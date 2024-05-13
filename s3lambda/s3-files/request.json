@@ -1,0 +1,5 @@
+{
+  "runnerTarget": "test-wrapper.jar",
+  "benchmarkTarget": "stress-tests.jar",
+  "benchmarkName": "PlainTest"
+}

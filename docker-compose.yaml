@@ -1,24 +1,25 @@
 version: "3.8"
 
 services:
-  localstack:
-    container_name: "${LOCALSTACK_DOCKER_NAME:-localstack}"
+  localstack-baas:
+    container_name: "${LOCALSTACK_DOCKER_NAME:-localstack-baas}"
     image: localstack/localstack
     ports:
-      - "${PORT_WEB_UI-8080}:${PORT_WEB_UI-8080}"
-      - "127.0.0.1:4566:4566"            # LocalStack Gateway
-      - "127.0.0.1:4510-4559:4510-4559"  # external services port range
+#      - "127.0.0.1:4510-4559:4510-4559"  # external services port range
+      - "4566:4566" # LocalStack Gateway
+      - "4572:4572" # S3 Port
+      - "4574:4574" # Lambda Port
     environment:
       # LocalStack configuration: https://docs.localstack.cloud/references/configuration/
       - DEBUG=${DEBUG:-0}
-      - SERVICES=s3
+      - SERVICES=s3,lambda
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
-  localstack-init:
+  localstack-baas-init:
     image: amazon/aws-cli
     depends_on:
-      - localstack
+      - localstack-baas
     environment:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
@@ -26,7 +27,7 @@ services:
     entrypoint: /bin/sh -c
     command: >
       "
-        aws --endpoint-url=http://localstack:4566 s3api create-bucket --bucket java-wonderland --region eu-central-1 --create-bucket-configuration LocationConstraint=eu-central-1
+        aws --endpoint-url=http://localstack-baas:4566 s3api create-bucket --bucket baas --region eu-central-1 --create-bucket-configuration LocationConstraint=eu-central-1
       "
   mongo:
     container_name: mongodb
