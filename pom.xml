@@ -152,5 +152,8 @@
         </pluginManagement>
     </build>
     <modules>
+        <module>fake-jmh-benchmarks</module>
+        <module>fake-stress-tests</module>
+        <module>benchmark-runner</module>
     </modules>
 </project>
