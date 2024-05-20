@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  JAVA_VERSION: 21
+  JAVA_DISTRIBUTION: temurin
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+      - name: Build with Maven
+        run: mvn -B verify --file pom.xml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm install semantic-release @semantic-release/changelog @semantic-release/commit-analyzer @semantic-release/git @semantic-release/github @semantic-release/release-notes-generator
+
+      - name: Generate release configuration
+        run: |
+          echo "module.exports = {
+            branches: ['main'],
+            plugins: [
+              '@semantic-release/commit-analyzer',
+              '@semantic-release/release-notes-generator',
+              '@semantic-release/changelog',
+              ['@semantic-release/git', {
+                assets: ['pom.xml', 'CHANGELOG.md'],
+                message: 'chore(release): \${nextRelease.version} [skip ci]\\n\\n\${nextRelease.notes}'
+              }],
+              '@semantic-release/github'
+            ],
+            preset: 'angular'
+          };" > release.config.js
+
+      - name: Run Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+      - name: Set up Maven
+        run: |
+          mvn versions:set -DnewVersion=$(npx semantic-release version)
+
+      - name: Commit version changes
+        run: |
+          git config --global user.name 'github-actions'
+          git config --global user.email 'github-actions@github.com'
+          git add pom.xml
+          git commit -m "chore(release): update Maven version [skip ci]"
+          git push origin HEAD:main
