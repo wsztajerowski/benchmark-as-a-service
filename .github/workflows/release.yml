@@ -52,8 +52,8 @@ jobs:
               [
                 '@semantic-release/exec',
                 {
-                  'prepareCmd': 'mvn versions:set -DnewVersion=\${nextRelease.version}',
-                  'publishCmd': 'mvn --batch-mode deploy'
+                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version}',
+                  'publishCmd': 'mvn --batch-mode deploy -DskipTests'
                 }
               ]
             ],
