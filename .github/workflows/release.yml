@@ -52,7 +52,7 @@ jobs:
                 '@semantic-release/github', 
                 {
                   'assets': [
-                    {'path': 'benchmark-runner/target/benchmark-runner.jar', 'label': 'Benchmark runner jar'}
+                    {'path': 'benchmark-runner/target/benchmark-runner.jar', 'label': 'benchmark-runner.jar'}
                   ]
                 }
               ],
