@@ -5,7 +5,7 @@
     <parent>
         <groupId>pl.wsztajerowski</groupId>
         <artifactId>benchmark-as-a-service</artifactId>
-        <version>1.0-SNAPSHOT</version>
+        <version>0.0.0-semantically-released</version>
     </parent>
 
     <artifactId>fake-jmh-benchmarks</artifactId>
