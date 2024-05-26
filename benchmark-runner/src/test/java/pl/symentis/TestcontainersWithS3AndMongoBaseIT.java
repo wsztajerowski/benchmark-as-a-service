@@ -1,4 +1,4 @@
-package pl.symentis;
+package pl.wsztajerowski;
 
 import com.mongodb.MongoClient;
 import org.junit.jupiter.api.AfterEach;

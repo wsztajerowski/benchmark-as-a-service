@@ -1,4 +1,4 @@
-package pl.symentis;
+package pl.wsztajerowski;
 
 import org.json.JSONArray;
 import org.json.JSONObject;

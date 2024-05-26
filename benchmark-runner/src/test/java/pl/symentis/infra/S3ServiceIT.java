@@ -1,15 +1,15 @@
-package pl.symentis.infra;
+package pl.wsztajerowski.infra;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import pl.symentis.TestcontainersWithS3BaseIT;
+import pl.wsztajerowski.TestcontainersWithS3BaseIT;
 
 import java.nio.file.Path;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
-import static pl.symentis.infra.S3ServiceBuilder.getS3ServiceBuilder;
+import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
 
 class S3ServiceIT extends TestcontainersWithS3BaseIT {
     private S3Service sut;

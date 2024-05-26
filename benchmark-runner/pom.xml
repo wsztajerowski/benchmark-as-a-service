@@ -190,7 +190,7 @@
                             <transformers>
                                 <transformer
                                         implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                                    <mainClass>pl.symentis.commands.TestWrapper</mainClass>
+                                    <mainClass>pl.wsztajerowski.commands.TestWrapper</mainClass>
                                 </transformer>
                                 <transformer
                                         implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>

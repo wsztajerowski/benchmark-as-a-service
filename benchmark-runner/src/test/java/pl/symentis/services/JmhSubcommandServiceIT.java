@@ -1,14 +1,14 @@
-package pl.symentis.services;
+package pl.wsztajerowski.services;
 
 import dev.morphia.annotations.Entity;
 import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import pl.symentis.MongoDbTestHelpers;
-import pl.symentis.TestcontainersWithS3AndMongoBaseIT;
-import pl.symentis.entities.jmh.JmhBenchmark;
-import pl.symentis.services.options.CommonSharedOptions;
-import pl.symentis.services.options.JmhOptions;
+import pl.wsztajerowski.MongoDbTestHelpers;
+import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
+import pl.wsztajerowski.entities.jmh.JmhBenchmark;
+import pl.wsztajerowski.services.options.CommonSharedOptions;
+import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,14 +18,14 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
-import static pl.symentis.MongoDbTestHelpers.all;
-import static pl.symentis.infra.S3ServiceBuilder.getS3ServiceBuilder;
-import static pl.symentis.services.JmhSubcommandServiceBuilder.serviceBuilder;
-import static pl.symentis.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
-import static pl.symentis.services.options.JmhIterationOptions.jmhIterationOptionsBuilder;
-import static pl.symentis.services.options.JmhJvmOptions.jmhJvmOptionsBuilder;
-import static pl.symentis.services.options.JmhOutputOptions.jmhOutputOptionsBuilder;
-import static pl.symentis.services.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
+import static pl.wsztajerowski.MongoDbTestHelpers.all;
+import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
+import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
+import static pl.wsztajerowski.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
+import static pl.wsztajerowski.services.options.JmhIterationOptions.jmhIterationOptionsBuilder;
+import static pl.wsztajerowski.services.options.JmhJvmOptions.jmhJvmOptionsBuilder;
+import static pl.wsztajerowski.services.options.JmhOutputOptions.jmhOutputOptionsBuilder;
+import static pl.wsztajerowski.services.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
 
 class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
 

@@ -1,4 +1,4 @@
-package pl.symentis.infra;
+package pl.wsztajerowski.infra;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -7,13 +7,13 @@ import org.testcontainers.containers.MongoDBContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import pl.symentis.MongoDbTestHelpers;
+import pl.wsztajerowski.MongoDbTestHelpers;
 
 import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static pl.symentis.MongoDbTestHelpers.byId;
-import static pl.symentis.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
+import static pl.wsztajerowski.MongoDbTestHelpers.byId;
+import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
 
 @Testcontainers
 class MorphiaServiceIT {

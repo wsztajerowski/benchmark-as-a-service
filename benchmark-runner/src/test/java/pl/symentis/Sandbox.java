@@ -1,4 +1,4 @@
-package pl.symentis;
+package pl.wsztajerowski;
 
 import com.fatboyindustrial.gsonjavatime.Converters;
 import com.google.gson.Gson;
@@ -16,10 +16,10 @@ import org.jsoup.nodes.Element;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.shaded.com.google.common.reflect.TypeToken;
-import pl.symentis.entities.jmh.BenchmarkMetadata;
-import pl.symentis.entities.jmh.JmhBenchmark;
-import pl.symentis.entities.jmh.JmhBenchmarkId;
-import pl.symentis.entities.jmh.JmhResult;
+import pl.wsztajerowski.entities.jmh.BenchmarkMetadata;
+import pl.wsztajerowski.entities.jmh.JmhBenchmark;
+import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
+import pl.wsztajerowski.entities.jmh.JmhResult;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
@@ -40,7 +40,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static java.nio.file.Files.list;
-import static pl.symentis.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
+import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
 
 @Disabled
 class Sandbox {
@@ -130,7 +130,7 @@ class Sandbox {
 
             String bucketName = "java-wonderland";
             String objectKey = "gha-outputs/async/graph.html";
-            Path flamegraph = Paths.get("flame", "pl.symentis.Incrementing_DekkersLock.g1-Throughput", "flame-cpu-forward.html");
+            Path flamegraph = Paths.get("flame", "pl.wsztajerowski.Incrementing_DekkersLock.g1-Throughput", "flame-cpu-forward.html");
             PutObjectRequest putOb = PutObjectRequest.builder()
                 .bucket(bucketName)
                 .key(objectKey)
@@ -198,7 +198,7 @@ class Sandbox {
 
             // tell morphia where to find your classes
             // can be called multiple times with different packages or classes
-            datastore.getMapper().mapPackage("pl.symentis.entites");
+            datastore.getMapper().mapPackage("pl.wsztajerowski.entites");
 
 //            List<Benchmark> benchmarks = mapJsonFileToJavaList();
             List<JmhResult> benchmarks = loadBenchamrkResultAndAddFlamegraphPaths();

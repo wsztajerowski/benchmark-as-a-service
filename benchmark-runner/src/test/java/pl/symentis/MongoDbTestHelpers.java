@@ -1,4 +1,4 @@
-package pl.symentis;
+package pl.wsztajerowski;
 
 import com.mongodb.ConnectionString;
 import com.mongodb.MongoClient;

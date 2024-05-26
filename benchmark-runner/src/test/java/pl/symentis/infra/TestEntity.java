@@ -1,4 +1,4 @@
-package pl.symentis.infra;
+package pl.wsztajerowski.infra;
 
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.Id;

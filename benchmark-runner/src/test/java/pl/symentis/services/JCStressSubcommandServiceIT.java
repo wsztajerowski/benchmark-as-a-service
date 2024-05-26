@@ -1,14 +1,14 @@
-package pl.symentis.services;
+package pl.wsztajerowski.services;
 
 import dev.morphia.annotations.Entity;
 import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import pl.symentis.MongoDbTestHelpers;
-import pl.symentis.TestcontainersWithS3AndMongoBaseIT;
-import pl.symentis.entities.jcstress.JCStressTest;
-import pl.symentis.services.options.CommonSharedOptions;
-import pl.symentis.services.options.JCStressOptions;
+import pl.wsztajerowski.MongoDbTestHelpers;
+import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
+import pl.wsztajerowski.entities.jcstress.JCStressTest;
+import pl.wsztajerowski.services.options.CommonSharedOptions;
+import pl.wsztajerowski.services.options.JCStressOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -18,10 +18,10 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
-import static pl.symentis.MongoDbTestHelpers.all;
-import static pl.symentis.infra.S3ServiceBuilder.getS3ServiceBuilder;
-import static pl.symentis.services.JCStressSubcommandServiceBuilder.serviceBuilder;
-import static pl.symentis.services.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
+import static pl.wsztajerowski.MongoDbTestHelpers.all;
+import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
+import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
+import static pl.wsztajerowski.services.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
 class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
 
@@ -67,7 +67,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                     .containsEntry("totalTests", 2)
                     .containsEntry("passedTests", 1)
                     .extracting("testsWithFailedResults", as(MAP))
-                        .containsKey("pl.symentis.IntegerIncrementing.TestWithForbiddenResults")
+                        .containsKey("pl.wsztajerowski.IntegerIncrementing.TestWithForbiddenResults")
         );
 
         // and
