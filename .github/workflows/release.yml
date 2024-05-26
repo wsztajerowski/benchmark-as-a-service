@@ -1,0 +1,66 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  JAVA_VERSION: 21
+  JAVA_DISTRIBUTION: temurin
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # to be able to publish a GitHub release
+      issues: write # to be able to comment on released issues
+      pull-requests: write # to be able to comment on released pull requests
+      id-token: write # to enable use of OIDC for npm provenance
+      packages: write
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+          cache: maven
+      - name: Build with Maven
+        run: mvn -B verify --file pom.xml
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/exec @semantic-release/github @semantic-release/release-notes-generator
+
+      - name: Generate release configuration
+        run: |
+          echo "module.exports = {
+            branches: ['main'],
+            plugins: [
+              '@semantic-release/commit-analyzer',
+              '@semantic-release/release-notes-generator',
+              '@semantic-release/github',
+              [
+                '@semantic-release/exec',
+                {
+                  'prepareCmd': 'mvn versions:set -DnewVersion=\${nextRelease.version}',
+                  'publishCmd': 'mvn --batch-mode deploy'
+                }
+              ]
+            ],
+            preset: 'angular'
+          };" > release.config.js
+
+      - name: Run Semantic Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
