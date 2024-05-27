@@ -1,0 +1,12 @@
+Resources:
+  S3Bucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: benchmark-as-a-service
+      Tags:
+        - Key: "project"
+          Value: "baas"
+Outputs:
+  S3BucketArn:
+    Value: !GetAtt S3Bucket.Arn
