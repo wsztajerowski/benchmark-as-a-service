@@ -1,0 +1,128 @@
+name: Run benchmark request on AWS
+
+on:
+  workflow_dispatch:
+    inputs:
+      request_id:
+        type: string
+        required: true
+        description: ID of benchmark run request
+      result_prefix:
+        type: string
+        required: true
+        description: S3 prefix for benchmark results
+      s3_result_bucket:
+        type: string
+        required: true
+        description: S3 bucket name for benchmark results
+      benchmark_path:
+        type: string
+        description: S3 url to benchmark jar
+        required: true
+      benchmark_type:
+        description: One of the supported benchmark type
+        required: true
+        type: choice
+        options:
+          - jmh
+          - jmh-with-async
+          - jcstress
+      parameters:
+        type: string
+        description: Additional parameters for benchmark
+env:
+  JAVA_VERSION: 21
+  JAVA_DISTRIBUTION: temurin
+  AWS_REGION: eu-north-1
+  WORKFLOW_ROLE_ARN: ${{ secrets.WORKFLOW_ROLE_ARN }}
+  RUNNER_ROLE_NAME: ${{ secrets.RUNNER_ROLE_NAME }}
+  AMI_ID: ami-099451d897f38cebe
+  EC2_INSTANCE_TYPE: c5.2xlarge
+  SUBNET_ID: subnet-3914dd42
+  SECURITY_GROUP_ID: sg-09ab440252230df2a
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.WORKFLOW_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GHA_EC2_PAT }}
+          ec2-image-id: ${{ env.AMI_ID }}
+          ec2-instance-type: ${{ env.EC2_INSTANCE_TYPE }}
+          subnet-id: ${{ env.SUBNET_ID }}
+          security-group-id: ${{ env.SECURITY_GROUP_ID }}
+          iam-role-name: ${{ env.RUNNER_ROLE_NAME }}
+          aws-resource-tags: > 
+            [
+              {"Key": "project", "Value": "baas"},
+              {"Key": "run_id", "Value": "${{ github.run_id }}" },
+              {"Key": "runner", "Value": "request-benchmark-runner"}
+            ]
+  run-benchmark:
+    name: Run JMH tests
+    needs:
+     - start-runner
+    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
+    steps:
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+      - name: Download Benchmark runner
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: 'wsztajerowski/benchmark-as-a-service'
+          latest: true
+          fileName: 'benchmark-runner.jar'
+      - name: Download benchmark from S3
+        run: aws s3 cp ${{ inputs.benchmark_path }} benchmark_under_test.jar
+      - name: Run benchmarks
+        env:
+          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+        run: |
+          java -jar benchmark-runner.jar ${{ inputs.benchmark_type }} \
+          --s3-result-prefix ${{ inputs.result_prefix }} \
+          --request-id ${{ inputs.request_id }} \
+          --s3-bucket ${{ inputs.s3_result_bucket }} \
+          --benchmark-path benchmark_under_test.jar \
+          ${{ inputs.parameters }}
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs:
+      - start-runner
+      - run-benchmark
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.WORKFLOW_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GHA_EC2_PAT }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
