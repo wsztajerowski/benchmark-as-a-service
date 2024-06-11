@@ -1,0 +1,199 @@
+Parameters:
+  ResourceNamePrefix:
+    Description: Prefix for all object's names created by stack
+    Type: String
+    Default: "baas"
+  S3LambdaBucketName:
+    Type: String
+    Description: Name of the S3 bucket where the Lambda code is stored.
+  OIDCProviderArn:
+    Description: Arn for the GitHub OIDC Provider.
+    Default: ""
+    Type: String
+  OIDCAudience:
+    Description: Audience supplied to configure-aws-credentials.
+    Default: "sts.amazonaws.com"
+    Type: String
+
+Conditions:
+  CreateOIDCProvider: !Equals
+    - !Ref OIDCProviderArn
+    - ""
+
+Resources:
+  S3MainBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub ${ResourceNamePrefix}-main
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: 's3:ObjectCreated:*'
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: 'prefix'
+                    Value: 'requests/'
+                  - Name: 'suffix'
+                    Value: '.json'
+            Function: !GetAtt S3HookLambdaFunction.Arn
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+  WorkflowRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourceNamePrefix}-github-actions-workflow-role
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Action: sts:AssumeRoleWithWebIdentity
+            Principal:
+              Federated: !If
+                - CreateOIDCProvider
+                - !Ref GithubOidc
+                - !Ref OIDCProviderArn
+            Condition:
+              StringEquals:
+                token.actions.githubusercontent.com:aud: !Ref OIDCAudience
+              StringLike:
+                token.actions.githubusercontent.com:sub: !Sub repo:{{resolve:ssm:/${ResourceNamePrefix}/github/org}}/{{resolve:ssm:/${ResourceNamePrefix}/github/repo}}:*
+      Policies:
+        - PolicyName: !Sub ${ResourceNamePrefix}-github-actions-workflow-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                - "ec2:RunInstances"
+                - "ec2:TerminateInstances"
+                - "ec2:DescribeInstances"
+                - "ec2:DescribeInstanceStatus"
+                - "ec2:ReplaceIamInstanceProfileAssociation"
+                - "ec2:AssociateIamInstanceProfile"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                - "iam:PassRole"
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                - "ec2:CreateTags"
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    'ec2:CreateAction': RunInstances
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+  RunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourceNamePrefix}-github-actions-runner-role
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+  RunnerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-github-actions-runner-role
+      Path: /
+      Roles:
+        - !Ref RunnerRole
+  GithubOidc:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOIDCProvider
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList:
+        - sts.amazonaws.com
+      ThumbprintList:
+        - 6938fd4d98bab03faadb97b34396831e3780aea1
+        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+  S3HookLambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 'lambda.amazonaws.com'
+            Action: 'sts:AssumeRole'
+      Policies:
+        - PolicyName: LambdaBasicExecution
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource: 'arn:aws:logs:*:*:*'
+              - Effect: Allow
+                Action:
+                  - 's3:GetObject'
+                  - 's3:PutObject'
+                  - 's3:DeleteObject'
+                Resource: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/*'
+              - Effect: Allow
+                Action:
+                  - 'ssm:GetParameter'
+                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/*'
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+  S3HookLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Handler: pl.wsztajerowski.s3hook.App::handleRequest
+      Runtime: java21
+      Timeout: 20
+      MemorySize: 512
+      Code:
+        S3Bucket: !Ref S3LambdaBucketName
+        S3Key: s3-hook-lambda.jar
+      Description: Lambda triggered by JSON request created on S3 bucket, which launch GitHub workflow
+      Role: !GetAtt S3HookLambdaExecutionRole.Arn
+      Environment:
+        Variables:
+          SSM_PARAM_PREFIX: !Sub ${ResourceNamePrefix}
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+  S3HookLambdaPermissionForS3:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      Action: 'lambda:InvokeFunction'
+      FunctionName: !Ref S3HookLambdaFunction
+      Principal: 's3.amazonaws.com'
+      SourceArn: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main'
+
+Outputs:
+  S3BucketArn:
+    Value: !GetAtt S3MainBucket.Arn
+  WorkflowRoleArn:
+    Value: !GetAtt WorkflowRole.Arn
+  RunnerRoleArn:
+    Value: !GetAtt RunnerRole.Arn
+  RunnerInstanceProfileArn:
+    Value: !GetAtt RunnerInstanceProfile.Arn
+  LambdaFunctionArn:
+    Description: "ARN of the S3 hook Lambda function"
+    Value: !GetAtt S3HookLambdaFunction.Arn
