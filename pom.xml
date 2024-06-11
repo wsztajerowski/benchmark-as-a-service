@@ -28,7 +28,6 @@
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
         <assertj.version>3.23.1</assertj.version>
         <aws.java.sdk.version>2.25.50</aws.java.sdk.version>
-        <aws.lambda.java.version>1.2.3</aws.lambda.java.version>
         <testcontainers.version>1.19.5</testcontainers.version>
         <slf4j.version>2.0.12</slf4j.version>
     </properties>
@@ -80,7 +79,6 @@
             </dependency>
         </dependencies>
     </dependencyManagement>
-
     <build>
         <pluginManagement>
             <plugins>
@@ -88,6 +86,11 @@
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <source>21</source>
+                        <target>21</target>
+                        <compilerArgs>--enable-preview</compilerArgs>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
@@ -156,6 +159,6 @@
         <module>fake-jmh-benchmarks</module>
         <module>fake-stress-tests</module>
         <module>benchmark-runner</module>
-        <module>s3lambda</module>
+        <module>s3-hook-lambda</module>
     </modules>
 </project>
