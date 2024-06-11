@@ -1,4 +1,4 @@
-package pl.wsztajerowski.s3lambda;
+package pl.wsztajerowski.s3hook;
 
 import org.junit.jupiter.api.Test;
 
