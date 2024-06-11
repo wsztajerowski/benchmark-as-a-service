@@ -12,7 +12,7 @@ services:
     environment:
       # LocalStack configuration: https://docs.localstack.cloud/references/configuration/
       - DEBUG=${DEBUG:-0}
-      - SERVICES=s3,lambda
+      - SERVICES=s3,lambda,ssm
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
@@ -24,10 +24,17 @@ services:
       - AWS_ACCESS_KEY_ID=test
       - AWS_SECRET_ACCESS_KEY=test
       - AWS_DEFAULT_REGION=eu-central-1
+    volumes:
+      - "./s3-hook-lambda/src/test/resources:/var/resources"
     entrypoint: /bin/sh -c
     command: >
       "
         aws --endpoint-url=http://localstack-baas:4566 s3api create-bucket --bucket baas --region eu-central-1 --create-bucket-configuration LocationConstraint=eu-central-1
+        aws --endpoint-url=http://localstack-baas:4566 s3api put-object --bucket baas --region eu-central-1 --key test-request.json --body /var/resources/requests/request.json
+        aws --endpoint-url=http://localstack-baas:4566 ssm put-parameter --name /baas/github/org --value wsztajerowski --type String
+        aws --endpoint-url=http://localstack-baas:4566 ssm put-parameter --name /baas/github/repo --value benchmark-as-a-service --type String 
+        aws --endpoint-url=http://localstack-baas:4566 ssm put-parameter --name /baas/github/workflowid --value 99963199 --type String 
+        aws --endpoint-url=http://localstack-baas:4566 ssm put-parameter --name /baas/github/token --value ${GITHUB_TOKEN} --type SecureString 
       "
   mongo:
     container_name: mongodb
