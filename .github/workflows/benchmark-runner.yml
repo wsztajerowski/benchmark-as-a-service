@@ -34,7 +34,7 @@ env:
   JAVA_VERSION: 21
   JAVA_DISTRIBUTION: temurin
   AWS_REGION: ${{ vars.AWS_REGION }}
-  AMI_ID: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
   EC2_INSTANCE_TYPE: c5.2xlarge
 jobs:
   start-runner:
@@ -52,13 +52,18 @@ jobs:
         with:
           role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+      - name: Get latest AL 2023 AMI ID
+        id: latest-ami-id
+        run: |
+          AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
+          echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2
         with:
           mode: start
           github-token: ${{ secrets.GHA_EC2_PAT }}
-          ec2-image-id: ${{ env.AMI_ID }}
+          ec2-image-id: ${{ steps.atest-ami-id.outputs.AMI_ID }}
           ec2-instance-type: ${{ env.EC2_INSTANCE_TYPE }}
           subnet-id: ${{ vars.SUBNET_ID }}
           security-group-id: ${{ vars.SECURITY_GROUP_ID }}
