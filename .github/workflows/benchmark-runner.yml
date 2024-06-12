@@ -64,7 +64,7 @@ jobs:
         with:
           mode: start
           github-token: ${{ secrets.GHA_EC2_PAT }}
-          ec2-image-id: ${{ steps.atest-ami-id.outputs.AMI_ID }}
+          ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
           ec2-instance-type: ${{ env.EC2_INSTANCE_TYPE }}
           subnet-id: ${{ vars.SUBNET_ID }}
           security-group-id: ${{ vars.SECURITY_GROUP_ID }}
