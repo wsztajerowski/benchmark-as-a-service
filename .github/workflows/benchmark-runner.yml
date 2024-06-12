@@ -76,6 +76,10 @@ jobs:
               {"Key": "run_id", "Value": "${{ github.run_id }}" },
               {"Key": "runner", "Value": "request-benchmark-runner"}
             ]
+          pre-runner-script: |
+            sudo yum update -y && \ 
+            sudo yum install docker git libicu -y && \
+            sudo systemctl enable docker
   run-benchmark:
     name: Run JMH tests
     needs:
