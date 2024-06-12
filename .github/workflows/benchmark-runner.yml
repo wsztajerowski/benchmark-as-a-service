@@ -33,6 +33,7 @@ on:
 env:
   JAVA_VERSION: 21
   JAVA_DISTRIBUTION: temurin
+  ASYNC_PROFILER_VERSION: ${{ vars.ASYNC_PROFILER_VERSION }}
   AWS_REGION: ${{ vars.AWS_REGION }}
   AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
   EC2_INSTANCE_TYPE: c5.2xlarge
@@ -81,6 +82,12 @@ jobs:
      - start-runner
     runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
     steps:
+      - name: Download async profiler
+        if: inputs.benchmark_type == 'jmh-with-async'
+        run: |
+          wget https://github.com/async-profiler/async-profiler/releases/download/v${{ env.ASYNC_PROFILER_VERSION }}/async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
+          tar -xf async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
+          mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 /home/ec2-user/async-profiler
       - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
