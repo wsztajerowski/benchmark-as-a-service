@@ -56,6 +56,7 @@ jobs:
         id: latest-ami-id
         run: |
           AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
+          echo "Newest AMI ID: $AMI_ID"
           echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
       - name: Start EC2 runner
         id: start-ec2-runner
