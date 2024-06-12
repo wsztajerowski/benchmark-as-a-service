@@ -1,0 +1,8 @@
+{
+  "request_id": "lambda-run-1",
+  "result_prefix": "lambda-runs/1",
+  "s3_result_bucket": "baas-lynx-main",
+  "benchmark_path": "s3://baas-lynx-main/fake-jmh-benchmarks.jar",
+  "benchmark_type": "jmh-with-async",
+  "parameters": "--async-path /home/ec2-user/async-profiler-2.9-linux-x64/build/libasyncProfiler.so -wi 1 -i 2 -f 1"
+}
