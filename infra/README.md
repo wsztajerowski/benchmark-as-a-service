@@ -19,14 +19,14 @@ ssm put-parameter \
 --type SecureString \
 --value GITHUB_TOKEN
 ```
-## Create CloudFormation stack for SSM Parameter Store 
+## Create CloudFormation bootstrap stack 
 
 ```bash
 aws --profile YOUR_AWS_PROFILE \
 cloudformation create-stack \
---stack-name baas-ssm \
+--stack-name baas-bootstrap \
 --template-body file://$(PWD)/cf-template-bootstrap.yaml \
---parameters ParameterKey=GHABenchmarkWorkflowId,ParameterValue=GITHUB_WORKFLOW_ID
+--parameters ParameterKey=GHABenchmarkWorkflowId,ParameterValue=GITHUB_WORKFLOW_ID ParameterKey=DeploymentPrefix,ParameterValue=RESOURCE_PREFIX
 ```
 
 ## Create Main CloudFormation stack 
@@ -34,17 +34,23 @@ cloudformation create-stack \
 ### without previously existing GitHub OIDC Provider
 
 ```bash
-aws --profile YOUR_AWS_PROFILE \
-cloudformation create-stack \
---stack-name baas-iam \
---template-body file://$(PWD)/cf-template-main.yaml \
---capabilities CAPABILITY_NAMED_IAM
+aws cloudformation deploy \
+  --profile YOUR_AWS_PROFILE \
+  --template-file cf-template-main.yaml \
+  --stack-name baas-main \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX S3LambdaBucketName=S3_BUCKET_NAME_FROM_BOOTSTRAP_STACK_OUTPUTS
 ```
 
 ### with existing GitHub OIDC Provider
 
 Add to parameters option following value:
 ```bash
---parameters (...) ParameterKey=OIDCProviderArn,ParameterValue=arn:aws:iam::AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com 
+aws cloudformation deploy \
+  --profile YOUR_AWS_PROFILE \
+  --template-file cf-template-main.yaml \
+  --stack-name baas-main \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX S3LambdaBucketName=S3_BUCKET_NAME_FROM_BOOTSTRAP_STACK_OUTPUTS OIDCProviderArn=arn:aws:iam::YOUR_AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com 
 ```
 
