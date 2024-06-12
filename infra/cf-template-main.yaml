@@ -77,6 +77,10 @@ Resources:
                 Resource: "*"
               - Effect: Allow
                 Action:
+                - "ssm:GetParameters"
+                Resource: "arn:aws:ssm:eu-central-1::parameter/aws/service/ami-amazon-linux-latest/*"
+              - Effect: Allow
+                Action:
                 - "ec2:CreateTags"
                 Resource: "*"
                 Condition:
