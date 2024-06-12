@@ -1,0 +1,80 @@
+Parameters:
+  DeploymentPrefix:
+    Description: Prefix for all object's names created by stack
+    Type: String
+    Default: "baas"
+  GitHubOrg:
+    Description: Name of GitHub organization/user (case sensitive)
+    Default: "wsztajerowski"
+    Type: String
+  RepositoryName:
+    Description: Name of GitHub repository (case sensitive)
+    Default: "benchmark-as-a-service"
+    Type: String
+  GHABenchmarkWorkflowId:
+    Description: ID of the GHA workflow, which should be run by S3 hook lambda
+    Type: Number
+#  GitHubToken: => We're waiting for SecureString support in CloudFormation since 2019 - https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/82
+#    Description: GH fine-grained token, with Read and Write access to actions permissions
+#    Type: String
+#    NoEcho: true
+
+Resources:
+  S3LambdaBucket:
+    Type: 'AWS::S3::Bucket'
+    DeletionPolicy: Retain
+    Properties:
+      BucketName: !Sub ${DeploymentPrefix}-lambda
+      Tags:
+        - Key: project
+          Value: !Sub ${DeploymentPrefix}
+  GitHubOrgSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${DeploymentPrefix}/github/org'
+      Description: Name of GitHub organization/user which owns benchmark repo
+      Type: String
+      Value: !Sub ${GitHubOrg}
+      Tags:
+        project: !Sub ${DeploymentPrefix}
+  GitHubRepoSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${DeploymentPrefix}/github/repo'
+      Description: Name of GitHub benchmark repo
+      Type: String
+      Value: !Sub ${RepositoryName}
+      Tags:
+        project: !Sub ${DeploymentPrefix}
+  GitHubWorkflowIdSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${DeploymentPrefix}/github/workflowid'
+      Description: ID of GitHUb Actions workflow, which run benchmarking job
+      Type: String
+      Value: !Sub ${GHABenchmarkWorkflowId}
+      Tags:
+        project: !Sub ${DeploymentPrefix}
+  #  GitHubTokenSSMParam:
+  #    Type: AWS::SSM::Parameter
+  #    Properties:
+  #      Name: !Sub '/${DeploymentPrefix}/github/token'
+  #      Description: GitHub fine-grained token, with Read and Write access to actions permissions
+  #      Type: SecureString => Still not supported
+#        Value: !Sub ${GitHubToken}
+#        Tags:
+#          - Key: project
+#            Value: ${DeploymentPrefix}
+
+Outputs:
+  S3LambdaBucketName:
+    Description: "Name of the S3 bucket where Lambda sources will be stored"
+    Value: !Ref S3LambdaBucket
+  GitHubOrgSSMParamName:
+    Value: !Ref GitHubOrgSSMParam
+  GitHubRepoSSMParamName:
+    Value: !Ref GitHubRepoSSMParam
+  GitHubWorkflowIdSSMParamName:
+    Value: !Ref GitHubWorkflowIdSSMParam
+#  GitHubTokenSSMParamName:
+#    Value: !Ref GitHubTokenSSMParam
