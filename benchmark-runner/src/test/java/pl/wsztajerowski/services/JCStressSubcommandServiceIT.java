@@ -49,7 +49,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 .withS3Client(awsS3Client)
                 .withBucketName(TEST_BUCKET_NAME)
                 .build())
-            .withCommonOptions(new CommonSharedOptions(TEST_BUCKET_NAME, "test-1", "req-1"))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1"))
             .withJCStressOptions(jcStressOptions)
             .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())
             .build();

@@ -6,6 +6,7 @@ import picocli.CommandLine.Mixin;
 
 import java.nio.file.Path;
 
+import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = "jcstress", description = "Run JCStress performance tests")
@@ -25,10 +26,10 @@ public class JCStressSubcommand implements Runnable {
     @Override
     public void run() {
         serviceBuilder()
-            .withCommonOptions(apiCommonSharedOptions.getValues())
+            .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
             .withJCStressOptions(apiJCStressOptions.getValues())
             .withBenchmarkPath(benchmarkPath)
-            .withDefaultS3Service(apiCommonSharedOptions.getS3ServiceEndpoint())
+            .withS3Service(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
             .withMongoConnectionString(apiCommonSharedOptions.getMongoConnectionString())
             .build()
             .executeCommand();

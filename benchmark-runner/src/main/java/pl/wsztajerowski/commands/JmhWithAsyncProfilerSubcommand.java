@@ -3,6 +3,7 @@ package pl.wsztajerowski.commands;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.infra.S3ServiceBuilder;
 import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 
 import java.nio.file.Files;
@@ -11,6 +12,7 @@ import java.nio.file.Path;
 import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
 import static picocli.CommandLine.Spec;
+import static pl.wsztajerowski.infra.S3ServiceBuilder.*;
 import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = "jmh-with-async", description = "Run JHM benchmarks with Async profiler")
@@ -50,7 +52,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
     @Override
     public void run() {
         serviceBuilder()
-            .withCommonOptions(apiCommonSharedOptions.getValues())
+            .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
             .withJmhOptions(apiJmhOptions.getJmhOptions())
             .withAsyncProfilerOptions(AsyncProfilerOptions.asyncProfilerOptionsBuilder()
                 .withAsyncPath(asyncPath)
@@ -59,7 +61,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
                 .withAsyncOutputPath(asyncOutputPath)
                 .build())
             .withMongoConnectionString(apiCommonSharedOptions.getMongoConnectionString())
-            .withDefaultS3Service(apiCommonSharedOptions.getS3ServiceEndpoint())
+            .withS3Service(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
             .build()
             .executeCommand();
     }

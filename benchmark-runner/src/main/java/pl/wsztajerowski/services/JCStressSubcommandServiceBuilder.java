@@ -10,7 +10,6 @@ import java.nio.file.Path;
 
 import static java.util.Objects.requireNonNull;
 import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getDefaultS3ServiceBuilder;
 
 public final class JCStressSubcommandServiceBuilder {
     private CommonSharedOptions commonOptions;
@@ -18,8 +17,6 @@ public final class JCStressSubcommandServiceBuilder {
     private URI mongoConnectionString;
     private Path benchmarkPath;
     private JCStressOptions jcStressOptions;
-    private boolean useDefaultS3Service = false;
-    private URI s3ServiceEndpoint;
 
     private JCStressSubcommandServiceBuilder() {
     }
@@ -53,20 +50,9 @@ public final class JCStressSubcommandServiceBuilder {
         return this;
     }
 
-    public JCStressSubcommandServiceBuilder withDefaultS3Service(URI s3ServiceEndpoint) {
-        this.s3ServiceEndpoint = s3ServiceEndpoint;
-        this.useDefaultS3Service = true;
-        return this;
-    }
-
     public JCStressSubcommandService build() {
         requireNonNull(mongoConnectionString, "Please provide connectionString for Mongo");
-        if (useDefaultS3Service) {
-            s3Service = getDefaultS3ServiceBuilder(s3ServiceEndpoint)
-                .withBucketName(commonOptions.s3BucketName())
-                .build();
-        }
-        requireNonNull(s3Service, "Please either provide a S3 service or invoke withDefaultS3Service method before");
+        requireNonNull(s3Service, "Please provide a S3 service");
         MorphiaService morphiaService = getMorphiaServiceBuilder()
             .withConnectionString(mongoConnectionString)
             .build();

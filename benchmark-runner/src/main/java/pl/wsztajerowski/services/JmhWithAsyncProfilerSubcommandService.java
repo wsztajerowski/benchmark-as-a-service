@@ -41,7 +41,7 @@ public class JmhWithAsyncProfilerSubcommandService {
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
         this.asyncProfilerOptions = asyncProfilerOptions;
-        this.s3Prefix = Path.of(commonOptions.s3ResultPrefix(), "jmh-with-async");
+        this.s3Prefix = commonOptions.resultPath().resolve("jmh-with-async");
     }
 
     public void executeCommand() {

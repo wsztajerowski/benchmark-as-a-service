@@ -30,3 +30,7 @@ buildNumber.properties
 /volume/
 **/.aws-sam/
 /.env
+/.vars
+/act-payload.json
+/.secrets
+**/jcstress-results-*.bin.gz
