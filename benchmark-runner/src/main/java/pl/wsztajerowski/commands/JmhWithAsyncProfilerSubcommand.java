@@ -7,6 +7,7 @@ import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Map;
 
 import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
@@ -49,6 +50,9 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
     @Option(names = {"-aop", "--async-output-path"}, description = "Profiler output path (default: ${DEFAULT-VALUE})")
     Path asyncOutputPath = getWorkingDirectory().resolve("async-output");
 
+    @Option(names = {"-aap", "--async-additional-param"}, description = "Provide advance raw parameters as a map")
+    Map<String, String> asyncAdditionalParams;
+
     @Override
     public void run() {
         serviceBuilder()
@@ -59,6 +63,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
                 .withAsyncInterval(asyncInterval)
                 .withAsyncOutputType(asyncOutputType)
                 .withAsyncOutputPath(asyncOutputPath)
+                .withAsyncAdditionalOptions(asyncAdditionalParams)
                 .build())
             .withMongoConnectionString(apiCommonSharedOptions.getMongoConnectionString())
             .withStorageService(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
