@@ -1,41 +1,55 @@
 package pl.wsztajerowski.commands;
 
+import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
+import pl.wsztajerowski.services.options.S3Options;
 
 import java.net.URI;
+import java.nio.file.Path;
+import java.time.Instant;
+import java.util.Optional;
 
 @Command
 public class ApiCommonSharedOptions {
+
+    @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: ISO 8601 format of UTC current date-time.")
+    Path resultPath;
+
+    @Option(names = {"-id","--request-id"}, description = "Request ID. Default value: ISO 8601 format of UTC current date-time.")
+    String requestId;
 
     @Option(names = {"--mongo-connection-string", "-m"},
         defaultValue = "${MONGO_CONNECTION_STRING}",
         description = "MongoDB connection string - you could provide it as a option value or put in MONGO_CONNECTION_STRING env variable. For details see: https://www.mongodb.com/docs/manual/reference/connection-string/")
     URI mongoConnectionString;
 
-    @Option(names = "--s3-service-endpoint",
-        description = "Custom S3 Service endpoint")
-    URI s3ServiceEndpoint;
+    @CommandLine.ArgGroup(exclusive = false)
+    ApiS3Options s3Options;
 
-    @Option(names = "--s3-bucket", defaultValue = "java-wonderland", description = "S3 bucket name where benchmark will be placed.")
-    String s3BucketName;
+    static class ApiS3Options {
+        @Option(names = "--s3-bucket", required = true, description = "S3 bucket name where benchmark will be placed.")
+        String s3BucketName;
 
-    @Option(names = "--s3-result-prefix", required = true, description = "Path within S3 bucket to save benchmark results.")
-    String s3ResultPrefix;
+        @Option(names = "--s3-service-endpoint", description = "Custom S3 Service endpoint")
+        URI s3ServiceEndpoint;
+    }
 
-    @Option(names = {"-id","--request-id"}, required = true, description = "Request ID")
-    String requestId;
 
-    public CommonSharedOptions getValues(){
-        return new CommonSharedOptions(s3BucketName, s3ResultPrefix, requestId);
+    public CommonSharedOptions getRequestOptions(){
+        String nonNullRequestId = Optional.ofNullable(requestId)
+            .orElseGet(() -> Instant.now().toString());
+        Path nonNullResultPath = Optional.ofNullable(resultPath)
+            .orElse(Path.of(nonNullRequestId));
+        return new CommonSharedOptions(nonNullResultPath, nonNullRequestId);
     }
 
     public URI getMongoConnectionString() {
         return mongoConnectionString;
     }
 
-    public URI getS3ServiceEndpoint() {
-        return s3ServiceEndpoint;
+    public S3Options getS3Options() {
+        return new S3Options(s3Options.s3BucketName, s3Options.s3ServiceEndpoint);
     }
 }

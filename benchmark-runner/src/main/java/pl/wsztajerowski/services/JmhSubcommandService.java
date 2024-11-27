@@ -33,7 +33,7 @@ public class JmhSubcommandService {
     }
 
     public void executeCommand() {
-        Path s3Prefix = Path.of(commonOptions.s3ResultPrefix(), "jmh");
+        Path s3Prefix = commonOptions.resultPath().resolve( "jmh");
         logger.info("Running JMH - S3 bucket: {}", s3Service.getEndpoint());
         logger.info("Path to results within bucket: {}", s3Prefix);
         try {

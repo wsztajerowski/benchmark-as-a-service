@@ -9,15 +9,12 @@ import java.net.URI;
 
 import static java.util.Objects.requireNonNull;
 import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getDefaultS3ServiceBuilder;
 
 public final class JmhSubcommandServiceBuilder {
     private S3Service s3Service;
     private CommonSharedOptions commonOptions;
     private JmhOptions jmhOptions;
     private URI mongoConnectionString;
-    private boolean useDefaultS3Service = false;
-    private URI s3ServiceEndpoint;
 
     private JmhSubcommandServiceBuilder() {
     }
@@ -46,20 +43,9 @@ public final class JmhSubcommandServiceBuilder {
         return this;
     }
 
-    public JmhSubcommandServiceBuilder withDefaultS3Service(URI s3ServiceEndpoint) {
-        this.s3ServiceEndpoint = s3ServiceEndpoint;
-        this.useDefaultS3Service = true;
-        return this;
-    }
-
     public JmhSubcommandService build() {
         requireNonNull(mongoConnectionString, "Please provide connectionString for Mongo");
-        if (useDefaultS3Service) {
-            s3Service = getDefaultS3ServiceBuilder(s3ServiceEndpoint)
-                .withBucketName(commonOptions.s3BucketName())
-                .build();
-        }
-        requireNonNull(s3Service, "Please either provide a S3 service or invoke withDefaultS3Service method before");
+        requireNonNull(s3Service, "Please provide a S3 service");
         MorphiaService morphiaService = getMorphiaServiceBuilder()
             .withConnectionString(mongoConnectionString)
             .build();

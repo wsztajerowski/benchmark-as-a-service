@@ -35,7 +35,7 @@ public class JCStressSubcommandService {
 
     public void executeCommand() {
         Path reportPath = jcStressOptions.reportPath();
-        Path s3Prefix = Path.of(commonOptions.s3ResultPrefix(), "jcstress");
+        Path s3Prefix = commonOptions.resultPath().resolve("jcstress");
         logger.info("Running JCStress - S3 bucket: {}", s3Service.getEndpoint());
         logger.info("Path to results within bucket: {}", s3Prefix);
         try {

@@ -44,7 +44,7 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
         JmhSubcommandService sut = serviceBuilder()
             .withMongoConnectionString(getConnectionString())
-            .withCommonOptions(new CommonSharedOptions(TEST_BUCKET_NAME, "test-1", "req-1"))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1"))
             .withJmhOptions( new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
