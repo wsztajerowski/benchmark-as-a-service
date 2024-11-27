@@ -1,6 +1,7 @@
 package pl.wsztajerowski.services.options;
 
 import java.nio.file.Path;
+import java.util.Map;
 
 import static java.util.Objects.requireNonNull;
 
@@ -8,7 +9,8 @@ public record AsyncProfilerOptions(
     Path asyncPath,
     int asyncInterval,
     String asyncOutputType,
-    Path asyncOutputPath) {
+    Path asyncOutputPath,
+    Map<String, String> asyncAdditionalOptions) {
 
     public static AsyncProfilerOptionsBuilder asyncProfilerOptionsBuilder() {
         return new AsyncProfilerOptionsBuilder();
@@ -19,6 +21,7 @@ public record AsyncProfilerOptions(
         private int asyncInterval;
         private String asyncOutputType;
         private Path asyncOutputPath;
+        private Map<String, String> asyncAdditionalOptions;
 
         private AsyncProfilerOptionsBuilder() {
         }
@@ -43,10 +46,15 @@ public record AsyncProfilerOptions(
             return this;
         }
 
+        public AsyncProfilerOptionsBuilder withAsyncAdditionalOptions(Map<String, String> asyncAdditionalOptions) {
+            this.asyncAdditionalOptions = asyncAdditionalOptions;
+            return this;
+        }
+
         public AsyncProfilerOptions build() {
             requireNonNull(asyncPath, "asyncPath cannot be null");
             requireNonNull(asyncOutputPath, "asyncOutputPath cannot be null");
-            return new AsyncProfilerOptions(asyncPath, asyncInterval, asyncOutputType, asyncOutputPath);
+            return new AsyncProfilerOptions(asyncPath, asyncInterval, asyncOutputType, asyncOutputPath, asyncAdditionalOptions);
         }
     }
 }

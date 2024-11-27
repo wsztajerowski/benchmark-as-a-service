@@ -15,8 +15,8 @@ import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static java.nio.file.Files.list;
@@ -131,10 +131,18 @@ public class JmhWithAsyncProfilerSubcommandService {
     }
 
     private String createAsyncCommand() {
-        return "async:libPath=%s;output=%s;dir=%s;interval=%d".formatted(
+        String additionalParams = Optional.ofNullable(asyncProfilerOptions
+            .asyncAdditionalOptions())
+            .orElse(Collections.emptyMap())
+            .entrySet()
+            .stream()
+            .map(entry -> entry.getKey() + "=" + entry.getValue())
+            .collect(Collectors.joining(";", ";", ""));
+        return "async:libPath=%s;output=%s;dir=%s;interval=%d%s".formatted(
             asyncProfilerOptions.asyncPath(),
             asyncProfilerOptions.asyncOutputType(),
             asyncProfilerOptions.asyncOutputPath().toAbsolutePath(),
-            asyncProfilerOptions.asyncInterval());
+            asyncProfilerOptions.asyncInterval(),
+            additionalParams);
     }
 }
