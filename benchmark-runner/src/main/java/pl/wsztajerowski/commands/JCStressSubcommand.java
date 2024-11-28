@@ -1,12 +1,13 @@
 package pl.wsztajerowski.commands;
 
-import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Option;
 
 import java.nio.file.Path;
 
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
+import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
+import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = "jcstress", description = "Run JCStress performance tests")
@@ -20,8 +21,8 @@ public class JCStressSubcommand implements Runnable {
     @Mixin
     private ApiJCStressOptions apiJCStressOptions;
 
-    @CommandLine.Option(names = "--benchmark-path", defaultValue = "${BENCHMARK_PATH:-stress-tests.jar}", description = "Path to JCStress benchmark jar (default: ${DEFAULT-VALUE})")
-    Path benchmarkPath;
+    @Option(names = "--benchmark-path", description = "Path to JCStress benchmark jar (default: ${DEFAULT-VALUE})")
+    Path benchmarkPath = getWorkingDirectory().resolve("stress-tests.jar");
 
     @Override
     public void run() {

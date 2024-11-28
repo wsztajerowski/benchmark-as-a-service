@@ -1,7 +1,7 @@
 package pl.wsztajerowski.services;
 
 import pl.wsztajerowski.infra.MorphiaService;
-import pl.wsztajerowski.infra.S3Service;
+import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
 
@@ -13,7 +13,7 @@ import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuil
 
 public final class JCStressSubcommandServiceBuilder {
     private CommonSharedOptions commonOptions;
-    private S3Service s3Service;
+    private StorageService storageService;
     private URI mongoConnectionString;
     private Path benchmarkPath;
     private JCStressOptions jcStressOptions;
@@ -35,8 +35,8 @@ public final class JCStressSubcommandServiceBuilder {
         return this;
     }
 
-    public JCStressSubcommandServiceBuilder withS3Service(S3Service s3Service){
-        this.s3Service = s3Service;
+    public JCStressSubcommandServiceBuilder withS3Service(StorageService storageService){
+        this.storageService = storageService;
         return this;
     }
 
@@ -52,10 +52,10 @@ public final class JCStressSubcommandServiceBuilder {
 
     public JCStressSubcommandService build() {
         requireNonNull(mongoConnectionString, "Please provide connectionString for Mongo");
-        requireNonNull(s3Service, "Please provide a S3 service");
+        requireNonNull(storageService, "Please provide a S3 service");
         MorphiaService morphiaService = getMorphiaServiceBuilder()
             .withConnectionString(mongoConnectionString)
             .build();
-        return new JCStressSubcommandService(s3Service, morphiaService, commonOptions, benchmarkPath, jcStressOptions);
+        return new JCStressSubcommandService(storageService, morphiaService, commonOptions, benchmarkPath, jcStressOptions);
     }
 }

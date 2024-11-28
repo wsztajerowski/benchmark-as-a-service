@@ -34,8 +34,8 @@ public class ApiJCStressOptions {
     Integer strideCount;
     @Option(names = "-strideSize", description = "Internal stride size. Larger value decreases the synchronization overhead, but also reduces the number of collisions.")
     Integer strideSize;
-    @Option(names = {"--process-output"}, defaultValue = "jcstress-output.txt", description = "Write tests process output to a given file. (default: ${DEFAULT-VALUE})")
-    Path processOutput;
+    @Option(names = {"--process-output"}, description = "Write tests process output to a given file. (default: ${DEFAULT-VALUE})")
+    Path processOutput = TestWrapper.getWorkingDirectory().resolve("jcstress-output.txt");
     @CommandLine.Parameters(index = "0", description = "Test name regex", arity = "0..1")
     String testNameRegex;
 

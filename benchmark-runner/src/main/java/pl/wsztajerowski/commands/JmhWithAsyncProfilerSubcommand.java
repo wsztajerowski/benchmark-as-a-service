@@ -3,7 +3,6 @@ package pl.wsztajerowski.commands;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
-import pl.wsztajerowski.infra.S3ServiceBuilder;
 import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 
 import java.nio.file.Files;
@@ -12,7 +11,8 @@ import java.nio.file.Path;
 import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
 import static picocli.CommandLine.Spec;
-import static pl.wsztajerowski.infra.S3ServiceBuilder.*;
+import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
+import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = "jmh-with-async", description = "Run JHM benchmarks with Async profiler")
@@ -46,8 +46,8 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
     @Option(names = {"-aot", "--async-output-type"}, description = "Output format(s). Supported: [text, collapsed, flamegraph, tree, jfr] (default: ${DEFAULT-VALUE})")
     String asyncOutputType = "flamegraph";
 
-    @Option(names = {"-aop", "--async-output-path"}, defaultValue = "./async-output", description = "Profiler output path")
-    Path asyncOutputPath;
+    @Option(names = {"-aop", "--async-output-path"}, description = "Profiler output path (default: ${DEFAULT-VALUE})")
+    Path asyncOutputPath = getWorkingDirectory().resolve("async-output");
 
     @Override
     public void run() {

@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
 import static picocli.CommandLine.Spec;
+import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
 
 @Command
 public class ApiJmhOptions {
@@ -19,9 +20,9 @@ public class ApiJmhOptions {
     @Spec
     static CommandSpec spec;
 
-    Path benchmarkPath;
+    Path benchmarkPath = getWorkingDirectory().resolve("jmh-benchmarks.jar");
 
-    @Option(names = "--benchmark-path", defaultValue = "jmh-benchmarks.jar", description = "Path to benchmark jar (default: ${DEFAULT-VALUE})")
+    @Option(names = "--benchmark-path", description = "Path to benchmark jar (default: ${DEFAULT-VALUE})")
     public void setBenchmarkPath(Path path) {
         if(!Files.exists(path)){
             throw new ParameterException(spec.commandLine(),
@@ -30,11 +31,11 @@ public class ApiJmhOptions {
         this.benchmarkPath = path;
     }
 
-    @Option(names = {"-rff", "--machine-readable-output"}, defaultValue = "jmh-results.json", description = "Write machine-readable results to a given json file. (default: ${DEFAULT-VALUE})")
-    Path machineReadableOutput;
+    @Option(names = {"-rff", "--machine-readable-output"}, description = "Write machine-readable results to a given json file. (default: ${DEFAULT-VALUE})")
+    Path machineReadableOutput = getWorkingDirectory().resolve("jmh-results.json");
 
-    @Option(names = {"-o", "--process-output"}, defaultValue = "jmh-output.txt", description = "Write benchmark process output to a given file. (default: ${DEFAULT-VALUE})")
-    Path processOutput;
+    @Option(names = {"-o", "--process-output"}, description = "Write benchmark process output to a given file. (default: ${DEFAULT-VALUE})")
+    Path processOutput = getWorkingDirectory().resolve("jmh-output.txt");
 
     @ArgGroup(validate = false, heading = "Benchmark options%n")
     BenchmarkSection benchmarkSection = new BenchmarkSection();

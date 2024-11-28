@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.entities.jmh.JmhBenchmark;
+import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
@@ -19,7 +20,6 @@ import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
 import static pl.wsztajerowski.services.options.JmhIterationOptions.jmhIterationOptionsBuilder;
@@ -61,10 +61,7 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                     .withIterations(1)
                     .build(),
                 jmhJvmOptionsBuilder().build()))
-            .withS3Service(getS3ServiceBuilder()
-                .withS3Client(awsS3Client)
-                .withBucketName(TEST_BUCKET_NAME)
-                .build())
+            .withS3Service(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
             .build();
 
         // when

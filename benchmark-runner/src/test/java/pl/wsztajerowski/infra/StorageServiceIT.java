@@ -9,17 +9,13 @@ import java.nio.file.Path;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.groups.Tuple.tuple;
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
 
-class S3ServiceIT extends TestcontainersWithS3BaseIT {
-    private S3Service sut;
+class StorageServiceIT extends TestcontainersWithS3BaseIT {
+    private StorageService sut;
 
     @BeforeEach
     void setupSut(){
-        sut = getS3ServiceBuilder()
-            .withS3Client(awsS3Client)
-            .withBucketName(TEST_BUCKET_NAME)
-            .build();
+        sut = new S3StorageService(awsS3Client, TEST_BUCKET_NAME);
     }
 
     @Test
@@ -34,7 +30,7 @@ class S3ServiceIT extends TestcontainersWithS3BaseIT {
         Path sampleFilePath = createPathForTestResource("sample.json");
 
         // when
-        sut.saveFileOnS3("sample.json", sampleFilePath);
+        sut.saveFile(Path.of("sample.json"), sampleFilePath);
 
         // then
         assertThatJson(listObjectsInTestBucket())

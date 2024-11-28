@@ -11,6 +11,8 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Optional;
 
+import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
+
 @Command
 public class ApiCommonSharedOptions {
 
@@ -41,7 +43,7 @@ public class ApiCommonSharedOptions {
         String nonNullRequestId = Optional.ofNullable(requestId)
             .orElseGet(() -> Instant.now().toString());
         Path nonNullResultPath = Optional.ofNullable(resultPath)
-            .orElse(Path.of(nonNullRequestId));
+            .orElse(getWorkingDirectory().resolve(nonNullRequestId));
         return new CommonSharedOptions(nonNullResultPath, nonNullRequestId);
     }
 
@@ -50,6 +52,12 @@ public class ApiCommonSharedOptions {
     }
 
     public S3Options getS3Options() {
-        return new S3Options(s3Options.s3BucketName, s3Options.s3ServiceEndpoint);
+        String s3BucketName = Optional.ofNullable(s3Options)
+            .map(s3Options -> s3Options.s3BucketName)
+            .orElse("");
+        URI s3ServiceEndpoint = Optional.ofNullable(s3Options)
+            .map(s3Options -> s3Options.s3ServiceEndpoint)
+            .orElse(null);
+        return new S3Options(s3BucketName, s3ServiceEndpoint);
     }
 }

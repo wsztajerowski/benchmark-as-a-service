@@ -2,9 +2,8 @@ package pl.wsztajerowski.commands;
 
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
-import pl.wsztajerowski.infra.S3ServiceBuilder;
 
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
+import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = "jmh", description = "Run JHM benchmarks")

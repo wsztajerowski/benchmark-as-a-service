@@ -8,7 +8,7 @@ import pl.wsztajerowski.entities.jmh.JmhBenchmark;
 import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
 import pl.wsztajerowski.entities.jmh.JmhResult;
 import pl.wsztajerowski.infra.MorphiaService;
-import pl.wsztajerowski.infra.S3Service;
+import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
@@ -30,24 +30,23 @@ public class JmhWithAsyncProfilerSubcommandService {
     private static final Logger logger = LoggerFactory.getLogger(JmhWithAsyncProfilerSubcommandService.class);
     private final CommonSharedOptions commonOptions;
     private final JmhOptions jmhOptions;
-    private final S3Service s3Service;
+    private final StorageService storageService;
     private final MorphiaService morphiaService;
     private final AsyncProfilerOptions asyncProfilerOptions;
-    private final Path s3Prefix;
+    private final Path outputPath;
 
-    JmhWithAsyncProfilerSubcommandService(S3Service s3Service, MorphiaService morphiaService, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
-        this.s3Service = s3Service;
+    JmhWithAsyncProfilerSubcommandService(StorageService storageService, MorphiaService morphiaService, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
+        this.storageService = storageService;
         this.morphiaService = morphiaService;
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
         this.asyncProfilerOptions = asyncProfilerOptions;
-        this.s3Prefix = commonOptions.resultPath().resolve("jmh-with-async");
+        this.outputPath = commonOptions.resultPath().resolve("jmh-with-async");
     }
 
     public void executeCommand() {
         // Build process
-        logger.info("Running JMH with async profiler - S3 bucket: {}", s3Service.getEndpoint());
-        logger.info("Path to results within bucket: {}", s3Prefix);
+        logger.info("Running JMH with async profiler. Output path: {}", outputPath);
         try {
             ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
             int exitCode = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions)
@@ -56,8 +55,8 @@ public class JmhWithAsyncProfilerSubcommandService {
                 .waitFor();
 
             logger.info("Saving benchmark process output on S3");
-            s3Service
-                .saveFileOnS3(s3Prefix.resolve("output.txt").toString(), jmhOptions.outputOptions().processOutput());
+            storageService
+                .saveFile(outputPath.resolve("output.txt"), jmhOptions.outputOptions().processOutput());
 
             if (exitCode != 0) {
                 throw new JavaWonderlandException(format("Benchmark process exit with non-zero code: {0}", exitCode));
@@ -76,12 +75,12 @@ public class JmhWithAsyncProfilerSubcommandService {
             try (Stream<Path> paths = list(profilerOutputDir)) {
                 paths
                     .forEach(path -> {
-                        String s3Key = s3Prefix.resolve(benchmarkFullname).resolve(path.getFileName()).toString();
-                        logger.info("Saving profiler output: {}", s3Key);
-                        s3Service
-                            .saveFileOnS3(s3Key, path);
+                        Path storagePath = outputPath.resolve(benchmarkFullname).resolve(path.getFileName());
+                        logger.info("Saving profiler output: {}", storagePath);
+                        storageService
+                            .saveFile(storagePath, path);
                         String profilerOutput = getFilenameWithoutExtension(path);
-                        profilerOutputs.put(profilerOutput, s3Key);
+                        profilerOutputs.put(profilerOutput, storagePath.toString());
                     });
             } catch (IOException e) {
                 throw new JavaWonderlandException(e);
@@ -106,9 +105,9 @@ public class JmhWithAsyncProfilerSubcommandService {
             paths
                 .filter(f -> f.toString().endsWith("log"))
                 .forEach(path -> {
-                    String s3Key = s3Prefix.resolve("logs").resolve(path.getFileName()).toString();
-                    s3Service
-                        .saveFileOnS3(s3Key, path);
+                    Path s3Key = outputPath.resolve("logs").resolve(path.getFileName());
+                    storageService
+                        .saveFile(s3Key, path);
                 });
         } catch (IOException e) {
             throw new JavaWonderlandException(e);
