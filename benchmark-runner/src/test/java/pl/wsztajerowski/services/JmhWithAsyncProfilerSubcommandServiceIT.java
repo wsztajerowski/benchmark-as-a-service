@@ -48,7 +48,7 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         Path asyncOutput = Files.createTempDirectory("async-outputs");
         JmhWithAsyncProfilerSubcommandService sut = serviceBuilder()
             .withMongoConnectionString(getConnectionString())
-            .withS3Service(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
+            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
             .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1"))
             .withJmhOptions( new JmhOptions(
                 jmhBenchmarkOptionsBuilder()

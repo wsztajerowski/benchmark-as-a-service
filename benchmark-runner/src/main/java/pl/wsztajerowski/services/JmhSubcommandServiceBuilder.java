@@ -1,6 +1,6 @@
 package pl.wsztajerowski.services;
 
-import pl.wsztajerowski.infra.MorphiaService;
+import pl.wsztajerowski.infra.DatabaseService;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
@@ -8,7 +8,7 @@ import pl.wsztajerowski.services.options.JmhOptions;
 import java.net.URI;
 
 import static java.util.Objects.requireNonNull;
-import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
+import static pl.wsztajerowski.infra.DatabaseServiceBuilder.getMorphiaServiceBuilder;
 
 public final class JmhSubcommandServiceBuilder {
     private StorageService storageService;
@@ -38,17 +38,16 @@ public final class JmhSubcommandServiceBuilder {
         return this;
     }
 
-    public JmhSubcommandServiceBuilder withS3Service(StorageService storageService){
+    public JmhSubcommandServiceBuilder withStorageService(StorageService storageService){
         this.storageService = storageService;
         return this;
     }
 
     public JmhSubcommandService build() {
-        requireNonNull(mongoConnectionString, "Please provide connectionString for Mongo");
-        requireNonNull(storageService, "Please provide a S3 service");
-        MorphiaService morphiaService = getMorphiaServiceBuilder()
+        requireNonNull(storageService, "Please provide a storage service");
+        DatabaseService databaseService = getMorphiaServiceBuilder()
             .withConnectionString(mongoConnectionString)
             .build();
-        return new JmhSubcommandService(storageService, morphiaService, commonOptions, jmhOptions);
+        return new JmhSubcommandService(storageService, databaseService, commonOptions, jmhOptions);
     }
 }

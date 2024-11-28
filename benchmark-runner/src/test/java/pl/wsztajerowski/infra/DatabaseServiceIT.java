@@ -13,16 +13,16 @@ import java.net.URI;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static pl.wsztajerowski.MongoDbTestHelpers.byId;
-import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
+import static pl.wsztajerowski.infra.DatabaseServiceBuilder.getMorphiaServiceBuilder;
 
 @Testcontainers
-class MorphiaServiceIT {
+class DatabaseServiceIT {
     private static final String TEST_DB_NAME = "morphia-service-tests";
     private static URI connectionString;
     @Container
     protected final static MongoDBContainer MONGO_DB_CONTAINER = new MongoDBContainer(DockerImageName.parse("mongo:7.0.5"))
         .withExposedPorts(27017);
-    private MorphiaService sut;
+    private DatabaseService sut;
     private static MongoDbTestHelpers helper;
 
     @BeforeAll

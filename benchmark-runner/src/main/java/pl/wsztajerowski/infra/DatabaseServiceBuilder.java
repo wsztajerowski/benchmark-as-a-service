@@ -4,31 +4,35 @@ import com.mongodb.ConnectionString;
 import com.mongodb.client.MongoClient;
 import com.mongodb.client.MongoClients;
 import dev.morphia.Datastore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 
 import static dev.morphia.Morphia.createDatastore;
 import static java.util.Objects.requireNonNull;
 
-public class MorphiaServiceBuilder {
-
+public class DatabaseServiceBuilder {
+    private static final Logger logger = LoggerFactory.getLogger(DatabaseServiceBuilder.class);
     private URI connectionString;
 
-    private MorphiaServiceBuilder(){
+    private DatabaseServiceBuilder(){
     }
 
-    public static MorphiaServiceBuilder getMorphiaServiceBuilder(){
-        return new MorphiaServiceBuilder();
+    public static DatabaseServiceBuilder getMorphiaServiceBuilder(){
+        return new DatabaseServiceBuilder();
     }
 
-    public MorphiaServiceBuilder withConnectionString(URI connectionString){
-        requireNonNull(connectionString, "Provided connection string cannot be null!");
+    public DatabaseServiceBuilder withConnectionString(URI connectionString){
         this.connectionString = connectionString;
         return this;
     }
 
-    public MorphiaService build() {
-        requireNonNull(connectionString, "Please provide non-null connection string in form: mongodb://server:port/database_name");
+    public DatabaseService build() {
+        if (connectionString == null) {
+            logger.info("Using No operational database service");
+            return new NoOpDatabaseService();
+        }
         ConnectionString typedConnectionString = new ConnectionString(connectionString.toString());
         String database = typedConnectionString.getDatabase();
         requireNonNull(database, "Connection string has to contain database name! Please provide connection string in form: mongodb://server:port/database_name");
@@ -38,6 +42,7 @@ public class MorphiaServiceBuilder {
         datastore
             .getMapper()
             .mapPackage("pl.wsztajerowski.entities");
-        return new MorphiaService(datastore);
+        logger.info("Using MongoDB database service - working database: {}", database);
+        return new DocumentDbService(datastore);
     }
 }

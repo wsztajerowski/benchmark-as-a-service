@@ -61,7 +61,7 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                     .withIterations(1)
                     .build(),
                 jmhJvmOptionsBuilder().build()))
-            .withS3Service(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
+            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
             .build();
 
         // when

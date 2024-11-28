@@ -7,7 +7,7 @@ import pl.wsztajerowski.entities.jmh.BenchmarkMetadata;
 import pl.wsztajerowski.entities.jmh.JmhBenchmark;
 import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
 import pl.wsztajerowski.entities.jmh.JmhResult;
-import pl.wsztajerowski.infra.MorphiaService;
+import pl.wsztajerowski.infra.DatabaseService;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
@@ -31,13 +31,13 @@ public class JmhWithAsyncProfilerSubcommandService {
     private final CommonSharedOptions commonOptions;
     private final JmhOptions jmhOptions;
     private final StorageService storageService;
-    private final MorphiaService morphiaService;
+    private final DatabaseService databaseService;
     private final AsyncProfilerOptions asyncProfilerOptions;
     private final Path outputPath;
 
-    JmhWithAsyncProfilerSubcommandService(StorageService storageService, MorphiaService morphiaService, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
+    JmhWithAsyncProfilerSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
         this.storageService = storageService;
-        this.morphiaService = morphiaService;
+        this.databaseService = databaseService;
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
         this.asyncProfilerOptions = asyncProfilerOptions;
@@ -92,7 +92,7 @@ public class JmhWithAsyncProfilerSubcommandService {
                 jmhResult.mode()
             );
             logger.info("Saving results in DB with ID: {}", benchmarkId);
-            morphiaService
+            databaseService
                 .upsert(JmhBenchmark.class)
                 .byFieldValue("benchmarkId", benchmarkId)
                 .setValue("benchmarkMetadata", new BenchmarkMetadata(profilerOutputs))
