@@ -8,6 +8,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 
+import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
+
 public class LocalStorageService implements StorageService {
     private static final Logger logger = LoggerFactory.getLogger(LocalStorageService.class);
 
@@ -15,8 +17,9 @@ public class LocalStorageService implements StorageService {
     public void saveFile(Path storagePath, Path localPath) {
         try {
             logger.trace("File content : {}", Files.readString(localPath));
-            Files.createDirectories(storagePath);
-            Files.copy(localPath, storagePath, StandardCopyOption.REPLACE_EXISTING);
+            Path targetPath = getWorkingDirectory().resolve(storagePath);
+            Files.createDirectories(targetPath);
+            Files.copy(localPath, targetPath, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException e) {
             throw new RuntimeException(e);
         }
