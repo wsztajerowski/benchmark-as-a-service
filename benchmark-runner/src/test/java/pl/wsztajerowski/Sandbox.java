@@ -30,7 +30,6 @@ import java.io.BufferedReader;
 import java.io.FileReader;
 import java.io.IOException;
 import java.lang.reflect.Type;
-import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -40,7 +39,6 @@ import java.util.Collections;
 import java.util.List;
 
 import static java.nio.file.Files.list;
-import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuilder;
 
 @Disabled
 class Sandbox {
@@ -139,18 +137,6 @@ class Sandbox {
 
             s3.putObject(putOb, RequestBody.fromFile(flamegraph));
         }
-    }
-
-    @Test
-    void count_docs_from_mongo() {
-        String mongoConnectionString = System.getenv("MONGO_CONNECTION_STRING");
-        List<JmhBenchmark> jmhBenchmarks = getMorphiaServiceBuilder()
-            .withConnectionString(URI.create(mongoConnectionString))
-            .build()
-            .listAll(JmhBenchmark.class);
-
-        jmhBenchmarks
-            .forEach(System.out::println);
     }
 
     @Test

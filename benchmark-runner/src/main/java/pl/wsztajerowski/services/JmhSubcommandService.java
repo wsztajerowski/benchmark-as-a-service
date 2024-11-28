@@ -6,7 +6,7 @@ import pl.wsztajerowski.JavaWonderlandException;
 import pl.wsztajerowski.entities.jmh.JmhBenchmark;
 import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
 import pl.wsztajerowski.entities.jmh.JmhResult;
-import pl.wsztajerowski.infra.MorphiaService;
+import pl.wsztajerowski.infra.DatabaseService;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
@@ -23,11 +23,11 @@ public class JmhSubcommandService {
     private final CommonSharedOptions commonOptions;
     private final JmhOptions jmhOptions;
     private final StorageService storageService;
-    private final MorphiaService morphiaService;
+    private final DatabaseService databaseService;
 
-    JmhSubcommandService(StorageService storageService, MorphiaService morphiaService, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
+    JmhSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
         this.storageService = storageService;
-        this.morphiaService = morphiaService;
+        this.databaseService = databaseService;
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
     }
@@ -60,7 +60,7 @@ public class JmhSubcommandService {
                 jmhResult.benchmark(),
                 jmhResult.mode());
             logger.info("Saving results in DB with ID: {}", benchmarkId);
-            morphiaService
+            databaseService
                 .upsert(JmhBenchmark.class)
                 .byFieldValue("benchmarkId", benchmarkId)
                 .setValue("jmhResult", jmhResult)

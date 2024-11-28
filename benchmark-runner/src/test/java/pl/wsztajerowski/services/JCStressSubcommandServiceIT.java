@@ -45,7 +45,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 .build();
         JCStressSubcommandService sut = serviceBuilder()
             .withMongoConnectionString(getConnectionString())
-            .withS3Service(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
+            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
             .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1"))
             .withJCStressOptions(jcStressOptions)
             .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())

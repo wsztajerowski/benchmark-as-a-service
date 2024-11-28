@@ -6,7 +6,7 @@ import pl.wsztajerowski.JavaWonderlandException;
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
 import pl.wsztajerowski.entities.jcstress.JCStressTest;
 import pl.wsztajerowski.entities.jcstress.JCStressTestMetadata;
-import pl.wsztajerowski.infra.MorphiaService;
+import pl.wsztajerowski.infra.DatabaseService;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
@@ -20,14 +20,14 @@ public class JCStressSubcommandService {
     private static final Logger logger = LoggerFactory.getLogger(JCStressSubcommandService.class);
     private final CommonSharedOptions commonOptions;
     private final StorageService storageService;
-    private final MorphiaService morphiaService;
+    private final DatabaseService databaseService;
     private final Path benchmarkPath;
 
     private final JCStressOptions jcStressOptions;
 
-    JCStressSubcommandService(StorageService storageService, MorphiaService morphiaService, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+    JCStressSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
         this.storageService = storageService;
-        this.morphiaService = morphiaService;
+        this.databaseService = databaseService;
         this.commonOptions = commonOptions;
         this.benchmarkPath = benchmarkPath;
         this.jcStressOptions = jcStressOptions;
@@ -75,7 +75,7 @@ public class JCStressSubcommandService {
             jcStressResult);
 
         logger.debug("JCStress results: {}", stressTestResult);
-        morphiaService
+        databaseService
             .save(stressTestResult);
 
         jcStressResult

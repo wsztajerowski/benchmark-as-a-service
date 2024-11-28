@@ -30,7 +30,7 @@ public class JCStressSubcommand implements Runnable {
             .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
             .withJCStressOptions(apiJCStressOptions.getValues())
             .withBenchmarkPath(benchmarkPath)
-            .withS3Service(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
+            .withStorageService(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
             .withMongoConnectionString(apiCommonSharedOptions.getMongoConnectionString())
             .build()
             .executeCommand();
