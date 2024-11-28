@@ -5,8 +5,6 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParseResult;
 
-import java.nio.file.Path;
-
 import static picocli.CommandLine.HelpCommand;
 
 @Command(name = "test-runner",
@@ -15,10 +13,6 @@ import static picocli.CommandLine.HelpCommand;
 public class TestWrapper {
 
     @Mixin LoggingMixin loggingMixin;
-
-    public static Path getWorkingDirectory() {
-        return Path.of(TestWrapper.class.getProtectionDomain().getCodeSource().getLocation().getPath()).getParent();
-    }
 
     public static void main(String... args) {
         TestWrapper app = new TestWrapper();

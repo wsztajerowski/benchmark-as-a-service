@@ -6,7 +6,7 @@ import picocli.CommandLine.Option;
 
 import java.nio.file.Path;
 
-import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
+import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 

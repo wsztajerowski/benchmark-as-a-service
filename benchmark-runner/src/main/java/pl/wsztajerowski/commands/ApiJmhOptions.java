@@ -12,7 +12,7 @@ import java.nio.file.Path;
 import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
 import static picocli.CommandLine.Spec;
-import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
+import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 
 @Command
 public class ApiJmhOptions {

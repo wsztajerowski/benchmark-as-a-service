@@ -11,7 +11,7 @@ import java.nio.file.Path;
 import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
 import static picocli.CommandLine.Spec;
-import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
+import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
 

@@ -11,8 +11,6 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Optional;
 
-import static pl.wsztajerowski.commands.TestWrapper.getWorkingDirectory;
-
 @Command
 public class ApiCommonSharedOptions {
 
@@ -43,7 +41,7 @@ public class ApiCommonSharedOptions {
         String nonNullRequestId = Optional.ofNullable(requestId)
             .orElseGet(() -> Instant.now().toString());
         Path nonNullResultPath = Optional.ofNullable(resultPath)
-            .orElse(getWorkingDirectory().resolve(nonNullRequestId));
+            .orElse(Path.of(nonNullRequestId));
         return new CommonSharedOptions(nonNullResultPath, nonNullRequestId);
     }
 
