@@ -1,7 +1,7 @@
 package pl.wsztajerowski.services;
 
 import pl.wsztajerowski.infra.MorphiaService;
-import pl.wsztajerowski.infra.S3Service;
+import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
@@ -14,7 +14,7 @@ import static pl.wsztajerowski.infra.MorphiaServiceBuilder.getMorphiaServiceBuil
 public final class JmhWithAsyncProfilerSubcommandServiceBuilder {
     private AsyncProfilerOptions asyncProfilerOptions;
     private CommonSharedOptions commonOptions;
-    private S3Service s3Service;
+    private StorageService storageService;
     private URI mongoConnectionString;
     private JmhOptions jmhOptions;
 
@@ -40,8 +40,8 @@ public final class JmhWithAsyncProfilerSubcommandServiceBuilder {
         return this;
     }
 
-    public JmhWithAsyncProfilerSubcommandServiceBuilder withS3Service(S3Service s3Service){
-        this.s3Service = s3Service;
+    public JmhWithAsyncProfilerSubcommandServiceBuilder withS3Service(StorageService storageService){
+        this.storageService = storageService;
         return this;
     }
 
@@ -52,12 +52,12 @@ public final class JmhWithAsyncProfilerSubcommandServiceBuilder {
 
     public JmhWithAsyncProfilerSubcommandService build() {
         requireNonNull(mongoConnectionString, "Please provide connectionString for Mongo");
-        requireNonNull(s3Service, "Please provide a S3 service");
+        requireNonNull(storageService, "Please provide a S3 service");
         MorphiaService morphiaService = getMorphiaServiceBuilder()
             .withConnectionString(mongoConnectionString)
             .build();
         return new JmhWithAsyncProfilerSubcommandService(
-            s3Service,
+            storageService,
             morphiaService,
             commonOptions,
             jmhOptions,

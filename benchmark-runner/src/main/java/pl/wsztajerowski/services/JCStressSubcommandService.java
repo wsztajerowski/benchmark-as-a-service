@@ -7,7 +7,7 @@ import pl.wsztajerowski.entities.jcstress.JCStressResult;
 import pl.wsztajerowski.entities.jcstress.JCStressTest;
 import pl.wsztajerowski.entities.jcstress.JCStressTestMetadata;
 import pl.wsztajerowski.infra.MorphiaService;
-import pl.wsztajerowski.infra.S3Service;
+import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
 
@@ -19,14 +19,14 @@ import static pl.wsztajerowski.process.BenchmarkProcessBuilder.benchmarkProcessB
 public class JCStressSubcommandService {
     private static final Logger logger = LoggerFactory.getLogger(JCStressSubcommandService.class);
     private final CommonSharedOptions commonOptions;
-    private final S3Service s3Service;
+    private final StorageService storageService;
     private final MorphiaService morphiaService;
     private final Path benchmarkPath;
 
     private final JCStressOptions jcStressOptions;
 
-    JCStressSubcommandService(S3Service s3Service, MorphiaService morphiaService, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
-        this.s3Service = s3Service;
+    JCStressSubcommandService(StorageService storageService, MorphiaService morphiaService, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+        this.storageService = storageService;
         this.morphiaService = morphiaService;
         this.commonOptions = commonOptions;
         this.benchmarkPath = benchmarkPath;
@@ -35,9 +35,8 @@ public class JCStressSubcommandService {
 
     public void executeCommand() {
         Path reportPath = jcStressOptions.reportPath();
-        Path s3Prefix = commonOptions.resultPath().resolve("jcstress");
-        logger.info("Running JCStress - S3 bucket: {}", s3Service.getEndpoint());
-        logger.info("Path to results within bucket: {}", s3Prefix);
+        Path outputPath = commonOptions.resultPath().resolve("jcstress");
+        logger.info("Running JCStress. Output path: {}", outputPath);
         try {
             benchmarkProcessBuilder(benchmarkPath)
                 .addArgumentWithValue("-r", reportPath)
@@ -61,12 +60,12 @@ public class JCStressSubcommandService {
         }
 
         logger.info("Saving test outputs on S3");
-        s3Service
-            .saveFileOnS3(s3Prefix.resolve("output.txt").toString(), jcStressOptions.processOutput());
+        storageService
+            .saveFile(outputPath.resolve("output.txt"), jcStressOptions.processOutput());
 
         Path resultFilepath = reportPath.resolve( "index.html");
         logger.info("Parsing JCStress html output: {}", resultFilepath);
-        JCStressResult jcStressResult = getJCStressHtmlResultParser(resultFilepath, s3Prefix)
+        JCStressResult jcStressResult = getJCStressHtmlResultParser(resultFilepath, outputPath)
             .parse();
 
         logger.info("Saving benchmarks into DB with id: {}", commonOptions.requestId());
@@ -84,8 +83,8 @@ public class JCStressSubcommandService {
             .forEach((testName, s3Key) ->
                 {
                     String testOutputFilename = testName + ".html";
-                    s3Service
-                        .saveFileOnS3(s3Key, reportPath.resolve(testOutputFilename));
+                    storageService
+                        .saveFile(Path.of(s3Key), reportPath.resolve(testOutputFilename));
                 }
             );
     }

@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.entities.jcstress.JCStressTest;
+import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
 
@@ -19,7 +20,6 @@ import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
-import static pl.wsztajerowski.infra.S3ServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.services.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
@@ -45,10 +45,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 .build();
         JCStressSubcommandService sut = serviceBuilder()
             .withMongoConnectionString(getConnectionString())
-            .withS3Service(getS3ServiceBuilder()
-                .withS3Client(awsS3Client)
-                .withBucketName(TEST_BUCKET_NAME)
-                .build())
+            .withS3Service(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
             .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1"))
             .withJCStressOptions(jcStressOptions)
             .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())

@@ -6,22 +6,23 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 import java.nio.file.Path;
 
-public class S3OperationalService implements S3Service{
+public class S3StorageService implements StorageService {
     private final String bucketName;
     private final S3Client s3Client;
 
-    S3OperationalService(S3Client client, String bucketName) {
+    public S3StorageService(S3Client client, String bucketName) {
         s3Client = client;
         this.bucketName = bucketName;
     }
 
-    public void saveFileOnS3(String objectKey, Path pathToFile) {
+    @Override
+    public void saveFile(Path storagePath, Path localPath) {
         PutObjectRequest putOb = PutObjectRequest.builder()
             .bucket(bucketName)
-            .key(objectKey)
+            .key(storagePath.toString())
             .build();
 
-        s3Client.putObject(putOb, RequestBody.fromFile(pathToFile));
+        s3Client.putObject(putOb, RequestBody.fromFile(localPath));
     }
 
     public String getEndpoint(){
@@ -34,7 +35,4 @@ public class S3OperationalService implements S3Service{
                 .formatted(s3Client.serviceClientConfiguration().region(), bucketName));
     }
 
-    public String getBucketName() {
-        return bucketName;
-    }
 }

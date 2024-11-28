@@ -7,7 +7,7 @@ import pl.wsztajerowski.entities.jmh.JmhBenchmark;
 import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
 import pl.wsztajerowski.entities.jmh.JmhResult;
 import pl.wsztajerowski.infra.MorphiaService;
-import pl.wsztajerowski.infra.S3Service;
+import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
@@ -22,20 +22,19 @@ public class JmhSubcommandService {
     private static final Logger logger = LoggerFactory.getLogger(JmhSubcommandService.class);
     private final CommonSharedOptions commonOptions;
     private final JmhOptions jmhOptions;
-    private final S3Service s3Service;
+    private final StorageService storageService;
     private final MorphiaService morphiaService;
 
-    JmhSubcommandService(S3Service s3Service, MorphiaService morphiaService, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
-        this.s3Service = s3Service;
+    JmhSubcommandService(StorageService storageService, MorphiaService morphiaService, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
+        this.storageService = storageService;
         this.morphiaService = morphiaService;
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
     }
 
     public void executeCommand() {
-        Path s3Prefix = commonOptions.resultPath().resolve( "jmh");
-        logger.info("Running JMH - S3 bucket: {}", s3Service.getEndpoint());
-        logger.info("Path to results within bucket: {}", s3Prefix);
+        Path outputPath = commonOptions.resultPath().resolve( "jmh");
+        logger.info("Running JMH. Output path: {}", outputPath);
         try {
             ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
             int exitCode = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions)
@@ -43,8 +42,8 @@ public class JmhSubcommandService {
                 .waitFor();
 
             logger.info("Saving benchmark process output on S3");
-            s3Service
-                .saveFileOnS3(s3Prefix.resolve("output.txt").toString(), jmhOptions.outputOptions().processOutput());
+            storageService
+                .saveFile(outputPath.resolve("output.txt"), jmhOptions.outputOptions().processOutput());
 
             if (exitCode != 0) {
                 throw new JavaWonderlandException(format("Benchmark process exit with non-zero code: {0}", exitCode));
