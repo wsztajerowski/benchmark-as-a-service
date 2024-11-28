@@ -3,7 +3,6 @@ package pl.wsztajerowski.commands;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
-import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -15,6 +14,7 @@ import static picocli.CommandLine.Spec;
 import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
+import static pl.wsztajerowski.services.options.AsyncProfilerOptions.asyncProfilerOptionsBuilder;
 
 @Command(name = "jmh-with-async", description = "Run JHM benchmarks with Async profiler")
 public class JmhWithAsyncProfilerSubcommand implements Runnable {
@@ -58,7 +58,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
         serviceBuilder()
             .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
             .withJmhOptions(apiJmhOptions.getJmhOptions())
-            .withAsyncProfilerOptions(AsyncProfilerOptions.asyncProfilerOptionsBuilder()
+            .withAsyncProfilerOptions(asyncProfilerOptionsBuilder()
                 .withAsyncPath(asyncPath)
                 .withAsyncInterval(asyncInterval)
                 .withAsyncOutputType(asyncOutputType)
