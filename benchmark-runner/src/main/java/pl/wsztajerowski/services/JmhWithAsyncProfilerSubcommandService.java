@@ -15,7 +15,10 @@ import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.util.*;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -138,7 +141,7 @@ public class JmhWithAsyncProfilerSubcommandService {
             .stream()
             .map(entry -> entry.getKey() + "=" + entry.getValue())
             .collect(Collectors.joining(";", ";", ""));
-        return "async:libPath=%s;output=%s;dir=%s;interval=%d%s".formatted(
+        return "async:libPath=%s;output=%s;dir=%s;interval=%d%s;verbose=true".formatted(
             asyncProfilerOptions.asyncPath(),
             asyncProfilerOptions.asyncOutputType(),
             asyncProfilerOptions.asyncOutputPath().toAbsolutePath(),
