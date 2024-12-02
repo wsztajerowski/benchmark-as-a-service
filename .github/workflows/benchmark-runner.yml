@@ -5,11 +5,9 @@ on:
     inputs:
       request_id:
         type: string
-        required: true
         description: ID of benchmark run request
       result_prefix:
         type: string
-        required: true
         description: S3 prefix for benchmark results
       s3_result_bucket:
         type: string
@@ -110,8 +108,8 @@ jobs:
           MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
         run: |
           java -jar benchmark-runner.jar ${{ inputs.benchmark_type }} \
-          --s3-result-prefix ${{ inputs.result_prefix }} \
           --request-id ${{ inputs.request_id }} \
+          --result-path ${{ inputs.result_prefix }} \
           --s3-bucket ${{ inputs.s3_result_bucket }} \
           --benchmark-path benchmark_under_test.jar \
           ${{ inputs.parameters }}
