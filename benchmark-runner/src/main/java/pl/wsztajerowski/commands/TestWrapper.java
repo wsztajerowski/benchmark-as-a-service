@@ -16,9 +16,12 @@ public class TestWrapper {
 
     public static void main(String... args) {
         TestWrapper app = new TestWrapper();
-        new CommandLine(app)
+        int exitCode = new CommandLine(app)
             .setExecutionStrategy(app::executionStrategy)
             .execute(args);
+        if (exitCode != CommandLine.ExitCode.OK ) {
+            System.exit(exitCode);
+        }
     }
 
     private int executionStrategy(ParseResult parseResult) {
