@@ -29,7 +29,7 @@ public class DatabaseServiceBuilder {
     }
 
     public DatabaseService build() {
-        if (connectionString == null) {
+        if (connectionString == null || connectionString.toString().isEmpty()) {
             logger.info("Using No operational database service");
             return new NoOpDatabaseService();
         }
