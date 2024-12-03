@@ -1,0 +1,91 @@
+name: Reusable workflow for executing benchmark
+
+on:
+  workflow_call:
+    inputs:
+      gha-runner-type:
+        required: true
+        type: string
+      benchmark-type:
+        required: true
+        type: string
+      benchmark-path:
+        required: true
+        type: string
+        description: S3 url to benchmark jar
+      runner-path:
+        type: string
+        description: S3 url to runner jar
+      s3-result-bucket:
+        required: true
+        type: string
+        description: S3 bucket name for benchmark results
+      request-id:
+        type: string
+        description: ID of benchmark run request
+      result-path:
+        type: string
+        description: Path in S3 bucket for benchmark results
+      parameters:
+        type: string
+      aws-region:
+        type: string
+    secrets:
+      mongo-connection-string:
+
+env:
+  JAVA_VERSION: 21
+  JAVA_DISTRIBUTION: temurin
+  ASYNC_PROFILER_VERSION: 3.0
+  AWS_REGION: ${{ inputs.aws-region }}
+
+jobs:
+  run-benchmark:
+    name: Run JMH tests
+    runs-on: ${{ inputs.gha-runner-type }}
+    steps:
+      - name: Set the test environment variables
+        if: ${{ env.ACT }}
+        run: |
+          echo "AWS_ENDPOINT_URL_S3=${{ vars.AWS_ENDPOINT_URL_S3 }}" >> "$GITHUB_ENV"
+      - name: Install AWS CLI (only for test runner)
+        if: ${{ env.ACT }}
+        run: |
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          sudo ./aws/install
+      - name: Download async profiler
+        if: inputs.benchmark-type == 'jmh-with-async'
+        run: |
+          wget https://github.com/async-profiler/async-profiler/releases/download/v${{ env.ASYNC_PROFILER_VERSION }}/async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
+          tar -xf async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
+          mkdir /app
+          mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 /app/async-profiler
+      - name: Set up Java JDK
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ env.JAVA_VERSION }}
+          distribution: ${{ env.JAVA_DISTRIBUTION }}
+      - name: Download Benchmark runner from GitHub release
+        if: ${{ !env.ACT }}
+        uses: robinraju/release-downloader@v1
+        with:
+          repository: 'wsztajerowski/benchmark-as-a-service'
+          latest: true
+          fileName: 'benchmark-runner.jar'
+      - name: Download Benchmark runner from S3
+        if: ${{ env.ACT }}
+        run: aws s3 cp ${{ inputs.runner-path }} benchmark-runner.jar
+      - name: Download benchmark from S3
+        run: aws s3 cp ${{ inputs.benchmark-path }} benchmark-under-test.jar
+      - name: Run benchmarks
+        env:
+          MONGO_CONNECTION_STRING: ${{ secrets.mongo-connection-string }}
+          ASYNC_PATH: /app/async-profiler/lib/libasyncProfiler.so
+        run: |
+          java -jar benchmark-runner.jar ${{ inputs.benchmark-type }} \
+          ${{ inputs.request-id != 0 && format('--request-id {0} ', inputs.request-id) || ' ' }}  \
+          ${{ inputs.result-prefix != 0 && format('--result-path {0} ', inputs.result-prefix) || ' ' }}  \
+          --s3-bucket ${{ inputs.s3-result-bucket }} \
+          --benchmark-path benchmark-under-test.jar \
+          ${{ inputs.parameters }}
