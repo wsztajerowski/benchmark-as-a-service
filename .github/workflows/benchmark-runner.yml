@@ -96,7 +96,7 @@ jobs:
     name: Stop EC2 runner
     needs:
       - start-runner
-      - run-benchmark
+      - call-exec-benchmark-workflow
     if: always()
     runs-on: ubuntu-latest
     permissions:
