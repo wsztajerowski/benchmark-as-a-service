@@ -32,7 +32,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
 
     private Path asyncPath;
 
-    @Option(names = {"-ap", "--async-path"}, defaultValue = "${ASYNC_PATH:-/home/ec2-user/async-profiler/build/libasyncProfiler.so}", description = "Path to Async profiler (default: ${DEFAULT-VALUE})")
+    @Option(names = {"-ap", "--async-path"}, defaultValue = "${ASYNC_PATH:-/app/async-profiler/lib/libasyncProfiler.so}", description = "Path to Async profiler (default: ${DEFAULT-VALUE})")
     public void setAsyncPath(Path path) {
         if(!Files.exists(path)){
             throw new ParameterException(spec.commandLine(),
