@@ -29,9 +29,6 @@ on:
         type: string
         description: Additional parameters for benchmark
 env:
-  JAVA_VERSION: 21
-  JAVA_DISTRIBUTION: temurin
-  ASYNC_PROFILER_VERSION: ${{ vars.ASYNC_PROFILER_VERSION }}
   AWS_REGION: ${{ vars.AWS_REGION }}
   AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
   EC2_INSTANCE_TYPE: c5.2xlarge
@@ -78,41 +75,22 @@ jobs:
             sudo yum update -y && \ 
             sudo yum install docker git libicu -y && \
             sudo systemctl enable docker
-  run-benchmark:
-    name: Run JMH tests
+  call-exec-benchmark-workflow:
+    name: Run Benchmark runner workflow
     needs:
-     - start-runner
-    runs-on: ${{ needs.start-runner.outputs.label }} # run the job on the newly created runner
-    steps:
-      - name: Download async profiler
-        if: inputs.benchmark_type == 'jmh-with-async'
-        run: |
-          wget https://github.com/async-profiler/async-profiler/releases/download/v${{ env.ASYNC_PROFILER_VERSION }}/async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
-          tar -xf async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
-          mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 /home/ec2-user/async-profiler
-      - name: Set up Java JDK
-        uses: actions/setup-java@v4
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
-      - name: Download Benchmark runner
-        uses: robinraju/release-downloader@v1
-        with:
-          repository: 'wsztajerowski/benchmark-as-a-service'
-          latest: true
-          fileName: 'benchmark-runner.jar'
-      - name: Download benchmark from S3
-        run: aws s3 cp ${{ inputs.benchmark_path }} benchmark_under_test.jar
-      - name: Run benchmarks
-        env:
-          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
-        run: |
-          java -jar benchmark-runner.jar ${{ inputs.benchmark_type }} \
-          --request-id ${{ inputs.request_id }} \
-          --result-path ${{ inputs.result_prefix }} \
-          --s3-bucket ${{ inputs.s3_result_bucket }} \
-          --benchmark-path benchmark_under_test.jar \
-          ${{ inputs.parameters }}
+      - start-runner
+    uses: ./.github/workflows/exec-single-benchmark.yml
+    with:
+      gha-runner-type: ${{ needs.start-runner.outputs.label }}
+      benchmark-type:  ${{ inputs.benchmark_type }}
+      benchmark-path: ${{ inputs.benchmark_path }}
+      s3-result-bucket: ${{ inputs.s3_result_bucket }}
+      request-id: ${{ inputs.request_id }}
+      result-path: ${{ inputs.result_prefix }}
+      parameters: ${{ inputs.parameters }}
+      aws-region: ${{ vars.AWS_REGION }}
+    secrets:
+      mongo-connection-string: ${{ secrets.MONGO_CONNECTION_STRING }}
 
   stop-runner:
     name: Stop EC2 runner
