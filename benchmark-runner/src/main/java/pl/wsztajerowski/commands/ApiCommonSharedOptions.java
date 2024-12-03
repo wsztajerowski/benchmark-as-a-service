@@ -32,7 +32,9 @@ public class ApiCommonSharedOptions {
         @Option(names = "--s3-bucket", required = true, description = "S3 bucket name where benchmark will be placed.")
         String s3BucketName;
 
-        @Option(names = "--s3-service-endpoint", description = "Custom S3 Service endpoint")
+        @Option(names = "--s3-service-endpoint",
+            defaultValue = "${AWS_ENDPOINT_URL_S3}",
+            description = "Custom S3 Service endpoint")
         URI s3ServiceEndpoint;
     }
 
