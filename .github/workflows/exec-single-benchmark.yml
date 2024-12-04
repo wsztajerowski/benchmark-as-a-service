@@ -30,13 +30,22 @@ on:
         type: string
       aws-region:
         type: string
+      java-version:
+        type: string
+        default: 21
+      java-distribution:
+        type: string
+        default: temurin
+      async-profiler-version:
+        type: string
+        default: "3.0"
     secrets:
-      mongo-connection-string:
+      MONGO_CONNECTION_STRING:
 
 env:
-  JAVA_VERSION: 21
-  JAVA_DISTRIBUTION: temurin
-  ASYNC_PROFILER_VERSION: 3.0
+  JAVA_VERSION: ${{ inputs.java-version }}
+  JAVA_DISTRIBUTION: ${{ inputs.java-distribution }}
+  ASYNC_PROFILER_VERSION: ${{ inputs.async-profiler-version }}
   AWS_REGION: ${{ inputs.aws-region }}
 
 jobs:
@@ -80,7 +89,7 @@ jobs:
         run: aws s3 cp ${{ inputs.benchmark-path }} benchmark-under-test.jar
       - name: Run benchmarks
         env:
-          MONGO_CONNECTION_STRING: ${{ secrets.mongo-connection-string }}
+          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
           ASYNC_PATH: /app/async-profiler/lib/libasyncProfiler.so
         run: |
           java -jar benchmark-runner.jar ${{ inputs.benchmark-type }} \

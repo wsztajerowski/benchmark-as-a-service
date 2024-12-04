@@ -90,7 +90,7 @@ jobs:
       parameters: ${{ inputs.parameters }}
       aws-region: ${{ vars.AWS_REGION }}
     secrets:
-      mongo-connection-string: ${{ secrets.MONGO_CONNECTION_STRING }}
+      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
 
   stop-runner:
     name: Stop EC2 runner
