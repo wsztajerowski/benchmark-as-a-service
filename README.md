@@ -60,3 +60,45 @@ and finally upload request file:
 ```bash
 aws s3 --profile YOUR-PROFILE cp path/to/request.json s3://MAIN_S3_BUCKET/requests/my-request-1/request.json
 ```
+
+## Local run
+
+### Prerequisites
+
+### Useful endpoints
+
+ - Local S3 browser: http://localhost:4566/baas/ (http://localhost:4566/S3_BUCKET)
+ - Local S3 document: http://localhost:4566/baas/test-request.json (http://localhost:4566/S3_BUCKET/OBJECT_KEY)
+ - MongoDB viewer: http://localhost:8081/
+
+### Run Benchmark Runner 
+The easiest way is to run shell script: 
+```bash 
+docker-compose up
+jmh-with-async.sh
+```
+
+### Run GitHub workflow locally
+
+```bash
+act -W .github/workflows/exec-single-benchmark.yml \
+--secret-file .github/test/.secrets \
+--var-file .github/test/.vars \
+-e .github/test/exec-single-benchmark-act-payload.json
+```
+
+## E2E test
+
+See: [README.md](.github%2Ftest%2FREADME.md)
+
+### Required tools
+ - act (https://nektosact.com/introduction.html)
+ - docker-compose
+ - localstack (can be used as a docker container - see docker compose)
+ - aws cli (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
+ - mongosh (https://www.mongodb.com/docs/mongodb-shell/install/)
+
+### Run
+```bash
+/bin/bash .github/test/exec-single-benchmark-e2e-test.sh
+```
