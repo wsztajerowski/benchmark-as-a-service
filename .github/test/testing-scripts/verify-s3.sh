@@ -12,9 +12,10 @@ show_help() {
     echo "Verifies the presence and size of an object in an S3 bucket."
     echo
     echo "Options:"
-    echo "  --profile               AWS CLI profile to use (default: default)"
+    echo "  --profile               AWS CLI profile to use"
     echo "  --bucket                Name of the S3 bucket (required)"
     echo "  --key                   Key (path) of the object in the S3 bucket (required)"
+    echo "  --check-size            Additional check for non-zero size"
     echo "  --help                  Show this help message and exit"
     echo
     echo "The script checks if the specified object exists in the bucket and verifies its size is greater than 0."
@@ -24,7 +25,7 @@ show_help() {
 parse_arguments() {
     while [[ "$#" -gt 0 ]]; do
         case $1 in
-            --s3-bucket) S3_BUCKET="$2"; shift ;;
+            --bucket) S3_BUCKET="$2"; shift ;;
             --key) S3_KEY="$2"; shift ;;
             --profile) PROFILE="$2"; shift ;;
             --check-size) CHECK_SIZE=true ;;
