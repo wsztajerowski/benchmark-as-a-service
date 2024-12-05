@@ -30,6 +30,7 @@ on:
         type: string
       aws-region:
         type: string
+        default: "eu-central-1"
       java-version:
         type: string
         default: 21
@@ -57,16 +58,18 @@ jobs:
         if: ${{ env.ACT }}
         run: |
           echo "AWS_ENDPOINT_URL_S3=${{ vars.AWS_ENDPOINT_URL_S3 }}" >> "$GITHUB_ENV"
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID }}" >> "$GITHUB_ENV"
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY }}" >> "$GITHUB_ENV"
       - name: Install AWS CLI (only for test runner)
         if: ${{ env.ACT }}
         run: |
-          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-          unzip awscliv2.zip
+          curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip -qq awscliv2.zip
           sudo ./aws/install
       - name: Download async profiler
         if: inputs.benchmark-type == 'jmh-with-async'
         run: |
-          wget https://github.com/async-profiler/async-profiler/releases/download/v${{ env.ASYNC_PROFILER_VERSION }}/async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
+          wget -nv https://github.com/async-profiler/async-profiler/releases/download/v${{ env.ASYNC_PROFILER_VERSION }}/async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
           tar -xf async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
           mkdir /app
           mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 /app/async-profiler
