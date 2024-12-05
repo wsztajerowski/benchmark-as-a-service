@@ -96,8 +96,8 @@ fi
 # Step 4: Run assertions
 log INFO "Step 4: Running assertions..."
 log INFO "Verifying if async output and flamegraph exist on S3..."
-./testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --s3-bucket "$S3_BUCKET" --key "${REQUEST_ID}/jmh-with-async/output.txt" --check-size || exit 1
-./testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --s3-bucket "$S3_BUCKET" \
+./testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" --key "${REQUEST_ID}/jmh-with-async/output.txt" --check-size || exit 1
+./testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" \
 --key "${REQUEST_ID}/jmh-with-async/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-cpu-forward.html" || exit 1
 
 log INFO "Verifying if document with benchmark results exists in MongoDB..."
