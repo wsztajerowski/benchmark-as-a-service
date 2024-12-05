@@ -89,6 +89,7 @@ jobs:
       result-path: ${{ inputs.result_prefix }}
       parameters: ${{ inputs.parameters }}
       aws-region: ${{ vars.AWS_REGION }}
+      async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
     secrets:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
 
