@@ -1,0 +1,11 @@
+{
+  "inputs": {
+    "gha-runner-type": "ubuntu-latest",
+    "benchmark-type": "jmh-with-async",
+    "benchmark-path": "s3://baas/test-benchmark.jar",
+    "runner-path": "s3://baas/runner.jar",
+    "s3-result-bucket": "baas",
+    "aws-region": "eu-central-1",
+    "parameters": "-f 1 --async-additional-param event=cpu --async-additional-param threads=true"
+  }
+}

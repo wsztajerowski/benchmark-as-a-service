@@ -29,8 +29,7 @@ buildNumber.properties
 *.html
 /volume/
 **/.aws-sam/
-/.env
-/.vars
-/act-payload.json
-/.secrets
+/**/.env
+/**/.vars
+/**/.secrets
 **/jcstress-results-*.bin.gz
