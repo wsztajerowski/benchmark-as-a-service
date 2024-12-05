@@ -1,4 +1,4 @@
-name: Reusable workflow for executing benchmark
+name: Execute benchmark
 
 on:
   workflow_call:
@@ -51,7 +51,7 @@ env:
 
 jobs:
   run-benchmark:
-    name: Run JMH tests
+    name: Run tests
     runs-on: ${{ inputs.gha-runner-type }}
     steps:
       - name: Set the test environment variables
