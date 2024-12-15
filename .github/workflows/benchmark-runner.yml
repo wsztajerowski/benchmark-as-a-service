@@ -12,6 +12,7 @@ on:
       s3_result_bucket:
         type: string
         required: true
+        default: baas-lynx-main
         description: S3 bucket name for benchmark results
       benchmark_path:
         type: string
