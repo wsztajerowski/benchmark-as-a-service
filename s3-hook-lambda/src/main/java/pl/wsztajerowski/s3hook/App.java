@@ -42,7 +42,8 @@ public class App implements RequestHandler<S3Event, String> {
                 String org = getParaValue("/%s/github/org".formatted(ssmParamPrefix));
                 String repo = getParaValue("/%s/github/repo".formatted(ssmParamPrefix));
                 String workflowId = getParaValue("/%s/github/workflowid".formatted(ssmParamPrefix));
-                String requestBody = benchmarkRequestBody("main", s3RequestBody);
+                String workflowBranch = getParaValue("/%s/github/workflowbranch".formatted(ssmParamPrefix));
+                String requestBody = benchmarkRequestBody(workflowBranch, s3RequestBody);
                 URI serverUri = benchmarkWorkflowUri(org, repo, workflowId);
                 logger.log("Request URI: %s \n".formatted(serverUri));
                 String githubToken = getParaValue("/%s/github/token".formatted(ssmParamPrefix));
