@@ -24,7 +24,7 @@ ssm put-parameter \
 ```bash
 aws --profile YOUR_AWS_PROFILE \
 cloudformation create-stack \
---stack-name baas-bootstrap \
+--stack-name baas-parameters \
 --template-body file://$(PWD)/cf-template-bootstrap.yaml \
 --parameters ParameterKey=GHABenchmarkWorkflowId,ParameterValue=GITHUB_WORKFLOW_ID ParameterKey=DeploymentPrefix,ParameterValue=RESOURCE_PREFIX
 ```
