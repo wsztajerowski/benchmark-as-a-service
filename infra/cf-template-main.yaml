@@ -39,6 +39,8 @@ Resources:
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
+        - Key: role
+          Value: working-bucket
   WorkflowRole:
     Type: AWS::IAM::Role
     Properties:
