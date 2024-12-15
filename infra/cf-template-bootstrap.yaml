@@ -14,6 +14,10 @@ Parameters:
   GHABenchmarkWorkflowId:
     Description: ID of the GHA workflow, which should be run by S3 hook lambda
     Type: Number
+  GHABenchmarkWorkflowBranch:
+    Description: Name of Git branch, which should be used to load workflow from
+    Default: "main"
+    Type: String
 #  GitHubToken: => We're waiting for SecureString support in CloudFormation since 2019 - https://github.com/aws-cloudformation/cloudformation-coverage-roadmap/issues/82
 #    Description: GH fine-grained token, with Read and Write access to actions permissions
 #    Type: String
@@ -55,6 +59,15 @@ Resources:
       Value: !Sub ${GHABenchmarkWorkflowId}
       Tags:
         project: !Sub ${DeploymentPrefix}
+  GitHubWorkflowBranchSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${DeploymentPrefix}/github/workflowbranch'
+      Description: Git branch to run workflow from
+      Type: String
+      Value: !Sub ${GHABenchmarkWorkflowBranch}
+      Tags:
+        project: !Sub ${DeploymentPrefix}
   #  GitHubTokenSSMParam:
   #    Type: AWS::SSM::Parameter
   #    Properties:
@@ -76,5 +89,7 @@ Outputs:
     Value: !Ref GitHubRepoSSMParam
   GitHubWorkflowIdSSMParamName:
     Value: !Ref GitHubWorkflowIdSSMParam
+  GitHubWorkflowBranchSSMParamName:
+    Value: !Ref GitHubWorkflowBranchSSMParam
 #  GitHubTokenSSMParamName:
 #    Value: !Ref GitHubTokenSSMParam
