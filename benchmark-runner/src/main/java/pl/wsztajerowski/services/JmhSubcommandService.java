@@ -33,7 +33,7 @@ public class JmhSubcommandService {
     }
 
     public void executeCommand() {
-        Path outputPath = commonOptions.resultPath().resolve( "jmh");
+        Path outputPath = commonOptions.resultPath();
         logger.info("Running JMH. Output path: {}", outputPath);
         try {
             ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
