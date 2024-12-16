@@ -84,7 +84,7 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
             .isArray()
             .anySatisfy(o -> assertThat(o)
                 .asString()
-                .isEqualTo("test-1/jmh/output.txt"));
+                .isEqualTo("test-1/jmh-output.txt"));
     }
 
 

@@ -84,7 +84,7 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
                 .isNotNull()
                 .containsEntry("_t", "JmhBenchmark")
                 .extracting("benchmarkMetadata.profilerOutputPaths", as(MAP))
-                .containsEntry("flame-cpu-forward", "test-1/jmh-with-async/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-cpu-forward.html")
+                .containsEntry("flame-cpu-forward", "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-cpu-forward.html")
         );
 
         // and
@@ -100,6 +100,6 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
                 .endsWith("flame-cpu-reverse.html"))
             .anySatisfy(o -> assertThat(o)
                 .asString()
-                .isEqualTo("test-1/jmh-with-async/output.txt"));
+                .isEqualTo("test-1/jmh-with-async-output.txt"));
     }
 }

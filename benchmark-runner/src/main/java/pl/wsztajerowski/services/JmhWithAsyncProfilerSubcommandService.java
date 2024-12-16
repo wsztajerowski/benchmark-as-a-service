@@ -61,7 +61,7 @@ public class JmhWithAsyncProfilerSubcommandService {
 
             logger.info("Saving benchmark process output on S3");
             storageService
-                .saveFile(outputPath.resolve("output.txt"), jmhOptions.outputOptions().processOutput());
+                .saveFile(outputPath.resolve("jmh-with-async-output.txt"), jmhOptions.outputOptions().processOutput());
 
             if (exitCode != 0) {
                 throw new JavaWonderlandException(format("Benchmark process exit with non-zero code: {0}", exitCode));
