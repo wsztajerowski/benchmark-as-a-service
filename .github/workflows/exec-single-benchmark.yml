@@ -3,9 +3,6 @@ name: Execute benchmark
 on:
   workflow_call:
     inputs:
-      gha-runner-type:
-        required: true
-        type: string
       benchmark-type:
         required: true
         type: string
@@ -13,9 +10,6 @@ on:
         required: true
         type: string
         description: S3 url to benchmark jar
-      runner-path:
-        type: string
-        description: S3 url to runner jar
       s3-result-bucket:
         required: true
         type: string
@@ -23,10 +17,13 @@ on:
       request-id:
         type: string
         description: ID of benchmark run request
-      result-path:
+      results-path:
         type: string
         description: Path in S3 bucket for benchmark results
       parameters:
+        type: string
+      gha-runner-type:
+        required: true
         type: string
       aws-region:
         type: string
@@ -40,6 +37,9 @@ on:
       async-profiler-version:
         type: string
         default: "3.0"
+      runner-path:    # Used in tests
+        type: string
+        description: S3 url to runner jar
     secrets:
       MONGO_CONNECTION_STRING:
 
