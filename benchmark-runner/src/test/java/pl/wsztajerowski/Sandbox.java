@@ -34,6 +34,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -210,7 +211,7 @@ class Sandbox {
 //                        benchmarkMetadata.addFlamegraphPath(flamegraphName, s3Key);
 //                    });
 
-                JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult,jmhResult, benchmarkMetadata);
+                JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult,jmhResult, benchmarkMetadata, LocalDateTime.now());
                 datastore
                     .insert(jmhBenchmark);
 //                    .find(JmhBenchmark.class)

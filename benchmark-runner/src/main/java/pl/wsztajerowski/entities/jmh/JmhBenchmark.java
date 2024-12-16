@@ -10,5 +10,6 @@ public record JmhBenchmark(
     JmhBenchmarkId benchmarkId,
     JmhResult jmhResult,
     JmhResult jmhWithAsyncResult,
-    BenchmarkMetadata benchmarkMetadata) {
+    BenchmarkMetadata benchmarkMetadata,
+    LocalDateTime createdAt) {
 }

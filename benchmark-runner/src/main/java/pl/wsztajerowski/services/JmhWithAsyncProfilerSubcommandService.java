@@ -15,6 +15,8 @@ import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -100,6 +102,7 @@ public class JmhWithAsyncProfilerSubcommandService {
                 .byFieldValue("benchmarkId", benchmarkId)
                 .setValue("benchmarkMetadata", new BenchmarkMetadata(profilerOutputs))
                 .setValue("jmhWithAsyncResult", jmhResult)
+                .setValue("createdAt", OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime())
                 .execute();
         }
 
