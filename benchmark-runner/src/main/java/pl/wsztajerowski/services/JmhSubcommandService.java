@@ -12,6 +12,8 @@ import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.nio.file.Path;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 
 import static java.text.MessageFormat.format;
 import static pl.wsztajerowski.FileUtils.ensurePathExists;
@@ -64,6 +66,7 @@ public class JmhSubcommandService {
                 .upsert(JmhBenchmark.class)
                 .byFieldValue("benchmarkId", benchmarkId)
                 .setValue("jmhResult", jmhResult)
+                .setValue("createdAt", OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime())
                 .execute();
         }
 
