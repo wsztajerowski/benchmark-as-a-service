@@ -3,7 +3,7 @@ package pl.wsztajerowski.entities.jcstress;
 import dev.morphia.annotations.Entity;
 import dev.morphia.annotations.Id;
 
-@Entity("jcstress-tests")
+@Entity("jcstress_tests")
 public record JCStressTest(
     @Id
     String requestId,
