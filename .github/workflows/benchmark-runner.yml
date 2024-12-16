@@ -3,21 +3,6 @@ name: Run benchmark request on AWS
 on:
   workflow_dispatch:
     inputs:
-      request_id:
-        type: string
-        description: ID of benchmark run request
-      result_prefix:
-        type: string
-        description: S3 prefix for benchmark results
-      s3_result_bucket:
-        type: string
-        required: true
-        default: baas-lynx-main
-        description: S3 bucket name for benchmark results
-      benchmark_path:
-        type: string
-        description: S3 url to benchmark jar
-        required: true
       benchmark_type:
         description: One of the supported benchmark type
         required: true
@@ -26,6 +11,20 @@ on:
           - jmh
           - jmh-with-async
           - jcstress
+      benchmark_path:
+        type: string
+        required: true
+        description: S3 url to benchmark jar
+      s3_result_bucket:
+        type: string
+        default: baas-lynx-main
+        description: S3 bucket name for benchmark results
+      request_id:
+        type: string
+        description: ID of benchmark run request
+      results_path:
+        type: string
+        description: S3 or local path to benchmark results
       parameters:
         type: string
         description: Additional parameters for benchmark
@@ -82,13 +81,13 @@ jobs:
       - start-runner
     uses: ./.github/workflows/exec-single-benchmark.yml
     with:
-      gha-runner-type: ${{ needs.start-runner.outputs.label }}
+      request-id: ${{ inputs.request_id }}
       benchmark-type:  ${{ inputs.benchmark_type }}
       benchmark-path: ${{ inputs.benchmark_path }}
       s3-result-bucket: ${{ inputs.s3_result_bucket }}
-      request-id: ${{ inputs.request_id }}
-      result-path: ${{ inputs.result_prefix }}
+      results-path: ${{ inputs.results_path }}
       parameters: ${{ inputs.parameters }}
+      gha-runner-type: ${{ needs.start-runner.outputs.label }}
       aws-region: ${{ vars.AWS_REGION }}
       async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
     secrets:

@@ -48,7 +48,7 @@ parse_arguments "$@"
 
 # Step 1: Validate required tools
 log INFO "Step 1: Validating required tools..."
-./testing-scripts/validate-tools.sh docker:Docker docker-compose:"Docker Compose" act aws:"AWS CLI v2" mongosh:"Mongo Shell" java mvn:Maven || exit 1
+./testing-scripts/validate-tools.sh docker:Docker act aws:"AWS CLI v2" mongosh:"Mongo Shell" java mvn:Maven || exit 1
 
 # Step 2: Prepare test data (run Maven command)
 log INFO "Step 2: Preparing test data..."
