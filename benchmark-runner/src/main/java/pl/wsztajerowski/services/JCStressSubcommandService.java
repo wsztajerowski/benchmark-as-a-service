@@ -35,7 +35,7 @@ public class JCStressSubcommandService {
 
     public void executeCommand() {
         Path reportPath = jcStressOptions.reportPath();
-        Path outputPath = commonOptions.resultPath().resolve("jcstress");
+        Path outputPath = commonOptions.resultPath();
         logger.info("Running JCStress. Output path: {}", outputPath);
         try {
             benchmarkProcessBuilder(benchmarkPath)

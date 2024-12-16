@@ -44,7 +44,7 @@ public class JmhWithAsyncProfilerSubcommandService {
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
         this.asyncProfilerOptions = asyncProfilerOptions;
-        this.outputPath = commonOptions.resultPath().resolve("jmh-with-async");
+        this.outputPath = commonOptions.resultPath();
     }
 
     public void executeCommand() {
