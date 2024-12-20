@@ -97,7 +97,7 @@ jobs:
         run: |
           java -jar benchmark-runner.jar ${{ inputs.benchmark-type }} \
           ${{ inputs.request-id != 0 && format('--request-id {0} ', inputs.request-id) || ' ' }}  \
-          ${{ inputs.result-path != 0 && format('--result-path {0} ', inputs.result-path) || ' ' }}  \
+          ${{ inputs.results-path != 0 && format('--result-path {0} ', inputs.results-path) || ' ' }}  \
           --s3-bucket ${{ inputs.s3-result-bucket }} \
           --benchmark-path benchmark-under-test.jar \
           ${{ inputs.parameters }}
