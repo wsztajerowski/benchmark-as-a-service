@@ -1,7 +1,8 @@
 #!/bin/bash
 
-# Source logger
-source "$(dirname "$0")/logger.sh"
+# Include helper scripts
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/logger.sh"
 
 # Function to display help
 show_help() {
