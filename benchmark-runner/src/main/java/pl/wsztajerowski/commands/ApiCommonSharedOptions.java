@@ -9,10 +9,14 @@ import pl.wsztajerowski.services.options.S3Options;
 import java.net.URI;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.Collections;
+import java.util.Map;
 import java.util.Optional;
 
 @Command
 public class ApiCommonSharedOptions {
+    @Option(names = "--tag")
+    Map<String, String> tags;
 
     @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: ISO 8601 format of UTC current date-time.")
     Path resultPath;
@@ -44,7 +48,9 @@ public class ApiCommonSharedOptions {
             .orElseGet(() -> Instant.now().toString());
         Path nonNullResultPath = Optional.ofNullable(resultPath)
             .orElse(Path.of(nonNullRequestId));
-        return new CommonSharedOptions(nonNullResultPath, nonNullRequestId);
+        Map<String, String> tagMap = Optional.ofNullable(tags)
+            .orElse(Collections.emptyMap());
+        return new CommonSharedOptions(nonNullResultPath, nonNullRequestId, tagMap);
     }
 
     public URI getMongoConnectionString() {

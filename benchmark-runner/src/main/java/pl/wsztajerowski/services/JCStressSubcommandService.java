@@ -71,7 +71,7 @@ public class JCStressSubcommandService {
         logger.info("Saving benchmarks into DB with id: {}", commonOptions.requestId());
         JCStressTest stressTestResult = new JCStressTest(
             commonOptions.requestId(),
-            new JCStressTestMetadata(),
+            new JCStressTestMetadata(commonOptions.tags()),
             jcStressResult);
 
         logger.debug("JCStress results: {}", stressTestResult);
