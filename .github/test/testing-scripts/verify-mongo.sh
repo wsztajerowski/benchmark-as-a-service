@@ -3,8 +3,9 @@
 # Explicitly set a user-friendly client name
 LOGGER_NAME="MongoDB Assertion"
 
-# Source logger
-source "$(dirname "$0")/logger.sh"
+# Include helper scripts
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+source "$SCRIPT_DIR/logger.sh"
 
 show_help() {
     echo "Usage: verify-mongo.sh [OPTIONS]"
