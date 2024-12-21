@@ -16,6 +16,7 @@ import pl.wsztajerowski.services.options.JmhOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.as;
@@ -49,7 +50,7 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         JmhWithAsyncProfilerSubcommandService sut = serviceBuilder()
             .withMongoConnectionString(getConnectionString())
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1"))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Collections.emptyMap()))
             .withJmhOptions( new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)

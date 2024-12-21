@@ -202,7 +202,7 @@ class Sandbox {
                     commitSha, jmhResult.benchmark(), jmhResult.mode());
 //                String flamegraphsDir = jmhResult.benchmark + dirSuffix;
 //                String s3Preffix = format("gha-outputs/commit-{0}/attempt-{1}/", benchmarkId.commitSha(), benchmarkId.runAttempt());
-                BenchmarkMetadata benchmarkMetadata = new BenchmarkMetadata(Collections.emptyMap());
+                BenchmarkMetadata benchmarkMetadata = new BenchmarkMetadata(Collections.emptyMap(),LocalDateTime.now(), Collections.emptyMap());
 //                list(Path.of(flamegraphsDir))
 //                    .forEach(path -> {
 //                        String s3Key = s3Preffix + path.toString();
@@ -211,7 +211,7 @@ class Sandbox {
 //                        benchmarkMetadata.addFlamegraphPath(flamegraphName, s3Key);
 //                    });
 
-                JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult,jmhResult, benchmarkMetadata, LocalDateTime.now());
+                JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult, benchmarkMetadata);
                 datastore
                     .insert(jmhBenchmark);
 //                    .find(JmhBenchmark.class)
