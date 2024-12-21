@@ -70,7 +70,6 @@ public class JmhWithAsyncProfilerSubcommandService {
             throw new JavaWonderlandException(e);
         }
 
-//        logger.info("S3 url: {}", s3Service.);
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
             logger.debug("JMH result: {}", jmhResult);
@@ -96,14 +95,12 @@ public class JmhWithAsyncProfilerSubcommandService {
                 jmhResult.benchmark(),
                 jmhResult.mode()
             );
+            var tags = commonOptions.tags();
+            var now = OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime();
+            JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult, new BenchmarkMetadata(tags, now, profilerOutputs));
             logger.info("Saving results in DB with ID: {}", benchmarkId);
             databaseService
-                .upsert(JmhBenchmark.class)
-                .byFieldValue("benchmarkId", benchmarkId)
-                .setValue("benchmarkMetadata", new BenchmarkMetadata(profilerOutputs))
-                .setValue("jmhWithAsyncResult", jmhResult)
-                .setValue("createdAt", OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime())
-                .execute();
+                .save(jmhBenchmark);
         }
 
         logger.info("Saving JMH logs on S3");

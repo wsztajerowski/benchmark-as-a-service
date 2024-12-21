@@ -3,6 +3,7 @@ package pl.wsztajerowski.services;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
+import pl.wsztajerowski.entities.jmh.BenchmarkMetadata;
 import pl.wsztajerowski.entities.jmh.JmhBenchmark;
 import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
 import pl.wsztajerowski.entities.jmh.JmhResult;
@@ -62,12 +63,10 @@ public class JmhSubcommandService {
                 jmhResult.benchmark(),
                 jmhResult.mode());
             logger.info("Saving results in DB with ID: {}", benchmarkId);
-            databaseService
-                .upsert(JmhBenchmark.class)
-                .byFieldValue("benchmarkId", benchmarkId)
-                .setValue("jmhResult", jmhResult)
-                .setValue("createdAt", OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime())
-                .execute();
+            var tags = commonOptions.tags();
+            var now = OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime();
+            JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult, new BenchmarkMetadata(tags, now, null));
+            databaseService.save(jmhBenchmark);
         }
 
 
