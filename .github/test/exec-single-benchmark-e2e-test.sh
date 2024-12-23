@@ -87,7 +87,7 @@ act -W $SCRIPT_DIR/../workflows/exec-single-benchmark.yml \
 --input benchmark-path=${BENCHMARK_S3_KEY} \
 --input runner-path=${RUNNER_S3_KEY} \
 --input s3-result-bucket=${S3_BUCKET} \
---input parameters="--tag source=shell-script -f 1 -wi 1 -i 1 --async-additional-param event=cpu --async-additional-param threads=true" | grep --color=always -v '::'
+--input parameters="--tag source=shell-script Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-additional-param event=cpu --async-additional-param threads=true" | grep --color=always -v '::'
 # using ${PIPESTATUS[0]} and  grep --color=always -v '::' is a workaround for do not printing ACT debug output
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
     log ERROR "act command failed."
