@@ -98,7 +98,7 @@ jobs:
     needs:
       - start-runner
       - call-exec-benchmark-workflow
-    if: success()
+    if: always()
     runs-on: ubuntu-latest
     permissions:
       id-token: write
