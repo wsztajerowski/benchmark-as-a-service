@@ -14,6 +14,7 @@ import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -64,9 +65,11 @@ public class JmhWithAsyncProfilerSubcommandService {
                 .saveFile(outputPath.resolve("jmh-with-async-output.txt"), jmhOptions.outputOptions().processOutput());
 
             if (exitCode != 0) {
+                logger.error("Jmh process exited with exit code: {}", exitCode);
+                logger.info("Benchmark process logs:\n{}", Files.readString(jmhOptions.outputOptions().processOutput()));
                 throw new JavaWonderlandException(format("Benchmark process exit with non-zero code: {0}", exitCode));
             }
-        } catch (InterruptedException e) {
+        } catch (InterruptedException | IOException e) {
             throw new JavaWonderlandException(e);
         }
 
