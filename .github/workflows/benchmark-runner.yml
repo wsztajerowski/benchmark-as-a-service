@@ -28,10 +28,25 @@ on:
       parameters:
         type: string
         description: Additional parameters for benchmark
+      worker_instance_family:
+        description: One of the supported EC2 worker instance family
+        default: c5
+        type: choice
+        options:
+          - c5
+          - c6i
+          - c7i
+      worker_instance_size:
+        description: One of the supported EC2 worker instance size
+        default: 2xlarge
+        type: choice
+        options:
+          - 2xlarge
+          - 4xlarge
+          - 8xlarge
 env:
   AWS_REGION: ${{ vars.AWS_REGION }}
   AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-  EC2_INSTANCE_TYPE: c5.2xlarge
 jobs:
   start-runner:
     name: Start EC2 runner
@@ -61,7 +76,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.GHA_EC2_PAT }}
           ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
-          ec2-instance-type: ${{ env.EC2_INSTANCE_TYPE }}
+          ec2-instance-type: ${{ input.worker_instance_family }}.${{ input.worker_instance_size }}
           subnet-id: ${{ vars.SUBNET_ID }}
           security-group-id: ${{ vars.SECURITY_GROUP_ID }}
           iam-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
