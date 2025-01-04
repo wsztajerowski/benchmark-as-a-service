@@ -46,7 +46,7 @@ public class JmhSubcommandService {
                 .buildAndStartProcess()
                 .waitFor();
 
-            logger.info("Saving benchmark process output on S3");
+            logger.info("Saving benchmark process output");
             storageService
                 .saveFile(outputPath.resolve("jmh-output.txt"), jmhOptions.outputOptions().processOutput());
 
