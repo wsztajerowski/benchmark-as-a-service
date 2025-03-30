@@ -13,8 +13,8 @@ import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
+import java.nio.file.*;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -49,6 +49,17 @@ public class JmhSubcommandService {
             logger.info("Saving benchmark process output");
             storageService
                 .saveFile(outputPath.resolve("jmh-output.txt"), jmhOptions.outputOptions().processOutput());
+
+            Files.walkFileTree(Paths.get("."), new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (file.toString().endsWith(".log")) {
+                        logger.info("Saving log file: {} ", file);
+                        storageService.saveFile(outputPath.resolve("logs").resolve(file.getFileName()), file);
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
+            });
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
