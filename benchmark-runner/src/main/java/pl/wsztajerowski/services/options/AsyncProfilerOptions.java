@@ -8,6 +8,7 @@ import static java.util.Objects.requireNonNull;
 public record AsyncProfilerOptions(
     Path asyncPath,
     int asyncInterval,
+    String asyncEvent,
     String asyncOutputType,
     Path asyncOutputPath,
     Map<String, String> asyncAdditionalOptions) {
@@ -19,6 +20,7 @@ public record AsyncProfilerOptions(
     public static final class AsyncProfilerOptionsBuilder {
         private Path asyncPath;
         private int asyncInterval;
+        private String asyncEvent;
         private String asyncOutputType;
         private Path asyncOutputPath;
         private Map<String, String> asyncAdditionalOptions;
@@ -33,6 +35,11 @@ public record AsyncProfilerOptions(
 
         public AsyncProfilerOptionsBuilder withAsyncInterval(int asyncInterval) {
             this.asyncInterval = asyncInterval;
+            return this;
+        }
+
+        public AsyncProfilerOptionsBuilder withAsyncEvent(String asyncEvent) {
+            this.asyncEvent = asyncEvent;
             return this;
         }
 
@@ -54,7 +61,7 @@ public record AsyncProfilerOptions(
         public AsyncProfilerOptions build() {
             requireNonNull(asyncPath, "asyncPath cannot be null");
             requireNonNull(asyncOutputPath, "asyncOutputPath cannot be null");
-            return new AsyncProfilerOptions(asyncPath, asyncInterval, asyncOutputType, asyncOutputPath, asyncAdditionalOptions);
+            return new AsyncProfilerOptions(asyncPath, asyncInterval, asyncEvent, asyncOutputType, asyncOutputPath, asyncAdditionalOptions);
         }
     }
 }
