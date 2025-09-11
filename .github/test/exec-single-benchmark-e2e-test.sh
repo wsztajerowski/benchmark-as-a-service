@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Explicitly set a user-friendly client name
+# shellcheck disable=SC2034
 LOGGER_NAME="Exec single benchmark e2e"
 # Source logger
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

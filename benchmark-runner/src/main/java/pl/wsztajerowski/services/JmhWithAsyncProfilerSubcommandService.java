@@ -123,16 +123,11 @@ public class JmhWithAsyncProfilerSubcommandService {
 
     private static String getProfilerOutputDirSuffix(String mode) {
         return switch (mode) {
-            case "thrpt":
-                yield "-Throughput";
-            case "avgt":
-                yield "-AverageTime";
-            case "sample":
-                yield "-SampleTime";
-            case "ss":
-                yield "-SingleShotTime";
-            default:
-                throw new IllegalArgumentException("Unknown benchmark mode: " + mode);
+            case "thrpt" -> "-Throughput";
+            case "avgt" -> "-AverageTime";
+            case "sample" -> "-SampleTime";
+            case "ss" -> "-SingleShotTime";
+            default -> throw new IllegalArgumentException("Unknown benchmark mode: " + mode);
         };
     }
 

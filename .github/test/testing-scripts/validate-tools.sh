@@ -1,6 +1,7 @@
 #!/bin/bash
 
 # Explicitly set a user-friendly client name
+# shellcheck disable=SC2034
 LOGGER_NAME="Tool validator"
 # Include helper scripts
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
