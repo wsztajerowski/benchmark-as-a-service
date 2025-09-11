@@ -45,7 +45,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
     int asyncInterval = 9990;
 
     @Option(names = {"-ae", "--async-event"}, description = """
-        Event to sample: cpu, alloc, lock, wall, itimer; com.foo.Bar.methodName; 
+        Event to sample: cpu, alloc, lock, wall, itimer; com.foo.Bar.methodName;
         any event from `perf list` e.g. cache-misses. (default: ${DEFAULT-VALUE})
         See https://github.com/async-profiler/async-profiler/blob/master/docs/ProfilingModes.md for details."""
     )
