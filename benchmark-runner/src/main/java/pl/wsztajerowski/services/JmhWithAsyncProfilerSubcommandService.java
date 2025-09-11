@@ -144,10 +144,11 @@ public class JmhWithAsyncProfilerSubcommandService {
             .stream()
             .map(entry -> entry.getKey() + "=" + entry.getValue())
             .collect(Collectors.joining(";", ";", ""));
-        return "async:libPath=%s;output=%s;dir=%s;interval=%d%s;verbose=true".formatted(
+        return "async:libPath=%s;output=%s;dir=%s;event=%s;interval=%d%s;verbose=true".formatted(
             asyncProfilerOptions.asyncPath(),
             asyncProfilerOptions.asyncOutputType(),
             asyncProfilerOptions.asyncOutputPath().toAbsolutePath(),
+            asyncProfilerOptions.asyncEvent(),
             asyncProfilerOptions.asyncInterval(),
             additionalParams);
     }

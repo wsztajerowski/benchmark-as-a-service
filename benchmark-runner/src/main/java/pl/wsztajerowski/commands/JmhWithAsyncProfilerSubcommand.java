@@ -44,6 +44,13 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
     @Option(names = {"-ai", "--async-interval"}, description = "Profiling interval (default: ${DEFAULT-VALUE})")
     int asyncInterval = 9990;
 
+    @Option(names = {"-ae", "--async-event"}, description = """
+        Event to sample: cpu, alloc, lock, wall, itimer; com.foo.Bar.methodName; 
+        any event from `perf list` e.g. cache-misses. (default: ${DEFAULT-VALUE})
+        See https://github.com/async-profiler/async-profiler/blob/master/docs/ProfilingModes.md for details."""
+    )
+    String asyncEvent = "cpu";
+
     @Option(names = {"-aot", "--async-output-type"}, description = "Output format(s). Supported: [text, collapsed, flamegraph, tree, jfr] (default: ${DEFAULT-VALUE})")
     String asyncOutputType = "flamegraph";
 
@@ -61,6 +68,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
             .withAsyncProfilerOptions(asyncProfilerOptionsBuilder()
                 .withAsyncPath(asyncPath)
                 .withAsyncInterval(asyncInterval)
+                .withAsyncEvent(asyncEvent)
                 .withAsyncOutputType(asyncOutputType)
                 .withAsyncOutputPath(asyncOutputPath)
                 .withAsyncAdditionalOptions(asyncAdditionalParams)
