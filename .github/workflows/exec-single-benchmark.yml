@@ -35,8 +35,8 @@ on:
         type: string
         default: temurin
       async-profiler-version:
+        required: true
         type: string
-        default: "3.0"
       runner-path:    # Used in tests
         type: string
         description: S3 url to runner jar
