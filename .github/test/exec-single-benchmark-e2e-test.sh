@@ -5,9 +5,12 @@ LOGGER_NAME="Exec single benchmark e2e"
 # Source logger
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/testing-scripts/logger.sh"
+source "$SCRIPT_DIR/testing-scripts/utils.sh"
 
 # Hardcoded values for the test
 S3_BUCKET="baas"
+ASYNC_VERSION=4.0
+ASYNC_EVENT=wall
 AWS_PROFILE="localstack"  # Default AWS profile
 MONGO_CONNECTION_STRING="mongodb://localhost:27017/local_test"  # Default MongoDB connection string
 
@@ -51,6 +54,9 @@ parse_arguments "$@"
 log INFO "Step 1: Validating required tools..."
 $SCRIPT_DIR/testing-scripts/validate-tools.sh docker:Docker act aws:"AWS CLI v2" mongosh:"Mongo Shell" java mvn:Maven || exit 1
 
+log INFO "Step 1.1: Running tools..."
+$SCRIPT_DIR/testing-scripts/run-tools.sh --file "$SCRIPT_DIR/../../docker-compose.yaml" || exit 1
+
 # Step 2: Prepare test data (run Maven command)
 log INFO "Step 2: Preparing test data..."
 log INFO "2.1: Run Maven build on project"
@@ -59,7 +65,7 @@ mvn -f $SCRIPT_DIR/../../pom.xml -q clean package -DskipTests || {
     exit 1;
 }
 
-RUNNER_FILE_PATH="$SCRIPT_DIR/../../benchmark-runner/target/benchmark-runner.jar"
+RUNNER_FILE_PATH=$(normalize_path "$SCRIPT_DIR/../../benchmark-runner/target/benchmark-runner.jar")
 RUNNER_S3_KEY="s3://$S3_BUCKET/runner.jar"
 log INFO "2.2: Uploading runner '$RUNNER_FILE_PATH' to S3 (path: '$RUNNER_S3_KEY')"
 aws s3 cp "$RUNNER_FILE_PATH" "$RUNNER_S3_KEY" --profile "$AWS_PROFILE" || {
@@ -67,7 +73,7 @@ aws s3 cp "$RUNNER_FILE_PATH" "$RUNNER_S3_KEY" --profile "$AWS_PROFILE" || {
    exit 1;
 }
 
-BENCHMARK_FILE_PATH="$SCRIPT_DIR/../../fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar"
+BENCHMARK_FILE_PATH=$(normalize_path "$SCRIPT_DIR/../../fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar")
 BENCHMARK_S3_KEY="s3://$S3_BUCKET/test-benchmark.jar"
 log INFO "2.3: Uploading benchmark '$BENCHMARK_FILE_PATH' to S3 (path: '$BENCHMARK_S3_KEY')"
 aws s3 cp "$BENCHMARK_FILE_PATH" "$BENCHMARK_S3_KEY" --profile "$AWS_PROFILE" || {
@@ -82,12 +88,14 @@ act -W $SCRIPT_DIR/../workflows/exec-single-benchmark.yml \
 --secret-file $SCRIPT_DIR/act-config/.secrets \
 --var-file $SCRIPT_DIR/act-config/.vars \
 --input gha-runner-type=ubuntu-latest \
+--input java-version=24 \
 --input benchmark-type=jmh-with-async \
 --input request-id=${REQUEST_ID} \
 --input benchmark-path=${BENCHMARK_S3_KEY} \
 --input runner-path=${RUNNER_S3_KEY} \
 --input s3-result-bucket=${S3_BUCKET} \
---input parameters="--tag source=shell-script Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-additional-param event=cpu --async-additional-param threads=true" | grep --color=always -v '::'
+--input async-profiler-version=${ASYNC_VERSION} \
+--input parameters="--tag source=shell-script Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=${ASYNC_EVENT}  --async-output-type=flamegraph,jfr --async-additional-param threads=true" | grep --color=always -v '::'
 # using ${PIPESTATUS[0]} and  grep --color=always -v '::' is a workaround for do not printing ACT debug output
 if [ "${PIPESTATUS[0]}" -ne 0 ]; then
     log ERROR "act command failed."
@@ -99,7 +107,7 @@ log INFO "Step 4: Running assertions..."
 log INFO "Verifying if async output and flamegraph exist on S3..."
 $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" --key "${REQUEST_ID}/jmh-with-async-output.txt" --check-size || exit 1
 $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" \
---key "${REQUEST_ID}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-cpu-forward.html" || exit 1
+--key "${REQUEST_ID}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-${ASYNC_EVENT}-forward.html" || exit 1
 
 log INFO "Verifying if document with benchmark results exists in MongoDB..."
 $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "$REQUEST_ID" || exit 1

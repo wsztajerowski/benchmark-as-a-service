@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# Explicitly set a user-friendly client name
+LOGGER_NAME="Tool validator"
 # Include helper scripts
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 source "$SCRIPT_DIR/logger.sh"
