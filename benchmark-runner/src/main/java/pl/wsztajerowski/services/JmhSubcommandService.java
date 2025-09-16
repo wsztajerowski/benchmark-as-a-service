@@ -83,7 +83,5 @@ public class JmhSubcommandService {
             JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult, new BenchmarkMetadata(tags, now, null));
             databaseService.save(jmhBenchmark);
         }
-
-
     }
 }

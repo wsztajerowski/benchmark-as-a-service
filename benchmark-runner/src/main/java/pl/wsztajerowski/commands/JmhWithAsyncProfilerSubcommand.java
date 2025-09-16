@@ -57,7 +57,7 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
     @Option(names = {"-aop", "--async-output-path"}, description = "Profiler output path (default: ${DEFAULT-VALUE})")
     Path asyncOutputPath = getWorkingDirectory().resolve("async-output");
 
-    @Option(names = {"-aap", "--async-additional-param"}, description = "Provide advance raw parameters as a map")
+    @Option(names = {"-aap", "--async-additional-param"}, description = "Provide advance raw parameters as a map in format: KEY=VALUE")
     Map<String, String> asyncAdditionalParams;
 
     @Override
