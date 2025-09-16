@@ -18,7 +18,7 @@ public class ApiCommonSharedOptions {
     @Option(names = "--tag")
     Map<String, String> tags;
 
-    @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: ISO 8601 format of UTC current date-time.")
+    @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
     Path resultPath;
 
     @Option(names = {"-id","--request-id"}, description = "Request ID. Default value: ISO 8601 format of UTC current date-time.")
@@ -41,7 +41,6 @@ public class ApiCommonSharedOptions {
             description = "Custom S3 Service endpoint")
         URI s3ServiceEndpoint;
     }
-
 
     public CommonSharedOptions getRequestOptions(){
         String nonNullRequestId = Optional.ofNullable(requestId)

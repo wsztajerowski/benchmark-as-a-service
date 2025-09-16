@@ -1,5 +1,6 @@
 package pl.wsztajerowski.services;
 
+import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -9,7 +10,7 @@ import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
 import pl.wsztajerowski.entities.jmh.JmhResult;
 import pl.wsztajerowski.infra.DatabaseService;
 import pl.wsztajerowski.infra.StorageService;
-import pl.wsztajerowski.services.options.AsyncProfilerOptions;
+import pl.wsztajerowski.process.BenchmarkProcessBuilder;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
@@ -18,7 +19,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -33,37 +33,39 @@ import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
 import static pl.wsztajerowski.services.JmhUtils.getProfilerOutputDirSuffix;
 
-public class JmhWithAsyncProfilerSubcommandService {
-    private static final Logger logger = LoggerFactory.getLogger(JmhWithAsyncProfilerSubcommandService.class);
+public class JmhWithProfilerSubcommandService {
+    private static final Logger logger = LoggerFactory.getLogger(JmhWithProfilerSubcommandService.class);
     private final CommonSharedOptions commonOptions;
     private final JmhOptions jmhOptions;
     private final StorageService storageService;
     private final DatabaseService databaseService;
-    private final AsyncProfilerOptions asyncProfilerOptions;
+    private final Map<String, String> profilerOptions;
     private final Path outputPath;
 
-    JmhWithAsyncProfilerSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
+    JmhWithProfilerSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, JmhOptions jmhOptions, Map<String, String> profilerOptions) {
         this.storageService = storageService;
         this.databaseService = databaseService;
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
-        this.asyncProfilerOptions = asyncProfilerOptions;
+        this.profilerOptions = profilerOptions;
         this.outputPath = commonOptions.resultPath();
     }
 
     public void executeCommand() {
         // Build process
-        logger.info("Running JMH with async profiler. Output path: {}", outputPath);
+        logger.info("Running JMH with profiler(s). Output path: {}", outputPath);
         try {
             ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
-            int exitCode = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions)
-                .addArgumentWithValue("-prof", createAsyncCommand())
+            BenchmarkProcessBuilder benchmarkProcessBuilder = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions);
+            profilerOptions.forEach((profilerName, profilerOptions) ->
+                benchmarkProcessBuilder.addArgumentWithValue("-prof", createProfilerCommand(profilerName, profilerOptions)));
+            int exitCode = benchmarkProcessBuilder
                 .buildAndStartProcess()
                 .waitFor();
 
-            logger.info("Saving benchmark process output on S3");
+            logger.info("Saving benchmark profiler(s) process output on S3");
             storageService
-                .saveFile(outputPath.resolve("jmh-with-async-output.txt"), jmhOptions.outputOptions().processOutput());
+                .saveFile(outputPath.resolve("jmh-profiler-output.txt"), jmhOptions.outputOptions().processOutput());
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -79,7 +81,7 @@ public class JmhWithAsyncProfilerSubcommandService {
             logger.debug("JMH result: {}", jmhResult);
             Map<String, String> profilerOutputs = new HashMap<>();
             String benchmarkFullname = jmhResult.benchmark() + getProfilerOutputDirSuffix(jmhResult.mode());
-            Path profilerOutputDir = asyncProfilerOptions.asyncOutputPath().resolve(benchmarkFullname);
+            Path profilerOutputDir = outputPath.resolve(benchmarkFullname);
             try (Stream<Path> paths = list(profilerOutputDir)) {
                 paths
                     .forEach(path -> {
@@ -106,35 +108,27 @@ public class JmhWithAsyncProfilerSubcommandService {
             databaseService
                 .save(jmhBenchmark);
         }
-
-        logger.info("Saving JMH logs on S3");
-        try (Stream<Path> paths = list(asyncProfilerOptions.asyncOutputPath())){
-            paths
-                .filter(f -> f.toString().endsWith("log"))
-                .forEach(path -> {
-                    Path s3Key = outputPath.resolve("logs").resolve(path.getFileName());
-                    storageService
-                        .saveFile(s3Key, path);
-                });
-        } catch (IOException e) {
-            throw new JavaWonderlandException(e);
-        }
     }
 
-    private String createAsyncCommand() {
-        String additionalParams = Optional.ofNullable(asyncProfilerOptions
-            .asyncAdditionalOptions())
-            .orElse(Collections.emptyMap())
-            .entrySet()
-            .stream()
-            .map(entry -> entry.getKey() + "=" + entry.getValue())
-            .collect(Collectors.joining(";", ";", ""));
-        return "async:libPath=%s;output=%s;dir=%s;event=%s;interval=%d%s;verbose=true".formatted(
-            asyncProfilerOptions.asyncPath(),
-            asyncProfilerOptions.asyncOutputType(),
-            asyncProfilerOptions.asyncOutputPath().toAbsolutePath(),
-            asyncProfilerOptions.asyncEvent(),
-            asyncProfilerOptions.asyncInterval(),
-            additionalParams);
+    private String createProfilerCommand(String profilerName, String profilerOptions) {
+        String outputOption = Optional.of(profilerName)
+            .map(this::getProfilerOutputOptionName)
+            .map(outputOptionName -> "%s=%s".formatted(outputOptionName, outputPath.toString()))
+            .orElse("");
+        String options = Stream.of(profilerOptions, outputOption)
+            .filter(this::isNotBlank)
+            .collect(Collectors.joining(";"));
+        return isNotBlank(options)? "%s:%s".formatted(profilerName, options) : profilerName;
+    }
+
+    private boolean isNotBlank(String string) {
+        return string != null && !string.trim().isEmpty();
+    }
+
+    private @Nullable String getProfilerOutputOptionName(String profilerName) {
+        return switch (profilerName) {
+            case "async", "jfr" -> "dir";
+            default -> null;
+        };
     }
 }
