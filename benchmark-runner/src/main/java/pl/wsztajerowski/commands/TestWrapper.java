@@ -9,7 +9,7 @@ import static picocli.CommandLine.HelpCommand;
 
 @Command(name = "test-runner",
     description = "Wrapper for benchmarks run and processing it's results.",
-    subcommands = {HelpCommand.class, JmhSubcommand.class, JmhWithAsyncProfilerSubcommand.class, JCStressSubcommand.class})
+    subcommands = {HelpCommand.class, JmhSubcommand.class, JmhWithAsyncProfilerSubcommand.class, JmhWithProfilerSubcommand.class, JCStressSubcommand.class})
 public class TestWrapper {
 
     @Mixin LoggingMixin loggingMixin;
