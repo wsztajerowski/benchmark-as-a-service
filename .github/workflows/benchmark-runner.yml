@@ -10,6 +10,7 @@ on:
         options:
           - jmh
           - jmh-with-async
+          - jmh-with-prof
           - jcstress
       benchmark_path:
         type: string
