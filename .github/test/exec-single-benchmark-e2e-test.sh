@@ -82,9 +82,9 @@ aws s3 cp "$BENCHMARK_FILE_PATH" "$BENCHMARK_S3_KEY" --profile "$AWS_PROFILE" ||
    exit 1;
 }
 
-# Step 3: Run act command and verify exit code
+# Step 3: Run act command for JHM with async profiler and verify exit code
 REQUEST_ID=$RANDOM
-log INFO "Step 3: Running act command..."
+log INFO "Step 3: Running act command for async profiler run..."
 act -W $SCRIPT_DIR/../workflows/exec-single-benchmark.yml \
 --secret-file $SCRIPT_DIR/act-config/.secrets \
 --var-file $SCRIPT_DIR/act-config/.vars \
@@ -113,5 +113,36 @@ $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_
 log INFO "Verifying if document with benchmark results exists in MongoDB..."
 $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "$REQUEST_ID" || exit 1
 $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value shell-script || exit 1
+
+# Step 5: Run act command for JHM with common profiler and verify exit code
+REQUEST_ID=$RANDOM
+log INFO "Step 5: Running act command for common profiler run..."
+act -W $SCRIPT_DIR/../workflows/exec-single-benchmark.yml \
+--secret-file $SCRIPT_DIR/act-config/.secrets \
+--var-file $SCRIPT_DIR/act-config/.vars \
+--input gha-runner-type=ubuntu-latest \
+--input java-version=24 \
+--input benchmark-type=jmh-with-prof \
+--input request-id=${REQUEST_ID} \
+--input benchmark-path=${BENCHMARK_S3_KEY} \
+--input runner-path=${RUNNER_S3_KEY} \
+--input s3-result-bucket=${S3_BUCKET} \
+--input parameters="--tag source=shell-script Incrementing_Synchronized -f 1 -wi 1 -i 1 --profiler 'gc=churn=false;alloc=false' --profiler 'jfr=stackDepth=20'" | grep --color=always -v '::'
+# using ${PIPESTATUS[0]} and  grep --color=always -v '::' is a workaround for do not printing ACT debug output
+if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+    log ERROR "act command failed."
+    exit 1
+fi
+
+# Step 4: Run assertions
+log INFO "Step 6: Running assertions..."
+log INFO "Verifying if profiler output and jrf file exist on S3..."
+$SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" --key "${REQUEST_ID}/jmh-profiler-output.txt" --check-size || exit 1
+$SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" \
+--key "${REQUEST_ID}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/profile.jfr" || exit 1
+
+log INFO "Verifying if document with benchmark results exists in MongoDB..."
+$SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "$REQUEST_ID" || exit 1
+$SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "jmhResult.secondaryMetrics.·jfr" || exit 1
 
 log INFO "All checks passed successfully!"
