@@ -72,6 +72,7 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
                 .withAsyncOutputType("flamegraph")
                 .withAsyncOutputPath(asyncOutput)
                 .withAsyncInterval(9990)
+                .withAsyncEvent("cpu")
                 .build())
             .build();
 
