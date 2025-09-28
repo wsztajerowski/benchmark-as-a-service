@@ -15,7 +15,7 @@
         <!-- common properties -->
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
-        <maven.compiler.compilerArgs>--enable-preview</maven.compiler.compilerArgs>
+        <maven.compiler.compilerArgs></maven.compiler.compilerArgs>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <!-- plugin versions -->
@@ -87,9 +87,9 @@
                     <artifactId>maven-compiler-plugin</artifactId>
                     <version>${maven-compiler-plugin.version}</version>
                     <configuration>
-                        <source>21</source>
-                        <target>21</target>
-                        <compilerArgs>--enable-preview</compilerArgs>
+                        <source>${maven.compiler.source}</source>
+                        <target>${maven.compiler.target}</target>
+                        <compilerArgs>${maven.compiler.compilerArgs}</compilerArgs>
                     </configuration>
                 </plugin>
                 <plugin>
