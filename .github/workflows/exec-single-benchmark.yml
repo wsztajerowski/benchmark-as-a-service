@@ -2,6 +2,9 @@ name: Execute benchmark
 
 on:
   workflow_call:
+    permissions:
+      id-token: write
+      contents: read
     inputs:
       benchmark-type:
         required: true
@@ -66,6 +69,12 @@ jobs:
           curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip -qq awscliv2.zip
           sudo ./aws/install
+      - name: Set up AWS CLI
+        if: ${{ !env.ACT }}
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.RUNNER_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
       - name: Download async profiler
         if: inputs.benchmark-type == 'jmh-with-async'
         run: |

@@ -65,6 +65,9 @@ jobs:
   call-workflow:
     name: Call benchmark workflow
     needs: prepare-test
+    permissions:
+      id-token: write
+      contents: read
     uses: ./.github/workflows/exec-single-benchmark.yml
     with:
       gha-runner-type: ubuntu-latest
