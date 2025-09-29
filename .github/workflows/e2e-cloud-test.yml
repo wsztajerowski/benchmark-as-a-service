@@ -9,14 +9,20 @@ env:
   AWS_REGION: eu-central-1
   JAVA_VERSION: 21
   JAVA_DISTRIBUTION: temurin
-  ASYNC_PROFILER_VERSION: 4.0
+  ASYNC_PROFILER_VERSION: "4.0"
 
 jobs:
   prepare-test:
     name: Prepare test artifacts and upload to S3
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     outputs:
       request_id: ${{ steps.gen_request_id.outputs.request_id }}
+      java_version: ${{ steps.export_constants.outputs.JAVA_VERSION }}
+      s3_bucket: ${{ steps.export_constants.outputs.S3_BUCKET }}
+      async_profiler_version: ${{ steps.export_constants.outputs.ASYNC_PROFILER_VERSION }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -30,8 +36,7 @@ jobs:
       - name: Set up AWS CLI
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Build runner and benchmark jars
@@ -46,9 +51,16 @@ jobs:
         run: |
           aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/ci/test-benchmark.jar"
 
+      - name: Export constants for downstream job
+        id: export_constants
+        run: |
+          echo "JAVA_VERSION=${{ env.JAVA_VERSION }}" >> "$GITHUB_OUTPUT"
+          echo "S3_BUCKET=${{ env.S3_BUCKET }}" >> "$GITHUB_OUTPUT"
+          echo "ASYNC_PROFILER_VERSION=${{ env.ASYNC_PROFILER_VERSION }}" >> "$GITHUB_OUTPUT"
+
       - name: Generate request ID
         id: gen_request_id
-        run: echo "request_id=CI_E2E_$(date -u +"%Y%m%d_%H%M%S")" >> $GITHUB_OUTPUT
+        run: echo "request_id=CI_E2E_$(date -u +'%Y%m%d_%H%M%S')" >> "$GITHUB_OUTPUT"
 
   call-workflow:
     name: Call benchmark workflow
@@ -56,13 +68,13 @@ jobs:
     uses: ./.github/workflows/exec-single-benchmark.yml
     with:
       gha-runner-type: ubuntu-latest
-      java-version: ${{ env.JAVA_VERSION }}
+      java-version: ${{ needs.prepare-test.outputs.java_version }}
       benchmark-type: jmh-with-async
       request-id: ${{ needs.prepare-test.outputs.request_id }}
-      benchmark-path: "s3://${{ env.S3_BUCKET }}/ci/test-benchmark.jar"
-      runner-path: "s3://${{ env.S3_BUCKET }}/ci/runner.jar"
-      s3-result-bucket: ${{ env.S3_BUCKET }}
-      async-profiler-version: ${{ env.ASYNC_PROFILER_VERSION }}
+      benchmark-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/ci/test-benchmark.jar"
+      runner-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/ci/runner.jar"
+      s3-result-bucket: ${{ needs.prepare-test.outputs.s3_bucket }}
+      async-profiler-version: ${{ needs.prepare-test.outputs.async_profiler_version }}
       parameters: "--tag source=gha-e2e-test Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
     secrets:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
