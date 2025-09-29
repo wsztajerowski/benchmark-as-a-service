@@ -24,32 +24,32 @@ jobs:
       s3_bucket: ${{ steps.export_constants.outputs.S3_BUCKET }}
       async_profiler_version: ${{ steps.export_constants.outputs.ASYNC_PROFILER_VERSION }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
-
-      - name: Set up Java
-        uses: actions/setup-java@v5
-        with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
-
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Build runner and benchmark jars
-        run: |
-          mvn -f ./pom.xml -q clean package -DskipTests
-
-      - name: Upload runner jar to S3 (prod)
-        run: |
-          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar "s3://${{ env.S3_BUCKET }}/ci/runner.jar"
-
-      - name: Upload benchmark jar to S3 (prod)
-        run: |
-          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/ci/test-benchmark.jar"
+#      - name: Checkout repository
+#        uses: actions/checkout@v5
+#
+#      - name: Set up Java
+#        uses: actions/setup-java@v5
+#        with:
+#          java-version: ${{ env.JAVA_VERSION }}
+#          distribution: ${{ env.JAVA_DISTRIBUTION }}
+#
+#      - name: Set up AWS CLI
+#        uses: aws-actions/configure-aws-credentials@v5
+#        with:
+#          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
+#          aws-region: ${{ env.AWS_REGION }}
+#
+#      - name: Build runner and benchmark jars
+#        run: |
+#          mvn -f ./pom.xml -q clean package -DskipTests
+#
+#      - name: Upload runner jar to S3 (prod)
+#        run: |
+#          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar "s3://${{ env.S3_BUCKET }}/ci/runner.jar"
+#
+#      - name: Upload benchmark jar to S3 (prod)
+#        run: |
+#          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/ci/test-benchmark.jar"
 
       - name: Export constants for downstream job
         id: export_constants
