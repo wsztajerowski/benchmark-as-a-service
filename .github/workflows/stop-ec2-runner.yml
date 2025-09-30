@@ -1,0 +1,41 @@
+name: Stop EC2 runner
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        description: "Label of the started EC2 runner"
+        required: true
+        type: string
+      ec2-instance-id:
+        description: "EC2 instance ID of the started runner"
+        required: true
+        type: string
+      aws-region:
+        description: "AWS region to use"
+        required: true
+        type: string
+    secrets:
+      workflow-role-arn:
+        required: true
+      gha-ec2-pat:
+        required: true
+
+jobs:
+  stop-runner:
+    name: Stop EC2 runner
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.workflow-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.gha-ec2-pat }}
+          label: ${{ inputs.label }}
+          ec2-instance-id: ${{ inputs.ec2-instance-id }}

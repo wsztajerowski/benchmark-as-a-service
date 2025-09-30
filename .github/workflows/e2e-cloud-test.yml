@@ -26,6 +26,7 @@ jobs:
           ID=CI_E2E_$(date -u +'%Y%m%d_%H%M%S')
           echo "request_id=$ID" >> "$GITHUB_OUTPUT"
           echo "result_path=ci/$ID" >> "$GITHUB_OUTPUT"
+
   prepare-test:
     name: Prepare test artifacts and upload to S3
     runs-on: ubuntu-latest
@@ -55,15 +56,9 @@ jobs:
       - name: Upload benchmark jar to S3 (CI dir)
         run: |
           aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
-#      - name: Export constants for downstream job
-#        id: export_constants
-#        run: |
-#          echo "JAVA_VERSION=${{ env.JAVA_VERSION }}" >> "$GITHUB_OUTPUT"
-#          echo "S3_BUCKET=${{ env.S3_BUCKET }}" >> "$GITHUB_OUTPUT"
-
 
   start-runner:
-    uses: ./.github/workflows/start_ec2_runner.yml
+    uses: ./.github/workflows/start-ec2-runner.yml
     permissions:
       id-token: write
       contents: read
@@ -101,28 +96,21 @@ jobs:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
 
   stop-runner:
-    name: Stop EC2 runner
+    uses: ./.github/workflows/stop-ec2-runner.yml
+    permissions:
+      id-token: write
+      contents: read
     needs:
       - start-runner
       - call-workflow
     if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: stop
-          github-token: ${{ secrets.GHA_EC2_PAT }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
+    with:
+      label: ${{ needs.start-runner.outputs.label }}
+      ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
+      aws-region: ${{ vars.AWS_REGION }}
+    secrets:
+      workflow-role-arn: ${{ secrets.WORKFLOW_ROLE_ARN }}
+      gha-ec2-pat: ${{ secrets.GHA_EC2_PAT }}
 
   verify-test-result:
     name: Verify benchmark results
