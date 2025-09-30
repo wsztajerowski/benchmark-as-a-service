@@ -74,19 +74,19 @@ jobs:
           mkdir /app
           mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 /app/async-profiler
       - name: Set up Java JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: ${{ env.JAVA_VERSION }}
           distribution: ${{ env.JAVA_DISTRIBUTION }}
       - name: Download Benchmark runner from GitHub release
-        if: ${{ !env.ACT }}
+        if: ${{ !inputs.runner-path || inputs.runner-path == '' }}
         uses: robinraju/release-downloader@v1
         with:
           repository: 'wsztajerowski/benchmark-as-a-service'
           latest: true
           fileName: 'benchmark-runner.jar'
       - name: Download Benchmark runner from S3
-        if: ${{ env.ACT }}
+        if: ${{ inputs.runner-path && inputs.runner-path != '' }}
         run: aws s3 cp ${{ inputs.runner-path }} benchmark-runner.jar
       - name: Download benchmark from S3
         run: aws s3 cp ${{ inputs.benchmark-path }} benchmark-under-test.jar
