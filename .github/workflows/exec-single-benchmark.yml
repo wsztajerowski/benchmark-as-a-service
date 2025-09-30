@@ -2,9 +2,6 @@ name: Execute benchmark
 
 on:
   workflow_call:
-    permissions:
-      id-token: write
-      contents: read
     inputs:
       benchmark-type:
         required: true
@@ -69,19 +66,13 @@ jobs:
           curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
           unzip -qq awscliv2.zip
           sudo ./aws/install
-      - name: Set up AWS CLI
-        if: ${{ !env.ACT }}
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.RUNNER_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
       - name: Download async profiler
         if: inputs.benchmark-type == 'jmh-with-async'
         run: |
           wget -nv https://github.com/async-profiler/async-profiler/releases/download/v${{ env.ASYNC_PROFILER_VERSION }}/async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
           tar -xf async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64.tar.gz
-          mkdir ./app
-          mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 ./app/async-profiler
+          mkdir /app
+          mv async-profiler-${{ env.ASYNC_PROFILER_VERSION }}-linux-x64 /app/async-profiler
       - name: Set up Java JDK
         uses: actions/setup-java@v4
         with:
@@ -102,7 +93,7 @@ jobs:
       - name: Run benchmarks
         env:
           MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
-          ASYNC_PATH: ./app/async-profiler/lib/libasyncProfiler.so
+          ASYNC_PATH: /app/async-profiler/lib/libasyncProfiler.so
         run: |
           java -jar benchmark-runner.jar ${{ inputs.benchmark-type }} \
           ${{ inputs.request-id != 0 && format('--request-id {0} ', inputs.request-id) || ' ' }}  \
