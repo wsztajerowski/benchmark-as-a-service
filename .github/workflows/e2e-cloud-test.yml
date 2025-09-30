@@ -62,15 +62,63 @@ jobs:
         id: gen_request_id
         run: echo "request_id=CI_E2E_$(date -u +'%Y%m%d_%H%M%S')" >> "$GITHUB_OUTPUT"
 
+
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    env:
+      AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Get latest AL 2023 AMI ID
+        id: latest-ami-id
+        run: |
+          AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
+          echo "Newest AMI ID: $AMI_ID"
+          echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.GHA_EC2_PAT }}
+          ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
+          ec2-instance-type: c5.2xlarge
+          subnet-id: ${{ vars.SUBNET_ID }}
+          security-group-id: ${{ vars.SECURITY_GROUP_ID }}
+          iam-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
+          aws-resource-tags: >
+            [
+              {"Key": "project", "Value": "baas"},
+              {"Key": "run_id", "Value": "${{ github.run_id }}" },
+              {"Key": "runner", "Value": "request-benchmark-runner"}
+            ]
+          pre-runner-script: |
+            sudo yum update -y && \ 
+            sudo yum install docker git libicu -y && \
+            sudo systemctl enable docker
+
   call-workflow:
     name: Call benchmark workflow
-    needs: prepare-test
+    needs:
+      - prepare-test
+      - start-runner
     permissions:
       id-token: write
       contents: read
     uses: ./.github/workflows/exec-single-benchmark.yml
     with:
-      gha-runner-type: ubuntu-latest
+      gha-runner-type: ${{ needs.start-runner.outputs.label }}
       java-version: ${{ needs.prepare-test.outputs.java_version }}
       benchmark-type: jmh-with-async
       request-id: ${{ needs.prepare-test.outputs.request_id }}
@@ -81,6 +129,30 @@ jobs:
       parameters: "--tag source=gha-e2e-test Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
     secrets:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+
+  stop-runner:
+    name: Stop EC2 runner
+    needs:
+      - start-runner
+      - call-workflow
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Stop EC2 runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: stop
+          github-token: ${{ secrets.GHA_EC2_PAT }}
+          label: ${{ needs.start-runner.outputs.label }}
+          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
 
 #  verify-test-result:
 #    name: Verify benchmark results
