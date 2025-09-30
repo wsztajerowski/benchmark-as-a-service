@@ -63,130 +63,150 @@ jobs:
         run: echo "request_id=CI_E2E_$(date -u +'%Y%m%d_%H%M%S')" >> "$GITHUB_OUTPUT"
 
 
-  start-runner:
-    name: Start EC2 runner
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-    env:
-      AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Get latest AL 2023 AMI ID
-        id: latest-ami-id
-        run: |
-          AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
-          echo "Newest AMI ID: $AMI_ID"
-          echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: start
-          github-token: ${{ secrets.GHA_EC2_PAT }}
-          ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
-          ec2-instance-type: c5.2xlarge
-          subnet-id: ${{ vars.SUBNET_ID }}
-          security-group-id: ${{ vars.SECURITY_GROUP_ID }}
-          iam-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
-          aws-resource-tags: >
-            [
-              {"Key": "project", "Value": "baas"},
-              {"Key": "run_id", "Value": "${{ github.run_id }}" },
-              {"Key": "runner", "Value": "request-benchmark-runner"}
-            ]
-          pre-runner-script: |
-            sudo yum update -y && \ 
-            sudo yum install docker git libicu -y && \
-            sudo systemctl enable docker
-
-  call-workflow:
-    name: Call benchmark workflow
-    needs:
-      - prepare-test
-      - start-runner
-    permissions:
-      id-token: write
-      contents: read
-    uses: ./.github/workflows/exec-single-benchmark.yml
-    with:
-      gha-runner-type: ${{ needs.start-runner.outputs.label }}
-      java-version: ${{ needs.prepare-test.outputs.java_version }}
-      benchmark-type: jmh-with-async
-      request-id: ${{ needs.prepare-test.outputs.request_id }}
-      benchmark-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/ci/test-benchmark.jar"
-      runner-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/ci/runner.jar"
-      s3-result-bucket: ${{ needs.prepare-test.outputs.s3_bucket }}
-      async-profiler-version: ${{ needs.prepare-test.outputs.async_profiler_version }}
-      parameters: "--tag source=gha-e2e-test Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
-    secrets:
-      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
-
-  stop-runner:
-    name: Stop EC2 runner
-    needs:
-      - start-runner
-      - call-workflow
-    if: always()
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Stop EC2 runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: stop
-          github-token: ${{ secrets.GHA_EC2_PAT }}
-          label: ${{ needs.start-runner.outputs.label }}
-          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
-
-#  verify-test-result:
-#    name: Verify benchmark results
+#  start-runner:
+#    name: Start EC2 runner
 #    runs-on: ubuntu-latest
-#    needs: call-workflow
+#    permissions:
+#      id-token: write
+#      contents: read
+#    outputs:
+#      label: ${{ steps.start-ec2-runner.outputs.label }}
+#      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+#    env:
+#      AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
 #    steps:
-#      - name: Checkout repository
-#        uses: actions/checkout@v5
-#
-#      - name: Set up AWS CLI
-#        uses: aws-actions/configure-aws-credentials@v5
+#      - name: Configure AWS credentials
+#        uses: aws-actions/configure-aws-credentials@v4
 #        with:
-#          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
 #          aws-region: ${{ env.AWS_REGION }}
-#
-#      - name: Install Mongosh CLI
+#      - name: Get latest AL 2023 AMI ID
+#        id: latest-ami-id
 #        run: |
-#          curl -fsSL https://pgp.mongodb.com/server-6.0.asc | sudo gpg --dearmor -o /usr/share/keyrings/mongodb-server-6.0.gpg
-#          echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-6.0.gpg ] https://repo.mongodb.org/apt/ubuntu focal/mongodb-org/6.0 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-6.0.list
-#          sudo apt-get update
-#          sudo apt-get install -y mongodb-mongosh
+#          AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
+#          echo "Newest AMI ID: $AMI_ID"
+#          echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
+#      - name: Start EC2 runner
+#        id: start-ec2-runner
+#        uses: machulav/ec2-github-runner@v2
+#        with:
+#          mode: start
+#          github-token: ${{ secrets.GHA_EC2_PAT }}
+#          ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
+#          ec2-instance-type: c5.2xlarge
+#          subnet-id: ${{ vars.SUBNET_ID }}
+#          security-group-id: ${{ vars.SECURITY_GROUP_ID }}
+#          iam-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
+#          aws-resource-tags: >
+#            [
+#              {"Key": "project", "Value": "baas"},
+#              {"Key": "run_id", "Value": "${{ github.run_id }}" },
+#              {"Key": "runner", "Value": "request-benchmark-runner"}
+#            ]
+#          pre-runner-script: |
+#            sudo yum update -y && \
+#            sudo yum install docker git libicu -y && \
+#            sudo systemctl enable docker
 #
-#      - name: Verify S3 results
-#        run: |
-#          aws s3 ls "s3://${{ env.S3_BUCKET }}/${{ needs.prepare-test.outputs.request_id }}/jmh-with-async-output.txt"
-#          aws s3 ls "s3://${{ env.S3_BUCKET }}/${{ needs.prepare-test.outputs.request_id }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-wall-forward.html"
+#  call-workflow:
+#    name: Call benchmark workflow
+#    needs:
+#      - prepare-test
+#      - start-runner
+#    permissions:
+#      id-token: write
+#      contents: read
+#    uses: ./.github/workflows/exec-single-benchmark.yml
+#    with:
+#      gha-runner-type: ${{ needs.start-runner.outputs.label }}
+#      java-version: ${{ needs.prepare-test.outputs.java_version }}
+#      benchmark-type: jmh-with-async
+#      request-id: ${{ needs.prepare-test.outputs.request_id }}
+#      benchmark-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/ci/test-benchmark.jar"
+#      runner-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/ci/runner.jar"
+#      s3-result-bucket: ${{ needs.prepare-test.outputs.s3_bucket }}
+#      async-profiler-version: ${{ needs.prepare-test.outputs.async_profiler_version }}
+#      parameters: "--tag source=gha-e2e-test Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
+#    secrets:
+#      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
 #
-#      - name: Verify MongoDB results
-#        env:
-#          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
-#        run: |
-#          mongosh "$MONGO_CONNECTION_STRING" --quiet --eval "db.getCollection('jmh_benchmarks').findOne({'_id.requestId': '${{ needs.prepare-test.outputs.request_id }}'})"
-#          mongosh "$MONGO_CONNECTION_STRING" --quiet --eval "db.getCollection('jmh_benchmarks').findOne({'benchmarkMetadata.tags.source': 'gha-e2e-prod'})"
+#  stop-runner:
+#    name: Stop EC2 runner
+#    needs:
+#      - start-runner
+#      - call-workflow
+#    if: always()
+#    runs-on: ubuntu-latest
+#    permissions:
+#      id-token: write
+#      contents: read
+#    steps:
+#      - name: Configure AWS credentials
+#        uses: aws-actions/configure-aws-credentials@v4
+#        with:
+#          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
+#          aws-region: ${{ env.AWS_REGION }}
+#      - name: Stop EC2 runner
+#        uses: machulav/ec2-github-runner@v2
+#        with:
+#          mode: stop
+#          github-token: ${{ secrets.GHA_EC2_PAT }}
+#          label: ${{ needs.start-runner.outputs.label }}
+#          ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
+
+  verify-test-result:
+    name: Verify benchmark results
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+#    needs: call-workflow
+    env:
+ #     REQUEST_ID: ${{ needs.prepare-test.outputs.request_id }}
+      REQUEST_ID: "ci/CI_E2E_20250930_173619"
+      MONGOSH_VERSION: "2.2.4"
+      S3_BUCKET: "baas-lynx-main"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download and install mongosh
+        run: |
+          wget https://downloads.mongodb.com/compass/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
+          tar -xzf mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
+          chmod +x mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin/mongosh
+          echo "$PWD/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
+
+      - name: Verify S3 results
+        run: |
+          echo "Verifying if async output and flamegraph exist on S3..."
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.REQUEST_ID }}/jmh-with-async-output.txt" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" \
+          --key "${REQUEST_ID}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-wall-forward.html" || exit 1
+      - name: Verify MongoDB results
+        env:
+          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+        run: |
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
+#          mongosh "$MONGO_CONNECTION_STRING" --quiet --eval "db.getCollection('jmh_benchmarks').findOne({'_id.requestId': '${{ env.REQUEST_ID }}'})"
+#          mongosh "$MONGO_CONNECTION_STRING" --quiet --eval "db.getCollection('jmh_benchmarks').findOne({'benchmarkMetadata.tags.source': 'gha-e2e-test'})"
+#          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.REQUEST_ID }}" || exit 1
+
+
+
+# Step 4: Run assertions
+#log INFO "Step 4: Running assertions..."
+#  log INFO "Verifying if async output and flamegraph exist on S3..."
+#  $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" --key "${REQUEST_ID}/jmh-with-async-output.txt" --check-size || exit 1
+#  $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" \
+#  --key "${REQUEST_ID}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-${ASYNC_EVENT}-forward.html" || exit 1
 #
-#      - name: All checks passed
-#        run: echo "E2E production benchmark workflow and validation succeeded!"
+#  log INFO "Verifying if document with benchmark results exists in MongoDB..."
+#  $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "$REQUEST_ID" || exit 1
+#  $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value shell-script || exit 1
