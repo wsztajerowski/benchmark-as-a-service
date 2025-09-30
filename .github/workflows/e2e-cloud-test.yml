@@ -9,21 +9,16 @@ env:
   AWS_REGION: eu-central-1
   JAVA_VERSION: 21
   JAVA_DISTRIBUTION: temurin
-  ASYNC_PROFILER_VERSION: "4.0"
 
 jobs:
-  prepare-test:
-    name: Prepare test artifacts and upload to S3
+  setup-env:
+    name: Setup environment
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     outputs:
       request_id: ${{ steps.gen_request_id.outputs.request_id }}
       result_path: ${{ steps.gen_request_id.outputs.result_path }}
       java_version: ${{ env.JAVA_VERSION }}
       s3_bucket: ${{ env.S3_BUCKET }}
-      async_profiler_version: ${{ env.ASYNC_PROFILER_VERSION }}
     steps:
       - name: Generate request ID
         id: gen_request_id
@@ -31,6 +26,14 @@ jobs:
           ID=CI_E2E_$(date -u +'%Y%m%d_%H%M%S')
           echo "request_id=$ID" >> "$GITHUB_OUTPUT"
           echo "result_path=ci/$ID" >> "$GITHUB_OUTPUT"
+  prepare-test:
+    name: Prepare test artifacts and upload to S3
+    runs-on: ubuntu-latest
+    needs: setup-env
+    permissions:
+      id-token: write
+      contents: read
+    steps:
       - name: Checkout repository
         uses: actions/checkout@v5
       - name: Set up Java
@@ -42,73 +45,41 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Build runner and benchmark jars
         run: |
           mvn -f ./pom.xml -q clean package -DskipTests
       - name: Upload runner jar to S3 (CI dir)
         run: |
-          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar "s3://${{ env.S3_BUCKET }}/${{ steps.gen_request_id.outputs.result_path }}/runner.jar"
+          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar "s3://${{ env.S3_BUCKET }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
       - name: Upload benchmark jar to S3 (CI dir)
         run: |
-          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/${{ steps.gen_request_id.outputs.result_path }}/test-benchmark.jar"
+          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
 #      - name: Export constants for downstream job
 #        id: export_constants
 #        run: |
 #          echo "JAVA_VERSION=${{ env.JAVA_VERSION }}" >> "$GITHUB_OUTPUT"
 #          echo "S3_BUCKET=${{ env.S3_BUCKET }}" >> "$GITHUB_OUTPUT"
-#          echo "ASYNC_PROFILER_VERSION=${{ env.ASYNC_PROFILER_VERSION }}" >> "$GITHUB_OUTPUT"
 
 
   start-runner:
-    name: Start EC2 runner
-    runs-on: ubuntu-latest
+    uses: ./.github/workflows/start_ec2_runner.yml
     permissions:
       id-token: write
       contents: read
-    outputs:
-      label: ${{ steps.start-ec2-runner.outputs.label }}
-      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
-    env:
-      AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
-    steps:
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-      - name: Get latest AL 2023 AMI ID
-        id: latest-ami-id
-        run: |
-          AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
-          echo "Newest AMI ID: $AMI_ID"
-          echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
-      - name: Start EC2 runner
-        id: start-ec2-runner
-        uses: machulav/ec2-github-runner@v2
-        with:
-          mode: start
-          github-token: ${{ secrets.GHA_EC2_PAT }}
-          ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
-          ec2-instance-type: c5.2xlarge
-          subnet-id: ${{ vars.SUBNET_ID }}
-          security-group-id: ${{ vars.SECURITY_GROUP_ID }}
-          iam-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
-          aws-resource-tags: >
-            [
-              {"Key": "project", "Value": "baas"},
-              {"Key": "run_id", "Value": "${{ github.run_id }}" },
-              {"Key": "runner", "Value": "request-benchmark-runner"},
-              {"Key": "ci-run", "Value": "true"}
-            ]
-          pre-runner-script: |
-            sudo yum update -y && \
-            sudo yum install docker git libicu -y && \
-            sudo systemctl enable docker
+    with:
+      aws-region: ${{ vars.AWS_REGION }}
+      subnet-id: ${{ vars.SUBNET_ID }}
+      security-group-id: ${{ vars.SECURITY_GROUP_ID }}
+    secrets:
+      workflow-role-arn: ${{ secrets.WORKFLOW_ROLE_ARN }}
+      runner-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
+      gha-ec2-pat: ${{ secrets.GHA_EC2_PAT }}
 
   call-workflow:
     name: Call benchmark workflow
     needs:
+      - setup-env
       - prepare-test
       - start-runner
     permissions:
@@ -117,14 +88,14 @@ jobs:
     uses: ./.github/workflows/exec-single-benchmark.yml
     with:
       gha-runner-type: ${{ needs.start-runner.outputs.label }}
-      java-version: ${{ needs.prepare-test.outputs.java_version }}
+      java-version: ${{ needs.setup-env.outputs.java_version }}
       benchmark-type: jmh-with-async
-      request-id: ${{ needs.prepare-test.outputs.request_id }}
-      results-path: ${{ needs.prepare-test.outputs.result_path }}
-      benchmark-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/${{ needs.prepare-test.outputs.result_path }}/test-benchmark.jar"
-      runner-path: "s3://${{ needs.prepare-test.outputs.s3_bucket }}/${{ needs.prepare-test.outputs.result_path }}/runner.jar"
-      s3-result-bucket: ${{ needs.prepare-test.outputs.s3_bucket }}
-      async-profiler-version: ${{ needs.prepare-test.outputs.async_profiler_version }}
+      request-id: ${{ needs.setup-env.outputs.request_id }}
+      results-path: ${{ needs.setup-env.outputs.result_path }}
+      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
+      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
+      s3-result-bucket: ${{ needs.setup-env.outputs.s3_bucket }}
+      async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
       parameters: "--tag source=gha-e2e-test Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
     secrets:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
@@ -144,7 +115,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Stop EC2 runner
         uses: machulav/ec2-github-runner@v2
         with:
@@ -160,11 +131,11 @@ jobs:
       id-token: write
       contents: read
     needs:
+      - setup-env
       - call-workflow
-      - prepare-test
     env:
-      REQUEST_ID: ${{ needs.prepare-test.outputs.request_id }}
-      RESULT_PATH: ${{ needs.prepare-test.outputs.result_path }}
+      REQUEST_ID: ${{ needs.setup-env.outputs.request_id }}
+      RESULT_PATH: ${{ needs.setup-env.outputs.result_path }}
       MONGOSH_VERSION: "2.2.4"
       S3_BUCKET: "baas-lynx-main"
     steps:
@@ -174,7 +145,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: ${{ vars.AWS_REGION }}
       - name: Download and install mongosh
         run: |
           wget https://downloads.mongodb.com/compass/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
@@ -194,18 +165,3 @@ jobs:
         run: |
           .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
           .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.REQUEST_ID }}" || exit 1
-#          mongosh "$MONGO_CONNECTION_STRING" --quiet --eval "db.getCollection('jmh_benchmarks').findOne({'_id.requestId': '${{ env.REQUEST_ID }}'})"
-#          mongosh "$MONGO_CONNECTION_STRING" --quiet --eval "db.getCollection('jmh_benchmarks').findOne({'benchmarkMetadata.tags.source': 'gha-e2e-test'})"
-
-
-
-# Step 4: Run assertions
-#log INFO "Step 4: Running assertions..."
-#  log INFO "Verifying if async output and flamegraph exist on S3..."
-#  $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" --key "${REQUEST_ID}/jmh-with-async-output.txt" --check-size || exit 1
-#  $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_BUCKET" \
-#  --key "${REQUEST_ID}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-${ASYNC_EVENT}-forward.html" || exit 1
-#
-#  log INFO "Verifying if document with benchmark results exists in MongoDB..."
-#  $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "$REQUEST_ID" || exit 1
-#  $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value shell-script || exit 1

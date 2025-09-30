@@ -1,0 +1,75 @@
+name: Start EC2-based runner
+
+on:
+  workflow_call:
+    inputs:
+      aws-region:
+        description: "AWS region where resources will be created"
+        required: true
+        type: string
+      subnet-id:
+        description: "EC2 Subnet ID"
+        required: true
+        type: string
+      security-group-id:
+        description: "EC2 Security Group ID"
+        required: true
+        type: string
+    secrets:
+      workflow-role-arn:
+        required: true
+      runner-role-name:
+        required: true
+      gha-ec2-pat:
+        required: true
+    outputs:
+      label:
+        description: "EC2 runner label"
+        value: ${{ jobs.start-runner.outputs.label }}
+      ec2-instance-id:
+        description: "EC2 runner instance ID"
+        value: ${{ jobs.start-runner.outputs.ec2-instance-id }}
+
+jobs:
+  start-runner:
+    name: Start EC2 runner
+    runs-on: ubuntu-latest
+    outputs:
+      label: ${{ steps.start-ec2-runner.outputs.label }}
+      ec2-instance-id: ${{ steps.start-ec2-runner.outputs.ec2-instance-id }}
+    env:
+      AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.workflow-role-arn }}
+          aws-region: ${{ inputs.aws-region }}
+      - name: Get latest AL 2023 AMI ID
+        id: latest-ami-id
+        run: |
+          AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
+          echo "Newest AMI ID: $AMI_ID"
+          echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
+      - name: Start EC2 runner
+        id: start-ec2-runner
+        uses: machulav/ec2-github-runner@v2
+        with:
+          mode: start
+          github-token: ${{ secrets.gha-ec2-pat }}
+          ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
+          ec2-instance-type: c5.2xlarge
+          subnet-id: ${{ inputs.subnet-id }}
+          security-group-id: ${{ inputs.security-group-id }}
+          iam-role-name: ${{ secrets.runner-role-name }}
+          aws-resource-tags: >
+            [
+              {"Key": "project", "Value": "baas"},
+              {"Key": "run_id", "Value": "${{ github.run_id }}" },
+              {"Key": "runner", "Value": "request-benchmark-runner"},
+              {"Key": "ci-run", "Value": "true"}
+            ]
+          pre-runner-script: |
+            sudo yum update -y && \
+            sudo yum install docker git libicu -y && \
+            sudo systemctl enable docker
