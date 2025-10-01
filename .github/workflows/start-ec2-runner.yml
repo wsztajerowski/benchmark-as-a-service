@@ -15,6 +15,14 @@ on:
         description: "EC2 Security Group ID"
         required: true
         type: string
+      tags:
+        description: 'Resource tags as a map'
+        required: false
+        default: |
+          project: baas
+          run_id: ${{ github.run_id }}
+          runner: request-benchmark-runner
+        type: string
     secrets:
       workflow-role-arn:
         required: true
@@ -51,6 +59,16 @@ jobs:
           AMI_ID=`aws ssm get-parameters --names ${{ env.AMI_NAME }} --query 'Parameters[0].[Value]' --output text`
           echo "Newest AMI ID: $AMI_ID"
           echo "AMI_ID=$AMI_ID" >> "$GITHUB_OUTPUT"
+      - name: Save tags to file
+        run: |
+          # Save the input YAML map to a file
+          echo "${{ inputs.tags }}" > tags.yaml
+      - name: Convert YAML to JSON, then map to array of {Key, Value} objects
+        id: convert-tags
+        uses: mikefarah/yq@master
+        with:
+          cmd: |
+            yq -o=json '[to_entries | .[] | {"Key": .key, "Value": .value}]' tags.yaml
       - name: Start EC2 runner
         id: start-ec2-runner
         uses: machulav/ec2-github-runner@v2
@@ -62,13 +80,7 @@ jobs:
           subnet-id: ${{ inputs.subnet-id }}
           security-group-id: ${{ inputs.security-group-id }}
           iam-role-name: ${{ secrets.runner-role-name }}
-          aws-resource-tags: >
-            [
-              {"Key": "project", "Value": "baas"},
-              {"Key": "run_id", "Value": "${{ github.run_id }}" },
-              {"Key": "runner", "Value": "request-benchmark-runner"},
-              {"Key": "ci-run", "Value": "true"}
-            ]
+          aws-resource-tags: ${{ steps.convert-tags.outputs.result }}
           pre-runner-script: |
             sudo yum update -y && \
             sudo yum install docker git libicu -y && \
