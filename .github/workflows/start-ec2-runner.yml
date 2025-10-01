@@ -15,6 +15,11 @@ on:
         description: "EC2 Security Group ID"
         required: true
         type: string
+      ec2-instance-type:
+        description: "EC2 instance type"
+        required: false
+        default: c5.2xlarge
+        type: string
       tags:
         description: 'Resource tags as a map'
         required: false
@@ -76,7 +81,7 @@ jobs:
           mode: start
           github-token: ${{ secrets.gha-ec2-pat }}
           ec2-image-id: ${{ steps.latest-ami-id.outputs.AMI_ID }}
-          ec2-instance-type: c5.2xlarge
+          ec2-instance-type: ${{ inputs.ec2-instance-type }}
           subnet-id: ${{ inputs.subnet-id }}
           security-group-id: ${{ inputs.security-group-id }}
           iam-role-name: ${{ secrets.runner-role-name }}
