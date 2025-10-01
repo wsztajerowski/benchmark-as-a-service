@@ -51,7 +51,7 @@ env:
 
 jobs:
   run-benchmark:
-    name: Run tests
+    name: Run benchmarks
     runs-on: ${{ inputs.gha-runner-type }}
     steps:
       - name: Set the test environment variables
