@@ -88,6 +88,20 @@ Resources:
                 Condition:
                   StringEquals:
                     'ec2:CreateAction': RunInstances
+        - PolicyName: !Sub ${ResourceNamePrefix}-github-actions-workflow-s3-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: AllowPutObject
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                Resource: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/ci/*'
+              - Sid: AllowListObjects
+                Effect: Allow
+                Action:
+                  - s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main'
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -105,8 +119,18 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Policies:
+        - PolicyName: !Sub ${ResourceNamePrefix}-github-actions-runner-s3-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/*'
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
