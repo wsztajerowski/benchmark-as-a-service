@@ -25,7 +25,7 @@ on:
         required: false
         default: |
           project: baas
-          run_id: ${{ github.run_id }}
+          run_id: "${{ github.run_id }}"
           runner: request-benchmark-runner
         type: string
     secrets:
