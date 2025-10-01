@@ -49,7 +49,7 @@ jobs:
       AMI_NAME: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
     steps:
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: aws-actions/configure-aws-credentials@v5
         with:
           role-to-assume: ${{ secrets.workflow-role-arn }}
           aws-region: ${{ inputs.aws-region }}
