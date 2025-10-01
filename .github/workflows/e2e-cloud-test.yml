@@ -6,9 +6,9 @@ on:
 
 env:
   S3_BUCKET: baas-lynx-main
-  AWS_REGION: eu-central-1
   JAVA_VERSION: 21
   JAVA_DISTRIBUTION: temurin
+  MONGOSH_VERSION: 2.5.8
 
 jobs:
   setup-env:
@@ -52,10 +52,12 @@ jobs:
           mvn -f ./pom.xml -q clean package -DskipTests
       - name: Upload runner jar to S3 (CI dir)
         run: |
-          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar "s3://${{ env.S3_BUCKET }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
+          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar \
+          "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
       - name: Upload benchmark jar to S3 (CI dir)
         run: |
-          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar "s3://${{ env.S3_BUCKET }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
+          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
+          "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
 
   start-runner:
     uses: ./.github/workflows/start-ec2-runner.yml
@@ -127,8 +129,6 @@ jobs:
     env:
       REQUEST_ID: ${{ needs.setup-env.outputs.request_id }}
       RESULT_PATH: ${{ needs.setup-env.outputs.result_path }}
-      MONGOSH_VERSION: "2.2.4"
-      S3_BUCKET: "baas-lynx-main"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -143,16 +143,17 @@ jobs:
           tar -xzf mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
           chmod +x mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin/mongosh
           echo "$PWD/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
-
       - name: Verify S3 results
         run: |
-          echo "Verifying if async output and flamegraph exist on S3..."
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" \
+          --key "${{ env.RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
           .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" \
           --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-wall-forward.html" || exit 1
       - name: Verify MongoDB results
         env:
           MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
         run: |
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.REQUEST_ID }}" || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" \
+          --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" \
+          --key "_id.requestId" --value "${{ env.REQUEST_ID }}" || exit 1
