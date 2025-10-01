@@ -81,8 +81,8 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
                 .isNotNull()
                 .containsEntry("_t", "JmhBenchmark")
                 .extracting("jmhResult.secondaryMetrics", as(MAP))
-                .containsKeys("·gc.count", "·class.load", "·compiler.time.total")
-                .doesNotContainKeys("·gc.churn.G1_Eden_Space", "·gc.alloc.rate")
+                .containsKeys("gc.count", "class.load", "compiler.time.total")
+                .doesNotContainKeys("gc.churn.G1_Eden_Space", "gc.alloc.rate")
         );
 
         // and
