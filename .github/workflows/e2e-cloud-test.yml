@@ -29,7 +29,7 @@ jobs:
 
 #  Prepare test artifacts and upload to S3
   prepare-test:
-    name: build
+    name: Build
     runs-on: ubuntu-latest
     needs: setup-env
     permissions:
@@ -61,10 +61,11 @@ jobs:
           "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
 
   start-runner:
-    uses: ./.github/workflows/start-ec2-runner.yml
+    name: Runner
     permissions:
       id-token: write
       contents: read
+    uses: ./.github/workflows/start-ec2-runner.yml
     with:
       aws-region: ${{ vars.AWS_REGION }}
       subnet-id: ${{ vars.SUBNET_ID }}
@@ -126,10 +127,11 @@ jobs:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
 
   stop-runner:
-    uses: ./.github/workflows/stop-ec2-runner.yml
+    name: Runner
     permissions:
       id-token: write
       contents: read
+    uses: ./.github/workflows/stop-ec2-runner.yml
     needs:
       - start-runner
       - call-workflow-with-async
