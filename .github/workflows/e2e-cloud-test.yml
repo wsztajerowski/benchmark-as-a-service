@@ -76,7 +76,7 @@ jobs:
       runner-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
       gha-ec2-pat: ${{ secrets.GHA_EC2_PAT }}
 
-  call-workflow:
+  call-workflow-with-async:
     name: Call benchmark workflow
     needs:
       - setup-env
@@ -100,6 +100,30 @@ jobs:
     secrets:
       MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
 
+  call-workflow-with-profilers:
+    name: Call benchmark workflow
+    needs:
+      - setup-env
+      - prepare-test
+      - start-runner
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/exec-single-benchmark.yml
+    with:
+      gha-runner-type: ${{ needs.start-runner.outputs.label }}
+      java-version: ${{ needs.setup-env.outputs.java_version }}
+      benchmark-type: jmh-with-prof
+      request-id: ${{ needs.setup-env.outputs.request_id }}
+      results-path: ${{ needs.setup-env.outputs.result_path }}
+      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
+      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
+      s3-result-bucket: ${{ needs.setup-env.outputs.s3_bucket }}
+      async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
+      parameters: "--tag source=gha-e2e-test Incrementing_Synchronized -f 1 -wi 1 -i 1 --profiler 'gc=churn=false;alloc=false' --profiler 'jfr=stackDepth=20'"
+    secrets:
+      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+
   stop-runner:
     uses: ./.github/workflows/stop-ec2-runner.yml
     permissions:
@@ -107,7 +131,8 @@ jobs:
       contents: read
     needs:
       - start-runner
-      - call-workflow
+      - call-workflow-with-async
+      - call-workflow-with-profilers
     if: always()
     with:
       label: ${{ needs.start-runner.outputs.label }}
@@ -125,7 +150,8 @@ jobs:
       contents: read
     needs:
       - setup-env
-      - call-workflow
+      - call-workflow-with-async
+      - call-workflow-with-profilers
     env:
       REQUEST_ID: ${{ needs.setup-env.outputs.request_id }}
       RESULT_PATH: ${{ needs.setup-env.outputs.result_path }}
@@ -145,15 +171,14 @@ jobs:
           echo "$PWD/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
       - name: Verify S3 results
         run: |
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" \
-          --key "${{ env.RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" \
-          --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-wall-forward.html" || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-wall-forward.html" || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/jmh-profiler-output.txt" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/profile.jfr" || exit 1
       - name: Verify MongoDB results
         env:
           MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
         run: |
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" \
-          --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" \
-          --key "_id.requestId" --value "${{ env.REQUEST_ID }}" || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.REQUEST_ID }}" || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "jmhResult.secondaryMetrics.jfr" || exit 1
