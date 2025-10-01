@@ -66,6 +66,9 @@ jobs:
       aws-region: ${{ vars.AWS_REGION }}
       subnet-id: ${{ vars.SUBNET_ID }}
       security-group-id: ${{ vars.SECURITY_GROUP_ID }}
+      tags: |
+        project: baas
+        environment: ci-run
     secrets:
       workflow-role-arn: ${{ secrets.WORKFLOW_ROLE_ARN }}
       runner-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
