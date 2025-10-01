@@ -143,6 +143,6 @@ $SCRIPT_DIR/testing-scripts/verify-s3.sh --profile "$AWS_PROFILE" --bucket "$S3_
 
 log INFO "Verifying if document with benchmark results exists in MongoDB..."
 $SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "$REQUEST_ID" || exit 1
-$SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "jmhResult.secondaryMetrics.·jfr" || exit 1
+$SCRIPT_DIR/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "jmhResult.secondaryMetrics.jfr" || exit 1
 
 log INFO "All checks passed successfully!"
