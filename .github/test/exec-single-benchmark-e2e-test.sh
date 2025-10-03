@@ -11,6 +11,7 @@ source "$SCRIPT_DIR/testing-scripts/utils.sh"
 # Hardcoded values for the test
 S3_BUCKET="baas"
 ASYNC_VERSION=4.0
+JAVA_VERSION=25
 ASYNC_EVENT=wall
 AWS_PROFILE="localstack"  # Default AWS profile
 MONGO_CONNECTION_STRING="mongodb://localhost:27017/local_test"  # Default MongoDB connection string
@@ -89,7 +90,7 @@ act -W $SCRIPT_DIR/../workflows/exec-single-benchmark.yml \
 --secret-file $SCRIPT_DIR/act-config/.secrets \
 --var-file $SCRIPT_DIR/act-config/.vars \
 --input gha-runner-type=ubuntu-latest \
---input java-version=24 \
+--input java-version=${JAVA_VERSION} \
 --input benchmark-type=jmh-with-async \
 --input request-id=${REQUEST_ID} \
 --input benchmark-path=${BENCHMARK_S3_KEY} \
@@ -121,7 +122,7 @@ act -W $SCRIPT_DIR/../workflows/exec-single-benchmark.yml \
 --secret-file $SCRIPT_DIR/act-config/.secrets \
 --var-file $SCRIPT_DIR/act-config/.vars \
 --input gha-runner-type=ubuntu-latest \
---input java-version=24 \
+--input java-version=${JAVA_VERSION} \
 --input benchmark-type=jmh-with-prof \
 --input request-id=${REQUEST_ID} \
 --input benchmark-path=${BENCHMARK_S3_KEY} \
