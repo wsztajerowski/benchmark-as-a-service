@@ -6,7 +6,7 @@ on:
 
 env:
   S3_BUCKET: baas-lynx-main
-  JAVA_VERSION: 21
+  JAVA_VERSION: 25
   JAVA_DISTRIBUTION: temurin
   MONGOSH_VERSION: 2.5.8
 
