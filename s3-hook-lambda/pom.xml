@@ -12,7 +12,7 @@
     <packaging>jar</packaging>
     <name>Lambda runner</name>
     <properties>
-        <aws-lambda-java-events.version>3.11.5</aws-lambda-java-events.version>
+        <aws-lambda-java-events.version>3.16.1</aws-lambda-java-events.version>
         <aws.lambda.java.version>1.2.3</aws.lambda.java.version>
     </properties>
 
