@@ -19,17 +19,20 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <!-- plugin versions -->
-        <maven-test-plugins.version>3.1.0</maven-test-plugins.version>
-        <maven-compiler-plugin.version>3.13.0</maven-compiler-plugin.version>
-        <maven-clean-plugin.version>3.3.2</maven-clean-plugin.version>
-        <maven-shade-plugin.version>3.5.1</maven-shade-plugin.version>
+        <maven-test-plugins.version>3.5.4</maven-test-plugins.version>
+        <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>
+        <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
+        <maven-shade-plugin.version>3.6.1</maven-shade-plugin.version>
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <!-- dependency versions -->
         <junit-jupiter.version>5.10.1</junit-jupiter.version>
         <assertj.version>3.23.1</assertj.version>
         <aws.java.sdk.version>2.25.50</aws.java.sdk.version>
-        <testcontainers.version>1.19.5</testcontainers.version>
+        <testcontainers.version>1.21.3</testcontainers.version>
         <slf4j.version>2.0.12</slf4j.version>
+        <json.version>20250517</json.version>
+        <json-unit-assertj.version>4.1.1</json-unit-assertj.version>
+        <jsoup.version>1.21.2</jsoup.version>
     </properties>
     <distributionManagement>
         <repository>
@@ -46,6 +49,12 @@
                 <version>${aws.java.sdk.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <!-- jsoup HTML parser library @ https://jsoup.org/ -->
+                <groupId>org.jsoup</groupId>
+                <artifactId>jsoup</artifactId>
+                <version>${jsoup.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.junit</groupId>
@@ -77,6 +86,18 @@
                 <version>${assertj.version}</version>
                 <scope>test</scope>
             </dependency>
+            <dependency>
+                <groupId>org.json</groupId>
+                <artifactId>json</artifactId>
+                <version>${json.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>net.javacrumbs.json-unit</groupId>
+                <artifactId>json-unit-assertj</artifactId>
+                <version>${json-unit-assertj.version}</version>
+                <scope>test</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
     <build>
@@ -102,12 +123,23 @@
                     <version>${maven-resources-plugin.version}</version>
                 </plugin>
                 <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven-test-plugins.version}</version>
+                    <configuration>
+                        <printSummary>true</printSummary>
+                        <reportFormat>brief</reportFormat>
+                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <artifactId>maven-failsafe-plugin</artifactId>
                     <version>${maven-test-plugins.version}</version>
+                    <configuration>
+                        <printSummary>true</printSummary>
+                        <reportFormat>brief</reportFormat>
+                        <redirectTestOutputToFile>true</redirectTestOutputToFile>
+                    </configuration>
                     <executions>
                         <execution>
                             <goals>
