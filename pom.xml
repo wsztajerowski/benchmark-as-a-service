@@ -29,7 +29,7 @@
         <assertj.version>3.23.1</assertj.version>
         <aws.java.sdk.version>2.25.50</aws.java.sdk.version>
         <testcontainers.version>1.21.3</testcontainers.version>
-        <slf4j.version>2.0.12</slf4j.version>
+        <slf4j.version>2.0.17</slf4j.version>
         <json.version>20250517</json.version>
         <json-unit-assertj.version>4.1.1</json-unit-assertj.version>
         <jsoup.version>1.21.2</jsoup.version>
