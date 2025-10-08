@@ -1,6 +1,5 @@
 package pl.wsztajerowski.services;
 
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -125,7 +124,7 @@ public class JmhWithProfilerSubcommandService {
         return string != null && !string.trim().isEmpty();
     }
 
-    private @Nullable String getProfilerOutputOptionName(String profilerName) {
+    private String getProfilerOutputOptionName(String profilerName) {
         return switch (profilerName) {
             case "async", "jfr" -> "dir";
             default -> null;

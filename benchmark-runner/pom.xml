@@ -12,7 +12,6 @@
     <artifactId>benchmark-runner</artifactId>
     <name>Benchmark runner</name>
 
-
     <properties>
         <!-- dependency versions -->
         <mongodb-driver-sync.version>4.10.1</mongodb-driver-sync.version>
@@ -24,10 +23,8 @@
 
     <dependencies>
         <dependency>
-            <!-- jsoup HTML parser library @ https://jsoup.org/ -->
             <groupId>org.jsoup</groupId>
             <artifactId>jsoup</artifactId>
-            <version>1.16.1</version>
         </dependency>
         <dependency>
             <groupId>software.amazon.awssdk</groupId>
@@ -89,13 +86,11 @@
         <dependency>
             <groupId>org.json</groupId>
             <artifactId>json</artifactId>
-            <version>20231013</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>net.javacrumbs.json-unit</groupId>
             <artifactId>json-unit-assertj</artifactId>
-            <version>3.2.4</version>
             <scope>test</scope>
         </dependency>
         <dependency>
