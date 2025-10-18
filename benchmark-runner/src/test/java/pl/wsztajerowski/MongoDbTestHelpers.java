@@ -1,8 +1,9 @@
 package pl.wsztajerowski;
 
 import com.mongodb.ConnectionString;
-import com.mongodb.MongoClient;
 import com.mongodb.client.FindIterable;
+import com.mongodb.client.MongoClient;
+import com.mongodb.client.MongoClients;
 import org.bson.*;
 import org.bson.types.ObjectId;
 
@@ -31,7 +32,7 @@ public class MongoDbTestHelpers {
 
     public void assertFindResult(String collectionName, BsonDocument filter, Consumer<FindIterable<Document>> resultsAssertion) {
         ConnectionString connection = new ConnectionString(connectionString.toString());
-        try (MongoClient mongoClient = new MongoClient(connection)) {
+        try (MongoClient mongoClient = MongoClients.create(connection)) {
             FindIterable<Document> documents = mongoClient.getDatabase(connection.getDatabase())
                 .getCollection(collectionName)
                 .find(filter);
