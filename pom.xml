@@ -26,19 +26,19 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <maven-dependency-plugin.version>3.9.0</maven-dependency-plugin.version>
         <!-- dependency versions -->
-        <junit-jupiter.version>5.10.1</junit-jupiter.version>
-        <assertj.version>3.27.6</assertj.version>
-        <aws.java.sdk.version>2.35.9</aws.java.sdk.version>
-        <testcontainers.version>2.0.1</testcontainers.version>
-        <slf4j.version>2.0.12</slf4j.version>
-        <json.version>20250517</json.version>
-        <json-unit-assertj.version>5.0.0</json-unit-assertj.version>
-        <jsoup.version>1.21.2</jsoup.version>
         <mongodb-driver-sync.version>5.6.1</mongodb-driver-sync.version>
         <morphia-core.version>2.5.1</morphia-core.version>
         <picocli.version>4.7.7</picocli.version>
+        <aws.java.sdk.version>2.35.9</aws.java.sdk.version>
+        <slf4j.version>2.0.17</slf4j.version>
+        <json.version>20250517</json.version>
+        <jsoup.version>1.21.2</jsoup.version>
         <gson.version>2.13.2</gson.version>
         <gson-javatime-serialisers.version>1.1.2</gson-javatime-serialisers.version>
+        <junit-jupiter.version>6.0.0</junit-jupiter.version>
+        <assertj.version>3.27.6</assertj.version>
+        <testcontainers.version>2.0.1</testcontainers.version>
+        <json-unit-assertj.version>5.0.0</json-unit-assertj.version>
     </properties>
     <distributionManagement>
         <repository>
