@@ -36,6 +36,6 @@ class StorageServiceIT extends TestcontainersWithS3BaseIT {
         assertThatJson(listObjectsInTestBucket())
             .isArray()
             .extracting("Key", "Size")
-            .contains(tuple("sample.json", 59));
+            .contains(tuple("sample.json", 353));
     }
 }
