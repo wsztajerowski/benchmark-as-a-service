@@ -26,19 +26,19 @@
         <maven-resources-plugin.version>3.3.1</maven-resources-plugin.version>
         <maven-dependency-plugin.version>3.9.0</maven-dependency-plugin.version>
         <!-- dependency versions -->
-        <mongodb-driver-sync.version>5.6.1</mongodb-driver-sync.version>
-        <morphia-core.version>2.5.1</morphia-core.version>
-        <picocli.version>4.7.7</picocli.version>
-        <aws.java.sdk.version>2.35.9</aws.java.sdk.version>
-        <slf4j.version>2.0.17</slf4j.version>
+        <junit.bom.version>6.0.1</junit.bom.version>
+        <awssdk.java.bom.version>2.39.2</awssdk.java.bom.version>
+        <testcontainers.bom.version>2.0.2</testcontainers.bom.version>
+        <assertj.version>3.27.7</assertj.version>
         <json.version>20250517</json.version>
+        <json-unit-assertj.version>5.1.0</json-unit-assertj.version>
         <jsoup.version>1.21.2</jsoup.version>
         <gson.version>2.13.2</gson.version>
         <gson-javatime-serialisers.version>1.1.2</gson-javatime-serialisers.version>
-        <junit-jupiter.version>6.0.0</junit-jupiter.version>
-        <assertj.version>3.27.6</assertj.version>
-        <testcontainers.version>2.0.1</testcontainers.version>
-        <json-unit-assertj.version>5.0.0</json-unit-assertj.version>
+        <mongodb-driver-sync.version>5.6.1</mongodb-driver-sync.version>
+        <morphia-core.version>2.5.1</morphia-core.version>
+        <picocli.version>4.7.7</picocli.version>
+        <slf4j.version>2.0.17</slf4j.version>
     </properties>
     <distributionManagement>
         <repository>
@@ -52,23 +52,29 @@
             <dependency>
                 <groupId>software.amazon.awssdk</groupId>
                 <artifactId>bom</artifactId>
-                <version>${aws.java.sdk.version}</version>
+                <version>${awssdk.java.bom.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.junit</groupId>
                 <artifactId>junit-bom</artifactId>
-                <version>${junit-jupiter.version}</version>
+                <version>${junit.bom.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.testcontainers</groupId>
                 <artifactId>testcontainers-bom</artifactId>
-                <version>${testcontainers.version}</version>
+                <version>${testcontainers.bom.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.assertj</groupId>
+                <artifactId>assertj-core</artifactId>
+                <version>${assertj.version}</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <!-- jsoup HTML parser library @ https://jsoup.org/ -->
@@ -110,12 +116,6 @@
                 <groupId>org.slf4j</groupId>
                 <artifactId>slf4j-simple</artifactId>
                 <version>${slf4j.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.assertj</groupId>
-                <artifactId>assertj-core</artifactId>
-                <version>${assertj.version}</version>
-                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>org.json</groupId>
