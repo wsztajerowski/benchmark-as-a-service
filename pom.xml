@@ -27,7 +27,7 @@
         <maven-dependency-plugin.version>3.9.0</maven-dependency-plugin.version>
         <!-- dependency versions -->
         <junit.bom.version>6.0.1</junit.bom.version>
-        <awssdk.java.bom.version>2.39.2</awssdk.java.bom.version>
+        <awssdk.java.bom.version>2.41.19</awssdk.java.bom.version>
         <testcontainers.bom.version>2.0.2</testcontainers.bom.version>
         <assertj.version>3.27.7</assertj.version>
         <json.version>20250517</json.version>
