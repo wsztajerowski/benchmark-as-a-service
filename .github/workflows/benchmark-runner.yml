@@ -79,8 +79,7 @@ jobs:
       gha-runner-type: ${{ needs.start-runner.outputs.label }}
       aws-region: ${{ vars.AWS_REGION }}
       async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
-    secrets:
-      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+      ssm-param-prefix: ${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}
 
   stop-runner:
     uses: ./.github/workflows/stop-ec2-runner.yml

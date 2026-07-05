@@ -1,0 +1,34 @@
+@startuml
+actor Developer
+participant "Local shell\n(run-remote-benchmark.zsh)" as Script
+participant "Git (lynx-journal)" as Git
+participant "Maven" as Maven
+participant "AWS S3\n(s3://{S3_BUCKET})" as S3
+participant "GitHub\n(benchmark-as-a-service repo)\n(GitHub Actions)" as GH
+participant "AWS Provisioner\n(in workflow)" as AWSProv
+participant "Worker Instance\n(EC2/ECS/Fargate)" as Worker
+participant "MongoDB\n(BaaS benchmark DB)" as MongoDB
+
+Developer -> Script: run run-remote-benchmark.zsh [options]
+Script -> Git: get_current_branch()
+alt build not skipped
+  Script -> Maven: mvn -f ../pom.xml clean package
+  Maven --> Script: jmh-benchmarks.jar produced
+  Script -> S3: upload jmh-benchmarks.jar -> s3://{bucket}/{branch}/jmh-benchmarks.jar
+end
+Script -> GH: gh workflow run benchmark-runner.yml --repo benchmark-as-a-service --ref {branch} \
+  -f request_id=... -f results_path=... -f benchmark_path=s3://...
+GH -> AWSProv: start/provision workers (using workflow steps)
+AWSProv -> Worker: launch configured instance(s)
+Worker -> S3: download jmh-benchmarks.jar
+Worker -> Worker: run JMH benchmarks
+Worker -> S3: upload outputs -> s3://{bucket}/{results_path}/
+Worker -> MongoDB: insert benchmark metrics/docs
+Worker -> GH: update job status (workflow logs & status)
+GH -> Script: gh returns run id (Script polls with wait-for-gha-run.sh)
+Script -> GH: gh run list / wait-for-gha-run.sh polls until run finishes
+note right of Script: after completion:
+Script -> MongoDB: mongosh "$BENCHMARK_DB_CONNECTION_STRING" --eval "$QUERY" (if defined)
+MongoDB --> Script: query results
+Script -> Developer: print results table and S3 console URL
+@enduml
