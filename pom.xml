@@ -227,6 +227,5 @@
         <module>fake-jmh-benchmarks</module>
         <module>fake-stress-tests</module>
         <module>benchmark-runner</module>
-        <module>s3-hook-lambda</module>
     </modules>
 </project>

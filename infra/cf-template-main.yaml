@@ -3,9 +3,6 @@ Parameters:
     Description: Prefix for all object's names created by stack
     Type: String
     Default: "baas"
-  S3LambdaBucketName:
-    Type: String
-    Description: Name of the S3 bucket where the Lambda code is stored.
   OIDCProviderArn:
     Description: Arn for the GitHub OIDC Provider.
     Default: ""
@@ -25,17 +22,6 @@ Resources:
     Type: AWS::S3::Bucket
     Properties:
       BucketName: !Sub ${ResourceNamePrefix}-main
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: 's3:ObjectCreated:*'
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: 'prefix'
-                    Value: 'requests/'
-                  - Name: 'suffix'
-                    Value: '.json'
-            Function: !GetAtt S3HookLambdaFunction.Arn
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -154,67 +140,6 @@ Resources:
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
-  S3HookLambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: 'lambda.amazonaws.com'
-            Action: 'sts:AssumeRole'
-      Policies:
-        - PolicyName: LambdaBasicExecution
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'logs:CreateLogGroup'
-                  - 'logs:CreateLogStream'
-                  - 'logs:PutLogEvents'
-                Resource: 'arn:aws:logs:*:*:*'
-              - Effect: Allow
-                Action:
-                  - 's3:GetObject'
-                  - 's3:PutObject'
-                  - 's3:DeleteObject'
-                Resource: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/*'
-              - Effect: Allow
-                Action:
-                  - 'ssm:GetParameter'
-                Resource: !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/*'
-      Tags:
-        - Key: project
-          Value: !Sub ${ResourceNamePrefix}
-  S3HookLambdaFunction:
-    Type: 'AWS::Lambda::Function'
-    Properties:
-      Handler: pl.wsztajerowski.s3hook.App::handleRequest
-      Runtime: java21
-      Timeout: 20
-      MemorySize: 512
-      Code:
-        S3Bucket: !Ref S3LambdaBucketName
-        S3Key: s3-hook-lambda.jar
-      Description: Lambda triggered by JSON request created on S3 bucket, which launch GitHub workflow
-      Role: !GetAtt S3HookLambdaExecutionRole.Arn
-      Environment:
-        Variables:
-          SSM_PARAM_PREFIX: !Sub ${ResourceNamePrefix}
-      Tags:
-        - Key: project
-          Value: !Sub ${ResourceNamePrefix}
-
-  S3HookLambdaPermissionForS3:
-    Type: 'AWS::Lambda::Permission'
-    Properties:
-      Action: 'lambda:InvokeFunction'
-      FunctionName: !Ref S3HookLambdaFunction
-      Principal: 's3.amazonaws.com'
-      SourceArn: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main'
-
 Outputs:
   S3BucketArn:
     Value: !GetAtt S3MainBucket.Arn
@@ -224,6 +149,3 @@ Outputs:
     Value: !GetAtt RunnerRole.Arn
   RunnerInstanceProfileArn:
     Value: !GetAtt RunnerInstanceProfile.Arn
-  LambdaFunctionArn:
-    Description: "ARN of the S3 hook Lambda function"
-    Value: !GetAtt S3HookLambdaFunction.Arn
