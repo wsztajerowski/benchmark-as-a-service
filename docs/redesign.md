@@ -99,7 +99,7 @@ GitHubOrgSSMParam:
   Resource: "arn:aws:ec2:*:*:instance/*"
   Condition:
     StringEquals:
-      aws:ResourceTag/baas:role: benchmark-runner
+      aws:ResourceTag/baas-role: benchmark-runner
 
 # Read MongoDB connection string from SSM at runtime
 - Effect: Allow
@@ -320,7 +320,7 @@ baas run jmh-with-async -- MyBenchmark -f 2 -wi 3 -i 5
  │       IamInstanceProfile.Name: <prefix>-github-actions-runner-role
  │       NetworkInterfaces: [{ SubnetId, Groups, AssociatePublicIpAddress: true }]  # public egress
  │       BlockDeviceMappings: [{ DeviceName: /dev/xvda, Ebs: { VolumeSize: 30, VolumeType: gp3 } }]
- │       Tags: project=baas, baas:role=benchmark-runner, baas:request-id=<id>, <user --tag values>
+ │       Tags: project=baas, baas-role=benchmark-runner, baas:request-id=<id>, <user --tag values>
  │       → instanceId
  ├─ 8. register JVM shutdown hook: ec2:TerminateInstances(instanceId)  [Ctrl+C safety net]
  └─ 9. poll every 15 s:
@@ -419,7 +419,7 @@ Three independent layers ensure no orphaned instance, with a **configurable wall
 
 `baas teardown` deletes the stack with data-protection gates. All checks run **before** any destructive call:
 
-1. **No active runs** — `ec2:DescribeInstances` filtered on `tag:baas:role=benchmark-runner` + `instance-state-name=running`; abort if any exist.
+1. **No active runs** — `ec2:DescribeInstances` filtered on `tag:baas-role=benchmark-runner` + `instance-state-name=running`; abort if any exist.
 2. **Explicit confirmation** — interactively retype the stack name, or pass `--yes`.
 3. **Data is opt-in to delete:**
    - The S3 results bucket keeps `DeletionPolicy: Retain` — CF will not delete it. It is emptied + deleted **only** with `--delete-bucket`.
@@ -457,7 +457,7 @@ Sequence: empty bucket (if `--delete-bucket`) → `cloudformation:DeleteStack` �
       "Resource": "*" },
     { "Sid": "EC2TerminateOwnBenchmarkInstances", "Effect": "Allow",
       "Action": "ec2:TerminateInstances", "Resource": "arn:aws:ec2:*:*:instance/*",
-      "Condition": { "StringEquals": { "aws:ResourceTag/baas:role": "benchmark-runner" } } },
+      "Condition": { "StringEquals": { "aws:ResourceTag/baas-role": "benchmark-runner" } } },
     { "Sid": "EC2TagOnLaunch", "Effect": "Allow",
       "Action": "ec2:CreateTags", "Resource": "*",
       "Condition": { "StringEquals": { "ec2:CreateAction": "RunInstances" } } },
@@ -568,7 +568,7 @@ SDK throws; CLI prints the error and exits. No instance created → shutdown hoo
 `DescribeStacks` first → exists ⇒ `UpdateStack`, else `CreateStack`; no-op update ⇒ `NoUpdateToPerformException` ⇒ "stack is up to date". ✓
 
 ### Scenario H: `baas teardown` with a run in flight
-`DescribeInstances` finds a `baas:role=benchmark-runner` instance in `running` → abort with a message listing instance IDs. ✓ (§6 gate 1.)
+`DescribeInstances` finds a `baas-role=benchmark-runner` instance in `running` → abort with a message listing instance IDs. ✓ (§6 gate 1.)
 
 ---
 
