@@ -40,8 +40,10 @@ on:
       runner-path:    # Used in tests
         type: string
         description: S3 url to runner jar
-    secrets:
-      MONGO_CONNECTION_STRING:
+      ssm-param-prefix:
+        type: string
+        default: "baas"
+        description: SSM parameter prefix (e.g. 'baas'); used to fetch MongoDB URI at runtime.
 
 env:
   JAVA_VERSION: ${{ inputs.java-version }}
@@ -90,9 +92,20 @@ jobs:
         run: aws s3 cp ${{ inputs.runner-path }} benchmark-runner.jar
       - name: Download benchmark from S3
         run: aws s3 cp ${{ inputs.benchmark-path }} benchmark-under-test.jar
+      - name: Fetch MongoDB URI from SSM
+        run: |
+          MONGO_URI=$(aws ssm get-parameter \
+            --name "/${{ inputs.ssm-param-prefix }}/mongo/connection-string" \
+            --with-decryption --query Parameter.Value --output text \
+            --region "${{ env.AWS_REGION }}")
+          if [ -z "$MONGO_URI" ]; then
+            echo "ERROR: SSM parameter /${{ inputs.ssm-param-prefix }}/mongo/connection-string not found or empty."
+            echo "Set RESOURCE_NAME_PREFIX GHA variable to match the CloudFormation ResourceNamePrefix."
+            exit 1
+          fi
+          echo "MONGO_CONNECTION_STRING=$MONGO_URI" >> "$GITHUB_ENV"
       - name: Run benchmarks
         env:
-          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
           ASYNC_PATH: /app/async-profiler/lib/libasyncProfiler.so
         run: |
           java -jar benchmark-runner.jar ${{ inputs.benchmark-type }} \

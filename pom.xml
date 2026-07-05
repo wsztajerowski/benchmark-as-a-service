@@ -39,6 +39,7 @@
         <morphia-core.version>2.5.2</morphia-core.version>
         <picocli.version>4.7.7</picocli.version>
         <slf4j.version>2.0.17</slf4j.version>
+        <jackson-dataformat-yaml.version>2.17.3</jackson-dataformat-yaml.version>
     </properties>
     <distributionManagement>
         <repository>
@@ -128,6 +129,11 @@
                 <artifactId>json-unit-assertj</artifactId>
                 <version>${json-unit-assertj.version}</version>
                 <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.dataformat</groupId>
+                <artifactId>jackson-dataformat-yaml</artifactId>
+                <version>${jackson-dataformat-yaml.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>
@@ -227,5 +233,6 @@
         <module>fake-jmh-benchmarks</module>
         <module>fake-stress-tests</module>
         <module>benchmark-runner</module>
+        <module>baas-cli</module>
     </modules>
 </project>

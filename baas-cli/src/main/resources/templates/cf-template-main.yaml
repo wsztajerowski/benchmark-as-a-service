@@ -310,6 +310,46 @@ Resources:
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
+
+  # ─── GitHub SSM params (inlined from bootstrap stack) ─────────────────────────
+  # Required by the GHA CI path (WorkflowRole trust policy). Not used by baas CLI.
+
+  GitHubOrgSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ResourceNamePrefix}/github/org'
+      Type: String
+      Value: !Ref GitHubOrg
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  GitHubRepoSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ResourceNamePrefix}/github/repo'
+      Type: String
+      Value: !Ref GitHubRepo
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  GitHubWorkflowIdSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ResourceNamePrefix}/github/workflowid'
+      Type: String
+      Value: !Sub ${GHABenchmarkWorkflowId}
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  GitHubWorkflowBranchSSMParam:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: !Sub '/${ResourceNamePrefix}/github/workflowbranch'
+      Type: String
+      Value: !Ref GHABenchmarkWorkflowBranch
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
 Outputs:
   BucketName:
     Value: !Ref S3MainBucket
