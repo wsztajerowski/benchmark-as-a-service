@@ -173,7 +173,7 @@ The current main stack provisions:
 - `<prefix>-main` S3 bucket (DeletionPolicy: Retain)
 - `RunnerSecurityGroup` — no inbound rules; outbound HTTPS + HTTP (for yum)
 - `WorkflowRole` – assumed by GHA via OIDC; manages EC2 + `s3:PutObject` on `ci/*`
-- `RunnerRole` + `RunnerInstanceProfile` – assumed by EC2; full S3 CRUD + `ec2:TerminateInstances` (tag-scoped to `baas:role=benchmark-runner`) + `ssm:GetParameter` for mongo and AMI paths
+- `RunnerRole` + `RunnerInstanceProfile` – assumed by EC2; full S3 CRUD + `ec2:TerminateInstances` (tag-scoped to `baas-role=benchmark-runner`) + `ssm:GetParameter` for mongo and AMI paths
 - `GithubOidc` – OIDC provider (conditional)
 - GitHub SSM params inlined: `/<prefix>/github/{org,repo,workflowid,workflowbranch}`
 - **No Lambda function, no S3 event trigger** — all Lambda resources have been removed

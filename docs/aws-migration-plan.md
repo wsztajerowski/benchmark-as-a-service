@@ -201,7 +201,7 @@ rm scripts/run-remote-benchmark.zsh \
 - [ ] `baas teardown` (in a scratch stack) → aborts when a run is in flight; with `--yes` deletes the stack but retains the bucket unless `--delete-bucket`
 - [ ] GHA `benchmark-runner.yml` manual dispatch → succeeds with new `SUBNET_ID`/`SECURITY_GROUP_ID`
 - [ ] GHA `e2e-cloud-test.yml` → all assertions pass
-- [ ] No orphaned EC2 instances: `aws ec2 describe-instances --filters "Name=tag:baas:role,Values=benchmark-runner" "Name=instance-state-name,Values=running"`
+- [ ] No orphaned EC2 instances: `aws ec2 describe-instances --filters "Name=tag:baas-role,Values=benchmark-runner" "Name=instance-state-name,Values=running"`
 - [ ] Old `baas-parameters` stack deleted; `<prefix>-lambda` bucket emptied and deleted
 - [ ] `s3-hook-lambda/` removed; benchmark-workflow scripts removed; version/dependency scripts retained
 
