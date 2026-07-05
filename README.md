@@ -5,10 +5,6 @@
 
 Self-executing JAR for running JMH/JCStress benchmarks.
 
-### s3-hook-lambda  
-
-AWS Lambda triggered by S3 hook and launching GitHub Action workflow for creating benchmark running env. Details: [README.md](s3-hook-lambda%2FREADME.md)
-
 ### infra  
 
 CloudFormation's templates for setting up all required infrastructure on AWS. See details: [README.md](infra%2FREADME.md)
