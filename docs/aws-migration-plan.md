@@ -2,6 +2,11 @@
 
 > Companion to [`redesign.md`](redesign.md). This document covers the step-by-step procedure for migrating from the current two-stack CloudFormation deployment + GitHub Actions trigger to the new single-stack deployment driven by the self-contained `baas` CLI.
 
+> **Superseded:** The setup/teardown and command-structure sections of this plan assumed a
+> single unified stack. That approach has been superseded by a core/CI stack split and the
+> `baas admin setup`/`baas admin teardown` command grouping — see
+> `openspec/changes/baas-cli-core-ci-split/`.
+
 ---
 
 ## Current State

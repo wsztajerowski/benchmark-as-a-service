@@ -1,5 +1,10 @@
 # BaaS Redesign – Self-contained CLI
 
+> **Superseded:** The setup/teardown provisioning model (§1, §6) and command structure (§3
+> "Command reference") described below reflect the original single-stack design. They have
+> been superseded by the core/CI stack split and the `baas admin` subcommand group — see
+> `openspec/changes/baas-cli-core-ci-split/`.
+
 ## Goal
 
 Replace the `run-remote-benchmark.zsh` + GitHub Actions `workflow_dispatch` dependency with a self-contained Java CLI (`baas`) that provisions AWS infrastructure, launches EC2 benchmark runners, manages the MongoDB connection string, polls for results, and tears everything down — **with no dependency on GitHub Actions**. The existing GHA workflows (`benchmark-runner.yml`, `e2e-cloud-test.yml`, `release.yml`) are retained **only for automated CI**; the CLI never dispatches or depends on them.
