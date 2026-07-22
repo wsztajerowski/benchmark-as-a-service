@@ -5,16 +5,14 @@ import picocli.CommandLine.Command;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
-import pl.wsztajerowski.baas.commands.SetupCommand;
-import pl.wsztajerowski.baas.commands.TeardownCommand;
+import pl.wsztajerowski.baas.commands.admin.AdminCommand;
 
 @Command(
     name = "baas",
     mixinStandardHelpOptions = true,
     description = "Benchmark as a Service CLI — provision AWS infrastructure and run benchmarks.",
     subcommands = {
-        SetupCommand.class,
-        TeardownCommand.class,
+        AdminCommand.class,
         ConfigCommand.class,
         RunCommand.class,
         ResultsCommand.class

@@ -37,7 +37,7 @@ public class CloudFormationService {
             if (status == StackStatus.ROLLBACK_COMPLETE) {
                 throw new IllegalStateException(
                     "Stack '" + stackName + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
-                    "Delete it first with: baas teardown --stack-name " + stackName + " --yes");
+                    "Delete it first with: baas admin teardown --stack-name " + stackName + " --yes");
             }
             try {
                 cf.updateStack(UpdateStackRequest.builder()

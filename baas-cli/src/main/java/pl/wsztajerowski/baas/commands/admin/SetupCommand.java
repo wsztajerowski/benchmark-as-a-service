@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas.commands;
+package pl.wsztajerowski.baas.commands.admin;
 
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -11,6 +11,7 @@ import pl.wsztajerowski.baas.infra.SsmService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Callable;
@@ -22,32 +23,11 @@ import java.util.concurrent.Callable;
 )
 public class SetupCommand implements Callable<Integer> {
 
-    @Option(names = "--prefix", description = "Resource name prefix (default: baas).")
-    String prefix;
-
     @Option(names = "--region", description = "AWS region (default: eu-central-1).")
     String region;
 
-    @Option(names = "--stack-name", description = "CloudFormation stack name (default: baas-main).")
-    String stackName;
-
     @Option(names = "--aws-profile", description = "AWS CLI profile.")
     String awsProfile;
-
-    @Option(names = "--github-org", description = "GitHub organisation name.", defaultValue = "wsztajerowski")
-    String githubOrg;
-
-    @Option(names = "--github-repo", description = "GitHub repository name.", defaultValue = "benchmark-as-a-service")
-    String githubRepo;
-
-    @Option(names = "--workflow-id", description = "GHA benchmark workflow ID.")
-    String workflowId;
-
-    @Option(names = "--workflow-branch", description = "GHA workflow branch.", defaultValue = "main")
-    String workflowBranch;
-
-    @Option(names = "--oidc-provider-arn", description = "Existing OIDC provider ARN (omit to create a new one).", defaultValue = "")
-    String oidcProviderArn;
 
     @Option(names = "--use-existing-vpc", description = "Skip VPC/networking creation and use provided IDs.")
     boolean useExistingVpc;
@@ -69,14 +49,24 @@ public class SetupCommand implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         BaasConfig config = configService.load();
-        if (prefix != null) config.setPrefix(prefix);
         if (region != null) config.getAws().setRegion(region);
-        if (stackName != null) config.getAws().setStackName(stackName);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
-        String resolvedPrefix = config.getPrefix();
         String resolvedRegion = config.getAws().getRegion();
-        String resolvedStack = config.getAws().getStackName();
+
+        var factory = new AwsClientFactory(resolvedRegion, config.getAws().getProfile());
+
+        String callerArn;
+        try (var sts = factory.sts()) {
+            callerArn = sts.getCallerIdentity().arn();
+        }
+        String resolvedPrefix = computePrefix(callerArn);
+        String resolvedStack = "baas-" + resolvedPrefix;
+
+        config.setPrefix(resolvedPrefix);
+        config.getAws().setCoreStackName(resolvedStack);
+
+        System.out.println("Using prefix: " + resolvedPrefix + " (derived from caller ARN)");
 
         if (useExistingVpc && (existingVpcId == null || existingSubnetId == null || existingSecurityGroupId == null)) {
             System.err.println("--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id.");
@@ -87,17 +77,10 @@ public class SetupCommand implements Callable<Integer> {
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("ResourceNamePrefix", resolvedPrefix);
-        params.put("OIDCProviderArn", oidcProviderArn != null ? oidcProviderArn : "");
-        params.put("GitHubOrg", githubOrg);
-        params.put("GitHubRepo", githubRepo);
-        params.put("GHABenchmarkWorkflowId", workflowId != null ? workflowId : "0");
-        params.put("GHABenchmarkWorkflowBranch", workflowBranch);
-        params.put("UseExistingVpc", useExistingVpc ? "true" : "false");
+        params.put("UseExistingVpc", Boolean.toString(useExistingVpc));
         params.put("ExistingVpcId", existingVpcId != null ? existingVpcId : "");
         params.put("ExistingSubnetId", existingSubnetId != null ? existingSubnetId : "");
         params.put("ExistingSecurityGroupId", existingSecurityGroupId != null ? existingSecurityGroupId : "");
-
-        var factory = new AwsClientFactory(resolvedRegion, config.getAws().getProfile());
 
         try (var cf = factory.cloudFormation()) {
             new CloudFormationService(cf).createOrUpdateStack(resolvedStack, templateBody, params);
@@ -134,8 +117,41 @@ public class SetupCommand implements Callable<Integer> {
         return 0;
     }
 
+    /**
+     * Derives a short, deterministic, lowercase prefix from the caller's ARN:
+     * {@code prefix = lowercase(base32(sha256(arn)))[0:8]}
+     */
+    static String computePrefix(String arn) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(arn.getBytes(StandardCharsets.UTF_8));
+        return base32Encode(hash).substring(0, 8).toLowerCase();
+    }
+
+    /**
+     * RFC 4648 Base32 encoding (no padding).
+     */
+    private static String base32Encode(byte[] data) {
+        final String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+        StringBuilder sb = new StringBuilder();
+        int buffer = 0;
+        int bitsLeft = 0;
+        for (byte b : data) {
+            buffer = (buffer << 8) | (b & 0xFF);
+            bitsLeft += 8;
+            while (bitsLeft >= 5) {
+                bitsLeft -= 5;
+                sb.append(alphabet.charAt((buffer >> bitsLeft) & 0x1F));
+            }
+        }
+        if (bitsLeft > 0) {
+            buffer <<= (5 - bitsLeft);
+            sb.append(alphabet.charAt(buffer & 0x1F));
+        }
+        return sb.toString();
+    }
+
     private String loadTemplate() throws IOException {
-        try (InputStream is = getClass().getResourceAsStream("/templates/cf-template-main.yaml")) {
+        try (InputStream is = getClass().getResourceAsStream("/templates/cf-template-core.yaml")) {
             if (is == null) throw new IllegalStateException("CF template not found in classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }

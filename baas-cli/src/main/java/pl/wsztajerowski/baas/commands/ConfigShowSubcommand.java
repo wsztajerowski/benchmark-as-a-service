@@ -25,7 +25,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         System.out.println("aws:");
         System.out.println("  profile:                  " + config.getAws().getProfile());
         System.out.println("  region:                   " + config.getAws().getRegion());
-        System.out.println("  stackName:                " + config.getAws().getStackName());
+        System.out.println("  coreStackName:            " + config.getAws().getCoreStackName());
         System.out.println("  bucket:                   " + config.getAws().getBucket());
         System.out.println("  subnetId:                 " + config.getAws().getSubnetId());
         System.out.println("  securityGroupId:          " + config.getAws().getSecurityGroupId());

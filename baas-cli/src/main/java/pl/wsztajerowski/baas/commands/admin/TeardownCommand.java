@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas.commands;
+package pl.wsztajerowski.baas.commands.admin;
 
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -35,7 +35,7 @@ public class TeardownCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
-        String resolvedStack = stackName != null ? stackName : config.getAws().getStackName();
+        String resolvedStack = stackName != null ? stackName : config.getAws().getCoreStackName();
 
         var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
 
@@ -86,7 +86,6 @@ public class TeardownCommand implements Callable<Integer> {
             System.out.println("  Delete manually if no longer needed, or re-run with --delete-bucket.");
         }
         System.out.println("MongoDB cluster NOT touched (connect-only; delete it manually in Atlas if desired).");
-        System.out.println("GitHub OIDC provider retained (DeletionPolicy: Retain). Delete manually in IAM if no longer needed.");
         return 0;
     }
 }

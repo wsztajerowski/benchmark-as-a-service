@@ -6,6 +6,7 @@ import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.services.sts.StsClient;
 
 public class AwsClientFactory {
 
@@ -37,6 +38,12 @@ public class AwsClientFactory {
 
     public CloudFormationClient cloudFormation() {
         var b = CloudFormationClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public StsClient sts() {
+        var b = StsClient.builder().region(region);
         if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
         return b.build();
     }

@@ -31,7 +31,7 @@ public class BaasConfig {
         private String securityGroupId;
         private String vpcId;
         private String runnerInstanceProfileName;
-        private String stackName = "baas-main";
+        private String coreStackName = "baas-main";
 
         public String getProfile() { return profile; }
         public void setProfile(String profile) { this.profile = profile; }
@@ -54,8 +54,8 @@ public class BaasConfig {
         public String getRunnerInstanceProfileName() { return runnerInstanceProfileName; }
         public void setRunnerInstanceProfileName(String name) { this.runnerInstanceProfileName = name; }
 
-        public String getStackName() { return stackName; }
-        public void setStackName(String stackName) { this.stackName = stackName; }
+        public String getCoreStackName() { return coreStackName; }
+        public void setCoreStackName(String coreStackName) { this.coreStackName = coreStackName; }
     }
 
     public static class Ec2Config {

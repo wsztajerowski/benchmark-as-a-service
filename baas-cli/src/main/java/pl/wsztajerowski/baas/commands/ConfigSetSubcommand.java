@@ -53,7 +53,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
         if (region != null) config.getAws().setRegion(region);
         if (bucket != null) config.getAws().setBucket(bucket);
-        if (stackName != null) config.getAws().setStackName(stackName);
+        if (stackName != null) config.getAws().setCoreStackName(stackName);
         if (instanceType != null) config.getEc2().setDefaultInstanceType(instanceType);
         if (benchmarkTimeout != null) config.getEc2().setBenchmarkTimeoutSeconds(benchmarkTimeout);
         if (wallClock != null) config.getEc2().setWallClockHardKillSeconds(wallClock);
