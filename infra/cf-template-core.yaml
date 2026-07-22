@@ -3,22 +3,6 @@ Parameters:
     Description: Prefix for all resource names created by this stack.
     Type: String
     Default: "baas"
-  OIDCProviderArn:
-    Description: ARN of an existing GitHub OIDC provider. Leave empty to create a new one.
-    Default: ""
-    Type: String
-  OIDCAudience:
-    Description: Audience for configure-aws-credentials.
-    Default: "sts.amazonaws.com"
-    Type: String
-  GitHubOrg:
-    Description: GitHub organisation or username (case-sensitive).
-    Default: "wsztajerowski"
-    Type: String
-  GitHubRepo:
-    Description: GitHub repository name (case-sensitive).
-    Default: "benchmark-as-a-service"
-    Type: String
   UseExistingVpc:
     Description: Set to 'true' to skip networking creation and use existing IDs.
     Type: String
@@ -38,7 +22,6 @@ Parameters:
     Default: ""
 
 Conditions:
-  CreateOIDCProvider: !Equals [!Ref OIDCProviderArn, ""]
   CreateNetworking: !Equals [!Ref UseExistingVpc, "false"]
 
 Resources:
@@ -126,7 +109,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Condition: CreateNetworking
     Properties:
-      GroupDescription: Benchmark runner security group — no inbound, outbound HTTPS only.
+      GroupDescription: Benchmark runner security group. No inbound, outbound HTTPS only.
       VpcId: !Ref BaasVpc
       SecurityGroupEgress:
         - IpProtocol: tcp
@@ -149,9 +132,8 @@ Resources:
 
   S3MainBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
     Properties:
-      BucketName: !Sub ${ResourceNamePrefix}-main
+      BucketName: !Sub baas-${ResourceNamePrefix}
       VersioningConfiguration:
         Status: Enabled
       BucketEncryption:
@@ -171,78 +153,10 @@ Resources:
 
   # ─── IAM ──────────────────────────────────────────────────────────────────────
 
-  WorkflowRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub ${ResourceNamePrefix}-github-actions-workflow-role
-      AssumeRolePolicyDocument:
-        Statement:
-          - Effect: Allow
-            Action: sts:AssumeRoleWithWebIdentity
-            Principal:
-              Federated: !If
-                - CreateOIDCProvider
-                - !Ref GithubOidc
-                - !Ref OIDCProviderArn
-            Condition:
-              StringEquals:
-                token.actions.githubusercontent.com:aud: !Ref OIDCAudience
-              StringLike:
-                token.actions.githubusercontent.com:sub: !Sub
-                  - "repo:${Org}/${Repo}:*"
-                  - Org: !Ref GitHubOrg
-                    Repo: !Ref GitHubRepo
-      Policies:
-        - PolicyName: !Sub ${ResourceNamePrefix}-gha-workflow-ec2-policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action:
-                  - ec2:RunInstances
-                  - ec2:DescribeInstances
-                  - ec2:DescribeInstanceStatus
-                  - ec2:ReplaceIamInstanceProfileAssociation
-                  - ec2:AssociateIamInstanceProfile
-                Resource: "*"
-              - Effect: Allow
-                Action: ec2:TerminateInstances
-                Resource: "arn:aws:ec2:*:*:instance/*"
-                Condition:
-                  StringEquals:
-                    aws:ResourceTag/baas-role: benchmark-runner
-              - Effect: Allow
-                Action: iam:PassRole
-                Resource: !GetAtt RunnerRole.Arn
-              - Effect: Allow
-                Action: ssm:GetParameters
-                Resource: "arn:aws:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
-              - Effect: Allow
-                Action: ec2:CreateTags
-                Resource: "*"
-                Condition:
-                  StringEquals:
-                    ec2:CreateAction: RunInstances
-        - PolicyName: !Sub ${ResourceNamePrefix}-gha-workflow-s3-policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: s3:PutObject
-                Resource:
-                  - !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/ci/*'
-                  - !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/runs/*'
-              - Effect: Allow
-                Action: s3:ListBucket
-                Resource: !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main'
-      Tags:
-        - Key: project
-          Value: !Sub ${ResourceNamePrefix}
-
   RunnerRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${ResourceNamePrefix}-github-actions-runner-role
+      RoleName: !Sub ${ResourceNamePrefix}-runner-role
       Path: "/"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -263,8 +177,8 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main'
-                  - !Sub 'arn:aws:s3:::${ResourceNamePrefix}-main/*'
+                  - !Sub 'arn:aws:s3:::baas-${ResourceNamePrefix}'
+                  - !Sub 'arn:aws:s3:::baas-${ResourceNamePrefix}/*'
         - PolicyName: !Sub ${ResourceNamePrefix}-runner-ec2-terminate-policy
           PolicyDocument:
             Version: "2012-10-17"
@@ -289,41 +203,25 @@ Resources:
   RunnerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
-      InstanceProfileName: !Sub ${ResourceNamePrefix}-github-actions-runner-role
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-runner-role
       Path: /
       Roles:
         - !Ref RunnerRole
 
-  GithubOidc:
-    Type: AWS::IAM::OIDCProvider
-    Condition: CreateOIDCProvider
-    DeletionPolicy: Retain
-    Properties:
-      Url: https://token.actions.githubusercontent.com
-      ClientIdList:
-        - sts.amazonaws.com
-      ThumbprintList:
-        - 6938fd4d98bab03faadb97b34396831e3780aea1
-        - 1c58a3a8518e8759bf075b76b750d4f2df264fcd
-      Tags:
-        - Key: project
-          Value: !Sub ${ResourceNamePrefix}
 Outputs:
   BucketName:
     Value: !Ref S3MainBucket
+  S3BucketArn:
+    Value: !GetAtt S3MainBucket.Arn
   RunnerRoleName:
     Value: !Ref RunnerRole
   RunnerRoleArn:
     Value: !GetAtt RunnerRole.Arn
   RunnerInstanceProfileName:
     Value: !Ref RunnerInstanceProfile
-  WorkflowRoleArn:
-    Value: !GetAtt WorkflowRole.Arn
   SubnetId:
     Value: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
   SecurityGroupId:
     Value: !If [CreateNetworking, !Ref RunnerSecurityGroup, !Ref ExistingSecurityGroupId]
   VpcId:
     Value: !If [CreateNetworking, !Ref BaasVpc, !Ref ExistingVpcId]
-  S3BucketArn:
-    Value: !GetAtt S3MainBucket.Arn
