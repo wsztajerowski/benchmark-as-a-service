@@ -25,6 +25,7 @@ public class BaasConfig {
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AwsConfig {
         private String profile;
+        private String operatorProfile;
         private String region = "eu-central-1";
         private String bucket;
         private String subnetId;
@@ -35,6 +36,19 @@ public class BaasConfig {
 
         public String getProfile() { return profile; }
         public void setProfile(String profile) { this.profile = profile; }
+
+        public String getOperatorProfile() { return operatorProfile; }
+        public void setOperatorProfile(String operatorProfile) { this.operatorProfile = operatorProfile; }
+
+        /**
+         * Credential profile for day-to-day commands (run/results/config show), which are
+         * meant to run under BaasCliOperatorRole. Deliberately does NOT fall back to
+         * {@link #profile} — that field holds the deployer profile written by
+         * `baas admin setup`, and silently reusing it would hand every benchmark run
+         * iam:CreateRole and cloudformation:*. A null return means "default credential
+         * chain", so AWS_PROFILE still works.
+         */
+        public String resolveOperatorProfile() { return operatorProfile; }
 
         public String getRegion() { return region; }
         public void setRegion(String region) { this.region = region; }
