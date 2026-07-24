@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.commands.RunCommand;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -43,5 +44,23 @@ class OperatorProfileTest {
 
         assertThat(written).contains("operatorProfile: \"baas-operator\"");
         assertThat(readBack.getAws().getOperatorProfile()).isEqualTo("baas-operator");
+    }
+
+    @Test
+    void warnsWhenNoOperatorProfileIsConfigured() {
+        BaasConfig config = new BaasConfig();
+        config.getAws().setProfile("baas-deployer");
+
+        assertThat(RunCommand.operatorCredentialsWarning(config))
+            .hasValueSatisfying(warning ->
+                assertThat(warning).contains("baas config set --operator-profile"));
+    }
+
+    @Test
+    void staysQuietWhenAnOperatorProfileIsConfigured() {
+        BaasConfig config = new BaasConfig();
+        config.getAws().setOperatorProfile("baas-operator");
+
+        assertThat(RunCommand.operatorCredentialsWarning(config)).isEmpty();
     }
 }

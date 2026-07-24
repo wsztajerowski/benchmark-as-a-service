@@ -23,7 +23,8 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         System.out.println("Config file: " + configService.configFilePath());
         System.out.println("prefix:      " + config.getPrefix());
         System.out.println("aws:");
-        System.out.println("  profile:                  " + config.getAws().getProfile());
+        System.out.println("  profile:                  " + config.getAws().getProfile() + "  (admin setup/teardown)");
+        System.out.println("  operatorProfile:          " + config.getAws().getOperatorProfile() + "  (run/results/config)");
         System.out.println("  region:                   " + config.getAws().getRegion());
         System.out.println("  coreStackName:            " + config.getAws().getCoreStackName());
         System.out.println("  bucket:                   " + config.getAws().getBucket());
@@ -41,7 +42,9 @@ public class ConfigShowSubcommand implements Callable<Integer> {
 
         // Show masked mongo URI from SSM
         try {
-            var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+            RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+            var factory = new AwsClientFactory(
+                config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
             try (var ssm = factory.ssm()) {
                 var ssmService = new SsmService(ssm);
                 var uri = ssmService.getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");

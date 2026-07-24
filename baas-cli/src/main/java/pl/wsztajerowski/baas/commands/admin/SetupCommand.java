@@ -109,9 +109,12 @@ public class SetupCommand implements Callable<Integer> {
         if (!operatorRoleArn.isEmpty()) {
             System.out.println();
             System.out.println("BaasCliOperatorRole created: " + operatorRoleArn);
-            System.out.println("Nobody can assume it yet. Grant sts:AssumeRole on this role ARN to whichever");
-            System.out.println("IAM user will run `baas run`/`baas results`/`baas config` day-to-day, then add");
-            System.out.println("a profile with role_arn + source_profile pointing at it. See infra/README.md.");
+            System.out.println("Nobody can assume it yet. Two one-time steps:");
+            System.out.println("  1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,");
+            System.out.println("     and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.");
+            System.out.println("  2. Point the CLI at that profile:");
+            System.out.println("       baas config set --operator-profile <profile-name>");
+            System.out.println("     Until you do, `baas run` uses the default credential chain, not this role.");
         }
 
         if (mongoUri != null) {

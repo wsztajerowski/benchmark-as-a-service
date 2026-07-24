@@ -40,7 +40,9 @@ public class ResultsCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
-        var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+        RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+        var factory = new AwsClientFactory(
+            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
         String mongoUri;
         try (var ssm = factory.ssm()) {

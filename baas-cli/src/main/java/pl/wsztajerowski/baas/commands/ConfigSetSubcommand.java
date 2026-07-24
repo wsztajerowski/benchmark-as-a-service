@@ -22,6 +22,10 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     @Option(names = "--aws-profile", description = "AWS CLI profile name.")
     String awsProfile;
 
+    @Option(names = "--operator-profile",
+        description = "AWS CLI profile that assumes BaasCliOperatorRole — used by run/results/config.")
+    String operatorProfile;
+
     @Option(names = "--region", description = "AWS region.")
     String region;
 
@@ -51,6 +55,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
         if (prefix != null) config.setPrefix(prefix);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
+        if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
         if (region != null) config.getAws().setRegion(region);
         if (bucket != null) config.getAws().setBucket(bucket);
         if (stackName != null) config.getAws().setCoreStackName(stackName);
@@ -60,7 +65,9 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
         if (mongoUri != null) {
             validateMongoUri(mongoUri);
-            var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+            RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+            var factory = new AwsClientFactory(
+                config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
             try (var ssm = factory.ssm()) {
                 new SsmService(ssm).putSecureParameter(
                     "/" + config.getPrefix() + "/mongo/connection-string", mongoUri);

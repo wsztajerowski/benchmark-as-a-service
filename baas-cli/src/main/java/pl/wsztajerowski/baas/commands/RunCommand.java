@@ -67,6 +67,20 @@ public class RunCommand implements Callable<Integer> {
 
     private final ConfigService configService = new ConfigService();
 
+    /**
+     * `run`/`results`/`config show` are meant to run under BaasCliOperatorRole. When no
+     * operator profile is configured they fall through to the default credential chain
+     * rather than reusing `aws.profile`, which holds deployer credentials.
+     */
+    public static Optional<String> operatorCredentialsWarning(BaasConfig config) {
+        if (config.getAws().getOperatorProfile() != null) {
+            return Optional.empty();
+        }
+        return Optional.of(
+            "No aws.operatorProfile configured — using the default AWS credential chain. "
+                + "Set one with: baas config set --operator-profile <profile-name>");
+    }
+
     @Override
     public Integer call() throws Exception {
         if (!VALID_TYPES.contains(benchmarkType)) {
@@ -99,7 +113,9 @@ public class RunCommand implements Callable<Integer> {
         String requestId = benchmarkType + "-" + timestamp;
         String resultPath = resolvedBranch + "/" + benchmarkType + "/" + timestamp;
 
-        var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+        operatorCredentialsWarning(config).ifPresent(System.err::println);
+        var factory = new AwsClientFactory(
+            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
         // 4. Upload JARs
         System.out.println("Uploading benchmark JAR to S3...");
