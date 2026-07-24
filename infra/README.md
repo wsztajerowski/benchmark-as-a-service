@@ -67,28 +67,64 @@ aws cloudformation deploy \
 The `WorkflowRoleArn` output of the `baas-ci` stack maps to the `WORKFLOW_ROLE_ARN` GitHub
 Actions secret.
 
-## IAM policies for `baas-cli` identities
+## IAM identities for `baas-cli`
 
-Two distinct IAM policies cover the two privilege levels `baas-cli` operates at. Attach only
-the one that matches what the identity actually does — don't grant the deployer policy to
-everyday users.
+Two distinct privilege levels cover what `baas-cli` operates at — a standing, narrow
+**role** for day-to-day use, and an elevated, admin-only **policy** for provisioning. Don't
+hold the deployer policy permanently; don't skip assuming the operator role.
 
-### `BaasCliOperatorPolicy` — standing, narrow
-
-Required by `baas run`, `baas results`, and `baas config`. Covers:
-
-- `ec2:RunInstances` / `ec2:Describe*` to launch and observe benchmark runner instances
-- `ec2:TerminateInstances`, scoped to instances tagged `baas-role=benchmark-runner`
-- `ssm:GetParameter` / `ssm:PutParameter`, scoped to the Mongo connection-string parameter path
-- S3 object access, scoped to the core stack's `S3MainBucket`
-- `iam:PassRole`, scoped to `RunnerRole` only
-
-This is the policy day-to-day users of `baas-cli` should hold permanently.
-
-### `BaasCliDeployerPolicy` — elevated, admin-only
+### `BaasCliDeployerPolicy` — elevated, admin-only, created out-of-band
 
 Required by `baas admin setup` and `baas admin teardown`. Matches
 [`deployer-policy.json`](./deployer-policy.json): `cloudformation:*` on the core stack,
-VPC/EC2 networking create/delete, IAM role and instance-profile create, and S3 bucket create.
-Attach this only to identities that provision or tear down the core stack — it should not be
-held as a standing policy for routine benchmark runs.
+VPC/EC2 networking create/delete, IAM role/instance-profile create, and S3 bucket create.
+Attach this only to identities that provision or tear down the core stack — it should not
+be held as a standing policy for routine benchmark runs.
+
+This one **cannot** be created by the core stack itself — you need deployer permissions
+*before* the stack exists in order to create it, so CloudFormation can never be the thing
+that grants permission to create CloudFormation stacks. Create this policy manually (IAM
+console or `aws iam create-policy`) and attach it to whichever identity will run
+`baas admin setup`/`baas admin teardown`, before the first deploy.
+
+### `BaasCliOperatorRole` — standing, narrow, created *by* the core stack, assumed per-session
+
+Required by `baas run`, `baas results`, and `baas config`. Unlike the deployer policy, this
+one has no bootstrap problem — by the time the core stack is being deployed, the deployer
+already holds deployer privileges, so it's safe (and more precise) for the stack to create
+this identity itself, as the `OperatorRole` resource (`AWS::IAM::Role`) in
+`cf-template-core.yaml`, scoped exactly to that stack's own `S3MainBucket`, `RunnerRole`,
+and mongo SSM parameter path — no wildcards needed, since CloudFormation knows those ARNs.
+
+It's a **role**, not a policy attached directly to a user: whoever runs `baas run` assumes
+it via `sts:AssumeRole` for a time-boxed session (1–12h) rather than holding permanent
+standing access on their own IAM user. Its trust policy allows the AWS account root, so
+`baas admin setup` needs no extra parameter for "who's the operator" — actual gating happens
+per-user, by granting `sts:AssumeRole` on this specific role ARN only to the identities that
+should be able to assume it:
+
+```bash
+# One-time, per operator identity: grant assume-role rights on this role only
+aws iam put-user-policy \
+  --profile YOUR_ADMIN_PROFILE \
+  --user-name YOUR_OPERATOR_IAM_USER \
+  --policy-name allow-assume-baas-operator-role \
+  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":"OPERATOR_ROLE_ARN_FROM_SETUP_OUTPUT"}]}'
+```
+
+Then the operator adds a profile that assumes it — no `baas-cli` code changes needed, since
+the AWS SDK's credential chain resolves `role_arn`/`source_profile` profiles transparently:
+
+```ini
+# ~/.aws/config
+[profile baas-operator]
+role_arn = OPERATOR_ROLE_ARN_FROM_SETUP_OUTPUT
+source_profile = YOUR_OPERATOR_IAM_USER_PROFILE
+region = eu-central-1
+```
+
+Every `baas admin setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
+ARN. [`operator-policy.json`](./operator-policy.json) is a static reference copy of the same
+permission statements (with wildcard ARNs instead of one stack's exact resources) — useful
+for review, or as `put-role-policy` content if you need to build an equivalent role manually
+before any core stack has been deployed.

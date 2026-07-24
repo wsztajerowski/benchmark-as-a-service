@@ -87,6 +87,7 @@ public class SetupCommand implements Callable<Integer> {
         }
 
         // Read CF outputs and write to config
+        String operatorRoleArn;
         try (var cf = factory.cloudFormation()) {
             var outputs = new CloudFormationService(cf).getStackOutputs(resolvedStack);
             config.getAws().setBucket(outputs.getOrDefault("BucketName", ""));
@@ -94,10 +95,19 @@ public class SetupCommand implements Callable<Integer> {
             config.getAws().setSecurityGroupId(outputs.getOrDefault("SecurityGroupId", ""));
             config.getAws().setVpcId(outputs.getOrDefault("VpcId", ""));
             config.getAws().setRunnerInstanceProfileName(outputs.getOrDefault("RunnerInstanceProfileName", ""));
+            operatorRoleArn = outputs.getOrDefault("OperatorRoleArn", "");
         }
 
         configService.save(config);
         System.out.println("Configuration written to " + configService.configFilePath());
+
+        if (!operatorRoleArn.isEmpty()) {
+            System.out.println();
+            System.out.println("BaasCliOperatorRole created: " + operatorRoleArn);
+            System.out.println("Nobody can assume it yet. Grant sts:AssumeRole on this role ARN to whichever");
+            System.out.println("IAM user will run `baas run`/`baas results`/`baas config` day-to-day, then add");
+            System.out.println("a profile with role_arn + source_profile pointing at it. See infra/README.md.");
+        }
 
         if (mongoUri != null) {
             validateMongoUri(mongoUri);
