@@ -79,6 +79,22 @@
                 </includes>
             </resource>
         </resources>
+        <!-- Infra data files reach the TEST classpath only. They must never enter
+             the shipped JAR — cf-template-core.yaml is the only bundled template. -->
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <testResource>
+                <directory>${project.basedir}/../infra</directory>
+                <targetPath>infra</targetPath>
+                <includes>
+                    <include>cf-template-ci.yaml</include>
+                    <include>deployer-policy.json</include>
+                    <include>operator-policy.json</include>
+                </includes>
+            </testResource>
+        </testResources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
