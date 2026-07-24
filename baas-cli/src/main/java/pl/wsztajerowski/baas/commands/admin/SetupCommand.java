@@ -48,6 +48,11 @@ public class SetupCommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws Exception {
+        // Fail before provisioning anything — a bad URI should not cost a stack deploy.
+        if (mongoUri != null) {
+            validateMongoUri(mongoUri);
+        }
+
         BaasConfig config = configService.load();
         if (region != null) config.getAws().setRegion(region);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
@@ -110,7 +115,6 @@ public class SetupCommand implements Callable<Integer> {
         }
 
         if (mongoUri != null) {
-            validateMongoUri(mongoUri);
             try (var ssm = factory.ssm()) {
                 new SsmService(ssm).putSecureParameter(
                     "/" + resolvedPrefix + "/mongo/connection-string", mongoUri);
@@ -167,7 +171,7 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
-    private void validateMongoUri(String uri) {
+    static void validateMongoUri(String uri) {
         var cs = new com.mongodb.ConnectionString(uri);
         if (cs.getDatabase() == null || cs.getDatabase().isEmpty()) {
             throw new IllegalArgumentException(

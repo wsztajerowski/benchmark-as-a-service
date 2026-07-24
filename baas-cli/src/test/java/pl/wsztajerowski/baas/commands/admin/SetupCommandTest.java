@@ -42,4 +42,16 @@ class SetupCommandTest {
 
         assertThat(prefixA).isNotEqualTo(prefixB);
     }
+
+    @Test
+    void rejectsMongoUriWithoutDatabaseName() {
+        assertThatThrownBy(() -> SetupCommand.validateMongoUri("mongodb+srv://user:pass@host"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("database name");
+    }
+
+    @Test
+    void acceptsMongoUriWithDatabaseName() {
+        SetupCommand.validateMongoUri("mongodb+srv://user:pass@host/benchmarks");
+    }
 }
