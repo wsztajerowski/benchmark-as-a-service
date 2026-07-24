@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.infra;
 
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -34,5 +36,31 @@ class DeployerPolicyTest {
             .as("the core/CI split exists so the local identity never touches GitHub OIDC trust")
             .noneMatch(action -> action.endsWith("OpenIDConnectProvider"))
             .doesNotContain("iam:UpdateAssumeRolePolicy");
+    }
+
+    @Test
+    void cloudFormationAccessIsScopedToBaasStacks() {
+        assertThat(statementWithSid("CloudFormation").get("Resource"))
+            .isEqualTo("arn:aws:cloudformation:*:*:stack/baas-*/*");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void iamAccessCannotCreateArbitrarilyNamedRoles() {
+        var resources = (List<String>) statementWithSid("IAM").get("Resource");
+
+        assertThat(resources)
+            .as("unscoped iam:CreateRole + iam:PutRolePolicy is an escalation path to account admin")
+            .doesNotContain("*")
+            .allSatisfy(arn -> assertThat(arn).matches("arn:aws:iam::\\*:(role|instance-profile)/\\*-(runner-role|operator-role)"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> statementWithSid(String sid) {
+        var statements = (List<Map<String, Object>>) InfraFixtures.deployerPolicy().get("Statement");
+        return statements.stream()
+            .filter(statement -> sid.equals(statement.get("Sid")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No statement with Sid " + sid));
     }
 }

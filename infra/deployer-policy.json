@@ -16,7 +16,7 @@
         "cloudformation:GetTemplate",
         "cloudformation:UpdateStack"
       ],
-      "Resource": "*"
+      "Resource": "arn:aws:cloudformation:*:*:stack/baas-*/*"
     },
     {
       "Sid": "EC2",
@@ -85,7 +85,11 @@
         "iam:TagRole",
         "iam:UntagRole"
       ],
-      "Resource": "*"
+      "Resource": [
+        "arn:aws:iam::*:role/*-runner-role",
+        "arn:aws:iam::*:role/*-operator-role",
+        "arn:aws:iam::*:instance-profile/*-runner-role"
+      ]
     },
     {
       "Sid": "S3WorkingBucketLifecycle",
