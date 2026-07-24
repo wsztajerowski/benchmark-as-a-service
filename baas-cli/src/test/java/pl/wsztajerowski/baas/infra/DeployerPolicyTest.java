@@ -1,0 +1,29 @@
+package pl.wsztajerowski.baas.infra;
+
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class DeployerPolicyTest {
+
+    @ParameterizedTest
+    @ValueSource(strings = {
+        // baas admin setup --mongo-uri writes the SecureString parameter
+        "ssm:PutParameter",
+        // baas admin teardown --delete-bucket empties the bucket, then CloudFormation removes it
+        "s3:ListBucket",
+        "s3:ListBucketVersions",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:DeleteBucket",
+        // CloudFormation reads an IAM role's inline policies back after creating it
+        "iam:GetRolePolicy",
+        "iam:ListRolePolicies",
+        "iam:ListAttachedRolePolicies"
+    })
+    void grantsActionNeededBySetupOrTeardown(String requiredAction) {
+        assertThat(InfraFixtures.actions(InfraFixtures.deployerPolicy()))
+            .contains(requiredAction);
+    }
+}
