@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.infra;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
@@ -25,5 +26,13 @@ class DeployerPolicyTest {
     void grantsActionNeededBySetupOrTeardown(String requiredAction) {
         assertThat(InfraFixtures.actions(InfraFixtures.deployerPolicy()))
             .contains(requiredAction);
+    }
+
+    @Test
+    void holdsNoCiStackPermissions() {
+        assertThat(InfraFixtures.actions(InfraFixtures.deployerPolicy()))
+            .as("the core/CI split exists so the local identity never touches GitHub OIDC trust")
+            .noneMatch(action -> action.endsWith("OpenIDConnectProvider"))
+            .doesNotContain("iam:UpdateAssumeRolePolicy");
     }
 }

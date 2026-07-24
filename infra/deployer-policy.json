@@ -71,22 +71,19 @@
       "Action": [
         "iam:AddRoleToInstanceProfile",
         "iam:CreateInstanceProfile",
-        "iam:CreateOpenIDConnectProvider",
         "iam:CreateRole",
         "iam:DeleteInstanceProfile",
         "iam:DeleteRole",
         "iam:DeleteRolePolicy",
         "iam:GetInstanceProfile",
-        "iam:GetOpenIDConnectProvider",
         "iam:GetRole",
         "iam:GetRolePolicy",
         "iam:ListAttachedRolePolicies",
         "iam:ListRolePolicies",
         "iam:PutRolePolicy",
         "iam:RemoveRoleFromInstanceProfile",
-        "iam:TagOpenIDConnectProvider",
         "iam:TagRole",
-        "iam:UpdateAssumeRolePolicy"
+        "iam:UntagRole"
       ],
       "Resource": "*"
     },
