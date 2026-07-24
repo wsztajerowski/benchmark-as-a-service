@@ -32,4 +32,14 @@ class CoreTemplateTest {
                 assertThat(rule.get("ToPort")).isEqualTo(27017);
             });
     }
+
+    @Test
+    void workingBucketSurvivesStackDeletion() {
+        var bucket = InfraFixtures.resource(template, "S3MainBucket");
+
+        assertThat(bucket)
+            .as("teardown promises the bucket is retained — that must be declared, not a side effect of a failing delete")
+            .containsEntry("DeletionPolicy", "Retain")
+            .containsEntry("UpdateReplacePolicy", "Retain");
+    }
 }

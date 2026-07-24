@@ -137,6 +137,10 @@ Resources:
 
   S3MainBucket:
     Type: AWS::S3::Bucket
+    # Benchmark history outlives any single stack. `baas admin teardown` deletes the
+    # bucket only when explicitly asked (--delete-bucket), which empties it first.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub baas-${ResourceNamePrefix}
       VersioningConfiguration:
