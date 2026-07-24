@@ -116,12 +116,17 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
-          Description: HTTPS to Atlas, GitHub and AWS APIs
+          Description: HTTPS to GitHub, S3 and AWS APIs
         - IpProtocol: tcp
           FromPort: 80
           ToPort: 80
           CidrIp: 0.0.0.0/0
           Description: HTTP for package downloads (yum)
+        - IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          CidrIp: 0.0.0.0/0
+          Description: MongoDB Atlas (Atlas serves clients on 27017, not 443)
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}

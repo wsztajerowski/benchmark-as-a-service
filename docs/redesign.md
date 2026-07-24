@@ -54,7 +54,7 @@ Replace the `run-remote-benchmark.zsh` + GitHub Actions `workflow_dispatch` depe
 | `DefaultRoute` | `AWS::EC2::Route` | `0.0.0.0/0` → `InternetGateway` |
 | `PublicSubnetRouteTableAssociation` | `AWS::EC2::SubnetRouteTableAssociation` | Associates subnet with route table |
 | `S3GatewayEndpoint` | `AWS::EC2::VPCEndpoint` | Gateway endpoint for S3 (free; keeps S3 traffic off the IGW) |
-| `RunnerSecurityGroup` | `AWS::EC2::SecurityGroup` | **No inbound rules**; outbound 443 (HTTPS to Atlas/GitHub/AWS APIs) + outbound to S3 prefix list |
+| `RunnerSecurityGroup` | `AWS::EC2::SecurityGroup` | **No inbound rules**; outbound 443 (HTTPS to GitHub/AWS APIs), 80 (yum), 27017 (MongoDB Atlas) + outbound to S3 prefix list |
 
 **Why this model:** the current solution already runs the EC2 runner in a subnet with internet egress — it has to, because the GHA self-hosted runner registers with `api.github.com` and the runner downloads async-profiler, the JDK, and `benchmark-runner.jar` from GitHub. That same egress is how it reaches MongoDB Atlas today. Reusing it means free-tier Atlas works immediately over the public internet (gated by a manual IP allowlist), with **no NAT gateway** and **no interface VPC endpoints** required.
 
