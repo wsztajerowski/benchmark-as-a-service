@@ -35,9 +35,18 @@ public class S3UploadService {
         }
     }
 
+    /**
+     * Removes every object version and delete marker, which is what a versioning-enabled
+     * bucket needs before it can be deleted. Listing only current versions leaves
+     * noncurrent ones behind and DeleteBucket then fails with BucketNotEmpty.
+     */
     public void deleteAllObjects(String bucket) {
-        var paginator = s3.listObjectsV2Paginator(r -> r.bucket(bucket));
-        paginator.contents().forEach(obj ->
-            s3.deleteObject(r -> r.bucket(bucket).key(obj.key())));
+        var paginator = s3.listObjectVersionsPaginator(r -> r.bucket(bucket));
+        paginator.stream().forEach(page -> {
+            page.versions().forEach(version ->
+                s3.deleteObject(r -> r.bucket(bucket).key(version.key()).versionId(version.versionId())));
+            page.deleteMarkers().forEach(marker ->
+                s3.deleteObject(r -> r.bucket(bucket).key(marker.key()).versionId(marker.versionId())));
+        });
     }
 }
