@@ -75,6 +75,24 @@ class CoreTemplateTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void operatorCannotLaunchArbitrarilyLargeInstances() {
+        var policies = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "OperatorRole").get("Policies");
+
+        var runInstances = policies.stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .flatMap(document -> ((List<Map<String, Object>>) document.get("Statement")).stream())
+            .filter(statement -> String.valueOf(statement.get("Action")).contains("ec2:RunInstances"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No ec2:RunInstances statement on OperatorRole"));
+
+        assertThat(runInstances)
+            .as("an unconstrained RunInstances turns a typo into a four-figure bill")
+            .containsKey("Condition");
+    }
+
+    @Test
     void workingBucketSurvivesStackDeletion() {
         var bucket = InfraFixtures.resource(template, "S3MainBucket");
 

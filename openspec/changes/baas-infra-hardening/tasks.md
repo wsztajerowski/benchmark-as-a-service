@@ -25,8 +25,8 @@
 ## 5. Phase D — hygiene
 - [x] 5.1 Tag convention (`baas-role` on the bucket, `baas-request-id` on instances).
 - [x] 5.2 `${AWS::Partition}` throughout both templates.
-- [ ] 5.3 `ec2:RunInstances` instance-type and region conditions.
-- [ ] 5.4 CI template `ssm:GetParameter` alignment + `s3:GetObject`.
+- [x] 5.3 `ec2:RunInstances` instance-type and region conditions.
+- [x] 5.4 CI template `ssm:GetParameter` alignment + `s3:GetObject`.
 
 ## 6. Documentation
 - [ ] 6.1 `infra/README.md`: operator-profile flow, Atlas allowlist reality, failure-log location.

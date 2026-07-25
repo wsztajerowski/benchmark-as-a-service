@@ -2,14 +2,26 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "Ec2RunAndDescribe",
+      "Sid": "Ec2Describe",
       "Effect": "Allow",
       "Action": [
-        "ec2:RunInstances",
         "ec2:DescribeInstances",
         "ec2:DescribeInstanceStatus"
       ],
       "Resource": "*"
+    },
+    {
+      "Sid": "Ec2RunBenchmarkInstances",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "*",
+      "Condition": {
+        "StringLike": {
+          "ec2:InstanceType": [
+            "c5.*", "c6i.*", "c7i.*", "m5.*", "m6i.*", "m7i.*"
+          ]
+        }
+      }
     },
     {
       "Sid": "Ec2CreateTagsOnRun",

@@ -94,7 +94,11 @@ Resources:
                 Action: iam:PassRole
                 Resource: !Ref RunnerRoleArn
               - Effect: Allow
-                Action: ssm:GetParameters
+                # Both forms: the core stack's OperatorRole uses the singular, and
+                # GetParameter/GetParameters are distinct IAM actions.
+                Action:
+                  - ssm:GetParameter
+                  - ssm:GetParameters
                 Resource: !Sub "arn:${AWS::Partition}:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
               - Effect: Allow
                 Action: ec2:CreateTags
@@ -111,6 +115,9 @@ Resources:
                 Resource:
                   - !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/ci/*'
                   - !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/runs/*'
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/*'
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}'
