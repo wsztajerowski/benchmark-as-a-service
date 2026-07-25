@@ -18,8 +18,8 @@
 - [x] 3.6 `baas config sync --core-stack-name <name>` + scoped `cloudformation:DescribeStacks` on `OperatorRole`, so an operator can populate `config.yaml` without hand-copying it.
 
 ## 4. Phase C — operability
-- [ ] 4.1 User-data ships `/var/log/cloud-init-output.log` to S3 before terminating.
-- [ ] 4.2 `RunCommand` poll loop checks instance state.
+- [x] 4.1 User-data ships `/var/log/cloud-init-output.log` to S3 before terminating.
+- [x] 4.2 `RunCommand` poll loop checks instance state.
 - [ ] 4.3 `S3MainBucket` lifecycle rules.
 
 ## 5. Phase D — hygiene

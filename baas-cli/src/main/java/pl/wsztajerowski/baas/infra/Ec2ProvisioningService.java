@@ -71,6 +71,23 @@ public class Ec2ProvisioningService {
         }
     }
 
+    /**
+     * Current EC2 state name, or "unknown" if the instance cannot be described.
+     * Used to fail a run fast when the runner dies before writing its sentinel.
+     */
+    public String instanceState(String instanceId) {
+        try {
+            var response = ec2.describeInstances(r -> r.instanceIds(instanceId));
+            return response.reservations().stream()
+                .flatMap(reservation -> reservation.instances().stream())
+                .findFirst()
+                .map(instance -> instance.state().nameAsString())
+                .orElse("unknown");
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
     public List<String> listRunningBenchmarkInstances() {
         var response = ec2.describeInstances(r -> r.filters(
             Filter.builder().name("tag:baas-role").values("benchmark-runner").build(),

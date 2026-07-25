@@ -169,10 +169,10 @@ public class RunCommand implements Callable<Integer> {
         }));
 
         // 9. Poll
-        return poll(factory, config, requestId, resultPath, resolvedWallClock);
+        return poll(factory, config, instanceId, requestId, resultPath, resolvedWallClock);
     }
 
-    private int poll(AwsClientFactory factory, BaasConfig config,
+    private int poll(AwsClientFactory factory, BaasConfig config, String instanceId,
                      String requestId, String resultPath, int wallClockSeconds) throws InterruptedException {
         long startMs = System.currentTimeMillis();
         long timeoutMs = (long) wallClockSeconds * 1000;
@@ -197,11 +197,23 @@ public class RunCommand implements Callable<Integer> {
                     showResults(factory, config, requestId);
                     return 0;
                 } else if (body.startsWith("failed:")) {
-                    System.err.println("Benchmark failed. Check S3: s3://" + config.getAws().getBucket() + "/" + resultPath + "/");
+                    System.err.println("Benchmark failed. Runner log: s3://"
+                        + config.getAws().getBucket() + "/" + resultPath + "/cloud-init-output.log");
                     return 1;
                 }
             } else {
-                System.out.printf("Still running... elapsed: %ds%n", elapsed);
+                String state;
+                try (var ec2 = factory.ec2()) {
+                    state = new Ec2ProvisioningService(ec2).instanceState(instanceId);
+                }
+                if ("terminated".equals(state) || "shutting-down".equals(state)) {
+                    System.err.println("Instance " + instanceId + " is " + state
+                        + " but wrote no run-status sentinel — the runner died before finishing.");
+                    System.err.println("Runner log: s3://" + config.getAws().getBucket()
+                        + "/" + resultPath + "/cloud-init-output.log");
+                    return 1;
+                }
+                System.out.printf("Still running (%s)... elapsed: %ds%n", state, elapsed);
             }
 
             Thread.sleep(15_000);

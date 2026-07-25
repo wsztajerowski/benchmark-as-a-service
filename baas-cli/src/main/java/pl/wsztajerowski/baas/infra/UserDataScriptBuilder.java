@@ -69,6 +69,11 @@ public class UserDataScriptBuilder {
         STATUS="completed"; [[ $EXIT_CODE -ne 0 ]] && STATUS="failed:${EXIT_CODE}"
         echo "$STATUS" | aws s3 cp - "s3://${S3_BUCKET}/${RESULT_PATH}/run-status"
 
+        # Ship the boot log before self-terminating — the instance is about to disappear
+        # and this is the only record of what went wrong on a failed run.
+        aws s3 cp /var/log/cloud-init-output.log \\
+          "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
+
         # Cleanup
         kill $WATCHDOG_PID 2>/dev/null || true
         aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
