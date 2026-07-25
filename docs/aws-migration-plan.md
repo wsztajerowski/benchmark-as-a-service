@@ -35,7 +35,7 @@
 
 **Kept for GHA CI only** (the `baas` CLI does **not** use these): `WorkflowRole`, OIDC provider, `/<prefix>/github/*` SSM params. The GHA workflows (`benchmark-runner.yml`, `e2e-cloud-test.yml`, `release.yml`) remain for automation.
 
-**MongoDB:** connect-only. No cluster is provisioned. The user supplies a connection string (e.g. free-tier Atlas) and `baas` stores it in SSM SecureString. **Atlas IP allowlist is managed manually** (add the runner egress IP + laptop IP).
+**MongoDB:** connect-only. No cluster is provisioned. The user supplies a connection string (e.g. free-tier Atlas) and `baas` stores it in SSM SecureString. Atlas is reached on **TCP 27017** (not 443). **Atlas IP allowlist is managed manually** — but note that runners get an ephemeral public IP per run, so there is no stable runner address to allowlist; see [infra/README.md](../infra/README.md#mongodb-atlas-connectivity).
 
 ---
 
@@ -85,7 +85,10 @@ This creates:
 baas config set --mongo-uri "mongodb+srv://<user>:<pass>@<host>/<db>"
 ```
 
-Then add the runner's egress IP and your laptop's IP to the **Atlas IP Access List** (manual, v1).
+Then add your laptop's IP to the **Atlas IP Access List** (manual, v1). Runner instances have
+no stable egress IP — each run gets a fresh public IP — so covering them means an entry of
+`0.0.0.0/0`, gated by the connection string's credentials rather than by network. See
+[infra/README.md](../infra/README.md#mongodb-atlas-connectivity) for the trade-off.
 
 **Step 1.3 — Smoke test via CLI**
 

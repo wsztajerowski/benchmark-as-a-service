@@ -123,8 +123,66 @@ source_profile = YOUR_OPERATOR_IAM_USER_PROFILE
 region = eu-central-1
 ```
 
+Finally, point the CLI at that profile — **this step is required**. Without it,
+`baas run`/`baas results`/`baas config` fall through to the default AWS credential chain
+rather than assuming the operator role:
+
+```bash
+baas config set --operator-profile baas-operator
+```
+
+`~/.baas/config.yaml` keeps the two identities separate:
+
+```yaml
+aws:
+  profile: baas-deployer          # baas admin setup / baas admin teardown
+  operatorProfile: baas-operator  # baas run / baas results / baas config
+```
+
+`aws.operatorProfile` deliberately does **not** fall back to `aws.profile`. `baas admin
+setup` writes the deployer profile into `aws.profile`, and silently reusing it would give
+every benchmark run `iam:CreateRole` and `cloudformation:*` — the exact standing privilege
+the operator role exists to avoid.
+
+If you are setting up on a machine that never ran `baas admin setup` — the usual case when
+the deployer and the operator are different people — pull the stack's values instead of
+copying `config.yaml` by hand:
+
+```bash
+baas config sync --core-stack-name baas-a1b2c3d4
+```
+
+The stack name is printed by `baas admin setup`; the operator cannot derive it, because the
+prefix is a hash of the *deployer's* ARN.
+
 Every `baas admin setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
 ARN. [`operator-policy.json`](./operator-policy.json) is a static reference copy of the same
-permission statements (with wildcard ARNs instead of one stack's exact resources) — useful
-for review, or as `put-role-policy` content if you need to build an equivalent role manually
-before any core stack has been deployed.
+permission statements — useful for review, or as `put-role-policy` content if you need to
+build an equivalent role manually before any core stack has been deployed. It carries
+`ACCOUNT_ID` and `RESOURCE_PREFIX` placeholder tokens rather than wildcards: substitute your
+real values before using it. Its action list is kept in sync with the template's
+`OperatorRole` by a test (`OperatorPolicyDriftTest`).
+
+## MongoDB Atlas connectivity
+
+The runner reaches Atlas over the public internet on **TCP 27017** (Atlas does not serve
+clients on 443). `RunnerSecurityGroup` allows that egress.
+
+Runner instances get an **ephemeral public IP per run** — there is no NAT gateway and no
+Elastic IP — so there is no stable address to add to the Atlas IP Access List. In practice
+this means the Access List entry has to be `0.0.0.0/0`, with access controlled by the
+connection string's credentials rather than by network. If that is unacceptable for your
+deployment, the private-networking profile (private subnet + NAT gateway + Atlas
+PrivateLink, which needs a paid M10+ tier) is the alternative; it is out of scope for v1
+and costs roughly $32/month standing.
+
+## Debugging a failed run
+
+Runner instances self-terminate on both the success and failure paths, so the boot log is
+uploaded to S3 before termination:
+
+```
+s3://<bucket>/<branch>/<type>/<timestamp>/cloud-init-output.log
+```
+
+`baas run` prints that path when a run fails, and when the instance dies before reporting.

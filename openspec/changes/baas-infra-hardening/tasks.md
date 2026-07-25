@@ -29,8 +29,8 @@
 - [x] 5.4 CI template `ssm:GetParameter` alignment + `s3:GetObject`.
 
 ## 6. Documentation
-- [ ] 6.1 `infra/README.md`: operator-profile flow, Atlas allowlist reality, failure-log location.
-- [ ] 6.2 Correct the "443 reaches Atlas" claim in `docs/redesign.md` and the "runner's egress IP" instruction in `docs/aws-migration-plan.md`.
+- [x] 6.1 `infra/README.md`: operator-profile flow, Atlas allowlist reality, failure-log location.
+- [x] 6.2 Correct the "443 reaches Atlas" claim in `docs/redesign.md` and the "runner's egress IP" instruction in `docs/aws-migration-plan.md`.
 
 ## 7. Manual verification
 - [ ] 7.1 `baas admin setup --mongo-uri "..."` against a scratch account under the revised deployer policy only.
