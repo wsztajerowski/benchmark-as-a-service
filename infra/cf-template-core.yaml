@@ -145,6 +145,22 @@ Resources:
       BucketName: !Sub baas-${ResourceNamePrefix}
       VersioningConfiguration:
         Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-noncurrent-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          # Uploaded benchmark JARs are re-creatable from source; results under
+          # <branch>/<type>/<timestamp>/ are untouched by these rules.
+          - Id: expire-uploaded-benchmark-jars
+            Status: Enabled
+            Prefix: runs/
+            ExpirationInDays: 30
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:

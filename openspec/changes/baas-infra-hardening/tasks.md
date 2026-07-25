@@ -20,7 +20,7 @@
 ## 4. Phase C — operability
 - [x] 4.1 User-data ships `/var/log/cloud-init-output.log` to S3 before terminating.
 - [x] 4.2 `RunCommand` poll loop checks instance state.
-- [ ] 4.3 `S3MainBucket` lifecycle rules.
+- [x] 4.3 `S3MainBucket` lifecycle rules.
 
 ## 5. Phase D — hygiene
 - [ ] 5.1 Tag convention (`baas-role` on the bucket, `baas-request-id` on instances).

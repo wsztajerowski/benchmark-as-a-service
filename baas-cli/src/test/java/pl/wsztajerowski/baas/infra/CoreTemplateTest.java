@@ -50,6 +50,21 @@ class CoreTemplateTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void bucketGrowthIsBounded() {
+        var lifecycle = (Map<String, Object>)
+            InfraFixtures.properties(template, "S3MainBucket").get("LifecycleConfiguration");
+
+        assertThat(lifecycle).as("versioning without lifecycle rules grows without bound").isNotNull();
+
+        var rules = (List<Map<String, Object>>) lifecycle.get("Rules");
+        assertThat(rules).anySatisfy(rule ->
+            assertThat(rule).containsKey("NoncurrentVersionExpiration"));
+        assertThat(rules).anySatisfy(rule ->
+            assertThat(rule).containsKey("AbortIncompleteMultipartUpload"));
+    }
+
+    @Test
     void workingBucketSurvivesStackDeletion() {
         var bucket = InfraFixtures.resource(template, "S3MainBucket");
 
