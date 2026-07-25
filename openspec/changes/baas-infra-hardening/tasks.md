@@ -1,19 +1,19 @@
 ## 1. Test harness for infra data files
-- [ ] 1.1 Add `<testResources>` to `baas-cli/pom.xml` copying `cf-template-ci.yaml`, `deployer-policy.json`, `operator-policy.json` into `target/test-classes/infra/`.
-- [ ] 1.2 Add `InfraFixtures` (SnakeYAML with an undefined-tag constructor + Jackson JSON loader + policy-action flattener).
+- [x] 1.1 Add `<testResources>` to `baas-cli/pom.xml` copying `cf-template-ci.yaml`, `deployer-policy.json`, `operator-policy.json` into `target/test-classes/infra/`.
+- [x] 1.2 Add `InfraFixtures` (SnakeYAML with an undefined-tag constructor + Jackson JSON loader + policy-action flattener).
 
 ## 2. Phase A — blocking fixes
-- [ ] 2.1 `RunnerSecurityGroup`: add TCP 27017 egress.
-- [ ] 2.2 `deployer-policy.json`: add `ssm:PutParameter`, S3 delete/list/version actions, IAM read-back actions.
-- [ ] 2.3 `S3MainBucket`: `DeletionPolicy: Retain` + `UpdateReplacePolicy: Retain`.
-- [ ] 2.4 `S3UploadService.deleteAllObjects`: version-aware.
-- [ ] 2.5 `SetupCommand`: validate `--mongo-uri` before any AWS call.
+- [x] 2.1 `RunnerSecurityGroup`: add TCP 27017 egress.
+- [x] 2.2 `deployer-policy.json`: add `ssm:PutParameter`, S3 delete/list/version actions, IAM read-back actions.
+- [x] 2.3 `S3MainBucket`: `DeletionPolicy: Retain` + `UpdateReplacePolicy: Retain`.
+- [x] 2.4 `S3UploadService.deleteAllObjects`: version-aware.
+- [x] 2.5 `SetupCommand`: validate `--mongo-uri` before any AWS call.
 
 ## 3. Phase B — security boundary
-- [ ] 3.1 `BaasConfig`: `aws.operatorProfile` + `resolveOperatorProfile()`.
-- [ ] 3.2 `run`/`results`/`config show` use operator credentials; `admin` commands keep `aws.profile`.
-- [ ] 3.3 `deployer-policy.json`: drop OIDC actions and `iam:UpdateAssumeRolePolicy`.
-- [ ] 3.4 `deployer-policy.json`: scope CloudFormation and IAM resources.
+- [x] 3.1 `BaasConfig`: `aws.operatorProfile` + `resolveOperatorProfile()`.
+- [x] 3.2 `run`/`results`/`config show` use operator credentials; `admin` commands keep `aws.profile`.
+- [x] 3.3 `deployer-policy.json`: drop OIDC actions and `iam:UpdateAssumeRolePolicy`.
+- [x] 3.4 `deployer-policy.json`: scope CloudFormation and IAM resources.
 - [ ] 3.5 `operator-policy.json`: pin account wildcards; add the drift test.
 - [ ] 3.6 `baas config sync --core-stack-name <name>` + scoped `cloudformation:DescribeStacks` on `OperatorRole`, so an operator can populate `config.yaml` without hand-copying it.
 
