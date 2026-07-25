@@ -23,8 +23,8 @@
 - [x] 4.3 `S3MainBucket` lifecycle rules.
 
 ## 5. Phase D — hygiene
-- [ ] 5.1 Tag convention (`baas-role` on the bucket, `baas-request-id` on instances).
-- [ ] 5.2 `${AWS::Partition}` throughout both templates.
+- [x] 5.1 Tag convention (`baas-role` on the bucket, `baas-request-id` on instances).
+- [x] 5.2 `${AWS::Partition}` throughout both templates.
 - [ ] 5.3 `ec2:RunInstances` instance-type and region conditions.
 - [ ] 5.4 CI template `ssm:GetParameter` alignment + `s3:GetObject`.
 

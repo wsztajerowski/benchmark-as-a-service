@@ -109,7 +109,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Condition: CreateNetworking
     Properties:
-      GroupDescription: Benchmark runner security group. No inbound, outbound HTTPS only.
+      GroupDescription: Benchmark runner security group. No inbound; outbound 443/80/27017 only.
       VpcId: !Ref BaasVpc
       SecurityGroupEgress:
         - IpProtocol: tcp
@@ -173,7 +173,7 @@ Resources:
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
-        - Key: role
+        - Key: baas-role
           Value: working-bucket
 
   # ─── IAM ──────────────────────────────────────────────────────────────────────
@@ -202,15 +202,15 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub 'arn:aws:s3:::baas-${ResourceNamePrefix}'
-                  - !Sub 'arn:aws:s3:::baas-${ResourceNamePrefix}/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::baas-${ResourceNamePrefix}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::baas-${ResourceNamePrefix}/*'
         - PolicyName: !Sub ${ResourceNamePrefix}-runner-ec2-terminate-policy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: ec2:TerminateInstances
-                Resource: "arn:aws:ec2:*:*:instance/*"
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
                 Condition:
                   StringEquals:
                     aws:ResourceTag/baas-role: benchmark-runner
@@ -220,7 +220,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: ssm:GetParameter
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -252,7 +252,7 @@ Resources:
         Statement:
           - Effect: Allow
             Principal:
-              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
             Action: sts:AssumeRole
       Policies:
         - PolicyName: !Sub ${ResourceNamePrefix}-operator-ec2-policy
@@ -273,7 +273,7 @@ Resources:
                     ec2:CreateAction: RunInstances
               - Effect: Allow
                 Action: ec2:TerminateInstances
-                Resource: "arn:aws:ec2:*:*:instance/*"
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
                 Condition:
                   StringEquals:
                     aws:ResourceTag/baas-role: benchmark-runner
@@ -285,10 +285,10 @@ Resources:
                 Action:
                   - ssm:GetParameter
                   - ssm:PutParameter
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
               - Effect: Allow
                 Action: ssm:GetParameter
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}::parameter/aws/service/ami-amazon-linux-latest/*"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-amazon-linux-latest/*"
         - PolicyName: !Sub ${ResourceNamePrefix}-operator-s3-policy
           PolicyDocument:
             Version: "2012-10-17"

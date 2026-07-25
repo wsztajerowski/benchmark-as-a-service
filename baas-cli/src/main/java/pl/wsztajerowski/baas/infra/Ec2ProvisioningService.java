@@ -21,7 +21,7 @@ public class Ec2ProvisioningService {
         List<Tag> tags = new ArrayList<>(List.of(
             Tag.builder().key("project").value("baas").build(),
             Tag.builder().key("baas-role").value("benchmark-runner").build(),
-            Tag.builder().key("baas:request-id").value(requestId).build()
+            Tag.builder().key("baas-request-id").value(requestId).build()
         ));
         extraTags.forEach((k, v) -> tags.add(Tag.builder().key(k).value(v).build()));
 

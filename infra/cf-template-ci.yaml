@@ -86,7 +86,7 @@ Resources:
                 Resource: "*"
               - Effect: Allow
                 Action: ec2:TerminateInstances
-                Resource: "arn:aws:ec2:*:*:instance/*"
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
                 Condition:
                   StringEquals:
                     aws:ResourceTag/baas-role: benchmark-runner
@@ -95,7 +95,7 @@ Resources:
                 Resource: !Ref RunnerRoleArn
               - Effect: Allow
                 Action: ssm:GetParameters
-                Resource: "arn:aws:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:*::parameter/aws/service/ami-amazon-linux-latest/*"
               - Effect: Allow
                 Action: ec2:CreateTags
                 Resource: "*"
@@ -109,18 +109,18 @@ Resources:
               - Effect: Allow
                 Action: s3:PutObject
                 Resource:
-                  - !Sub 'arn:aws:s3:::${BucketName}/ci/*'
-                  - !Sub 'arn:aws:s3:::${BucketName}/runs/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/ci/*'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/runs/*'
               - Effect: Allow
                 Action: s3:ListBucket
-                Resource: !Sub 'arn:aws:s3:::${BucketName}'
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}'
         - PolicyName: !Sub ${ResourceNamePrefix}-gha-workflow-ssm-policy
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: ssm:GetParameter
-                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}

@@ -65,6 +65,16 @@ class CoreTemplateTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void bucketFollowsTheDashedTagConvention() {
+        var tags = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "S3MainBucket").get("Tags");
+
+        assertThat(tags).extracting(tag -> tag.get("Key")).contains("baas-role");
+        assertThat(tags).extracting(tag -> tag.get("Key")).doesNotContain("role");
+    }
+
+    @Test
     void workingBucketSurvivesStackDeletion() {
         var bucket = InfraFixtures.resource(template, "S3MainBucket");
 
