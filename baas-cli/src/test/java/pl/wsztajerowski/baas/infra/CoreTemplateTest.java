@@ -34,6 +34,22 @@ class CoreTemplateTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void operatorCanReadItsOwnStackOutputs() {
+        var policies = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "OperatorRole").get("Policies");
+
+        var actions = policies.stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .flatMap(document -> InfraFixtures.actions(document).stream())
+            .toList();
+
+        assertThat(actions)
+            .as("without this an operator cannot populate config.yaml without hand-copying it")
+            .contains("cloudformation:DescribeStacks");
+    }
+
+    @Test
     void workingBucketSurvivesStackDeletion() {
         var bucket = InfraFixtures.resource(template, "S3MainBucket");
 

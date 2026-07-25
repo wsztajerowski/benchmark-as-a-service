@@ -8,13 +8,14 @@ import picocli.CommandLine.Command;
     description = "Manage BaaS CLI configuration.",
     subcommands = {
         ConfigSetSubcommand.class,
-        ConfigShowSubcommand.class
+        ConfigShowSubcommand.class,
+        ConfigSyncSubcommand.class
     }
 )
 public class ConfigCommand implements Runnable {
 
     @Override
     public void run() {
-        System.out.println("Use 'baas config set' or 'baas config show'.");
+        System.out.println("Use 'baas config set', 'baas config show', or 'baas config sync'.");
     }
 }

@@ -35,6 +35,14 @@ class BaasAppTest {
     }
 
     @Test
+    void resolvesConfigSyncSubcommand() {
+        CommandLine cmd = new CommandLine(new BaasApp());
+
+        assertThat(cmd.getSubcommands().get("config").getSubcommands())
+            .containsKey("sync");
+    }
+
+    @Test
     void topLevelSetupIsNotResolvable() {
         CommandLine root = new CommandLine(new BaasApp());
 

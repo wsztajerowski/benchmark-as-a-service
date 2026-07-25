@@ -14,8 +14,8 @@
 - [x] 3.2 `run`/`results`/`config show` use operator credentials; `admin` commands keep `aws.profile`.
 - [x] 3.3 `deployer-policy.json`: drop OIDC actions and `iam:UpdateAssumeRolePolicy`.
 - [x] 3.4 `deployer-policy.json`: scope CloudFormation and IAM resources.
-- [ ] 3.5 `operator-policy.json`: pin account wildcards; add the drift test.
-- [ ] 3.6 `baas config sync --core-stack-name <name>` + scoped `cloudformation:DescribeStacks` on `OperatorRole`, so an operator can populate `config.yaml` without hand-copying it.
+- [x] 3.5 `operator-policy.json`: pin account wildcards; add the drift test.
+- [x] 3.6 `baas config sync --core-stack-name <name>` + scoped `cloudformation:DescribeStacks` on `OperatorRole`, so an operator can populate `config.yaml` without hand-copying it.
 
 ## 4. Phase C — operability
 - [ ] 4.1 User-data ships `/var/log/cloud-init-output.log` to S3 before terminating.

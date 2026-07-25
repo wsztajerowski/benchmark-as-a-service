@@ -293,6 +293,15 @@ Resources:
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !GetAtt RunnerRole.Arn
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-cfn-read-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Read-only, and only this stack — enough for `baas config sync` to
+              # populate config.yaml, not enough to mutate any stack.
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/baas-${ResourceNamePrefix}/*"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}

@@ -67,6 +67,12 @@
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": "arn:aws:iam::ACCOUNT_ID:role/*-runner-role"
+    },
+    {
+      "Sid": "CloudFormationReadOwnStack",
+      "Effect": "Allow",
+      "Action": "cloudformation:DescribeStacks",
+      "Resource": "arn:aws:cloudformation:*:ACCOUNT_ID:stack/baas-RESOURCE_PREFIX/*"
     }
   ]
 }
