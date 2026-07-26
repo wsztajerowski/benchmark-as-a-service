@@ -7,7 +7,11 @@ import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.function.Consumer;
 
 @Command(
     name = "sync",
@@ -37,12 +41,22 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
                     + config.getAws().getRegion() + ".");
                 return 1;
             }
-            config.getAws().setCoreStackName(coreStackName);
-            config.getAws().setBucket(outputs.getOrDefault("BucketName", ""));
-            config.getAws().setSubnetId(outputs.getOrDefault("SubnetId", ""));
-            config.getAws().setSecurityGroupId(outputs.getOrDefault("SecurityGroupId", ""));
-            config.getAws().setVpcId(outputs.getOrDefault("VpcId", ""));
-            config.getAws().setRunnerInstanceProfileName(outputs.getOrDefault("RunnerInstanceProfileName", ""));
+            var aws = config.getAws();
+            aws.setCoreStackName(coreStackName);
+
+            // Only overwrite what the stack actually reports. Defaulting a missing output to
+            // "" would silently blank a value the operator already had working.
+            List<String> missing = new ArrayList<>();
+            applyIfPresent(outputs, "BucketName", aws::setBucket, missing);
+            applyIfPresent(outputs, "SubnetId", aws::setSubnetId, missing);
+            applyIfPresent(outputs, "SecurityGroupId", aws::setSecurityGroupId, missing);
+            applyIfPresent(outputs, "VpcId", aws::setVpcId, missing);
+            applyIfPresent(outputs, "RunnerInstanceProfileName", aws::setRunnerInstanceProfileName, missing);
+
+            if (!missing.isEmpty()) {
+                System.err.println("Warning: stack '" + coreStackName + "' did not report "
+                    + String.join(", ", missing) + " — existing local values were left unchanged.");
+            }
         }
 
         // The SSM mongo path is keyed by the prefix, which is the stack name minus its "baas-" namespace.
@@ -51,5 +65,15 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         configService.save(config);
         System.out.println("Configuration synced from " + coreStackName + " to " + configService.configFilePath());
         return 0;
+    }
+
+    private static void applyIfPresent(Map<String, String> outputs, String key,
+                                       Consumer<String> setter, List<String> missing) {
+        String value = outputs.get(key);
+        if (value == null || value.isBlank()) {
+            missing.add(key);
+        } else {
+            setter.accept(value);
+        }
     }
 }

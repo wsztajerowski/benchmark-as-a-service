@@ -71,9 +71,14 @@ public class Ec2ProvisioningService {
         }
     }
 
+    private boolean describeFailureReported = false;
+
     /**
      * Current EC2 state name, or "unknown" if the instance cannot be described.
      * Used to fail a run fast when the runner dies before writing its sentinel.
+     *
+     * <p>A persistent failure here (denied permission, expired session) silently
+     * disables that fail-fast, so the first one is reported rather than swallowed.
      */
     public String instanceState(String instanceId) {
         try {
@@ -84,6 +89,12 @@ public class Ec2ProvisioningService {
                 .map(instance -> instance.state().nameAsString())
                 .orElse("unknown");
         } catch (Exception e) {
+            if (!describeFailureReported) {
+                describeFailureReported = true;
+                System.err.println("Warning: cannot read the state of " + instanceId
+                    + " (" + e.getMessage() + ") — this run will poll until the wall-clock cap"
+                    + " instead of failing fast if the runner dies.");
+            }
             return "unknown";
         }
     }

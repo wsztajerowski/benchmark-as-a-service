@@ -32,6 +32,27 @@ class UserDataScriptBuilderTest {
             .isLessThan(script.lastIndexOf("terminate-instances"));
     }
 
+    /**
+     * The watchdog fires on the paths where the log matters most — a deadlocked JVM or a
+     * hung download — and it terminates the instance without ever reaching the normal
+     * upload further down the script. `baas run` points users at that S3 key, so it has
+     * to exist on this path too.
+     */
+    @Test
+    void watchdogShipsTheLogBeforeHardKillingTheInstance() {
+        String script = script();
+
+        int watchdogStart = script.indexOf("# Layer 1: background watchdog");
+        int watchdogTerminate = script.indexOf("terminate-instances", watchdogStart);
+        int uploadInWatchdog = script.indexOf("cloud-init-output.log", watchdogStart);
+
+        assertThat(watchdogStart).isNotNegative();
+        assertThat(uploadInWatchdog)
+            .as("the watchdog kills the instance without reaching the normal upload")
+            .isNotNegative()
+            .isLessThan(watchdogTerminate);
+    }
+
     @Test
     void passesBenchmarkParametersThrough() {
         assertThat(script()).contains("export BENCHMARK_PARAMETERS='MyBenchmark -f 1'");

@@ -69,4 +69,38 @@ class S3UploadServiceIT {
 
         assertThat(s3.listObjectVersions(r -> r.bucket(bucket)).versions()).isEmpty();
     }
+
+    /**
+     * The stack declares DeletionPolicy: Retain, so CloudFormation never removes the bucket.
+     * If teardown does not remove it explicitly, a retained bucket blocks the next
+     * `baas admin setup` — the bucket name is a deterministic hash of the caller ARN.
+     */
+    @Test
+    void removesTheBucketItselfNotJustItsContents() {
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/result.json").build(),
+            RequestBody.fromString("{}"));
+
+        var service = new S3UploadService(s3);
+        service.deleteAllObjects(bucket);
+        service.deleteBucket(bucket);
+
+        assertThat(s3.listBuckets().buckets())
+            .extracting(software.amazon.awssdk.services.s3.model.Bucket::name)
+            .doesNotContain(bucket);
+    }
+
+    @Test
+    void batchesDeletesAcrossMoreThanOnePage() {
+        // listObjectVersions pages at 1000 keys; this crosses that boundary.
+        for (int i = 0; i < 1005; i++) {
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/obj-" + i).build(),
+                RequestBody.fromString("x"));
+        }
+
+        new S3UploadService(s3).deleteAllObjects(bucket);
+
+        var remaining = s3.listObjectVersions(r -> r.bucket(bucket));
+        assertThat(remaining.versions()).isEmpty();
+        assertThat(remaining.deleteMarkers()).isEmpty();
+    }
 }

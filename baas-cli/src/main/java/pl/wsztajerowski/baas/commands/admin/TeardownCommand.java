@@ -60,11 +60,23 @@ public class TeardownCommand implements Callable<Integer> {
             }
         }
 
-        // Empty + delete S3 bucket if requested
+        // Empty + delete S3 bucket if requested. The stack declares DeletionPolicy: Retain,
+        // so CloudFormation will not remove the bucket — teardown has to do it here.
+        boolean bucketDeleted = false;
         if (deleteBucket && config.getAws().getBucket() != null) {
-            System.out.println("Emptying S3 bucket: " + config.getAws().getBucket());
+            String bucket = config.getAws().getBucket();
+            System.out.println("Emptying S3 bucket: " + bucket);
             try (var s3 = factory.s3()) {
-                new S3UploadService(s3).deleteAllObjects(config.getAws().getBucket());
+                var s3Service = new S3UploadService(s3);
+                s3Service.deleteAllObjects(bucket);
+                s3Service.deleteBucket(bucket);
+                bucketDeleted = true;
+                System.out.println("Deleted S3 bucket: " + bucket);
+            } catch (RuntimeException e) {
+                // Don't abort the teardown — leaving the stack behind is worse than
+                // leaving the bucket behind, and the bucket is recoverable by hand.
+                System.err.println("Warning: could not delete bucket " + bucket + ": " + e.getMessage());
+                System.err.println("  Continuing with stack deletion; remove the bucket manually.");
             }
         }
 
@@ -81,9 +93,12 @@ public class TeardownCommand implements Callable<Integer> {
         }
 
         System.out.println();
-        if (!deleteBucket) {
+        if (!bucketDeleted && config.getAws().getBucket() != null) {
             System.out.println("S3 results bucket retained: " + config.getAws().getBucket());
-            System.out.println("  Delete manually if no longer needed, or re-run with --delete-bucket.");
+            System.out.println("  Note: `baas admin setup` as this identity will fail while it exists —");
+            System.out.println("  the bucket name comes from a hash of your caller ARN, so the next setup");
+            System.out.println("  tries to create this same name. Delete it manually, or re-run teardown");
+            System.out.println("  with --delete-bucket.");
         }
         System.out.println("MongoDB cluster NOT touched (connect-only; delete it manually in Atlas if desired).");
         return 0;

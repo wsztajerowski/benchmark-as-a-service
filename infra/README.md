@@ -159,9 +159,17 @@ Every `baas admin setup` run prints (and the stack outputs as `OperatorRoleArn`)
 ARN. [`operator-policy.json`](./operator-policy.json) is a static reference copy of the same
 permission statements — useful for review, or as `put-role-policy` content if you need to
 build an equivalent role manually before any core stack has been deployed. It carries
-`ACCOUNT_ID` and `RESOURCE_PREFIX` placeholder tokens rather than wildcards: substitute your
-real values before using it. Its action list is kept in sync with the template's
-`OperatorRole` by a test (`OperatorPolicyDriftTest`).
+`ACCOUNT_ID`, `REGION` and `RESOURCE_PREFIX` placeholder tokens rather than wildcards:
+substitute your real values before using it. Its actions, resources *and* conditions are kept
+in sync with the template's `OperatorRole` by a test (`OperatorPolicyDriftTest`), which
+resolves the template's intrinsics to those same tokens before comparing.
+
+Note the two `ec2:RunInstances` statements. EC2 authorizes `RunInstances` separately against
+every resource in the request — instance, image, subnet, security group, network interface,
+volume — and `ec2:InstanceType` is only populated for the instance. A single statement
+carrying that condition would evaluate false for the other five and deny the whole call, so
+the instance-type constraint lives on an instance-scoped statement and the supporting
+resources get their own.
 
 ## MongoDB Atlas connectivity
 

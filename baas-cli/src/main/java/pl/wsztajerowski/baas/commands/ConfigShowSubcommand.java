@@ -24,7 +24,12 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         System.out.println("prefix:      " + config.getPrefix());
         System.out.println("aws:");
         System.out.println("  profile:                  " + config.getAws().getProfile() + "  (admin setup/teardown)");
-        System.out.println("  operatorProfile:          " + config.getAws().getOperatorProfile() + "  (run/results/config)");
+        // Unset here is not cosmetic — it means run/results/config fall through to the default
+        // credential chain instead of assuming the operator role, so say what to do about it.
+        System.out.println("  operatorProfile:          "
+            + (config.getAws().getOperatorProfile() != null
+                ? config.getAws().getOperatorProfile() + "  (run/results/config)"
+                : "<not set> — run: baas config set --operator-profile <name>"));
         System.out.println("  region:                   " + config.getAws().getRegion());
         System.out.println("  coreStackName:            " + config.getAws().getCoreStackName());
         System.out.println("  bucket:                   " + config.getAws().getBucket());

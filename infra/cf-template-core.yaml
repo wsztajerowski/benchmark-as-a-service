@@ -151,6 +151,11 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpiration:
               NoncurrentDays: 30
+          # Expiring a versioned object only writes a delete marker; without this the
+          # markers themselves accumulate forever once the versions beneath them go.
+          - Id: expire-orphaned-delete-markers
+            Status: Enabled
+            ExpiredObjectDeleteMarker: true
           - Id: abort-incomplete-uploads
             Status: Enabled
             AbortIncompleteMultipartUpload:
@@ -264,9 +269,14 @@ Resources:
                   - ec2:DescribeInstances
                   - ec2:DescribeInstanceStatus
                 Resource: "*"
+              # RunInstances is authorized once per resource in the request, and
+              # ec2:InstanceType is only populated for the instance leg. Carrying that
+              # condition on a single Resource:"*" statement makes it evaluate false for
+              # the image/subnet/security-group/network-interface/volume legs, which then
+              # match no Allow at all — the whole call fails. Hence the split.
               - Effect: Allow
                 Action: ec2:RunInstances
-                Resource: "*"
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
                 Condition:
                   StringEquals:
                     aws:RequestedRegion: !Ref AWS::Region
@@ -280,6 +290,17 @@ Resources:
                       - m5.*
                       - m6i.*
                       - m7i.*
+              - Effect: Allow
+                Action: ec2:RunInstances
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:*::image/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:subnet/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:network-interface/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:volume/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
               - Effect: Allow
                 Action: ec2:CreateTags
                 Resource: "*"

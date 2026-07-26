@@ -77,19 +77,48 @@ class CoreTemplateTest {
     @Test
     @SuppressWarnings("unchecked")
     void operatorCannotLaunchArbitrarilyLargeInstances() {
+        var runInstances = operatorStatementsFor("ec2:RunInstances");
+
+        assertThat(runInstances)
+            .as("RunInstances is authorized once per resource in the request, so the instance-type "
+                + "constraint and the supporting-resource grant have to be separate statements")
+            .hasSize(2);
+
+        var instanceLeg = runInstances.stream()
+            .filter(statement -> String.valueOf(statement.get("Resource")).contains(":instance/"))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No instance-scoped ec2:RunInstances statement"));
+
+        var instanceCondition = (Map<String, Object>) instanceLeg.get("Condition");
+        assertThat((Map<String, Object>) instanceCondition.get("StringLike"))
+            .as("an unconstrained RunInstances turns a typo into a four-figure bill")
+            .containsKey("ec2:InstanceType");
+
+        var supportingLeg = runInstances.stream()
+            .filter(statement -> statement != instanceLeg)
+            .findFirst()
+            .orElseThrow();
+
+        assertThat((Map<String, Object>) supportingLeg.get("Condition"))
+            .as("ec2:InstanceType is absent from the image/subnet/volume request context, so a "
+                + "StringLike on it here evaluates false and denies the whole RunInstances call")
+            .doesNotContainKey("StringLike");
+
+        assertThat(String.valueOf(supportingLeg.get("Resource")))
+            .as("every resource EC2 authorizes RunInstances against needs its own grant")
+            .contains(":image/", ":subnet/", ":security-group/", ":network-interface/", ":volume/");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> operatorStatementsFor(String action) {
         var policies = (List<Map<String, Object>>)
             InfraFixtures.properties(template, "OperatorRole").get("Policies");
 
-        var runInstances = policies.stream()
+        return policies.stream()
             .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
             .flatMap(document -> ((List<Map<String, Object>>) document.get("Statement")).stream())
-            .filter(statement -> String.valueOf(statement.get("Action")).contains("ec2:RunInstances"))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("No ec2:RunInstances statement on OperatorRole"));
-
-        assertThat(runInstances)
-            .as("an unconstrained RunInstances turns a typo into a four-figure bill")
-            .containsKey("Condition");
+            .filter(statement -> String.valueOf(statement.get("Action")).contains(action))
+            .toList();
     }
 
     @Test

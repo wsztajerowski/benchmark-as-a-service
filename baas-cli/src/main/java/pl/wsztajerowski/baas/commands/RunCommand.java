@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -176,48 +177,70 @@ public class RunCommand implements Callable<Integer> {
                      String requestId, String resultPath, int wallClockSeconds) throws InterruptedException {
         long startMs = System.currentTimeMillis();
         long timeoutMs = (long) wallClockSeconds * 1000;
+        String bucket = config.getAws().getBucket();
         String statusKey = resultPath + "/run-status";
+        String logPath = "s3://" + bucket + "/" + resultPath + "/cloud-init-output.log";
 
-        while (true) {
-            long elapsed = (System.currentTimeMillis() - startMs) / 1000;
-            if (elapsed * 1000 > timeoutMs) {
-                System.err.println("Client-side wall-clock cap exceeded (" + wallClockSeconds + "s). Exiting poll.");
-                return 1;
-            }
+        // Built once, not per iteration: every client construction re-resolves the
+        // profile, and with a role-assuming operator profile that means a fresh
+        // sts:AssumeRole — hundreds of them over a long run.
+        try (var s3 = factory.s3(); var ec2 = factory.ec2()) {
+            var storage = new S3UploadService(s3);
+            var provisioning = new Ec2ProvisioningService(ec2);
 
-            Optional<String> status;
-            try (var s3 = factory.s3()) {
-                status = new S3UploadService(s3).getObjectIfExists(config.getAws().getBucket(), statusKey);
-            }
-
-            if (status.isPresent()) {
-                String body = status.get().trim();
-                System.out.println("Run status: " + body);
-                if ("completed".equals(body)) {
-                    showResults(factory, config, requestId);
-                    return 0;
-                } else if (body.startsWith("failed:")) {
-                    System.err.println("Benchmark failed. Runner log: s3://"
-                        + config.getAws().getBucket() + "/" + resultPath + "/cloud-init-output.log");
+            while (true) {
+                long elapsed = (System.currentTimeMillis() - startMs) / 1000;
+                if (elapsed * 1000 > timeoutMs) {
+                    System.err.println("Client-side wall-clock cap exceeded (" + wallClockSeconds + "s). Exiting poll.");
                     return 1;
                 }
-            } else {
-                String state;
-                try (var ec2 = factory.ec2()) {
-                    state = new Ec2ProvisioningService(ec2).instanceState(instanceId);
-                }
-                if ("terminated".equals(state) || "shutting-down".equals(state)) {
-                    System.err.println("Instance " + instanceId + " is " + state
-                        + " but wrote no run-status sentinel — the runner died before finishing.");
-                    System.err.println("Runner log: s3://" + config.getAws().getBucket()
-                        + "/" + resultPath + "/cloud-init-output.log");
-                    return 1;
-                }
-                System.out.printf("Still running (%s)... elapsed: %ds%n", state, elapsed);
-            }
 
-            Thread.sleep(15_000);
+                Optional<String> status = storage.getObjectIfExists(bucket, statusKey);
+                if (status.isPresent()) {
+                    var exitCode = exitCodeFor(status.get().trim(), factory, config, requestId, logPath);
+                    if (exitCode.isPresent()) {
+                        return exitCode.getAsInt();
+                    }
+                } else {
+                    String state = provisioning.instanceState(instanceId);
+                    if ("terminated".equals(state) || "shutting-down".equals(state)) {
+                        // The sentinel is written moments before the instance terminates, so a
+                        // poll landing in that window sees a dead instance and no status yet.
+                        // Re-read once before reporting a successful run as a failure.
+                        var lateStatus = storage.getObjectIfExists(bucket, statusKey);
+                        if (lateStatus.isPresent()) {
+                            var exitCode = exitCodeFor(lateStatus.get().trim(), factory, config, requestId, logPath);
+                            if (exitCode.isPresent()) {
+                                return exitCode.getAsInt();
+                            }
+                        }
+                        System.err.println("Instance " + instanceId + " is " + state
+                            + " but wrote no run-status sentinel — the runner died before finishing.");
+                        System.err.println("Runner log (present only if the instance got far enough "
+                            + "to upload it): " + logPath);
+                        return 1;
+                    }
+                    System.out.printf("Still running (%s)... elapsed: %ds%n", state, elapsed);
+                }
+
+                Thread.sleep(15_000);
+            }
         }
+    }
+
+    /** Maps a run-status sentinel to an exit code, or empty while the run is still in flight. */
+    private OptionalInt exitCodeFor(String body, AwsClientFactory factory, BaasConfig config,
+                                    String requestId, String logPath) {
+        System.out.println("Run status: " + body);
+        if ("completed".equals(body)) {
+            showResults(factory, config, requestId);
+            return OptionalInt.of(0);
+        }
+        if (body.startsWith("failed:")) {
+            System.err.println("Benchmark failed. Runner log: " + logPath);
+            return OptionalInt.of(1);
+        }
+        return OptionalInt.empty();
     }
 
     private void showResults(AwsClientFactory factory, BaasConfig config, String requestId) {

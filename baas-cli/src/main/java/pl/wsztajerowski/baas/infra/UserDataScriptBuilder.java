@@ -17,6 +17,10 @@ public class UserDataScriptBuilder {
         (
           sleep ${WALL_CLOCK_HARD_KILL}
           echo "WATCHDOG: hard-kill cap exceeded; terminating $INSTANCE_ID"
+          # This path never reaches the normal upload below, and it is exactly the
+          # case a user needs the log for — ship it before the instance disappears.
+          aws s3 cp /var/log/cloud-init-output.log \\
+            "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
           aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
         ) &
         WATCHDOG_PID=$!
