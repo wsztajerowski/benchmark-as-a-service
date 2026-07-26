@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.infra;
 
+import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.cloudformation.model.Capability;
 import software.amazon.awssdk.services.cloudformation.model.CloudFormationException;
@@ -63,7 +64,7 @@ public class CloudFormationService {
                 .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
                 .build());
             System.out.println("Creating stack " + stackName + "...");
-            cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName));
+            await(stackName, "create", () -> cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName)));
         }
         System.out.println("Stack " + stackName + " deployed successfully.");
     }
@@ -71,8 +72,51 @@ public class CloudFormationService {
     public void deleteStack(String stackName) {
         cf.deleteStack(DeleteStackRequest.builder().stackName(stackName).build());
         System.out.println("Deleting stack " + stackName + "...");
-        cf.waiter().waitUntilStackDeleteComplete(r -> r.stackName(stackName));
+        await(stackName, "delete", () -> cf.waiter().waitUntilStackDeleteComplete(r -> r.stackName(stackName)));
         System.out.println("Stack " + stackName + " deleted.");
+    }
+
+    /**
+     * A failed waiter reports only that it reached a terminal state — the actual cause lives
+     * in the stack events. Without this, a single denied IAM action surfaces as an
+     * SdkClientException stack trace naming neither the resource nor the action, and the user
+     * has to go and run describe-stack-events by hand to learn anything at all.
+     */
+    private void await(String stackName, String operation, Runnable waiter) {
+        try {
+            waiter.run();
+        } catch (SdkClientException e) {
+            throw new IllegalStateException(failureReport(stackName, operation), e);
+        }
+    }
+
+    private String failureReport(String stackName, String operation) {
+        var report = new StringBuilder("Stack " + stackName + " failed to " + operation + ".");
+        try {
+            var failures = cf.describeStackEvents(r -> r.stackName(stackName)).stackEvents().stream()
+                .filter(event -> event.resourceStatusAsString() != null
+                    && event.resourceStatusAsString().endsWith("_FAILED"))
+                .filter(event -> event.resourceStatusReason() != null)
+                // Cascade noise: these name no cause and bury the one event that does.
+                .filter(event -> !event.resourceStatusReason().contains("Resource creation cancelled"))
+                .filter(event -> !event.resourceStatusReason().startsWith("The following resource(s) failed"))
+                .toList();
+
+            // Events come back newest-first, so the last one is the root cause.
+            for (int i = failures.size() - 1; i >= 0; i--) {
+                report.append(System.lineSeparator())
+                    .append("  ").append(failures.get(i).logicalResourceId())
+                    .append(": ").append(failures.get(i).resourceStatusReason());
+            }
+            if (failures.isEmpty()) {
+                report.append(System.lineSeparator())
+                    .append("  (no failure events reported — check the CloudFormation console)");
+            }
+        } catch (RuntimeException e) {
+            report.append(System.lineSeparator())
+                .append("  (could not read stack events: ").append(e.getMessage()).append(')');
+        }
+        return report.toString();
     }
 
     public Map<String, String> getStackOutputs(String stackName) {
