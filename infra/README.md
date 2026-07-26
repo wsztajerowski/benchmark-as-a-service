@@ -87,6 +87,27 @@ that grants permission to create CloudFormation stacks. Create this policy manua
 console or `aws iam create-policy`) and attach it to whichever identity will run
 `baas admin setup`/`baas admin teardown`, before the first deploy.
 
+It has to be a **customer-managed policy**, not an inline user policy: the document is over
+2 KB minified, and IAM caps inline *user* policies at 2 048 characters (managed policies get
+6 144). `aws iam put-user-policy` will reject it.
+
+```bash
+# First time
+aws iam create-policy --policy-name BaasCliDeployerPolicy \
+  --policy-document file://deployer-policy.json
+aws iam attach-user-policy --user-name YOUR_DEPLOYER_IAM_USER \
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy
+
+# After any change to deployer-policy.json — the attached policy does not track the file
+aws iam create-policy-version --set-as-default \
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy \
+  --policy-document file://deployer-policy.json
+```
+
+Re-running the second command matters: nothing keeps the attached policy in sync with this
+repo, so a stack change that needs a new permission fails at deploy time with a bare
+`AccessDenied` until you publish a new policy version.
+
 ### `BaasCliOperatorRole` — standing, narrow, created *by* the core stack, assumed per-session
 
 Required by `baas run`, `baas results`, and `baas config`. Unlike the deployer policy, this
