@@ -33,6 +33,12 @@
 - [x] 6.2 Correct the "443 reaches Atlas" claim in `docs/redesign.md` and the "runner's egress IP" instruction in `docs/aws-migration-plan.md`.
 
 ## 7. Manual verification
-- [ ] 7.1 `baas admin setup --mongo-uri "..."` against a scratch account under the revised deployer policy only.
+- [x] 7.1 `baas admin setup --mongo-uri "..."` against a scratch account under the revised deployer policy only.
+  - Run against account 381492019823, eu-central-1, as `baas-admin-wiktor` holding only the deployer policy. Stack `CREATE_COMPLETE`, SSM SecureString written, config populated from outputs.
+  - Found a real gap: the policy had no `iam:PassRole`, so `RunnerInstanceProfile` could not be created. Fixed and re-verified.
+  - Confirmed deployed: security-group egress 80/443/**27017**; all four bucket lifecycle rules; the two-statement `ec2:RunInstances` split with the instance-type constraint only on the instance leg.
+  - `ssm:GetParameter` is denied to the deployer by design — writing is the deployer's job, reading the operator's.
 - [ ] 7.2 `baas run jmh` under an assumed `BaasCliOperatorRole` — confirm the Mongo write succeeds and results appear.
-- [ ] 7.3 `baas admin teardown --yes --delete-bucket` — confirm the bucket empties and the stack reaches `DELETE_COMPLETE`.
+  - Blocked on two prerequisites, not on this change: an operator identity granted `sts:AssumeRole` on the role ARN, and a Mongo URI the runner can reach (a local Docker instance is not routable from EC2).
+- [x] 7.3 `baas admin teardown --yes --delete-bucket` — confirm the bucket empties and the stack reaches `DELETE_COMPLETE`.
+  - Emptied the bucket, deleted it explicitly, deleted the stack and the SSM parameter. The explicit `DeleteBucket` is the fix for `DeletionPolicy: Retain` leaving the bucket behind; without it the deterministic prefix makes the next `setup` unrecoverable.
