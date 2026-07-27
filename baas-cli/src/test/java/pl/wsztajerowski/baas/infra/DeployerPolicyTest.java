@@ -10,6 +10,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class DeployerPolicyTest {
 
+    /**
+     * Found by a real deploy, not by reading docs: iam:AddRoleToInstanceProfile additionally
+     * requires iam:PassRole on the role being added, so RunnerInstanceProfile fails to create
+     * without it even though every Create/Add action is granted.
+     */
+    @Test
+    void canPassTheRunnerRoleIntoItsInstanceProfile() {
+        assertThat(InfraFixtures.actions(InfraFixtures.deployerPolicy()))
+            .as("AddRoleToInstanceProfile is not sufficient on its own")
+            .contains("iam:PassRole");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {
         // baas admin setup --mongo-uri writes the SecureString parameter

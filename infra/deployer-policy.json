@@ -94,6 +94,12 @@
       ]
     },
     {
+      "Sid": "PassRunnerRoleToInstanceProfile",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": "arn:aws:iam::*:role/*-runner-role"
+    },
+    {
       "Sid": "S3WorkingBucketLifecycle",
       "Effect": "Allow",
       "Action": [
