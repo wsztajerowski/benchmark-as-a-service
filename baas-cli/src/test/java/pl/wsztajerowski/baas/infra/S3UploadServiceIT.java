@@ -89,6 +89,22 @@ class S3UploadServiceIT {
             .doesNotContain(bucket);
     }
 
+    /**
+     * A retained bucket blocks the stack that wants to recreate it, and CloudFormation reports
+     * that as "Validation failed with 1 error(s)" without ever naming S3. Setup pre-checks for
+     * it, so this has to distinguish present from absent correctly.
+     */
+    @Test
+    void detectsWhetherABucketNameIsTaken() {
+        var service = new S3UploadService(s3);
+
+        assertThat(service.bucketExists(bucket)).isTrue();
+        assertThat(service.bucketExists("baas-definitely-not-created-" + UUID.randomUUID())).isFalse();
+
+        service.deleteBucket(bucket);
+        assertThat(service.bucketExists(bucket)).isFalse();
+    }
+
     @Test
     void batchesDeletesAcrossMoreThanOnePage() {
         // listObjectVersions pages at 1000 keys; this crosses that boundary.

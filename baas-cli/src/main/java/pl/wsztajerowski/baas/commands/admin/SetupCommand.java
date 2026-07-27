@@ -6,6 +6,7 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
+import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 
 import java.io.IOException;
@@ -86,6 +87,24 @@ public class SetupCommand implements Callable<Integer> {
         params.put("ExistingVpcId", existingVpcId != null ? existingVpcId : "");
         params.put("ExistingSubnetId", existingSubnetId != null ? existingSubnetId : "");
         params.put("ExistingSecurityGroupId", existingSecurityGroupId != null ? existingSecurityGroupId : "");
+
+        // The bucket is declared DeletionPolicy: Retain, so deleting the stack leaves it
+        // behind — and the prefix is a hash of the caller ARN, so the next setup asks for
+        // that exact name again and CloudFormation refuses with an opaque "Validation failed
+        // with 1 error(s)" that never mentions S3. Say what actually happened instead.
+        try (var cf = factory.cloudFormation(); var s3 = factory.s3()) {
+            String bucketName = "baas-" + resolvedPrefix;
+            if (!new CloudFormationService(cf).stackExists(resolvedStack)
+                && new S3UploadService(s3).bucketExists(bucketName)) {
+                System.err.println("Bucket " + bucketName + " already exists, but stack "
+                    + resolvedStack + " does not.");
+                System.err.println("  A previous teardown retained it — the stack cannot recreate a bucket");
+                System.err.println("  that is already there, and the name is fixed by your caller ARN.");
+                System.err.println("  Keep the old results:  aws s3 sync s3://" + bucketName + " ./backup");
+                System.err.println("  Then remove it:        aws s3 rb s3://" + bucketName + " --force");
+                return 1;
+            }
+        }
 
         try (var cf = factory.cloudFormation()) {
             new CloudFormationService(cf).createOrUpdateStack(resolvedStack, templateBody, params);

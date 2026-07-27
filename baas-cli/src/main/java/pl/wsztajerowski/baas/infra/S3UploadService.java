@@ -3,9 +3,11 @@ package pl.wsztajerowski.baas.infra;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -78,5 +80,21 @@ public class S3UploadService {
      */
     public void deleteBucket(String bucket) {
         s3.deleteBucket(r -> r.bucket(bucket));
+    }
+
+    /**
+     * Bucket names are global, so a retained bucket blocks a stack that wants to recreate it.
+     * A 403 counts as existing: the name is taken either way, which is all the caller needs
+     * to know, and treating it as absent would send them into a create that cannot succeed.
+     */
+    public boolean bucketExists(String bucket) {
+        try {
+            s3.headBucket(r -> r.bucket(bucket));
+            return true;
+        } catch (NoSuchBucketException e) {
+            return false;
+        } catch (S3Exception e) {
+            return e.statusCode() != 404;
+        }
     }
 }
