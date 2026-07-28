@@ -38,6 +38,11 @@ public class UserDataScriptBuilder {
         fi
 
         mkdir -p /app
+        # Run from a real working directory. cloud-init starts us in /, and the runner
+        # scans the tree below its cwd for .log files to upload — from / that means
+        # walking the whole root filesystem, and dying on /proc entries that vanish
+        # mid-walk. The GitHub Actions flow this replaced ran from its workspace dir.
+        cd /app
 
         # Download runner JAR: from S3 (if --runner-jar provided) or GitHub Releases
         if [[ -n "${RUNNER_JAR_S3_KEY}" ]]; then

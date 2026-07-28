@@ -53,6 +53,22 @@ class UserDataScriptBuilderTest {
             .isLessThan(watchdogTerminate);
     }
 
+    /**
+     * cloud-init starts the script in /, and the runner walks the tree below its cwd looking
+     * for .log files to upload. From / that walks the entire root filesystem and aborts on
+     * /proc entries that disappear mid-walk, which fails the run after the benchmark has
+     * already completed.
+     */
+    @Test
+    void runsTheBenchmarkFromARealWorkingDirectory() {
+        String script = script();
+
+        assertThat(script).contains("cd /app");
+        assertThat(script.indexOf("cd /app"))
+            .as("the working directory has to be set before the runner starts")
+            .isLessThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
+    }
+
     @Test
     void passesBenchmarkParametersThrough() {
         assertThat(script()).contains("export BENCHMARK_PARAMETERS='MyBenchmark -f 1'");
