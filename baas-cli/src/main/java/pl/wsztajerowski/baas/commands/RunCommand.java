@@ -28,6 +28,21 @@ import java.util.concurrent.Callable;
     name = "run",
     mixinStandardHelpOptions = true,
     description = "Build a benchmark JAR, launch an EC2 runner, and poll for results.",
+    // Lines are kept under 80 columns: picocli wraps the footer at the usage width and
+    // re-wrapping mid-sentence makes the -- rule harder to read than no footer at all.
+    footer = {
+        "",
+        "Put -- before the benchmark parameters. Everything after it goes verbatim",
+        "to benchmark-runner.jar. Without it, JMH flags are parsed as baas options",
+        "and the command fails with: Unknown options: '-f', '-wi', '-i'",
+        "",
+        "  baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3",
+        "  baas run --instance-type c6i.4xlarge jmh -- MyBenchmark -f 1",
+        "",
+        "Measurements go to MongoDB. S3 receives process output, logs, profiler",
+        "artifacts and the run-status sentinel. With no MongoDB URI the runner",
+        "uses a no-op database and the measurements are discarded."
+    },
     separator = " "
 )
 public class RunCommand implements Callable<Integer> {
@@ -39,7 +54,8 @@ public class RunCommand implements Callable<Integer> {
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
     String benchmarkType;
 
-    @Parameters(index = "1..*", paramLabel = "PARAMS", description = "Parameters forwarded to benchmark-runner.jar.")
+    @Parameters(index = "1..*", paramLabel = "PARAMS",
+        description = "Parameters forwarded to benchmark-runner.jar. Must follow a -- separator.")
     List<String> benchmarkParams = new ArrayList<>();
 
     @Option(names = "--benchmark-jar", description = "Path to the benchmark JAR (overrides config jarPath).")

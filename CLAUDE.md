@@ -42,11 +42,22 @@ The `.env` file contains LocalStack credentials used by Docker Compose and tests
 ## Running Benchmarks Remotely
 
 ```bash
-# Build, upload to S3, and trigger a GitHub Actions workflow on EC2
+# Provision EC2, run, poll (baas-cli)
+baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
+
+# Build, upload to S3, and trigger a GitHub Actions workflow on EC2 (legacy path)
 scripts/run-remote-benchmark.zsh -t=jmh-with-async -- MyBenchmark -f 1 -wi 1 -i 3
 
 # Query aggregated results from MongoDB
 scripts/benchmark_overview.sh
+```
+
+**`--` is required before benchmark parameters.** Everything after it is forwarded verbatim to
+`benchmark-runner.jar`. Without it, picocli parses JMH flags as `baas` options and fails with
+`Unknown options: '-f', '-wi', '-i'`. `baas` options must come before the `--`:
+
+```bash
+baas run --instance-type c6i.4xlarge jmh -- MyBenchmark -f 1 -wi 1 -i 3
 ```
 
 ## Module Structure
@@ -91,8 +102,20 @@ This is a Maven multi-module project with 4 modules:
 
 ## Storage Layout
 
-- **S3**: Results stored by `{requestPath}/{benchmarkName}/result.json`; profiling artifacts (flame graphs) alongside
-- **MongoDB**: Collections `jmh_benchmarks` and JCStress results; Morphia ORM; connection string via `MONGODB_CONNECTION_STRING` env var
+**Measurements go to MongoDB, not to S3.** S3 holds process output and artifacts. There is no
+`result.json` — the machine-readable JMH file is parsed locally and persisted as documents; if
+the database is the no-op implementation, the numbers are not stored anywhere.
+
+- **S3**, under `{resultPath}` (= `{branch}/{type}/{timestamp}`):
+  - `jmh-output.txt` / `jmh-with-async-output.txt` / `jmh-profiler-output.txt` / `jcstress-output.txt` — captured process stdout
+  - `logs/*.log` — log files found under the runner's working directory
+  - `{benchmark}.{mode}/*` — async-profiler artifacts (flame graphs), `jmh-with-async` only
+  - `run-status` — sentinel written by user-data: `completed` or `failed:{exitCode}`
+  - `cloud-init-output.log` — the runner's boot log, uploaded before the instance self-terminates
+  - `runs/{requestId}/{benchmark,runner}.jar` — uploaded inputs (separate top-level prefix)
+- **MongoDB**: `jmh_benchmarks` and JCStress collections; Morphia ORM. The connection string
+  reaches the runner as `MONGO_CONNECTION_STRING` (env var) or `--mongo-connection-string`.
+  Empty or unset selects `NoOpDatabaseService` — benchmarks still run, results are discarded.
 
 ## Java Version
 

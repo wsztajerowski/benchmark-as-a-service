@@ -391,8 +391,10 @@ baas setup        # deploy/update CloudFormation stack; write config to ~/.baas/
 baas teardown     # tear down the CloudFormation stack
 baas config set   # store MongoDB URI in SSM SecureString; write non-sensitive config
 baas config show  # print current config (MongoDB URI masked)
-baas run <type>   # build → upload → provision EC2 → poll → show results
+baas run <type> -- <params>
+                  # build → upload → provision EC2 → poll → show results
                   # types: jmh | jmh-with-async | jmh-with-prof | jcstress
+                  # -- is required; params after it go verbatim to benchmark-runner.jar
 baas results      # query MongoDB; mirrors benchmark_overview.sh aggregation logic
 ```
 

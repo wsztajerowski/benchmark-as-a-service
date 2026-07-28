@@ -42,6 +42,32 @@ class BaasAppTest {
             .containsKey("sync");
     }
 
+    /**
+     * Without the separator picocli reads JMH flags as baas options and fails with
+     * "Unknown options: '-f', '-wi', '-i'", which does not hint at the cause. The help
+     * text is the only place a user finds out, so it has to say so.
+     */
+    @Test
+    void runHelpExplainsTheDoubleDashSeparator() {
+        String usage = new CommandLine(new BaasApp())
+            .getSubcommands().get("run")
+            .getUsageMessage(CommandLine.Help.Ansi.OFF);
+
+        assertThat(usage)
+            .contains("Put -- before the benchmark parameters")
+            .contains("baas run jmh -- MyBenchmark");
+    }
+
+    /** The -- separator has to survive into the forwarded parameter list, not be consumed. */
+    @Test
+    void parametersAfterTheSeparatorAreForwardedVerbatim() {
+        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+            .parseArgs("run", "jmh", "--", "MyBenchmark", "-f", "1", "-wi", "1");
+
+        assertThat(result.subcommand().matchedPositionalValue(1, java.util.List.<String>of()))
+            .containsExactly("MyBenchmark", "-f", "1", "-wi", "1");
+    }
+
     @Test
     void topLevelSetupIsNotResolvable() {
         CommandLine root = new CommandLine(new BaasApp());
