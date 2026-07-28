@@ -38,7 +38,11 @@
   - Found a real gap: the policy had no `iam:PassRole`, so `RunnerInstanceProfile` could not be created. Fixed and re-verified.
   - Confirmed deployed: security-group egress 80/443/**27017**; all four bucket lifecycle rules; the two-statement `ec2:RunInstances` split with the instance-type constraint only on the instance leg.
   - `ssm:GetParameter` is denied to the deployer by design — writing is the deployer's job, reading the operator's.
-- [ ] 7.2 `baas run jmh` under an assumed `BaasCliOperatorRole` — confirm the Mongo write succeeds and results appear.
-  - Blocked on two prerequisites, not on this change: an operator identity granted `sts:AssumeRole` on the role ARN, and a Mongo URI the runner can reach (a local Docker instance is not routable from EC2).
+- [x] 7.2 `baas run jmh` under an assumed `BaasCliOperatorRole` — confirm the Mongo write succeeds and results appear.
+  - Ran `baas run jmh` with `fake-jmh-benchmarks.jar` under an operator profile assuming `3q7i7s65-operator-role`. `Run status: completed`; `jmh-output.txt`, `run-status` and `cloud-init-output.log` all in S3; instance self-terminated.
+  - **The split `ec2:RunInstances` grant works** — `Instance launched: i-0c87b8f59461b2f19`. This was the one thing no test could prove, since the bug it fixes is an IAM evaluation behaviour.
+  - Also exercised: S3 upload under operator credentials, instance-state polling, the `failed:` path and its log pointer (on the first attempt), and the cloud-init log upload.
+  - Found and fixed a regression: the runner scans below its cwd for `.log` files, and cloud-init starts user-data in `/`, so it walked the whole root filesystem and died on `/proc`. Now runs from `/app`.
+  - The Mongo write itself was deliberately not exercised — the SSM parameter was removed so `DatabaseServiceBuilder` took its `NoOpDatabaseService` path, which the log confirms. Re-run against a reachable Atlas URI to close that last gap.
 - [x] 7.3 `baas admin teardown --yes --delete-bucket` — confirm the bucket empties and the stack reaches `DELETE_COMPLETE`.
   - Emptied the bucket, deleted it explicitly, deleted the stack and the SSM parameter. The explicit `DeleteBucket` is the fix for `DeletionPolicy: Retain` leaving the bucket behind; without it the deterministic prefix makes the next `setup` unrecoverable.
