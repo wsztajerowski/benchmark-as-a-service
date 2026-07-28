@@ -1,6 +1,8 @@
 # AWS Migration Plan — BaaS Infrastructure
 
-> Companion to [`redesign.md`](redesign.md). This document covers the step-by-step procedure for migrating from the current two-stack CloudFormation deployment + GitHub Actions trigger to the new single-stack deployment driven by the self-contained `baas` CLI.
+> **Historical.** This migration has been executed and verified; the procedure below is kept as
+> a record, not as instructions to follow. The design rationale it accompanied now lives in
+> [`docs/adr/0001-self-contained-baas-cli.md`](adr/0001-self-contained-baas-cli.md).
 
 > **Superseded:** The setup/teardown and command-structure sections of this plan assumed a
 > single unified stack. That approach has been superseded by a core/CI stack split and the
@@ -163,7 +165,7 @@ aws cloudformation delete-stack --stack-name baas-main --profile <profile>
 aws cloudformation wait stack-delete-complete --stack-name baas-main --profile <profile>
 ```
 
-If old and new stacks share the same bucket name, ensure the new stack manages it before deleting the old one. For routine teardown of a `baas`-managed stack, prefer `baas teardown` (safety gates in `redesign.md §6`).
+If old and new stacks share the same bucket name, ensure the new stack manages it before deleting the old one. For routine teardown of a `baas`-managed stack, prefer `baas admin teardown` (its safety gates are implemented in `TeardownCommand`).
 
 **Step 3.3 — Clean up old externally-managed networking (if any)**
 

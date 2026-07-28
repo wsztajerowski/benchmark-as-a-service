@@ -416,7 +416,7 @@ baas results      # query MongoDB; mirrors benchmark_overview.sh aggregation log
 `baas results` outputs: `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`
 (differs from `benchmark_overview.sh` which outputs `BENCHMARK | SCORE | UNIT | BRANCH | REQUEST_ID | OPTIONS`)
 
-> Full design document: [`docs/redesign.md`](docs/redesign.md) | Migration plan: [`docs/aws-migration-plan.md`](docs/aws-migration-plan.md)
+> Design rationale and the invariants the runner depends on: [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change design records live in `openspec/changes/*/design.md`. Historical migration procedure: [`docs/aws-migration-plan.md`](docs/aws-migration-plan.md).
 
 ---
 
