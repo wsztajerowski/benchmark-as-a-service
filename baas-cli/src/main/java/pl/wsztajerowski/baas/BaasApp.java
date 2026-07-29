@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas;
 
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
+import picocli.CommandLine.ParseResult;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
@@ -20,10 +22,23 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
 )
 public class BaasApp implements Runnable {
 
+    @Mixin LoggingMixin loggingMixin;
+
     public static void main(String[] args) {
-        System.exit(new CommandLine(new BaasApp())
+        // Must happen before the CommandLine is built — see LoggingMixin#applyEarlyVerbosity.
+        LoggingMixin.applyEarlyVerbosity(args);
+        BaasApp app = new BaasApp();
+        System.exit(new CommandLine(app)
+            .setExecutionStrategy(app::executionStrategy)
             .setExecutionExceptionHandler(BaasApp::reportFailure)
             .execute(args));
+    }
+
+    private int executionStrategy(ParseResult parseResult) {
+        if (loggingMixin.verbose) {
+            System.setProperty(LoggingMixin.LEVEL_PROPERTY, "debug");
+        }
+        return new CommandLine.RunLast().execute(parseResult); // default execution strategy
     }
 
     /**
@@ -45,6 +60,7 @@ public class BaasApp implements Runnable {
 
     @Override
     public void run() {
+        // Help text is program output, not a log event — picocli renders and wraps it itself.
         CommandLine.usage(this, System.out);
     }
 }

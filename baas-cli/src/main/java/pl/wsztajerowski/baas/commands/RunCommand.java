@@ -1,8 +1,12 @@
 package pl.wsztajerowski.baas.commands;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -47,8 +51,12 @@ import java.util.concurrent.Callable;
 )
 public class RunCommand implements Callable<Integer> {
 
+    private static final Logger logger = LoggerFactory.getLogger(RunCommand.class);
+
     private static final List<String> VALID_TYPES = List.of("jmh", "jmh-with-async", "jmh-with-prof", "jcstress");
     private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
+
+    @Mixin LoggingMixin loggingMixin;
 
     @Parameters(index = "0", paramLabel = "<type>",
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
@@ -101,7 +109,7 @@ public class RunCommand implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         if (!VALID_TYPES.contains(benchmarkType)) {
-            System.err.println("Unknown benchmark type '" + benchmarkType + "'. Valid: " + VALID_TYPES);
+            logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
             return 1;
         }
 
@@ -111,6 +119,8 @@ public class RunCommand implements Callable<Integer> {
         int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
             : (timeoutSeconds != null ? timeoutSeconds + 300 : config.getEc2().getWallClockHardKillSeconds());
         String resolvedBranch = branch != null ? branch : currentGitBranch();
+        logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, params={}",
+            resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, benchmarkParams);
 
         // 1. Build
         if (!skipBuild) {
@@ -120,8 +130,7 @@ public class RunCommand implements Callable<Integer> {
         // 2. Determine JAR path
         Path jarPath = benchmarkJar != null ? benchmarkJar : Path.of(config.getBenchmark().getJarPath());
         if (!jarPath.toFile().exists()) {
-            System.err.println("Benchmark JAR not found: " + jarPath);
-            System.err.println("Run without --skip-build or specify --benchmark-jar.");
+            logger.error("Benchmark JAR not found: {}\nRun without --skip-build or specify --benchmark-jar.", jarPath);
             return 1;
         }
 
@@ -129,13 +138,14 @@ public class RunCommand implements Callable<Integer> {
         String timestamp = TS.format(LocalDateTime.now());
         String requestId = benchmarkType + "-" + timestamp;
         String resultPath = resolvedBranch + "/" + benchmarkType + "/" + timestamp;
+        logger.debug("Results will land under s3://{}/{}", config.getAws().getBucket(), resultPath);
 
-        operatorCredentialsWarning(config).ifPresent(System.err::println);
+        operatorCredentialsWarning(config).ifPresent(logger::warn);
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
         // 4. Upload JARs
-        System.out.println("Uploading benchmark JAR to S3...");
+        logger.info("Uploading benchmark JAR to S3...");
         String benchmarkJarKey = "runs/" + requestId + "/benchmark.jar";
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).upload(jarPath, config.getAws().getBucket(), benchmarkJarKey);
@@ -143,7 +153,7 @@ public class RunCommand implements Callable<Integer> {
 
         String runnerJarS3Key = null;
         if (runnerJar != null) {
-            System.out.println("Uploading runner JAR to S3...");
+            logger.info("Uploading runner JAR to S3...");
             runnerJarS3Key = "runs/" + requestId + "/runner.jar";
             try (var s3 = factory.s3()) {
                 new S3UploadService(s3).upload(runnerJar, config.getAws().getBucket(), runnerJarS3Key);
@@ -156,6 +166,7 @@ public class RunCommand implements Callable<Integer> {
             amiId = new SsmService(ssm).getParameter(
                 "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64");
         }
+        logger.debug("Resolved AL2023 AMI: {}", amiId);
 
         // 6. Build user-data
         String userData = new UserDataScriptBuilder().build(
@@ -163,9 +174,12 @@ public class RunCommand implements Callable<Integer> {
             benchmarkType, requestId, resultPath, resolvedTimeout, resolvedWallClock,
             config.getBenchmark().getAsyncProfilerVersion(), runnerJarS3Key,
             benchmarkParams);
+        // The script is what actually decides whether a run works; when a runner dies before it
+        // can upload cloud-init-output.log, this is the only place left to look.
+        logger.debug("Generated user-data script:\n{}", userData);
 
         // 7. Launch instance
-        System.out.println("Launching EC2 instance (" + resolvedInstanceType + ")...");
+        logger.info("Launching EC2 instance ({})...", resolvedInstanceType);
         String instanceId;
         try (var ec2 = factory.ec2()) {
             instanceId = new Ec2ProvisioningService(ec2).runInstance(
@@ -174,12 +188,12 @@ public class RunCommand implements Callable<Integer> {
                 config.getAws().getRunnerInstanceProfileName(),
                 userData, requestId, extraTags);
         }
-        System.out.println("Instance launched: " + instanceId);
-        System.out.println("Request ID: " + requestId);
+        logger.info("Instance launched: {}", instanceId);
+        logger.info("Request ID: {}", requestId);
 
         // 8. Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Terminating instance " + instanceId + " ...");
+            logger.info("Terminating instance {} ...", instanceId);
             try (var ec2 = factory.ec2()) {
                 new Ec2ProvisioningService(ec2).terminateInstance(instanceId);
             }
@@ -207,7 +221,7 @@ public class RunCommand implements Callable<Integer> {
             while (true) {
                 long elapsed = (System.currentTimeMillis() - startMs) / 1000;
                 if (elapsed * 1000 > timeoutMs) {
-                    System.err.println("Client-side wall-clock cap exceeded (" + wallClockSeconds + "s). Exiting poll.");
+                    logger.error("Client-side wall-clock cap exceeded ({}s). Exiting poll.", wallClockSeconds);
                     return 1;
                 }
 
@@ -230,13 +244,12 @@ public class RunCommand implements Callable<Integer> {
                                 return exitCode.getAsInt();
                             }
                         }
-                        System.err.println("Instance " + instanceId + " is " + state
-                            + " but wrote no run-status sentinel — the runner died before finishing.");
-                        System.err.println("Runner log (present only if the instance got far enough "
-                            + "to upload it): " + logPath);
+                        logger.error("Instance {} is {} but wrote no run-status sentinel — the runner "
+                            + "died before finishing.\nRunner log (present only if the instance got "
+                            + "far enough to upload it): {}", instanceId, state, logPath);
                         return 1;
                     }
-                    System.out.printf("Still running (%s)... elapsed: %ds%n", state, elapsed);
+                    logger.info("Still running ({})... elapsed: {}s", state, elapsed);
                 }
 
                 Thread.sleep(15_000);
@@ -247,13 +260,13 @@ public class RunCommand implements Callable<Integer> {
     /** Maps a run-status sentinel to an exit code, or empty while the run is still in flight. */
     private OptionalInt exitCodeFor(String body, AwsClientFactory factory, BaasConfig config,
                                     String requestId, String logPath) {
-        System.out.println("Run status: " + body);
+        logger.info("Run status: {}", body);
         if ("completed".equals(body)) {
             showResults(factory, config, requestId);
             return OptionalInt.of(0);
         }
         if (body.startsWith("failed:")) {
-            System.err.println("Benchmark failed. Runner log: " + logPath);
+            logger.error("Benchmark failed. Runner log: {}", logPath);
             return OptionalInt.of(1);
         }
         return OptionalInt.empty();
@@ -264,22 +277,21 @@ public class RunCommand implements Callable<Integer> {
             Optional<String> mongoUri = new SsmService(ssm)
                 .getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");
             if (mongoUri.isEmpty()) {
-                System.out.println("No MongoDB URI configured — skipping results display.");
+                logger.warn("No MongoDB URI configured — skipping results display.");
                 return;
             }
             try (var results = new ResultsQueryService(mongoUri.get())) {
                 var rows = results.queryByRequestId(requestId);
-                System.out.println();
-                System.out.println("Results for request: " + requestId);
+                logger.info("Results for request: {}", requestId);
                 results.printTable(rows);
             }
         } catch (Exception e) {
-            System.err.println("Warning: could not fetch results from MongoDB: " + e.getMessage());
+            logger.warn("Could not fetch results from MongoDB: {}", e.getMessage());
         }
     }
 
     private void runMavenBuild() throws IOException, InterruptedException {
-        System.out.println("Building benchmark JAR (mvn clean package -q)...");
+        logger.info("Building benchmark JAR (mvn clean package -q)...");
         var pb = new ProcessBuilder("mvn", "clean", "package", "-q", "-DskipTests")
             .inheritIO()
             .directory(Path.of(".").toAbsolutePath().normalize().toFile());

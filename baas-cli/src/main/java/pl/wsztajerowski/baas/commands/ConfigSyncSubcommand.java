@@ -1,7 +1,11 @@
 package pl.wsztajerowski.baas.commands;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -20,6 +24,10 @@ import java.util.function.Consumer;
 )
 public class ConfigSyncSubcommand implements Callable<Integer> {
 
+    private static final Logger logger = LoggerFactory.getLogger(ConfigSyncSubcommand.class);
+
+    @Mixin LoggingMixin loggingMixin;
+
     @Option(names = "--core-stack-name", required = true,
         description = "Core stack to read, as printed by `baas admin setup` (e.g. baas-a1b2c3d4).")
     String coreStackName;
@@ -29,7 +37,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
@@ -37,8 +45,8 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         try (var cf = factory.cloudFormation()) {
             var outputs = new CloudFormationService(cf).getStackOutputs(coreStackName);
             if (outputs.isEmpty()) {
-                System.err.println("Stack '" + coreStackName + "' has no outputs, or does not exist in "
-                    + config.getAws().getRegion() + ".");
+                logger.error("Stack '{}' has no outputs, or does not exist in {}.",
+                    coreStackName, config.getAws().getRegion());
                 return 1;
             }
             var aws = config.getAws();
@@ -54,8 +62,8 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             applyIfPresent(outputs, "RunnerInstanceProfileName", aws::setRunnerInstanceProfileName, missing);
 
             if (!missing.isEmpty()) {
-                System.err.println("Warning: stack '" + coreStackName + "' did not report "
-                    + String.join(", ", missing) + " — existing local values were left unchanged.");
+                logger.warn("Stack '{}' did not report {} — existing local values were left unchanged.",
+                    coreStackName, String.join(", ", missing));
             }
         }
 
@@ -63,7 +71,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         config.setPrefix(coreStackName.startsWith("baas-") ? coreStackName.substring(5) : coreStackName);
 
         configService.save(config);
-        System.out.println("Configuration synced from " + coreStackName + " to " + configService.configFilePath());
+        logger.info("Configuration synced from {} to {}", coreStackName, configService.configFilePath());
         return 0;
     }
 

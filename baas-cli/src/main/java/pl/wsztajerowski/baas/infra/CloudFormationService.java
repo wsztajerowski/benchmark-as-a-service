@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.infra;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.exception.SdkClientException;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.cloudformation.model.Capability;
@@ -20,6 +22,8 @@ import java.util.stream.Collectors;
 
 public class CloudFormationService {
 
+    private static final Logger logger = LoggerFactory.getLogger(CloudFormationService.class);
+
     private final CloudFormationClient cf;
 
     public CloudFormationService(CloudFormationClient cf) {
@@ -30,6 +34,8 @@ public class CloudFormationService {
         List<Parameter> cfParams = params.entrySet().stream()
             .map(e -> Parameter.builder().parameterKey(e.getKey()).parameterValue(e.getValue()).build())
             .toList();
+
+        logger.debug("Stack parameters for {}: {}", stackName, params);
 
         Optional<Stack> existing = describeStack(stackName);
 
@@ -47,11 +53,11 @@ public class CloudFormationService {
                     .parameters(cfParams)
                     .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
                     .build());
-                System.out.println("Updating stack " + stackName + "...");
+                logger.info("Updating stack {}...", stackName);
                 cf.waiter().waitUntilStackUpdateComplete(r -> r.stackName(stackName));
             } catch (CloudFormationException e) {
                 if (isNoUpdateNeeded(e)) {
-                    System.out.println("Stack " + stackName + " is already up to date.");
+                    logger.info("Stack {} is already up to date.", stackName);
                     return;
                 }
                 throw e;
@@ -63,17 +69,17 @@ public class CloudFormationService {
                 .parameters(cfParams)
                 .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
                 .build());
-            System.out.println("Creating stack " + stackName + "...");
+            logger.info("Creating stack {}...", stackName);
             await(stackName, "create", () -> cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName)));
         }
-        System.out.println("Stack " + stackName + " deployed successfully.");
+        logger.info("Stack {} deployed successfully.", stackName);
     }
 
     public void deleteStack(String stackName) {
         cf.deleteStack(DeleteStackRequest.builder().stackName(stackName).build());
-        System.out.println("Deleting stack " + stackName + "...");
+        logger.info("Deleting stack {}...", stackName);
         await(stackName, "delete", () -> cf.waiter().waitUntilStackDeleteComplete(r -> r.stackName(stackName)));
-        System.out.println("Stack " + stackName + " deleted.");
+        logger.info("Stack {} deleted.", stackName);
     }
 
     /**

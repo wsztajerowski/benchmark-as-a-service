@@ -1,7 +1,11 @@
 package pl.wsztajerowski.baas.commands;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -19,6 +23,10 @@ import java.util.concurrent.Callable;
     description = "Query benchmark results from MongoDB."
 )
 public class ResultsCommand implements Callable<Integer> {
+
+    private static final Logger logger = LoggerFactory.getLogger(ResultsCommand.class);
+
+    @Mixin LoggingMixin loggingMixin;
 
     @Option(names = "--request-id", description = "Filter by request ID.")
     String requestId;
@@ -40,7 +48,7 @@ public class ResultsCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
@@ -48,7 +56,7 @@ public class ResultsCommand implements Callable<Integer> {
         try (var ssm = factory.ssm()) {
             var opt = new SsmService(ssm).getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");
             if (opt.isEmpty()) {
-                System.err.println("No MongoDB URI found in SSM. Run: baas config set --mongo-uri <uri>");
+                logger.error("No MongoDB URI found in SSM. Run: baas config set --mongo-uri <uri>");
                 return 1;
             }
             mongoUri = opt.get();
@@ -99,6 +107,11 @@ public class ResultsCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * Result payloads stay on stdout, never the logger: {@code baas results --format json | jq}
+     * has to see clean JSON, and SimpleLogger writes to stderr with a timestamp on every line.
+     * Same reasoning covers {@link #printCsv} and {@link ResultsQueryService#printTable}.
+     */
     private void printJson(List<ResultRow> rows) {
         System.out.println("[");
         for (int i = 0; i < rows.size(); i++) {

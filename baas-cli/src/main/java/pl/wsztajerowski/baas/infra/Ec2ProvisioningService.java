@@ -1,13 +1,18 @@
 package pl.wsztajerowski.baas.infra;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 public class Ec2ProvisioningService {
+
+    private static final Logger logger = LoggerFactory.getLogger(Ec2ProvisioningService.class);
 
     private final Ec2Client ec2;
 
@@ -24,6 +29,9 @@ public class Ec2ProvisioningService {
             Tag.builder().key("baas-request-id").value(requestId).build()
         ));
         extraTags.forEach((k, v) -> tags.add(Tag.builder().key(k).value(v).build()));
+        logger.debug("Launching {} from {} in subnet {} (sg {}, instance profile {}) with tags {}",
+            instanceType, amiId, subnetId, securityGroupId, instanceProfileName,
+            tags.stream().collect(Collectors.toMap(Tag::key, Tag::value)));
 
         var response = ec2.runInstances(RunInstancesRequest.builder()
             .imageId(amiId)
@@ -67,7 +75,7 @@ public class Ec2ProvisioningService {
                 .instanceIds(instanceId)
                 .build());
         } catch (Exception e) {
-            System.err.println("Warning: failed to terminate instance " + instanceId + ": " + e.getMessage());
+            logger.warn("Failed to terminate instance {}: {}", instanceId, e.getMessage());
         }
     }
 
@@ -91,9 +99,8 @@ public class Ec2ProvisioningService {
         } catch (Exception e) {
             if (!describeFailureReported) {
                 describeFailureReported = true;
-                System.err.println("Warning: cannot read the state of " + instanceId
-                    + " (" + e.getMessage() + ") — this run will poll until the wall-clock cap"
-                    + " instead of failing fast if the runner dies.");
+                logger.warn("Cannot read the state of {} ({}) — this run will poll until the "
+                    + "wall-clock cap instead of failing fast if the runner dies.", instanceId, e.getMessage());
             }
             return "unknown";
         }

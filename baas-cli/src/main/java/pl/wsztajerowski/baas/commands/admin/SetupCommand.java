@@ -1,7 +1,11 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -23,6 +27,10 @@ import java.util.concurrent.Callable;
     description = "Deploy AWS infrastructure (VPC, S3 bucket, IAM roles) via CloudFormation."
 )
 public class SetupCommand implements Callable<Integer> {
+
+    private static final Logger logger = LoggerFactory.getLogger(SetupCommand.class);
+
+    @Mixin LoggingMixin loggingMixin;
 
     @Option(names = "--region", description = "AWS region (default: eu-central-1).")
     String region;
@@ -66,16 +74,17 @@ public class SetupCommand implements Callable<Integer> {
         try (var sts = factory.sts()) {
             callerArn = sts.getCallerIdentity().arn();
         }
+        logger.debug("Caller ARN: {}", callerArn);
         String resolvedPrefix = computePrefix(callerArn);
         String resolvedStack = "baas-" + resolvedPrefix;
 
         config.setPrefix(resolvedPrefix);
         config.getAws().setCoreStackName(resolvedStack);
 
-        System.out.println("Using prefix: " + resolvedPrefix + " (derived from caller ARN)");
+        logger.info("Using prefix: {} (derived from caller ARN)", resolvedPrefix);
 
         if (useExistingVpc && (existingVpcId == null || existingSubnetId == null || existingSecurityGroupId == null)) {
-            System.err.println("--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id.");
+            logger.error("--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id.");
             return 1;
         }
 
@@ -96,12 +105,13 @@ public class SetupCommand implements Callable<Integer> {
             String bucketName = "baas-" + resolvedPrefix;
             if (!new CloudFormationService(cf).stackExists(resolvedStack)
                 && new S3UploadService(s3).bucketExists(bucketName)) {
-                System.err.println("Bucket " + bucketName + " already exists, but stack "
-                    + resolvedStack + " does not.");
-                System.err.println("  A previous teardown retained it — the stack cannot recreate a bucket");
-                System.err.println("  that is already there, and the name is fixed by your caller ARN.");
-                System.err.println("  Keep the old results:  aws s3 sync s3://" + bucketName + " ./backup");
-                System.err.println("  Then remove it:        aws s3 rb s3://" + bucketName + " --force");
+                logger.error("""
+                        Bucket {} already exists, but stack {} does not.
+                          A previous teardown retained it — the stack cannot recreate a bucket
+                          that is already there, and the name is fixed by your caller ARN.
+                          Keep the old results:  aws s3 sync s3://{} ./backup
+                          Then remove it:        aws s3 rb s3://{} --force""",
+                    bucketName, resolvedStack, bucketName, bucketName);
                 return 1;
             }
         }
@@ -123,31 +133,34 @@ public class SetupCommand implements Callable<Integer> {
         }
 
         configService.save(config);
-        System.out.println("Configuration written to " + configService.configFilePath());
+        logger.info("Configuration written to {}", configService.configFilePath());
 
         if (!operatorRoleArn.isEmpty()) {
-            System.out.println();
-            System.out.println("BaasCliOperatorRole created: " + operatorRoleArn);
-            System.out.println("Nobody can assume it yet. Two one-time steps:");
-            System.out.println("  1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,");
-            System.out.println("     and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.");
-            System.out.println("  2. Point the CLI at that profile:");
-            System.out.println("       baas config set --operator-profile <profile-name>");
-            System.out.println("     Until you do, `baas run` uses the default credential chain, not this role.");
+            logger.info("""
+                    BaasCliOperatorRole created: {}
+                    Nobody can assume it yet. Two one-time steps:
+                      1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,
+                         and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.
+                      2. Point the CLI at that profile:
+                           baas config set --operator-profile <profile-name>
+                         Until you do, `baas run` uses the default credential chain, not this role.""",
+                operatorRoleArn);
         }
 
         if (mongoUri != null) {
             try (var ssm = factory.ssm()) {
                 new SsmService(ssm).putSecureParameter(
                     "/" + resolvedPrefix + "/mongo/connection-string", mongoUri);
-                System.out.println("MongoDB URI stored in SSM.");
+                logger.info("MongoDB URI stored in SSM.");
             }
         } else {
-            System.out.println();
-            System.out.println("No MongoDB connection string provided.");
-            System.out.println("Create a free Atlas cluster: https://www.mongodb.com/cloud/atlas/register");
-            System.out.println("Then run: baas config set --mongo-uri \"mongodb+srv://<user>:<pass>@<host>/<db>\"");
-            System.out.println("Remember to add the runner's egress IP and your laptop's IP to the Atlas IP Access List.");
+            // warn, not info: with no URI the runner falls back to NoOpDatabaseService and every
+            // measurement is silently discarded while the run still reports success.
+            logger.warn("""
+                No MongoDB connection string provided.
+                Create a free Atlas cluster: https://www.mongodb.com/cloud/atlas/register
+                Then run: baas config set --mongo-uri "mongodb+srv://<user>:<pass>@<host>/<db>"
+                Remember to add the runner's egress IP and your laptop's IP to the Atlas IP Access List.""");
         }
 
         return 0;

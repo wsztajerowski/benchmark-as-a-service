@@ -1,6 +1,10 @@
 package pl.wsztajerowski.baas.commands;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
+import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -15,51 +19,62 @@ import java.util.concurrent.Callable;
 )
 public class ConfigShowSubcommand implements Callable<Integer> {
 
+    private static final Logger logger = LoggerFactory.getLogger(ConfigShowSubcommand.class);
+
+    @Mixin LoggingMixin loggingMixin;
+
     private final ConfigService configService = new ConfigService();
 
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
-        System.out.println("Config file: " + configService.configFilePath());
-        System.out.println("prefix:      " + config.getPrefix());
-        System.out.println("aws:");
-        System.out.println("  profile:                  " + config.getAws().getProfile() + "  (admin setup/teardown)");
-        // Unset here is not cosmetic — it means run/results/config fall through to the default
-        // credential chain instead of assuming the operator role, so say what to do about it.
-        System.out.println("  operatorProfile:          "
-            + (config.getAws().getOperatorProfile() != null
+
+        // Accumulated and logged as one event rather than a line at a time: SimpleLogger prefixes
+        // every call with a timestamp, which would break the column alignment this dump relies on.
+        var dump = new StringBuilder()
+            .append("Config file: ").append(configService.configFilePath()).append('\n')
+            .append("prefix:      ").append(config.getPrefix()).append('\n')
+            .append("aws:\n")
+            .append("  profile:                  ").append(config.getAws().getProfile())
+            .append("  (admin setup/teardown)\n")
+            // Unset here is not cosmetic — it means run/results/config fall through to the default
+            // credential chain instead of assuming the operator role, so say what to do about it.
+            .append("  operatorProfile:          ")
+            .append(config.getAws().getOperatorProfile() != null
                 ? config.getAws().getOperatorProfile() + "  (run/results/config)"
-                : "<not set> — run: baas config set --operator-profile <name>"));
-        System.out.println("  region:                   " + config.getAws().getRegion());
-        System.out.println("  coreStackName:            " + config.getAws().getCoreStackName());
-        System.out.println("  bucket:                   " + config.getAws().getBucket());
-        System.out.println("  subnetId:                 " + config.getAws().getSubnetId());
-        System.out.println("  securityGroupId:          " + config.getAws().getSecurityGroupId());
-        System.out.println("  vpcId:                    " + config.getAws().getVpcId());
-        System.out.println("  runnerInstanceProfile:    " + config.getAws().getRunnerInstanceProfileName());
-        System.out.println("ec2:");
-        System.out.println("  defaultInstanceType:      " + config.getEc2().getDefaultInstanceType());
-        System.out.println("  benchmarkTimeoutSeconds:  " + config.getEc2().getBenchmarkTimeoutSeconds());
-        System.out.println("  wallClockHardKillSeconds: " + config.getEc2().getWallClockHardKillSeconds());
-        System.out.println("benchmark:");
-        System.out.println("  asyncProfilerVersion:     " + config.getBenchmark().getAsyncProfilerVersion());
-        System.out.println("  jarPath:                  " + config.getBenchmark().getJarPath());
+                : "<not set> — run: baas config set --operator-profile <name>").append('\n')
+            .append("  region:                   ").append(config.getAws().getRegion()).append('\n')
+            .append("  coreStackName:            ").append(config.getAws().getCoreStackName()).append('\n')
+            .append("  bucket:                   ").append(config.getAws().getBucket()).append('\n')
+            .append("  subnetId:                 ").append(config.getAws().getSubnetId()).append('\n')
+            .append("  securityGroupId:          ").append(config.getAws().getSecurityGroupId()).append('\n')
+            .append("  vpcId:                    ").append(config.getAws().getVpcId()).append('\n')
+            .append("  runnerInstanceProfile:    ").append(config.getAws().getRunnerInstanceProfileName()).append('\n')
+            .append("ec2:\n")
+            .append("  defaultInstanceType:      ").append(config.getEc2().getDefaultInstanceType()).append('\n')
+            .append("  benchmarkTimeoutSeconds:  ").append(config.getEc2().getBenchmarkTimeoutSeconds()).append('\n')
+            .append("  wallClockHardKillSeconds: ").append(config.getEc2().getWallClockHardKillSeconds()).append('\n')
+            .append("benchmark:\n")
+            .append("  asyncProfilerVersion:     ").append(config.getBenchmark().getAsyncProfilerVersion()).append('\n')
+            .append("  jarPath:                  ").append(config.getBenchmark().getJarPath()).append('\n')
+            .append("mongo:\n")
+            .append("  connectionString: ");
 
         // Show masked mongo URI from SSM
         try {
-            RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+            RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
             var factory = new AwsClientFactory(
                 config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
             try (var ssm = factory.ssm()) {
                 var ssmService = new SsmService(ssm);
                 var uri = ssmService.getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");
-                System.out.println("mongo:");
-                System.out.println("  connectionString: " + uri.map(u -> maskMongoUri(u)).orElse("(not set)"));
+                dump.append(uri.map(u -> maskMongoUri(u)).orElse("(not set)"));
             }
         } catch (Exception e) {
-            System.out.println("mongo:");
-            System.out.println("  connectionString: (unable to retrieve: " + e.getMessage() + ")");
+            dump.append("(unable to retrieve: ").append(e.getMessage()).append(')');
         }
+
+        logger.info("Current configuration:\n{}", dump);
         return 0;
     }
 

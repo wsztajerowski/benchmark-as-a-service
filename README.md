@@ -90,6 +90,10 @@ profilers), `jcstress`.
 Useful options: `--skip-build`, `--benchmark-jar`, `--runner-jar`, `--instance-type`, `--timeout`,
 `--max-wall-clock`, `--tag key=value`, `--branch`.
 
+`-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved run
+parameters, the AMI, the CloudFormation parameters, and the full generated user-data script. It
+must come before the `--` separator, or it is passed to the benchmark instead.
+
 ### 5. Read results
 
 ```bash

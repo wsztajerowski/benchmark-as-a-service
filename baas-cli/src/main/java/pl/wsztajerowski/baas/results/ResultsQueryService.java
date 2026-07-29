@@ -81,6 +81,7 @@ public class ResultsQueryService implements AutoCloseable {
         return rows;
     }
 
+    /** Command payload, so stdout rather than the logger — see {@code ResultsCommand#printJson}. */
     public void printTable(List<ResultRow> rows) {
         if (rows.isEmpty()) {
             System.out.println("No results found.");

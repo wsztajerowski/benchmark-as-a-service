@@ -1,7 +1,11 @@
 package pl.wsztajerowski.baas.commands;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -15,6 +19,10 @@ import java.util.concurrent.Callable;
     description = "Update configuration values."
 )
 public class ConfigSetSubcommand implements Callable<Integer> {
+
+    private static final Logger logger = LoggerFactory.getLogger(ConfigSetSubcommand.class);
+
+    @Mixin LoggingMixin loggingMixin;
 
     @Option(names = "--mongo-uri", description = "MongoDB connection string (stored in SSM SecureString).")
     String mongoUri;
@@ -65,18 +73,18 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
         if (mongoUri != null) {
             validateMongoUri(mongoUri);
-            RunCommand.operatorCredentialsWarning(config).ifPresent(System.err::println);
+            RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
             var factory = new AwsClientFactory(
                 config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
             try (var ssm = factory.ssm()) {
                 new SsmService(ssm).putSecureParameter(
                     "/" + config.getPrefix() + "/mongo/connection-string", mongoUri);
-                System.out.println("MongoDB URI stored in SSM: /" + config.getPrefix() + "/mongo/connection-string");
+                logger.info("MongoDB URI stored in SSM: /{}/mongo/connection-string", config.getPrefix());
             }
         }
 
         configService.save(config);
-        System.out.println("Configuration saved to " + configService.configFilePath());
+        logger.info("Configuration saved to {}", configService.configFilePath());
         return 0;
     }
 

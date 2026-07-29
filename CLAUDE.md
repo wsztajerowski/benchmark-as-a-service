@@ -80,6 +80,18 @@ The watchdog is the only one that survives a deadlocked JVM.
   otherwise defaults to the on-instance path.
 - **`MONGO_CONNECTION_STRING` is not a GHA secret.** `exec-single-benchmark.yml` reads it from SSM
   at `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and exits 1 if absent or empty.
+- **`baas -v` needs the argv pre-scan, not just the execution-strategy hook.**
+  `LoggingMixin.applyEarlyVerbosity` in `BaasApp.main` looks redundant next to the
+  `TestWrapper`-style hook, but SimpleLogger pins a logger's level when the logger is constructed,
+  and every `baas` command's `static final Logger` is built while picocli instantiates the
+  subcommand tree — before `execute()`. Delete the pre-scan and `-v` **silently stops** raising
+  command-level logging. `benchmark-runner` is unaffected only because its loggers live in
+  services, constructed later.
+- **Diagnostics go to the logger (stderr); command payloads stay on `System.out`.**
+  `ResultsCommand.printJson`/`printCsv` and `ResultsQueryService.printTable`, the picocli usage
+  renderers, and `TeardownCommand`'s confirmation prompt are deliberately not migrated — a
+  timestamp prefix on every line breaks `--format json | jq`, `--format csv > file`, and the
+  same-line prompt.
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`. The local act
   E2E additionally needs `/baas/mongo/connection-string` as a SecureString.
