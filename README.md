@@ -1,100 +1,263 @@
 # Benchmark as a Service (BaaS)
 
+Run JMH and JCStress benchmarks on throwaway EC2 instances, from one command, on hardware that
+isn't your laptop. Results land in MongoDB; process output and profiling artifacts land in S3.
+
+The `baas` CLI provisions its own AWS infrastructure, launches the runner, polls for completion,
+and prints the numbers. It does not need GitHub Actions.
+
+```bash
+baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
+```
+
+## Requirements
+
+- **Java 25** and Maven (the build targets 25; fat JARs via `maven-shade-plugin`)
+- **AWS account** and credentials — see [Permissions](#permissions) for the two roles involved
+- **MongoDB** connection string. BaaS is *connect-only*: it never provisions a cluster. A free
+  Atlas tier is fine.
+- Docker, for integration tests and local development
+
+## Getting started
+
+### 1. Build
+
+```bash
+mvn clean package -DskipTests
+```
+
+There is no packaged binary yet — no install script, no Homebrew tap, no native image. `baas` is a
+shaded JAR, so alias it:
+
+```bash
+alias baas='java -jar '"$PWD"'/baas-cli/target/baas-cli.jar'
+```
+
+### 2. Deploy the infrastructure
+
+One-time, and it needs the elevated deployer credentials described under
+[Permissions](#permissions).
+
+```bash
+baas admin setup --mongo-uri "mongodb+srv://<user>:<pass>@<host>/<database>"
+```
+
+This deploys the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 gateway
+endpoint, security group, the results bucket, and the runner/operator IAM roles — then writes the
+non-sensitive outputs to `~/.baas/config.yaml`. The Mongo URI goes to SSM as a SecureString and is
+never written to the config file, to user-data, or to CI logs.
+
+The connection string **must include a database name**, and it is validated before anything is
+provisioned, so a typo costs you a second rather than a stack deploy. Omit `--mongo-uri` and
+you'll get the Atlas signup link plus instructions to supply it later via
+`baas config set --mongo-uri`.
+
+Two things to know about naming: the stack and bucket are both `baas-<prefix>`, where `prefix` is
+a hash of your caller ARN. You don't choose it, and it's stable for a given identity. The bucket
+is declared `DeletionPolicy: Retain`, so a previous teardown can leave one behind and block the
+next setup — `baas admin setup` detects that case and tells you how to recover.
+
+Setup finishes by printing follow-up steps for the operator role. **Do them** — until you do,
+`baas run` uses your default credential chain rather than the narrow role.
+
+### 3. Allow the runner to reach MongoDB
+
+If you're on Atlas, add an IP Access List entry. Runners get a **fresh public IP per run**, so
+there is no stable address to allowlist; covering them means `0.0.0.0/0`, gated by the connection
+string's credentials rather than by network. That trade-off is deliberate for v1 — see
+[`infra/README.md`](infra/README.md#mongodb-atlas-connectivity).
+
+### 4. Run a benchmark
+
+From **your benchmark project's** directory, not this repo — `baas run` builds in the current
+working directory.
+
+```bash
+baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
+```
+
+Types: `jmh`, `jmh-with-async` (async-profiler flame graphs), `jmh-with-prof` (JMH's own
+profilers), `jcstress`.
+
+> **`--` is required.** Everything after it is forwarded verbatim to `benchmark-runner.jar`.
+> Without it, picocli parses JMH flags as `baas` options and fails with
+> `Unknown options: '-f', '-wi', '-i'`. `baas` options go *before* the separator:
+>
+> ```bash
+> baas run --instance-type c6i.4xlarge --timeout 1800 jmh -- MyBenchmark -f 1 -wi 1 -i 3
+> ```
+
+Useful options: `--skip-build`, `--benchmark-jar`, `--runner-jar`, `--instance-type`, `--timeout`,
+`--max-wall-clock`, `--tag key=value`, `--branch`.
+
+### 5. Read results
+
+```bash
+baas results
+```
+
+Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`, reading the Mongo URI from
+SSM. No `mongosh` needed.
+
+### Tear down
+
+```bash
+baas admin teardown                  # deletes the stack, retains the bucket
+baas admin teardown --delete-bucket  # also empties and deletes the bucket
+```
+
+Two safety gates: it aborts if any benchmark runner is still running, and without `--yes` it makes
+you type the stack name. The MongoDB cluster is never touched.
+
+## How it works
+
+```
+baas run
+  ├─ build the benchmark JAR in the current directory
+  ├─ upload it to s3://<bucket>/runs/<requestId>/benchmark.jar
+  ├─ look up the latest Amazon Linux 2023 AMI via SSM
+  └─ ec2:RunInstances with a generated user-data script
+       ├─ install Amazon Corretto 25
+       ├─ download benchmark-runner.jar (GitHub Releases, or S3 if overridden)
+       ├─ read MONGO_CONNECTION_STRING from SSM
+       ├─ run benchmark-runner.jar from /app
+       │    └─ launch the benchmark JAR as a subprocess, parse results,
+       │       upload output to S3, write documents to MongoDB
+       ├─ write the run-status sentinel to S3
+       └─ self-terminate
+  ├─ poll run-status every 15s
+  └─ print results from MongoDB
+```
+
+Instances self-terminate through **three** independent mechanisms — a process `timeout`, a
+background shell watchdog that fires even if the JVM deadlocks, and a CLI shutdown hook for
+Ctrl+C. Any one alone leaves a way to orphan a paid instance.
+
+**Measurements live only in MongoDB.** S3 holds process output and profiling artifacts; there is no
+`result.json`. An empty or unset Mongo URI selects a no-op database implementation — the run still
+succeeds and the numbers are silently discarded.
+
+Design rationale, the invariants the runner depends on, and the open risks:
+[`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
+Call-level sequence diagrams: [`docs/diagrams/`](docs/diagrams/).
+
+## Permissions
+
+Two roles, deliberately separate:
+
+| Role | Policy | Used by |
+|---|---|---|
+| Deployer | `infra/deployer-policy.json` | `baas admin setup` / `baas admin teardown` |
+| Operator | `infra/operator-policy.json` (role created by the stack) | `baas run` / `baas results` |
+
+`aws.operatorProfile` in `~/.baas/config.yaml` does **not** fall back to `aws.profile`. That's
+intentional: the fallback would silently hand everyday commands deploy-level rights.
+[`infra/README.md`](infra/README.md) covers the assume-role setup.
+
 ## Modules
-### benchmark-runner
 
-Self-executing JAR for running JMH/JCStress benchmarks.
+| Module | Purpose |
+|---|---|
+| `baas-cli` | The `baas` CLI. Main class `pl.wsztajerowski.baas.BaasApp` |
+| `benchmark-runner` | Runs on the EC2 instance — executes benchmarks, writes to S3 and MongoDB |
+| `fake-jmh-benchmarks` | Minimal JMH JAR, test fixture |
+| `fake-stress-tests` | Minimal JCStress JAR, test fixture |
 
-### infra  
+Infrastructure lives in [`infra/`](infra/README.md) as two independently-deployed CloudFormation
+stacks: `cf-template-core.yaml` (what the CLI deploys) and `cf-template-ci.yaml` (GitHub OIDC and
+the workflow role, for CI only — split out so the CLI's identity never needs
+`iam:CreateOIDCProvider`).
 
-CloudFormation's templates for setting up all required infrastructure on AWS. See details: [README.md](infra%2FREADME.md)
-
-### GitHub Action workflow
-
-Workflow for creating AWS environment and launching benchmarks using [benchmark-runner](benchmark-runner). Workflow file: [benchmark-runner.yml](.github%2Fworkflows%2Fbenchmark-runner.yml)
-
-In order to use this workflow, you need to set following GHA settings:
-
-Secrets
- - WORKFLOW_ROLE_ARN - created by CF template - you can find it in stack outputs
- - RUNNER_ROLE_NAME - created by CF template - you can find it in stack outputs
- - MONGO_CONNECTION_STRING - ConnectionString for MongoDB instance, which will keep benchmark results. It needs to contain database. See:benchmark-runner/pl.wsztajerowski.commands.ApiCommonSharedOptions.mongoConnectionString
- - GHA_EC2_PAT - GitHub classic token with `repo` scope
-
-Variables
-- SUBNET_ID - AWS subnet ID where EC2 instance with benchmark env should be created
-- SECURITY_GROUP_ID - SecurityGroup ID used during creating EC2 instance
-- AWS_REGION - AWS region where all infrastructure have been created
-- ASYNC_PROFILER_VERSION - Async Profiler version (in format `MAJOR.MINOR`) used within jmh-with-async benchmark type
-
-## Launch benchmark
-
-Assuming all CloudFormation stacks have been created and having benchmark JAR file, create a JSON file request with following format:
-
-```NOTE
-Provided parameters are examples - for more see benchmark-runner options!
-```
-
-```json
-{
-  "request_id": "REQUEST_ID",
-  "result_prefix": "FOLDER_WITHIN_PROVIDED_S3_BUCKET",
-  "s3_result_bucket": "S3_BUCKET_NAME_RETURNED_BY_MAIN_CLOUDFORMATION_STACK",
-  "benchmark_path": "s3://MAIN_S3_BUCKET/requests/my-request-1/benchmark.jar",
-  "benchmark_type": "jmh-with-async",
-  "parameters": "--async-path /home/ec2-user/async-profiler/lib/libasyncProfiler.so -wi 1 -i 2 -f 1"
-}
-```
-Next, upload benchmark file:
+## Build and test
 
 ```bash
-aws s3 --profile YOUR-PROFILE cp path/to/benchmark.jar s3://MAIN_S3_BUCKET/requests/my-request-1/benchmark.jar
+mvn clean package                              # unit tests only
+mvn clean verify                               # + integration tests (needs Docker)
+mvn -pl benchmark-runner test -Dtest=MyTest    # single test
+mvn -pl benchmark-runner verify -Dit.test=MyIT # single integration test
 ```
 
-and finally upload request file:
+Integration tests (`*IT.java`) spin up LocalStack and MongoDB via Testcontainers. `mvn clean
+verify` copies `fake-jmh-benchmarks.jar` and `fake-stress-tests.jar` into
+`benchmark-runner/target/` during `pre-integration-test`.
+
+`mvn -pl benchmark-runner verify` on its own needs the two fixture JARs already installed in your
+local Maven repository (`classifier=shaded`) — run the full reactor first.
+
+Note: JUnit **6** and Testcontainers **2.x**, both of which differ from the versions you may be
+used to.
+
+## Local development
 
 ```bash
-aws s3 --profile YOUR-PROFILE cp path/to/request.json s3://MAIN_S3_BUCKET/requests/my-request-1/request.json
-```
-
-## Local run
-
-### Prerequisites
-
-### Useful endpoints
-
- - Local S3 browser: http://localhost:4566/baas/ (http://localhost:4566/S3_BUCKET)
- - Local S3 document: http://localhost:4566/baas/test-request.json (http://localhost:4566/S3_BUCKET/OBJECT_KEY)
- - MongoDB viewer: http://localhost:8081/
-
-### Run Benchmark Runner 
-The easiest way is to run shell script: 
-```bash 
 docker-compose up
-jmh-with-async.sh
 ```
 
-### Run GitHub workflow locally
+Starts LocalStack (`SERVICES=s3,ssm`), MongoDB on 27017, and mongo-express on 8081. Credentials for
+LocalStack come from `.env` — test values only, never real credentials.
+
+There is **no** init container, so create what you need yourself:
 
 ```bash
-act -W .github/workflows/exec-single-benchmark.yml \
---secret-file .github/test/.secrets \
---var-file .github/test/.vars \
--e .github/test/exec-single-benchmark-act-payload.json
+aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas
 ```
+
+Then run the runner directly against LocalStack:
+
+```bash
+./jmh-with-profiler.sh
+```
+
+That script uses the `fake-jmh-benchmarks` fixture and works after a full build. `jmh-with-async.sh`
+expects a benchmark JAR at `benchmark-runner/target/jmh-benchmarks.jar`, which this repo does not
+produce — point `--benchmark-path` at your own JAR, and set `ASYNC_PATH` to your local
+`libasyncProfiler.so` (it defaults to the on-instance path `/app/async-profiler/lib/libasyncProfiler.so`
+and is validated for existence).
+
+Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config.
+
+Endpoints: S3 browser `http://localhost:4566/baas/` · mongo-express `http://localhost:8081/`
+(the SDK/CLI endpoint is `https://s3.localhost.localstack.cloud:4566`).
+
+## GitHub Actions
+
+The workflows are for CI. `baas` neither dispatches nor depends on them.
+
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `ci-pr-build.yml` | PR | `mvn clean verify` |
+| `e2e-cloud-test.yml` | PR / manual | Full cloud E2E against real AWS |
+| `release.yml` | push to `main` | semantic-release → GitHub Release → GitHub Packages |
+| `benchmark-runner.yml` | `workflow_dispatch` | Benchmark execution via GHA |
+| `exec-single-benchmark.yml`, `start-ec2-runner.yml`, `stop-ec2-runner.yml` | called by the above | Executor and EC2 lifecycle |
+
+Secrets: `WORKFLOW_ROLE_ARN`, `RUNNER_ROLE_NAME` (both from the CI stack / core stack outputs),
+`GHA_EC2_PAT` (classic token, `repo` scope, for `machulav/ec2-github-runner`).
+
+Variables: `SUBNET_ID`, `SECURITY_GROUP_ID`, `AWS_REGION`, `ASYNC_PROFILER_VERSION`,
+`RESOURCE_NAME_PREFIX`.
+
+> `MONGO_CONNECTION_STRING` is **not** a secret. `exec-single-benchmark.yml` reads it from SSM at
+> `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and fails the job if it's absent or empty.
+
+Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
+real version is set at release time.
 
 ## E2E test
 
-See: [README.md](.github%2Ftest%2FREADME.md)
+See [`.github/test/README.md`](.github/test/README.md). Requires `act`, Docker Compose, LocalStack,
+the AWS CLI, and `mongosh`.
 
-### Required tools
- - act (https://nektosact.com/introduction.html)
- - docker-compose
- - localstack (can be used as a docker container - see docker compose)
- - aws cli (https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html)
- - mongosh (https://www.mongodb.com/docs/mongodb-shell/install/)
-
-### Run
 ```bash
 /bin/bash .github/test/exec-single-benchmark-e2e-test.sh
+```
+
+`docker-compose.yaml` does not create the `/baas/mongo/connection-string` parameter that
+`exec-single-benchmark.yml` requires, so add it first:
+
+```bash
+aws --endpoint-url=http://localhost:4566 --profile localstack ssm put-parameter \
+  --name /baas/mongo/connection-string \
+  --value "mongodb://host.docker.internal:27017/local_test" \
+  --type SecureString
 ```
