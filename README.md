@@ -202,19 +202,26 @@ There is **no** init container, so create what you need yourself:
 aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas
 ```
 
-Then run the runner directly against LocalStack:
+Then run the runner directly against LocalStack. Both scripts use the `fake-jmh-benchmarks`
+fixture, so they work straight after a build:
 
 ```bash
-./jmh-with-profiler.sh
+./jmh-with-profiler.sh   # JMH's own profilers (gc, comp, cl, jfr)
+./jmh-with-async.sh      # async-profiler flame graphs
 ```
 
-That script uses the `fake-jmh-benchmarks` fixture and works after a full build. `jmh-with-async.sh`
-expects a benchmark JAR at `benchmark-runner/target/jmh-benchmarks.jar`, which this repo does not
-produce — point `--benchmark-path` at your own JAR, and set `ASYNC_PATH` to your local
-`libasyncProfiler.so` (it defaults to the on-instance path `/app/async-profiler/lib/libasyncProfiler.so`
-and is validated for existence).
+`jmh-with-async.sh` additionally needs a local async-profiler library, because `--async-path`
+defaults to the on-instance location and is validated for existence:
 
-Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config.
+```bash
+export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib   # .so on Linux
+```
+
+Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and both write to the
+local MongoDB (`local_test` database) as well as to LocalStack S3.
+
+Setting `ASYNC_PATH` also enables `JmhWithAsyncProfilerSubcommandServiceIT`, which is skipped
+without it — so `mvn verify` covers async profiling only when that variable is set.
 
 Endpoints: S3 browser `http://localhost:4566/baas/` · mongo-express `http://localhost:8081/`
 (the SDK/CLI endpoint is `https://s3.localhost.localstack.cloud:4566`).

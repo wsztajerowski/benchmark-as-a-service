@@ -33,9 +33,13 @@ Integration tests (`*IT.java`) spin up LocalStack (S3) and MongoDB via TestConta
 # Start LocalStack (S3, SSM) + MongoDB + MongoDB Express
 docker-compose up
 
-# Run a local benchmark (uses LocalStack for storage, skips MongoDB)
-./jmh-with-async.sh
+# Run a local benchmark against LocalStack S3 + local MongoDB (local_test db)
+./jmh-with-profiler.sh   # JMH's own profilers
+./jmh-with-async.sh      # async-profiler; needs ASYNC_PATH set to a local libasyncProfiler
 ```
+
+Both use the `fake-jmh-benchmarks` fixture. `docker-compose` has no init container, so create the
+bucket first: `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`.
 
 The `.env` file contains LocalStack credentials used by Docker Compose and tests.
 

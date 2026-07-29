@@ -300,6 +300,12 @@ Integration tests (`*IT.java`) use **Testcontainers** (LocalStack for S3 + Mongo
 
 **JUnit 6** is used (`junit.bom.version=6.0.2`) — the API differs from JUnit 5. Testcontainers **2.x** is used; integration tests pin `mongo:7.0.5`.
 
+**`ASYNC_PATH` gates async coverage.** `JmhWithAsyncProfilerSubcommandServiceIT` is annotated
+`@EnabledIfEnvironmentVariable(named = "ASYNC_PATH", ...)`, so a plain `mvn verify` **silently skips**
+the only test that exercises async-profiler end to end. Export `ASYNC_PATH` (pointing at a local
+`libasyncProfiler.so`/`.dylib`) before trusting a green build on profiler changes. The same variable
+is what `jmh-with-async.sh` needs, since `--async-path` otherwise defaults to the on-instance path.
+
 **JCStress result files** (`jcstress-results-*.bin.gz`) are written to the **module root directory** (not `target/`). `mvn clean` removes them via an extra configured fileset.
 
 ---
@@ -310,9 +316,11 @@ Integration tests (`*IT.java`) use **Testcontainers** (LocalStack for S3 + Mongo
 # Start LocalStack + MongoDB (required for local runs)
 docker-compose -f docker-compose.yaml up
 
-# Run a benchmark locally against LocalStack
-./jmh-with-async.sh       # jmh-with-async type
+# Run a benchmark locally against LocalStack S3 + local MongoDB (local_test db).
+# Both use the fake-jmh-benchmarks fixture. There is no local mode in `baas run` —
+# it always provisions EC2 — so these are the only no-cost way to exercise the runner.
 ./jmh-with-profiler.sh    # jmh-with-prof type
+./jmh-with-async.sh       # jmh-with-async type; requires ASYNC_PATH (see below)
 
 # Run local E2E test (requires act, docker-compose, aws cli, mongosh)
 /bin/bash .github/test/exec-single-benchmark-e2e-test.sh
