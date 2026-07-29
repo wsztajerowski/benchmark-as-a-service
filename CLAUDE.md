@@ -54,11 +54,12 @@ baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
 baas results
 ```
 
-The zsh helpers in `scripts/` (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
-`benchmark_overview.sh`, and the `logger.sh`/`git_helpers.sh`/`aws_helpers.sh` they source) are
-superseded by `baas run` and `baas results` and are slated for removal. Don't build on them.
-`scripts/get-version-property*.sh` and `scripts/update-dependencies.sh` stay — CI and the
-release workflow use them.
+The zsh helpers that used to drive this (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
+`benchmark_overview.sh`, plus the `logger.sh`/`git_helpers.sh`/`aws_helpers.sh` they sourced)
+have been **removed** — `baas run` and `baas results` replace them. `scripts/` now holds only
+`get-version-property.sh`, `get-version-property-simple.sh`, and `update-dependencies.sh`:
+standalone developer utilities for POM version inspection and dependency bumps. Nothing in CI
+invokes them; `release.yml` builds its semantic-release config inline and shells out only to `mvn`.
 
 **`--` is required before benchmark parameters.** Everything after it is forwarded verbatim to
 `benchmark-runner.jar`. Without it, picocli parses JMH flags as `baas` options and fails with

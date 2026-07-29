@@ -40,7 +40,7 @@ baas run <type> [baas options] -- [benchmark params]
 
 `benchmark-runner.yml` still exists and still works, but it is for automated CI (`e2e-cloud-test.yml`)
 rather than for developers. `baas` neither dispatches nor depends on it. The zsh helper that used
-to drive it (`scripts/run-remote-benchmark.zsh`) is superseded — see [Developer Scripts](#developer-scripts).
+to drive it (`scripts/run-remote-benchmark.zsh`) has been deleted — see [Developer Scripts](#developer-scripts).
 
 ### GitHub Actions orchestration (benchmark-runner.yml)
 ```
@@ -87,33 +87,38 @@ TestWrapper (picocli)
 
 ## Developer Scripts
 
-### Superseded by `baas` — do not build on these
+`scripts/` holds exactly three files, all standalone developer utilities:
 
-These still exist on disk and still run, but `baas-cli` replaced them and they are slated for
-removal. Use `baas run` / `baas results` instead, and don't add features here.
-
-| Script | Replaced by |
+| Script | Purpose |
 |---|---|
-| `scripts/run-remote-benchmark.zsh` | `baas run <type> -- <params>` |
-| `scripts/wait-for-gha-run.sh` | `baas run`'s built-in `run-status` polling |
-| `scripts/benchmark_overview.sh` | `baas results` |
-| `scripts/logger.sh`, `git_helpers.sh`, `aws_helpers.sh` | (support code for the three above) |
+| `get-version-property.sh` | Read a version property out of a POM |
+| `get-version-property-simple.sh` | Thin wrapper that sources the above |
+| `update-dependencies.sh` | Semi-automated POM version bumps with build verification. Contains a hardcoded `dependencies=()` array — edit it in place |
 
-Two behaviours from the old scripts still shape the data model and are mirrored by `baas results`:
+Nothing in CI invokes these. `release.yml` generates its semantic-release config inline and shells
+out only to `mvn`, so don't assume changing them affects a workflow (or that CI protects them).
+
+### Removed — replaced by `baas`
+
+`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`, `benchmark_overview.sh`, and the
+`logger.sh` / `git_helpers.sh` / `aws_helpers.sh` support trio are **gone**. Use
+`baas run <type> -- <params>` and `baas results`. Don't reintroduce shell helpers for
+orchestration — that is what `baas-cli` exists to replace.
+
+Note: `.github/test/testing-scripts/logger.sh` is a **separate copy** and is still live — the E2E
+test scripts source it. Deleting `scripts/logger.sh` did not affect it.
+
+Two behaviours from the old scripts outlived them, because they shape the data model and are
+mirrored by `baas results`:
 
 - Runs are tagged with `branch`, `type`, `project`, and `options=<params>`; non-standard hardware
   runs get `exclude_from_results=true`.
 - Default aggregation filters out `benchmarkMetadata.tags.exclude_from_results = true`, groups by
   `(benchmark, branch)`, and keeps only the highest-scoring run per group.
 
-`benchmark_overview.sh` also hard-codes a match on `tags.project: 'lynx-journal'` — a leftover
-from the original consuming project, and a reason not to trust its output for other projects.
-
-### Retained — used by CI and release
-
-`scripts/get-version-property.sh`, `scripts/get-version-property-simple.sh`, and
-`scripts/update-dependencies.sh`. Keep these. `update-dependencies.sh` contains a hardcoded
-`dependencies=()` array — edit it to perform semi-automated POM version bumps with build verification.
+The old `benchmark_overview.sh` also hard-coded a match on `tags.project: 'lynx-journal'`, a
+leftover from the original consuming project. `baas results` carries no such filter — if you are
+comparing historical output against it, that difference explains a row-count mismatch.
 
 ---
 
@@ -361,7 +366,7 @@ Local S3 browser: `http://localhost:4566/<bucket>` (browser only; SDK/CLI endpoi
 - Java **25**, compiled with `maven-compiler-plugin` 3.14+; target Java version is set in root `pom.xml` `<maven.compiler.source>` / `<maven.compiler.target>`.
 - All JARs are assembled as **shaded fat JARs** (maven-shade-plugin); artifact name is always `${project.artifactId}` (no version suffix).
 - Version string is `0.0.0-semantically-released` – actual versioning is managed by the release workflow, not manually.
-- Shell scripts in `.github/test/testing-scripts/` use a shared `logger.sh` providing `log INFO|SUCCESS|WARNING|ERROR "message"` — always source it with `LOGGER_NAME="..."` set first. (`scripts/logger.sh` serves only the superseded zsh helpers.)
+- Shell scripts in `.github/test/testing-scripts/` use a shared `logger.sh` providing `log INFO|SUCCESS|WARNING|ERROR "message"` — always source it with `LOGGER_NAME="..."` set first. This is the only surviving `logger.sh`; the `scripts/` copy was deleted with the zsh helpers.
 - New benchmark types need: a subcommand class in `commands/`, a service + builder in `services/`, an options record in `services/options/`, and registration in `TestWrapper`'s `subcommands` list.
 - EC2 instance tags use the key `baas-role`, not `baas:role`. IAM conditions depend on it.
 
@@ -369,7 +374,7 @@ Local S3 browser: `http://localhost:4566/<bucket>` (browser only; SDK/CLI endpoi
 
 ## Module: baas-cli
 
-Self-contained Java CLI that replaces `run-remote-benchmark.zsh` and `benchmark_overview.sh`. **Fully implemented** — not a planned feature.
+Self-contained Java CLI that replaced the `run-remote-benchmark.zsh` / `benchmark_overview.sh` helpers (now deleted). **Fully implemented** — not a planned feature.
 
 - Main class: `pl.wsztajerowski.baas.BaasApp` (picocli root command `"baas"`)
 - Config stored at `~/.baas/config.yaml` (Jackson YAML)
