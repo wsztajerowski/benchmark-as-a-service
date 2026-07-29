@@ -98,8 +98,8 @@ code disagree, **the code wins**.
   which meant every run failed at the database write.
 - **Bucket naming and retention.** The bucket is `baas-<prefix>`, declared
   `DeletionPolicy: Retain`. Because the prefix is a hash of the caller's ARN, a retained bucket
-  blocks any later `setup` — so teardown deletes it explicitly, and setup detects and reports
-  the collision.
+  blocks any later `setup` — so `baas admin teardown --delete-bucket` empties and deletes it
+  explicitly (opt-in; the default retains), and setup detects and reports the collision.
 
 Distribution beyond a shaded JAR — an install script, a Homebrew tap, jpackage bundles, a
 native image, a Docker image — was specified but never built. It remains backlog, not a

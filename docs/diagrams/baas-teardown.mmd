@@ -1,0 +1,58 @@
+sequenceDiagram
+    actor User as CLI User
+    participant TD as TeardownCommand
+    participant EC2 as AWS EC2
+    participant S3 as AWS S3
+    participant CF as AWS CloudFormation
+    participant SSM as AWS SSM
+
+    Note over User,SSM: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack only. The CI stack and the MongoDB cluster are untouched.
+    User->>TD: baas admin teardown [--stack-name] [--yes] [--delete-bucket]
+    Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else aws.coreStackName from config
+
+    rect rgb(255, 235, 235)
+        Note over TD,EC2: Gate 1 -- never tear down under a live run
+        TD->>EC2: describeInstances(tag baas-role=benchmark-runner, state=running)
+        EC2-->>TD: instance IDs
+        alt running runner instances found
+            TD-->>User: abort, list the instance IDs, exit 1
+        end
+    end
+
+    opt --yes not set
+        Note over TD,User: Gate 2 -- explicit confirmation
+        TD->>User: prompt: type the stack name to confirm deletion
+        User-->>TD: typed input
+        alt input does not match the stack name exactly
+            TD-->>User: "Aborted." exit 0
+        end
+    end
+
+    alt --delete-bucket set
+        TD->>S3: listObjectsV2Paginator(bucket)
+        S3-->>TD: object keys (paginated)
+        TD->>S3: deleteObject(key) for each object
+        TD->>S3: deleteBucket(bucket)
+        alt deletion fails
+            Note over TD: warn and CONTINUE -- leaving the stack behind is worse<br/>than leaving the bucket behind, and the bucket is recoverable by hand
+        end
+    else default (bucket retained)
+        Note over TD,S3: the bucket survives -- DeletionPolicy Retain means CloudFormation<br/>will not remove it either
+    end
+
+    TD->>CF: deleteStack(stackName)
+    CF-->>TD: delete accepted
+    TD->>CF: waiter.waitUntilStackDeleteComplete()
+    loop poll DescribeStacks
+        CF-->>TD: status = DELETE_IN_PROGRESS
+    end
+    CF-->>TD: status = DELETE_COMPLETE
+
+    TD->>SSM: deleteParameter(/PREFIX/mongo/connection-string)
+    Note over SSM: ParameterNotFoundException is<br/>silently swallowed if absent
+    SSM-->>TD: deleted (or not found, ignored)
+
+    opt bucket was retained
+        TD-->>User: warn: `baas admin setup` as this identity will FAIL while the bucket<br/>exists -- its name is a hash of your caller ARN, so the next setup asks<br/>for the same name. Delete it by hand or re-run with --delete-bucket.
+    end
+    TD-->>User: "MongoDB cluster NOT touched (connect-only)" and exit 0

@@ -41,16 +41,24 @@ The `.env` file contains LocalStack credentials used by Docker Compose and tests
 
 ## Running Benchmarks Remotely
 
+`baas` is the supported path. It provisions its own infrastructure and needs no GitHub Actions.
+
 ```bash
-# Provision EC2, run, poll (baas-cli)
+# One-time: deploy the core stack and store the MongoDB URI in SSM (needs deployer credentials)
+baas admin setup --mongo-uri "mongodb+srv://user:pass@host/db"
+
+# Provision EC2, run, poll for results
 baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
 
-# Build, upload to S3, and trigger a GitHub Actions workflow on EC2 (legacy path)
-scripts/run-remote-benchmark.zsh -t=jmh-with-async -- MyBenchmark -f 1 -wi 1 -i 3
-
 # Query aggregated results from MongoDB
-scripts/benchmark_overview.sh
+baas results
 ```
+
+The zsh helpers in `scripts/` (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
+`benchmark_overview.sh`, and the `logger.sh`/`git_helpers.sh`/`aws_helpers.sh` they source) are
+superseded by `baas run` and `baas results` and are slated for removal. Don't build on them.
+`scripts/get-version-property*.sh` and `scripts/update-dependencies.sh` stay — CI and the
+release workflow use them.
 
 **`--` is required before benchmark parameters.** Everything after it is forwarded verbatim to
 `benchmark-runner.jar`. Without it, picocli parses JMH flags as `baas` options and fails with
@@ -66,10 +74,12 @@ This is a Maven multi-module project with 4 modules:
 
 | Module | Purpose |
 |--------|---------|
-| `benchmark-runner` | Main fat JAR — runs benchmarks, saves results to S3 & MongoDB |
-| `s3-hook-lambda` | **DEPRECATED** — AWS Lambda triggered by S3 uploads (being removed) |
+| `benchmark-runner` | Fat JAR that runs on the EC2 runner — executes benchmarks, saves results to S3 & MongoDB |
+| `baas-cli` | The `baas` CLI developers use locally — provisions infrastructure, launches runners, polls for results. Main class `pl.wsztajerowski.baas.BaasApp` |
 | `fake-jmh-benchmarks` | Minimal JMH JAR used as test fixture |
 | `fake-stress-tests` | Minimal JCStress JAR used as test fixture |
+
+The `s3-hook-lambda` module has been removed; the S3-upload-triggers-GHA path no longer exists.
 
 ## Architecture (benchmark-runner)
 
@@ -85,20 +95,58 @@ This is a Maven multi-module project with 4 modules:
 - `entities/` — Morphia-mapped MongoDB documents for JMH and JCStress results
 - `process/` — `BenchmarkProcessBuilder` for launching the benchmark JAR as a subprocess
 
-**End-to-end flow**:
-1. Developer runs `scripts/run-remote-benchmark.zsh` → builds JAR → uploads to S3 → dispatches `benchmark-runner.yml` GHA workflow
-2. GHA provisions an EC2 instance → downloads the runner and benchmark JARs → executes the CLI
-3. CLI launches the benchmark JAR as a subprocess → parses stdout results → uploads JSON to S3 → saves to MongoDB
+## Architecture (baas-cli)
+
+**Entry point**: `pl.wsztajerowski.baas.BaasApp` (picocli root command `baas`)
+
+**Subcommands**: `admin setup`, `admin teardown`, `config set`, `config show`, `run <type>`, `results`.
+`setup`/`teardown` live under `admin` because they need the elevated `BaasCliDeployerPolicy`;
+day-to-day `run`/`results` use the narrow, stack-created `BaasCliOperatorRole`
+(`aws.operatorProfile` in `~/.baas/config.yaml`, which deliberately does **not** fall back to
+`aws.profile`).
+
+**End-to-end flow** — no GitHub Actions involved:
+1. `baas run <type>` builds the benchmark JAR in the **current working directory** (the user's
+   project, not this repo) and uploads it to `s3://{bucket}/runs/{requestId}/benchmark.jar`
+2. The CLI looks up the latest AL2023 AMI via SSM and calls `ec2:RunInstances` directly with a
+   generated user-data script
+3. User-data installs Amazon Corretto 25, fetches the runner JAR (S3 or GitHub Releases), reads
+   `MONGO_CONNECTION_STRING` from SSM, and runs `benchmark-runner.jar` from `/app`
+4. `benchmark-runner.jar` launches the benchmark JAR as a subprocess → parses results → uploads
+   output to S3 → saves documents to MongoDB
+5. User-data writes the `run-status` sentinel to S3 and self-terminates the instance; the CLI
+   polls that sentinel every 15s, then prints results from MongoDB
+
+The GHA workflows still exist, but for automated CI only — the CLI neither dispatches nor
+depends on them.
+
+> Design rationale, and the non-obvious invariants the runner depends on (no `set -e` in
+> user-data, `/app` as working directory, request-ID-scoped S3 paths, three termination layers):
+> [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
+> Read it before changing user-data generation or the teardown path.
 
 ## Infrastructure & CI
 
-- **CloudFormation**: Two stacks in `infra/` — bootstrap (OIDC, IAM, S3 bucket) and main (EC2, SSM parameters)
+- **CloudFormation**: two independently-deployed stacks in `infra/` — see [`infra/README.md`](infra/README.md)
+  for the deploy procedure:
+  - `cf-template-core.yaml` — networking (VPC, public subnet, IGW, S3 gateway endpoint,
+    security group), the `baas-{prefix}` S3 bucket, `RunnerRole` + instance profile, and
+    `OperatorRole`. This is what `baas admin setup` deploys, bundled in the CLI as the
+    classpath resource `/templates/cf-template-core.yaml`.
+  - `cf-template-ci.yaml` — GitHub OIDC provider + `WorkflowRole`, for the GHA CI path only.
+    Split out so the local CLI's identity never needs `iam:CreateOIDCProvider`.
+  - `deployer-policy.json` / `operator-policy.json` — the two IAM policies; test fixtures, not
+    bundled into the shipped JAR.
 - **GitHub Actions** in `.github/workflows/`:
-  - `benchmark-runner.yml` — main orchestration: EC2 provisioning + benchmark execution
+  - `benchmark-runner.yml` — `workflow_dispatch` orchestration: EC2 provisioning + benchmark execution
   - `exec-single-benchmark.yml` — reusable benchmark executor (called by the main workflow)
+  - `start-ec2-runner.yml` / `stop-ec2-runner.yml` — EC2 lifecycle via `machulav/ec2-github-runner@v2`
   - `release.yml` — semantic release; sets the actual version (pom.xml has `0.0.0-semantically-released`)
-  - `ci.yml` — build + test on push/PR
-- EC2 instances self-terminate after benchmark completes via a shell watchdog
+  - `ci-pr-build.yml` — `mvn clean verify` on PRs
+  - `e2e-cloud-test.yml` — full cloud E2E against real AWS
+- EC2 instances self-terminate through **three** independent mechanisms: the benchmark process
+  `timeout`, a background shell watchdog that fires even if the JVM deadlocks, and a CLI JVM
+  shutdown hook for Ctrl+C. Any one of them alone leaves a way to orphan an instance.
 
 ## Storage Layout
 

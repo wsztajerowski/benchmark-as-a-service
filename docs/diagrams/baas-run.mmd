@@ -1,0 +1,36 @@
+sequenceDiagram
+    actor User as CLI User
+    participant RC as RunCommand
+    participant Sub as OS Subprocess
+    participant S3 as AWS S3
+    participant SSM as AWS SSM
+    participant EC2 as AWS EC2
+    participant DB as MongoDB
+
+    User->>RC: baas run <type> [params] [--instance-type] [--timeout] [--skip-build]
+    Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() from ~/.baas/config.yaml
+    RC->>Sub: git rev-parse --abbrev-ref HEAD
+    Sub-->>RC: current branch name
+    opt --skip-build = false (default)
+        RC->>Sub: mvn clean package -q -DskipTests
+        Sub-->>RC: BUILD SUCCESS or RuntimeException on failure
+    end
+    Note over RC: generate requestId = type-yyyyMMdd_HHmmss<br/>resultPath = branch/type/yyyyMMdd_HHmmss
+    RC->>S3: s3.putObject(bucket, runs/requestId/benchmark.jar)
+    S3-->>RC: PutObjectResponse
+    RC->>SSM: ssm.getParameter(al2023-ami-kernel-default-x86_64)
+    SSM-->>RC: amiId
+    Note over RC: UserDataScriptBuilder.build()<br/>Script installs java-25-amazon-corretto-headless<br/>downloads benchmark-runner.jar from S3 or GitHub Releases<br/>fetches MONGO_CONNECTION_STRING from SSM<br/>runs: timeout N java -jar benchmark-runner.jar type ...<br/>writes run-status sentinel to S3<br/>self-terminates the EC2 instance
+    RC->>EC2: ec2.runInstances(amiId, instanceType, subnetId, sgId, instanceProfile, userData, tags)
+    Note over EC2: min=1 max=1<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: baas-role=benchmark-runner
+    EC2-->>RC: instanceId
+    Note over RC: register JVM shutdown hook<br/>ec2.terminateInstances(instanceId) on Ctrl+C
+    loop poll every 15 seconds
+        RC->>S3: s3.getObjectAsBytes(resultPath/run-status)
+        S3-->>RC: completed or failed:N or absent -- sleep 15s and retry
+    end
+    RC->>SSM: ssm.getParameter(/<prefix>/mongo/connection-string, withDecryption=true)
+    SSM-->>RC: mongoUri
+    RC->>DB: find({_id.requestId: requestId}) on jmh_benchmarks
+    DB-->>RC: BENCHMARK | MODE | SCORE | ERROR | UNIT
+    RC-->>User: print results table and exit 0

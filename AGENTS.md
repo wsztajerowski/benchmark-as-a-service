@@ -2,55 +2,45 @@
 
 ## Architecture Overview
 
-BaaS is a **cloud-native benchmark orchestration system** composed of five Maven modules in a single multi-module build:
+BaaS is a **cloud-native benchmark orchestration system** composed of four Maven modules in a single multi-module build:
 
 | Module | Role |
 |---|---|
-| `benchmark-runner` | Fat JAR CLI (picocli) that runs JMH/JCStress benchmarks, uploads results to S3, and persists data in MongoDB |
+| `benchmark-runner` | Fat JAR CLI (picocli) that runs JMH/JCStress benchmarks on the EC2 runner, uploads results to S3, and persists data in MongoDB |
 | `baas-cli` | Self-contained Java CLI replacing the zsh helper scripts; main class `pl.wsztajerowski.baas.BaasApp` |
-| `s3-hook-lambda` | ~~AWS Lambda triggered by S3 object-create events; translates the JSON request file into a GitHub Actions `workflow_dispatch` call~~ **DEPRECATED – scheduled for removal** |
 | `fake-jmh-benchmarks` | Minimal JMH benchmark JAR used as test fixture in integration tests |
 | `fake-stress-tests` | Minimal JCStress JAR used as test fixture in integration tests |
+
+`s3-hook-lambda` has been **removed** — the module, its CloudFormation resources, the
+`<prefix>-lambda` bucket, and the S3-object-create trigger path are all gone. If you find a
+reference to it anywhere, it is stale.
 
 ---
 
 ## Full System Flow
 
-### ~~Trigger path A – S3 upload (production)~~ [DEPRECATED – pending removal]
+### Trigger path A – `baas run` — **the supported path**
 
-> **This trigger path is deprecated and will be removed.** The `s3-hook-lambda` module, its CloudFormation resources, and all associated SSM parameters are being decommissioned. Do not build new features that rely on this path.
+No GitHub Actions involved. See [Module: baas-cli](#module-baas-cli) for the full flow.
 
 ```
-[DEPRECATED]
-User
- └─ aws s3 cp request.json  →  s3://<prefix>-main/requests/<id>/request.json
-                                        │ S3 ObjectCreated event (prefix=requests/, suffix=.json)
-                                        ▼
-                              s3-hook-lambda (Java 21, AWS Lambda)  ← DEPRECATED
-                                ├─ reads JSON body from S3
-                                ├─ reads GitHub config from SSM Parameter Store
-                                │   /<prefix>/github/{org,repo,workflowid,workflowbranch,token}
-                                └─ POST https://api.github.com/repos/<org>/<repo>/actions/workflows/<id>/dispatches
-                                           (forwards S3 JSON verbatim as "inputs")
-                                        │ workflow_dispatch
-                                        ▼
-                              benchmark-runner.yml  (GHA)
-```
-
-### Trigger path B – CLI helper (`scripts/run-remote-benchmark.zsh`) — **current recommended path**
-```
-scripts/run-remote-benchmark.zsh -t=<type> [options] -- [JMH params]
+baas run <type> [baas options] -- [benchmark params]
  │
- ├─ 1. get current git branch name
- ├─ 2. mvn clean package  (skip with -sb)
- ├─ 3. aws s3 cp jmh-benchmarks/target/jmh-benchmarks.jar
- │        → s3://<bucket>/<branch>/jmh-benchmarks.jar
- ├─ 4. gh workflow run benchmark-runner.yml  (with request_id, result_path, tags, …)
- │        waits via scripts/wait-for-gha-run.sh
- └─ 5. [if BENCHMARK_DB_CONNECTION_STRING set]
-          mongosh → db.jmh_benchmarks.find({'_id.requestId': '<id>'})
-          prints: BENCHMARK  SCORE  UNIT
+ ├─ 1. resolve config from ~/.baas/config.yaml; get current git branch
+ ├─ 2. mvn clean package -q -DskipTests  in the CURRENT working directory (skip with --skip-build)
+ ├─ 3. aws s3 putObject → s3://<bucket>/runs/<requestId>/benchmark.jar
+ ├─ 4. SSM lookup: latest AL2023 AMI  →  ec2:RunInstances with generated user-data
+ │        user-data: install Corretto 25 → fetch runner JAR → read mongo URI from SSM
+ │                 → run benchmark-runner.jar from /app → write run-status → self-terminate
+ ├─ 5. poll s3://<bucket>/<resultPath>/run-status every 15 s
+ └─ 6. read mongo URI from SSM, query jmh_benchmarks, print results table
 ```
+
+### Trigger path B – GitHub Actions `workflow_dispatch` — **CI only**
+
+`benchmark-runner.yml` still exists and still works, but it is for automated CI (`e2e-cloud-test.yml`)
+rather than for developers. `baas` neither dispatches nor depends on it. The zsh helper that used
+to drive it (`scripts/run-remote-benchmark.zsh`) is superseded — see [Developer Scripts](#developer-scripts).
 
 ### GitHub Actions orchestration (benchmark-runner.yml)
 ```
@@ -97,90 +87,82 @@ TestWrapper (picocli)
 
 ## Developer Scripts
 
-### `scripts/run-remote-benchmark.zsh` — main action entry point
+### Superseded by `baas` — do not build on these
 
-**The primary way to trigger a remote benchmark run.** Handles the full lifecycle: build → upload → dispatch → wait → preview results.
+These still exist on disk and still run, but `baas-cli` replaced them and they are slated for
+removal. Use `baas run` / `baas results` instead, and don't add features here.
 
-**Prerequisites:** `mvn`, `aws` CLI (profile `lynx` by default), `gh` CLI (authenticated).
-
-```zsh
-scripts/run-remote-benchmark.zsh -t=<type> [options] -- [JMH params forwarded verbatim]
-```
-
-| Option | Default | Description |
-|---|---|---|
-| `-t`, `--benchmark-type` | **required** | `jmh`, `jmh-with-async`, or `jmh-with-prof` (not `jcstress`) |
-| `-w`, `--workflow-branch` | `main` | Git branch used to load the workflow |
-| `-p`, `--aws-profile` | `lynx` | AWS CLI profile |
-| `-sb`, `--skip-build` | `false` | Skip `mvn clean package` and S3 upload |
-| `-wf`, `--worker-family` | _(default EC2)_ | EC2 family override (`c5`, `c6i`, `c7i`) |
-| `-ws`, `--worker-size` | _(default EC2)_ | EC2 size override (`2xlarge`, `4xlarge`, `8xlarge`) |
-| `--` | — | Everything after `--` is forwarded as JMH benchmark parameters |
-
-**Behaviour notes:**
-- Benchmark JAR is read from `jmh-benchmarks/target/jmh-benchmarks.jar` and uploaded to `s3://<bucket>/<branch>/jmh-benchmarks.jar`.
-- Request ID format: `<type>-<YYYYMMDD_HHMMSS>`; result path: `<branch>/<type>/<YYYYMMDD_HHMMSS>`.
-- Auto-tags every run with `branch`, `type`, `project=lynx-journal`, `options=<JMH params>`.
-- When `-wf` or `-ws` is supplied, the tag `exclude_from_results=true` is automatically added (non-standard hardware runs are excluded from `benchmark_overview.sh` default aggregation).
-- After the workflow completes it prints a quick result preview via `mongosh` if `BENCHMARK_DB_CONNECTION_STRING` is set, otherwise prints the equivalent query to stdout.
-- The S3 console link to result artifacts is printed at the end regardless.
-
-```zsh
-# Examples
-scripts/run-remote-benchmark.zsh -t=jmh-with-async -- MyBenchmark -f 1 -wi 1 -i 3
-scripts/run-remote-benchmark.zsh -t=jmh -sb -wf=c7i -ws=4xlarge -- -f 2 -wi 3 -i 5
-```
-
----
-
-### `scripts/benchmark_overview.sh` — result viewer
-
-**The primary way to inspect aggregated benchmark results** stored in MongoDB. Requires `BENCHMARK_DB_CONNECTION_STRING` env var; when unset it prints the generated `mongosh` query to stdout instead of running it.
-
-```bash
-BENCHMARK_DB_CONNECTION_STRING=mongodb://... scripts/benchmark_overview.sh [options]
-```
-
-| Option | Description |
+| Script | Replaced by |
 |---|---|
-| `-b`, `--benchmark-name` | Filter by benchmark name (MongoDB `$regex`) |
-| `-l`, `--living-branches` | Restrict to currently active remote git branches |
-| `-a`, `--all` | Print every result row; skip grouping/deduplication |
+| `scripts/run-remote-benchmark.zsh` | `baas run <type> -- <params>` |
+| `scripts/wait-for-gha-run.sh` | `baas run`'s built-in `run-status` polling |
+| `scripts/benchmark_overview.sh` | `baas results` |
+| `scripts/logger.sh`, `git_helpers.sh`, `aws_helpers.sh` | (support code for the three above) |
 
-**Default behaviour (no `-a`):**
-- Filters out documents with `benchmarkMetadata.tags.exclude_from_results = true`.
-- Hard-coded match on `benchmarkMetadata.tags.project: 'lynx-journal'` and `benchmarkMetadata.tags.type: 'jmh'`.
-- Groups by `(benchmark, branch)`, keeping only the **highest-scoring run** per group.
-- Output columns: `BENCHMARK  SCORE  UNIT  BRANCH  REQUEST_ID  OPTIONS`
+Two behaviours from the old scripts still shape the data model and are mirrored by `baas results`:
 
-```bash
-# Examples
-BENCHMARK_DB_CONNECTION_STRING=mongodb://... scripts/benchmark_overview.sh --living-branches
-BENCHMARK_DB_CONNECTION_STRING=mongodb://... scripts/benchmark_overview.sh -b Synchronized -l
-BENCHMARK_DB_CONNECTION_STRING=mongodb://... scripts/benchmark_overview.sh --all
-```
+- Runs are tagged with `branch`, `type`, `project`, and `options=<params>`; non-standard hardware
+  runs get `exclude_from_results=true`.
+- Default aggregation filters out `benchmarkMetadata.tags.exclude_from_results = true`, groups by
+  `(benchmark, branch)`, and keeps only the highest-scoring run per group.
+
+`benchmark_overview.sh` also hard-codes a match on `tags.project: 'lynx-journal'` — a leftover
+from the original consuming project, and a reason not to trust its output for other projects.
+
+### Retained — used by CI and release
+
+`scripts/get-version-property.sh`, `scripts/get-version-property-simple.sh`, and
+`scripts/update-dependencies.sh`. Keep these. `update-dependencies.sh` contains a hardcoded
+`dependencies=()` array — edit it to perform semi-automated POM version bumps with build verification.
 
 ---
 
 ## AWS Deployment Topology
 
-### CloudFormation stack (`infra/cf-template-main.yaml`)
+### Two CloudFormation stacks
 
-`cf-template-main.yaml` is a **single unified stack** — it has already been rewritten. The bootstrap stack (`cf-template-bootstrap.yaml`) is obsolete; `infra/README.md` is outdated and references removed parameters. Trust the template file, not the README.
+Deployed independently. `infra/README.md` documents the procedure and is **current** — follow it.
+There is no `cf-template-main.yaml` and no bootstrap stack; both were replaced by this split.
 
-The current main stack provisions:
+**`infra/cf-template-core.yaml`** — everything the CLI itself needs. This is what `baas admin setup`
+deploys, bundled into `baas-cli` as the classpath resource `/templates/cf-template-core.yaml`.
+
 - VPC (`10.0.0.0/16`), public subnet, Internet Gateway, S3 gateway endpoint
-- `<prefix>-main` S3 bucket (DeletionPolicy: Retain)
-- `RunnerSecurityGroup` — no inbound rules; outbound HTTPS + HTTP (for yum)
-- `WorkflowRole` – assumed by GHA via OIDC; manages EC2 + `s3:PutObject` on `ci/*`
-- `RunnerRole` + `RunnerInstanceProfile` – assumed by EC2; full S3 CRUD + `ec2:TerminateInstances` (tag-scoped to `baas-role=benchmark-runner`) + `ssm:GetParameter` for mongo and AMI paths
-- `GithubOidc` – OIDC provider (conditional)
-- GitHub SSM params inlined: `/<prefix>/github/{org,repo,workflowid,workflowbranch}`
-- **No Lambda function, no S3 event trigger** — all Lambda resources have been removed
+- `baas-<prefix>` S3 bucket (`DeletionPolicy: Retain`, encrypted, public access blocked)
+- `RunnerSecurityGroup` — no inbound rules; outbound 443 (GitHub/S3/AWS APIs), 80 (yum), and
+  **27017 for MongoDB Atlas**. Atlas is *not* reachable over 443; omitting 27017 makes every run
+  fail at the database write.
+- `RunnerRole` + `RunnerInstanceProfile` — assumed by EC2; S3 access on the bucket +
+  `ec2:TerminateInstances` (tag-scoped to `baas-role=benchmark-runner`) + `ssm:GetParameter` for
+  the mongo and AMI paths
+- `OperatorRole` — the narrow day-to-day role for `baas run` / `baas results`
 
-`UseExistingVpc` / `ExistingVpcId` / `ExistingSubnetId` / `ExistingSecurityGroupId` parameters allow reusing existing network infrastructure.
+Outputs: `BucketName`, `S3BucketArn`, `RunnerRoleName`, `RunnerRoleArn`,
+`RunnerInstanceProfileName`, `OperatorRoleArn`, `SubnetId`, `SecurityGroupId`, `VpcId`.
 
-> **GitHub token** (`/<prefix>/github/token`) must still be created manually via `aws ssm put-parameter --type SecureString` — CloudFormation does not support SecureString parameters.
+`UseExistingVpc` / `ExistingVpcId` / `ExistingSubnetId` / `ExistingSecurityGroupId` allow reusing
+existing network infrastructure.
+
+**`infra/cf-template-ci.yaml`** — the GHA CI path only: `GithubOidc` (conditional on
+`OIDCProviderArn` being empty) and `WorkflowRole`. Split out of the core stack so the local CLI's
+identity never needs `iam:CreateOIDCProvider`. Takes `RunnerRoleArn` and `BucketName` from the
+core stack's outputs.
+
+### IAM policy model
+
+Two policies in `infra/`, and the split is deliberate:
+
+- `deployer-policy.json` → `BaasCliDeployerPolicy`, elevated, needed only by `baas admin setup` /
+  `baas admin teardown`.
+- `operator-policy.json` → the stack-created `BaasCliOperatorRole`, narrow, used by `baas run` /
+  `baas results`.
+
+`aws.operatorProfile` in `~/.baas/config.yaml` deliberately does **not** fall back to `aws.profile`
+(which holds deployer credentials). Don't "helpfully" add that fallback — it silently hands
+day-to-day commands elevated rights.
+
+Both JSON files reach the **test** classpath only (`baas-cli/pom.xml` `<testResources>`); only
+`cf-template-core.yaml` is bundled into the shipped JAR.
 
 ### GHA required secrets/variables
 | Name | Type | Source |
@@ -201,7 +183,9 @@ The current main stack provisions:
 - Default type: `c5.2xlarge`; configurable: `c5|c6i|c7i` × `2xlarge|4xlarge|8xlarge`
 - Pre-runner script: installs `docker`, `git`, `libicu`
 - Instance profile: `RunnerInstanceProfile` (inherits `RunnerRole` S3 permissions)
-- Tags (YAML map, converted to `[{Key, Value}]` JSON via `yq`): `project=baas`, `runner=request-benchmark-runner`
+- Tags (YAML map, converted to `[{Key, Value}]` JSON via `yq`): `baas-role: benchmark-runner`.
+  The tag key is `baas-role`, **not** `baas:role` — `RunnerRole`'s `ec2:TerminateInstances`
+  condition is scoped to it, so changing the key breaks self-termination.
 - Lifecycle: created on `start-runner`, **always terminated** by `stop-runner` (even on failure)
 
 ---
@@ -214,21 +198,36 @@ The current main stack provisions:
 | `jmh_benchmarks` | `JmhBenchmark` | `_id`: `{requestId, benchmarkName, mode}` · `jmhResult` (raw JMH JSON) · `benchmarkMetadata.{tags, createdAt}` |
 | (JCStress – no explicit `@Entity("…")`) | `JCStressResult` | `totalTests`, `passedTests`, `testsWithFailedResults`, `testsWithInterestingResults` |
 
-- Tags are a free-form `Map<String,String>` on `BenchmarkMetadata` — used by scripts for filtering (e.g. `branch`, `type`, `source`, `exclude_from_results`, `project`)
-- `benchmark_overview.sh` groups by `(benchmark, branch)`, keeping the highest-scoring run; excludes documents where `benchmarkMetadata.tags.exclude_from_results = true`
+- Tags are a free-form `Map<String,String>` on `BenchmarkMetadata` — used for filtering (e.g. `branch`, `type`, `source`, `exclude_from_results`, `project`)
+- `baas results` groups by `(benchmark, branch)`, keeping the highest-scoring run; excludes documents where `benchmarkMetadata.tags.exclude_from_results = true`
+
+**Measurements live only in MongoDB.** S3 holds process output and profiling artifacts; there is
+no `result.json`. The machine-readable JMH file is parsed on the runner and persisted as
+documents, so if `DatabaseServiceBuilder` selected `NoOpDatabaseService` (empty or unset mongo
+URI) the numbers are not stored anywhere — the run still "succeeds".
 
 ### S3 result layout
 ```
-<result-path>/
+<result-path>/                          (= <branch>/<type>/<YYYYMMDD_HHMMSS>)
  ├─ jmh-output.txt            (process stdout for plain jmh)
  ├─ jmh-profiler-output.txt   (process stdout for jmh-with-prof)
  ├─ jmh-with-async-output.txt (process stdout for jmh-with-async)
- ├─ logs/*.log                 (any .log files found in working directory)
+ ├─ jcstress-output.txt       (process stdout for jcstress)
+ ├─ logs/*.log                 (any .log files found below the working directory)
+ ├─ run-status                 (sentinel written by user-data: "completed" or "failed:<exitCode>")
+ ├─ cloud-init-output.log      (runner boot log, uploaded before self-termination)
  └─ <fully.qualified.BenchmarkName-Mode>/
       ├─ flame-<event>-forward.html   (async profiler flamegraph)
       ├─ jfr-<event>.jfr             (async profiler JFR)
       └─ profile.jfr                  (JMH profiler output)
+
+runs/<requestId>/                       (separate top-level prefix — uploaded inputs)
+ ├─ benchmark.jar
+ └─ runner.jar                (only when --runner-jar overrides the GitHub Releases download)
 ```
+
+The `runs/<requestId>/` scoping is load-bearing: without it, two developers on the same branch
+overwrite each other's JARs mid-run.
 
 ---
 
@@ -239,7 +238,9 @@ The current main stack provisions:
 | `ci-pr-build.yml` | PR | `mvn -B clean verify` (unit + integration tests) |
 | `e2e-cloud-test.yml` | PR / manual | Full cloud E2E: builds JAR, uploads to S3, runs `jmh-with-async` + `jmh-with-prof` on EC2, verifies S3 artifacts and MongoDB documents |
 | `release.yml` | push to `main` | `mvn verify` → semantic-release → GitHub Release with `benchmark-runner.jar` asset → `mvn deploy` to GitHub Packages |
-| `benchmark-runner.yml` | `workflow_dispatch` ~~/ Lambda~~ | Production benchmark execution |
+| `benchmark-runner.yml` | `workflow_dispatch` | Benchmark execution via GHA (CI path; `baas run` bypasses it) |
+| `start-ec2-runner.yml` / `stop-ec2-runner.yml` | called by `benchmark-runner.yml` | EC2 lifecycle via `machulav/ec2-github-runner@v2` |
+| `exec-single-benchmark.yml` | called by `benchmark-runner.yml` | Downloads runner + benchmark JARs, runs `benchmark-runner.jar` |
 
 ### Release mechanics
 - Semantic versioning via `@semantic-release/commit-analyzer` (Angular preset)
@@ -272,17 +273,6 @@ Both storage and database are **optional at runtime**:
 The connection string **must include the database name**: `mongodb://host:port/database_name`. This is enforced in `DatabaseServiceBuilder` with a `requireNonNull` check.
 
 Morphia auto-maps all classes under `pl.wsztajerowski.entities` – keep entity classes in that package.
-
----
-
-## Module: s3-hook-lambda
-
-> **DEPRECATED – scheduled for removal.** Do not add new features or dependencies on this module.
-
-Lambda reads GitHub config from **SSM Parameter Store** using a prefix from the `SSM_PARAM_PREFIX` env var:
-- `/<prefix>/github/org`, `/<prefix>/github/repo`, `/<prefix>/github/workflowid`, `/<prefix>/github/workflowbranch`, `/<prefix>/github/token`
-
-The S3 request body JSON is forwarded verbatim as `inputs` inside the GHA `workflow_dispatch` payload. The Lambda runtime is **Java 21** (one version behind the build toolchain which targets Java 25).
 
 ---
 
@@ -322,20 +312,22 @@ docker-compose -f docker-compose.yaml up
 # Run local E2E test (requires act, docker-compose, aws cli, mongosh)
 /bin/bash .github/test/exec-single-benchmark-e2e-test.sh
 
-# ── Remote benchmarks (see Developer Scripts section for full option reference) ──
+# ── Remote benchmarks (see Module: baas-cli for the full option reference) ──
 
 # Trigger a remote benchmark run and wait for results
-scripts/run-remote-benchmark.zsh -t=jmh-with-async -- MyBenchmark -f 1 -wi 1 -i 3
+baas run jmh-with-async -- MyBenchmark -f 1 -wi 1 -i 3
 
-# View aggregated results from MongoDB (filtered to active branches)
-BENCHMARK_DB_CONNECTION_STRING=mongodb://... scripts/benchmark_overview.sh --living-branches
+# View aggregated results from MongoDB
+baas results
 ```
 
 **`docker-compose.yaml` services** (note: `.yaml` extension, not `.yml`):
-- `localstack-baas` — LocalStack with `SERVICES=s3,lambda,ssm`
-- `localstack-baas-init` — creates S3 bucket `baas` and SSM params `/baas/github/{org,repo,workflowid,token}`
+- `localstack-baas` — LocalStack with `SERVICES=s3,ssm`
 - `mongo` — MongoDB at port 27017
 - `mongo-express` — MongoDB UI at port 8081
+
+There is **no** init service — the S3 bucket and any SSM params must be created by hand against
+the LocalStack endpoint.
 
 **`.env` at root** supplies `AWS_ACCESS_KEY_ID=test` / `AWS_SECRET_ACCESS_KEY=test` for LocalStack. Do not store real credentials here.
 
@@ -369,9 +361,9 @@ Local S3 browser: `http://localhost:4566/<bucket>` (browser only; SDK/CLI endpoi
 - Java **25**, compiled with `maven-compiler-plugin` 3.14+; target Java version is set in root `pom.xml` `<maven.compiler.source>` / `<maven.compiler.target>`.
 - All JARs are assembled as **shaded fat JARs** (maven-shade-plugin); artifact name is always `${project.artifactId}` (no version suffix).
 - Version string is `0.0.0-semantically-released` – actual versioning is managed by the release workflow, not manually.
-- Shell scripts in `scripts/` and `.github/test/testing-scripts/` use a shared `logger.sh` providing `log INFO|SUCCESS|WARNING|ERROR "message"` — always source it with `LOGGER_NAME="..."` set first.
+- Shell scripts in `.github/test/testing-scripts/` use a shared `logger.sh` providing `log INFO|SUCCESS|WARNING|ERROR "message"` — always source it with `LOGGER_NAME="..."` set first. (`scripts/logger.sh` serves only the superseded zsh helpers.)
 - New benchmark types need: a subcommand class in `commands/`, a service + builder in `services/`, an options record in `services/options/`, and registration in `TestWrapper`'s `subcommands` list.
-- `scripts/update-dependencies.sh` contains a hardcoded `dependencies=()` array — edit it to perform semi-automated POM version bumps with build verification.
+- EC2 instance tags use the key `baas-role`, not `baas:role`. IAM conditions depend on it.
 
 ---
 
@@ -381,22 +373,33 @@ Self-contained Java CLI that replaces `run-remote-benchmark.zsh` and `benchmark_
 
 - Main class: `pl.wsztajerowski.baas.BaasApp` (picocli root command `"baas"`)
 - Config stored at `~/.baas/config.yaml` (Jackson YAML)
-- CF template is bundled as a classpath resource (`/templates/cf-template-main.yaml`) — `baas setup` reads it directly, no local `infra/` file needed
+- The core CF template is bundled as a classpath resource (`/templates/cf-template-core.yaml`) — `baas admin setup` reads it directly, no local `infra/` file needed
 - Does **not** use Morphia; uses raw `mongodb-driver-sync`
 
 ### Subcommands
 
+`setup`/`teardown` sit under `admin` because they need the elevated `BaasCliDeployerPolicy`;
+everything else runs with the narrow operator role.
+
 ```
-baas setup        # deploy/update CloudFormation stack; write config to ~/.baas/config.yaml
-baas teardown     # tear down the CloudFormation stack
-baas config set   # store MongoDB URI in SSM SecureString; write non-sensitive config
-baas config show  # print current config (MongoDB URI masked)
+baas admin setup     # deploy/update the CORE stack; write config to ~/.baas/config.yaml
+                     # options: --region --aws-profile --mongo-uri
+                     #          --use-existing-vpc --vpc-id --subnet-id --sg-id
+baas admin teardown  # tear down the core stack
+                     # options: --stack-name --yes --delete-bucket
+baas config set      # store MongoDB URI in SSM SecureString; write non-sensitive config
+baas config show     # print current config (MongoDB URI masked)
 baas run <type> -- <params>
-                  # build → upload → provision EC2 → poll → show results
-                  # types: jmh | jmh-with-async | jmh-with-prof | jcstress
-                  # -- is required; params after it go verbatim to benchmark-runner.jar
-baas results      # query MongoDB; mirrors benchmark_overview.sh aggregation logic
+                     # build → upload → provision EC2 → poll → show results
+                     # types: jmh | jmh-with-async | jmh-with-prof | jcstress
+                     # options: --benchmark-jar --runner-jar --skip-build --instance-type
+                     #          --timeout --max-wall-clock --tag --branch
+                     # -- is required; params after it go verbatim to benchmark-runner.jar
+baas results         # query MongoDB and print the aggregated results table
 ```
+
+The CI stack (`cf-template-ci.yaml`) is **not** deployed by the CLI — deploy it by hand per
+`infra/README.md`.
 
 ### `baas run` execution flow
 
@@ -408,15 +411,40 @@ baas results      # query MongoDB; mirrors benchmark_overview.sh aggregation log
 6. CLI polls S3 every 15 seconds for `run-status` sentinel
 7. JVM shutdown hook calls `ec2:TerminateInstances` on `Ctrl+C`
 
-### Two independent EC2 termination safety layers
-- **Process timeout**: Linux `timeout` kills `java -jar benchmark-runner.jar` after `--timeout` seconds
-- **Shell watchdog**: background `sleep N && ec2:TerminateInstances` fires `timeout + 300 s` after launch
+### Three independent EC2 termination layers
+
+All three are required. Any one alone leaves a way to orphan a paid instance.
+
+- **Shell watchdog** (layer 1, `UserDataScriptBuilder`): background `sleep N && ec2:TerminateInstances`,
+  fires `timeout + 300 s` after launch. Started *immediately* after `INSTANCE_ID` resolves, so it
+  covers every later failure. It's the only layer that survives a deadlocked JVM.
+- **Process timeout** (layer 2): Linux `timeout` kills `java -jar benchmark-runner.jar` after `--timeout` seconds
+- **CLI shutdown hook** (layer 3, `RunCommand`): `ec2:TerminateInstances` on `Ctrl+C`
+
+### User-data invariants — read before editing `UserDataScriptBuilder`
+
+- **No `set -e`.** If the IMDSv2 instance-id fetch fails under `set -e`, the script exits *before*
+  starting the watchdog and orphans the instance. Errors are handled by exit code and the
+  `run-status` sentinel instead.
+- **The benchmark runs from `/app`, never from `/`.** The runner scans below its working directory
+  for `.log` files to upload; cloud-init starts user-data in `/`, so that walk covers the whole
+  root filesystem and aborts on `/proc` entries that vanish mid-walk.
+- **The mongo URI is never placed in user-data.** It's fetched from SSM at runtime so it stays out
+  of instance metadata and CI logs.
 
 ### Result output columns
 `baas results` outputs: `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`
-(differs from `benchmark_overview.sh` which outputs `BENCHMARK | SCORE | UNIT | BRANCH | REQUEST_ID | OPTIONS`)
 
-> Design rationale and the invariants the runner depends on: [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change design records live in `openspec/changes/*/design.md`. Historical migration procedure: [`docs/aws-migration-plan.md`](docs/aws-migration-plan.md).
+> Design rationale, the full invariant list, and the open risks:
+> [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
+> Per-change design records live in `openspec/changes/*/design.md`.
+>
+> Call-level sequence diagrams (Mermaid sources, rendered by GitHub in-place):
+> [`baas-run.mmd`](docs/diagrams/baas-run.mmd) ·
+> [`baas-setup.mmd`](docs/diagrams/baas-setup.mmd) ·
+> [`baas-teardown.mmd`](docs/diagrams/baas-teardown.mmd).
+> No checked-in SVGs — they went stale faster than the sources. Update the `.mmd` when the
+> corresponding command changes.
 
 ---
 
@@ -424,10 +452,13 @@ baas results      # query MongoDB; mirrors benchmark_overview.sh aggregation log
 
 | Area | Notes |
 |---|---|
-| SecureString in CF | Not supported — GitHub token (`/<prefix>/github/token`) must be created manually via `aws ssm put-parameter --type SecureString` |
+| SecureString in CF | Not supported — the mongo URI is written by `baas config set` / `baas admin setup --mongo-uri`, not by CloudFormation |
+| Atlas IP allowlist | Runners get a fresh public IP per run, so there is no stable address to allowlist — the access list has to be `0.0.0.0/0`, gated by connection-string credentials. Accepted for v1; see `infra/README.md` |
+| MongoDB is connect-only | `baas` never provisions a cluster. The user supplies the URI; empty/unset silently selects `NoOpDatabaseService` and discards measurements |
 | GHA as compute orchestrator | `benchmark-runner.yml` EC2 lifecycle is still managed by `machulav/ec2-github-runner@v2`; `baas run` bypasses GHA entirely |
-| Runner source | Downloaded from GitHub Releases at runtime; `runner-path` input on `exec-single-benchmark.yml` overrides with an S3 URL (used in E2E tests) |
-| `jcstress` not in zsh helper | `run-remote-benchmark.zsh` only accepts `jmh`, `jmh-with-async`, `jmh-with-prof`; use `baas run jcstress` or manual `workflow_dispatch` |
-| MongoDB queries in shell | `scripts/benchmark_overview.sh` and `run-remote-benchmark.zsh` embed raw `mongosh` queries — no API layer |
+| Runner source | Downloaded from GitHub Releases at runtime **without checksum verification** (known open risk); `--runner-jar` / the `runner-path` workflow input override with an S3 URL |
+| Root volume size | 30 GB gp3, not the AL2023 default — 8 GB is exhausted by profiling artifacts |
+| Shared `RunnerRole` | One SSM path for the mongo URI, so any operator's runner can read it. Fine for single-tenant; would need per-operator path prefixes otherwise |
+| `baas run` project layout | Assumes a Maven project producing one JAR; `--benchmark-jar` plus `--skip-build` covers other layouts |
 | Tags as metadata | Free-form `Map<String,String>` on `BenchmarkMetadata`; `exclude_from_results` tag is a convention, not a first-class field |
-| `CLAUDE.md` at root | Contains several errors (wrong env var names, wrong workflow names, wrong module count) — do not rely on it; use AGENTS.md |
+| Distribution | Ships as a shaded JAR only. Install script, Homebrew tap, jpackage, native image, Docker image were all specified but never built — backlog, not decisions |
