@@ -10,6 +10,8 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
+import pl.wsztajerowski.baas.infra.DeployerPolicyRenderer;
+import pl.wsztajerowski.baas.infra.DeployerPreflight;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 
@@ -71,8 +73,11 @@ public class SetupCommand implements Callable<Integer> {
         var factory = new AwsClientFactory(resolvedRegion, config.getAws().getProfile());
 
         String callerArn;
+        String accountId;
         try (var sts = factory.sts()) {
-            callerArn = sts.getCallerIdentity().arn();
+            var identity = sts.getCallerIdentity();
+            callerArn = identity.arn();
+            accountId = identity.account();
         }
         logger.debug("Caller ARN: {}", callerArn);
         String resolvedPrefix = computePrefix(callerArn);
@@ -88,6 +93,55 @@ public class SetupCommand implements Callable<Integer> {
             return 1;
         }
 
+        try {
+            preflight(factory, callerArn, accountId, resolvedRegion, resolvedPrefix);
+        } catch (IllegalStateException e) {
+            logger.error(e.getMessage());
+            return 1;
+        }
+
+        try {
+            return deploy(factory, config, resolvedPrefix, resolvedStack);
+        } catch (RuntimeException e) {
+            if (!DeployerPreflight.isAccessDenied(e)) {
+                throw e;
+            }
+            // The SDK names the action but never what to do about it. The rendered policy is the
+            // answer, and it is caller-specific — there is no generic version to link to.
+            logger.error("""
+                {}
+
+                This identity is missing a permission `baas admin setup` needs. Attach the policy
+                below (rendered for account {}, region {}, prefix {}):
+
+                {}""",
+                e.getMessage(), accountId, resolvedRegion, resolvedPrefix,
+                new DeployerPolicyRenderer().render(accountId, resolvedRegion, resolvedPrefix));
+            return 1;
+        }
+    }
+
+    private void preflight(AwsClientFactory factory, String callerArn, String accountId,
+                           String resolvedRegion, String resolvedPrefix) {
+        var renderer = new DeployerPolicyRenderer();
+        try (var iam = factory.iam()) {
+            var denied = new DeployerPreflight(iam)
+                .simulateCriticalActions(callerArn, accountId, resolvedRegion, resolvedPrefix);
+            if (!denied.isEmpty()) {
+                throw new IllegalStateException("""
+                    This identity cannot %s.
+
+                    Attach the policy below (rendered for account %s, region %s, prefix %s):
+
+                    %s"""
+                    .formatted(String.join(", ", denied), accountId, resolvedRegion, resolvedPrefix,
+                        renderer.render(accountId, resolvedRegion, resolvedPrefix)));
+            }
+        }
+    }
+
+    private Integer deploy(AwsClientFactory factory, BaasConfig config, String resolvedPrefix,
+                           String resolvedStack) throws Exception {
         String templateBody = loadTemplate();
 
         Map<String, String> params = new LinkedHashMap<>();

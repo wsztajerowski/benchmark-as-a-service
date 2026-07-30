@@ -27,6 +27,11 @@ no checked-in SVGs — update the `.mmd` when a command changes). Design rationa
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change
 records: `openspec/changes/*/design.md`.
 
+**Open review findings live in [`docs/review/`](docs/review/)** — one file per module, each entry
+marked Open or Fixed. An in-progress walkthrough works through them by severity; read the relevant
+file before proposing security or architecture work, and update the status table when one is
+fixed. Items already in *Accepted risks* below are excluded from both files on purpose.
+
 ## Invariants — breaking these costs money or silently loses data
 
 **User-data generation (`UserDataScriptBuilder`)**
@@ -141,8 +146,19 @@ is no `cf-template-main.yaml` and no bootstrap stack.
 
 IAM is split deliberately: `deployer-policy.json` → `BaasCliDeployerPolicy`, elevated, only for
 `baas admin setup`/`teardown`; `operator-policy.json` → the stack-created `BaasCliOperatorRole`,
-narrow, for `baas run`/`results`. Both JSONs reach the **test** classpath only
-(`baas-cli/pom.xml` `<testResources>`); only the core template ships in the JAR.
+narrow, for `baas run`/`results`. `operator-policy.json` and `cf-template-ci.yaml` reach the
+**test** classpath only; the core template and the two deployer policy templates ship in the JAR
+because the CLI renders them at runtime.
+
+**`deployer-policy.json` is a template, never a policy.** It carries `${ACCOUNT_ID}` / `${REGION}`
+/ `${PREFIX}` placeholders and is rendered per caller by `DeployerPolicyRenderer` — every resource
+it names is prefix-exact, so two developers cannot reach each other's stack, bucket or SSM
+parameter. Attaching the file as-is grants nothing. `baas admin deployer-policy` prints the
+rendered form; `--for-arn` renders it for someone else.
+
+`baas admin setup`'s preflight (opportunistic `SimulatePrincipalPolicy`, plus translating any
+`AccessDenied` into the rendered policy) is a **UX affordance, not a control** — anyone holding the
+policy can call IAM directly. Don't try to make it one.
 
 GHA values whose origin isn't obvious from the workflow files:
 
@@ -191,6 +207,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 
 | Area | Position |
 |---|---|
+| Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
 | Atlas IP allowlist | Runners get a fresh public IP per run, so there is no stable address to pin. The access list is `0.0.0.0/0`, gated by connection-string credentials. A private subnet + NAT + PrivateLink needs a paid tier and ~$32/month standing cost. |
 | Runner JAR integrity | Downloaded from GitHub Releases **without checksum verification**. Known open risk. |
 | Shared `RunnerRole` | One SSM path for the mongo URI, so any operator's runner can read it. Fine single-tenant. |

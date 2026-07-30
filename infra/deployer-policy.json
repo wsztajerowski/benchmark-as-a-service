@@ -16,7 +16,7 @@
         "cloudformation:GetTemplate",
         "cloudformation:UpdateStack"
       ],
-      "Resource": "arn:aws:cloudformation:*:*:stack/baas-*/*"
+      "Resource": "arn:aws:cloudformation:${REGION}:${ACCOUNT_ID}:stack/baas-${PREFIX}/*"
     },
     {
       "Sid": "EC2",
@@ -56,7 +56,12 @@
         "ec2:ModifyVpcAttribute",
         "ec2:RevokeSecurityGroupEgress"
       ],
-      "Resource": "*"
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${REGION}"
+        }
+      }
     },
     {
       "Sid": "SsmMongoParameter",
@@ -65,7 +70,7 @@
         "ssm:PutParameter",
         "ssm:DeleteParameter"
       ],
-      "Resource": "arn:aws:ssm:*:*:parameter/*/mongo/connection-string"
+      "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/${PREFIX}/mongo/connection-string"
     },
     {
       "Sid": "IAM",
@@ -88,16 +93,22 @@
         "iam:UntagRole"
       ],
       "Resource": [
-        "arn:aws:iam::*:role/*-runner-role",
-        "arn:aws:iam::*:role/*-operator-role",
-        "arn:aws:iam::*:instance-profile/*-runner-role"
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-operator-role",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-runner-role"
       ]
     },
     {
       "Sid": "PassRunnerRoleToInstanceProfile",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::*:role/*-runner-role"
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role"
+    },
+    {
+      "Sid": "PreflightSimulation",
+      "Effect": "Allow",
+      "Action": "iam:SimulatePrincipalPolicy",
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:*"
     },
     {
       "Sid": "S3WorkingBucketLifecycle",
@@ -136,8 +147,8 @@
         "s3:PutLifecycleConfiguration"
       ],
       "Resource": [
-        "arn:aws:s3:::baas-*",
-        "arn:aws:s3:::baas-*/*"
+        "arn:aws:s3:::baas-${PREFIX}",
+        "arn:aws:s3:::baas-${PREFIX}/*"
       ]
     }
   ]

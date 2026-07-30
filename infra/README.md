@@ -73,36 +73,55 @@ Two distinct privilege levels cover what `baas-cli` operates at — a standing, 
 **role** for day-to-day use, and an elevated, admin-only **policy** for provisioning. Don't
 hold the deployer policy permanently; don't skip assuming the operator role.
 
-### `BaasCliDeployerPolicy` — elevated, admin-only, created out-of-band
+### `BaasCliDeployerPolicy` — elevated, admin-only, per caller
 
-Required by `baas admin setup` and `baas admin teardown`. Matches
-[`deployer-policy.json`](./deployer-policy.json): `cloudformation:*` on the core stack,
-VPC/EC2 networking create/delete, IAM role/instance-profile create, and S3 bucket create.
-Attach this only to identities that provision or tear down the core stack — it should not
-be held as a standing policy for routine benchmark runs.
+Required by `baas admin setup` and `baas admin teardown`. Attach this only to identities that
+provision or tear down the core stack — it should not be held as a standing policy for routine
+benchmark runs.
+
+**It is rendered per identity, not shared.** Every resource it names derives from the caller's
+account, region and ARN-hash prefix — `baas-<prefix>` for the bucket, `<prefix>-runner-role` for
+the role, `/<prefix>/mongo/…` for the parameter. [`deployer-policy.json`](./deployer-policy.json)
+is therefore a *template* carrying `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` / `${BOUNDARY_ARN}`
+placeholders, and must never be attached in that form. Two callers get two different policies,
+and neither can reach the other's stack, bucket or parameter.
 
 This one **cannot** be created by the core stack itself — you need deployer permissions
 *before* the stack exists in order to create it, so CloudFormation can never be the thing
-that grants permission to create CloudFormation stacks. Create this policy manually (IAM
-console or `aws iam create-policy`) and attach it to whichever identity will run
-`baas admin setup`/`baas admin teardown`, before the first deploy.
+that grants permission to create CloudFormation stacks.
 
 It has to be a **customer-managed policy**, not an inline user policy: the document is over
 2 KB minified, and IAM caps inline *user* policies at 2 048 characters (managed policies get
 6 144). `aws iam put-user-policy` will reject it.
 
 ```bash
-# First time
-aws iam create-policy --policy-name BaasCliDeployerPolicy \
-  --policy-document file://deployer-policy.json
-aws iam attach-user-policy --user-name YOUR_DEPLOYER_IAM_USER \
-  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy
+# The user renders their own policy...
+baas admin deployer-policy > policy.json
 
-# After any change to deployer-policy.json — the attached policy does not track the file
+# ...or an administrator renders it for them, without the user running anything
+baas admin deployer-policy --for-arn arn:aws:iam::123456789012:user/alice > policy.json
+
+# First time
+aws iam create-policy --policy-name BaasCliDeployerPolicy-alice \
+  --policy-document file://policy.json
+aws iam attach-user-policy --user-name alice \
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy-alice
+
+# After any change to the template — the attached policy does not track the file
 aws iam create-policy-version --set-as-default \
-  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy \
-  --policy-document file://deployer-policy.json
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy-alice \
+  --policy-document file://policy.json
 ```
+
+Give each identity its own policy name; a single shared `BaasCliDeployerPolicy` would have to be
+re-rendered every time a different person ran setup.
+
+If a permission is missing, `baas admin setup` fails and prints the rendered policy rather than
+surfacing a bare `AccessDenied`. Treat that as a convenience, not a control: it is bypassable by
+calling IAM directly, and nothing stops a deployer from granting itself more. That is deliberate —
+this is an internal tool for development environments where the deployer is a trusted developer.
+The per-caller scoping is about keeping two developers out of each other's stacks, not about
+containing either of them.
 
 Re-running the second command matters: nothing keeps the attached policy in sync with this
 repo, so a stack change that needs a new permission fails at deploy time with a bare

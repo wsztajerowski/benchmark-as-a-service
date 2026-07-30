@@ -18,6 +18,19 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
         ConfigCommand.class,
         RunCommand.class,
         ResultsCommand.class
+    },
+    // picocli lists direct children only, so `baas admin deployer-policy` is invisible here —
+    // and it is the one command a new user needs *before* anything else works. Lines stay under
+    // 80 columns: the footer wraps at the usage width and re-wrapping mid-command is unreadable.
+    footer = {
+        "",
+        "First run, in order:",
+        "  baas admin deployer-policy             # attach to your own identity",
+        "  baas admin setup                       # deploy the stack",
+        "  baas config set --operator-profile <p> # day-to-day credentials",
+        "  baas run jmh -- MyBenchmark -f 1       # note the -- separator",
+        "",
+        "See infra/README.md for the one-time IAM step."
     }
 )
 public class BaasApp implements Runnable {

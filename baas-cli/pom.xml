@@ -36,6 +36,10 @@
             <artifactId>sts</artifactId>
         </dependency>
         <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>iam</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
         </dependency>
@@ -90,11 +94,17 @@
                 <targetPath>templates</targetPath>
                 <includes>
                     <include>cf-template-core.yaml</include>
+                    <!-- deployer-policy.json is a template, not a policy: `baas admin setup`
+                         renders it with the caller's account/region/prefix and prints it when a
+                         permission is missing, so it has to be readable at runtime. -->
+                    <include>deployer-policy.json</include>
                 </includes>
             </resource>
         </resources>
-        <!-- Infra data files reach the TEST classpath only. They must never enter
-             the shipped JAR — cf-template-core.yaml is the only bundled template. -->
+        <!-- Everything the CLI does not read at runtime reaches the TEST classpath only:
+             cf-template-ci.yaml is deployed by hand and operator-policy.json is reference
+             documentation pinned by OperatorPolicyDriftTest. The bundled set is the core
+             template plus the two deployer policy templates above. -->
         <testResources>
             <testResource>
                 <directory>src/test/resources</directory>
@@ -104,7 +114,6 @@
                 <targetPath>infra</targetPath>
                 <includes>
                     <include>cf-template-ci.yaml</include>
-                    <include>deployer-policy.json</include>
                     <include>operator-policy.json</include>
                 </includes>
             </testResource>

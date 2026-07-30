@@ -4,6 +4,7 @@ import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.iam.IamClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.ssm.SsmClient;
 import software.amazon.awssdk.services.sts.StsClient;
@@ -44,6 +45,13 @@ public class AwsClientFactory {
 
     public StsClient sts() {
         var b = StsClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    /** IAM is global; the region only selects the endpoint. */
+    public IamClient iam() {
+        var b = IamClient.builder().region(region);
         if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
         return b.build();
     }

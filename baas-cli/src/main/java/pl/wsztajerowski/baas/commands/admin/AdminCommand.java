@@ -8,10 +8,14 @@ import pl.wsztajerowski.baas.LoggingMixin;
 @Command(
     name = "admin",
     mixinStandardHelpOptions = true,
-    description = "Deployer-privileged commands (requires BaasCliDeployerPolicy).",
+    description = {
+        "Deployer-privileged commands (requires BaasCliDeployerPolicy).",
+        "Start with `baas admin deployer-policy`, which prints that policy."
+    },
     subcommands = {
         SetupCommand.class,
-        TeardownCommand.class
+        TeardownCommand.class,
+        DeployerPolicyCommand.class
     }
 )
 public class AdminCommand implements Runnable {

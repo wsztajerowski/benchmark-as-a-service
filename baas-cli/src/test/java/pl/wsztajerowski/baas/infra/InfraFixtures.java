@@ -37,9 +37,17 @@ final class InfraFixtures {
         return loadYaml("/infra/cf-template-ci.yaml");
     }
 
+    /**
+     * The rendered policy, not the template — the file on disk carries {@code ${…}} placeholders
+     * and is never attached in that form, so asserting on it directly would test nothing real.
+     */
     static Map<String, Object> deployerPolicy() {
-        return loadJson("/infra/deployer-policy.json");
+        return parseJson(new DeployerPolicyRenderer().render(ACCOUNT_ID, REGION, PREFIX));
     }
+
+    static final String ACCOUNT_ID = "123456789012";
+    static final String REGION = "eu-central-1";
+    static final String PREFIX = "a1b2c3d4";
 
     static Map<String, Object> operatorPolicy() {
         return loadJson("/infra/operator-policy.json");
@@ -92,6 +100,31 @@ final class InfraFixtures {
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> parseJson(String json) {
+        try {
+            return JSON.readValue(json, Map.class);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Every {@code Resource} entry (string or list) across a policy document's statements. */
+    @SuppressWarnings("unchecked")
+    static Set<String> resources(Map<String, Object> policyDocument) {
+        var statements = (List<Map<String, Object>>) policyDocument.get("Statement");
+        Set<String> resources = new TreeSet<>();
+        for (Map<String, Object> statement : statements) {
+            Object resource = statement.get("Resource");
+            if (resource instanceof String single) {
+                resources.add(single);
+            } else {
+                resources.addAll((List<String>) resource);
+            }
+        }
+        return resources;
     }
 
     private static InputStream open(String classpathResource) {

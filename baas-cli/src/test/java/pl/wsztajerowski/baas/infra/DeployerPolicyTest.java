@@ -51,20 +51,29 @@ class DeployerPolicyTest {
     }
 
     @Test
-    void cloudFormationAccessIsScopedToBaasStacks() {
+    void cloudFormationAccessIsScopedToOneStack() {
         assertThat(statementWithSid("CloudFormation").get("Resource"))
-            .isEqualTo("arn:aws:cloudformation:*:*:stack/baas-*/*");
+            .isEqualTo("arn:aws:cloudformation:%s:%s:stack/baas-%s/*"
+                .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
     }
 
+    /**
+     * Deliberately not asserted: that a deployer cannot escalate. It can — {@code iam:CreateRole}
+     * writes the trust policy, so it can recreate {@code <prefix>-operator-role} trusting itself
+     * with an inline {@code Action:*}. That is an accepted risk for an internal tool whose
+     * deployer is a trusted developer; see CLAUDE.md. What the per-caller scoping below *does*
+     * buy is that one deployer cannot reach another's stack, bucket or parameter.
+     */
     @Test
-    @SuppressWarnings("unchecked")
-    void iamAccessCannotCreateArbitrarilyNamedRoles() {
-        var resources = (List<String>) statementWithSid("IAM").get("Resource");
-
-        assertThat(resources)
-            .as("unscoped iam:CreateRole + iam:PutRolePolicy is an escalation path to account admin")
-            .doesNotContain("*")
-            .allSatisfy(arn -> assertThat(arn).matches("arn:aws:iam::\\*:(role|instance-profile)/\\*-(runner-role|operator-role)"));
+    void renderedPolicyNamesExactlyOneCallersResources() {
+        // A trailing /* (S3 objects) and the simulate statement's account-wide principal are
+        // legitimate; a *prefix* wildcard is what would cross into another deployer's resources.
+        assertThat(InfraFixtures.resources(InfraFixtures.deployerPolicy()))
+            .as("a prefix wildcard lets one deployer reach another's roles, parameters or bucket")
+            .noneMatch(arn -> arn.contains("baas-*"))
+            .noneMatch(arn -> arn.contains("*-runner-role"))
+            .noneMatch(arn -> arn.contains("*-operator-role"))
+            .noneMatch(arn -> arn.contains("parameter/*/"));
     }
 
     @SuppressWarnings("unchecked")
