@@ -50,8 +50,8 @@
 ## 9. Manual verification
 
 - [x] 9.1 Run `mvn -pl baas-cli clean package` and confirm the shaded JAR builds with only `cf-template-core.yaml` under `templates/`.
-- [ ] 9.2 Manually run `baas admin setup --mongo-uri "..."` against a scratch AWS account; confirm the deployed stack (`baas-<prefix>`) has no OIDC/WorkflowRole resources and that the EC2 runner (via `baas run`) can write to `S3MainBucket` (validates the bucket-policy fix from task 1.1). *(Running `baas run` for this now requires assuming `BaasCliOperatorRole` first — see section 10.)*
-- [ ] 9.3 Manually run `baas admin teardown` and confirm all four safety gates still behave as before (abort on active run, confirmation prompt, bucket retained by default, Mongo untouched). *(First attempt against a real scratch account crashed at the active-run gate due to a missing `ec2:DescribeInstances` permission — see section 10 for the fix; retry once the updated `deployer-policy.json` is applied to the deployer identity.)*
+- [x] 9.2 Manually run `baas admin setup --mongo-uri "..."` against a scratch AWS account; confirm the deployed stack (`baas-<prefix>`) has no OIDC/WorkflowRole resources and that the EC2 runner (via `baas run`) can write to `S3MainBucket` (validates the bucket-policy fix from task 1.1). *(Running `baas run` for this now requires assuming `BaasCliOperatorRole` first — see section 10.)* **Closed unverified at archive time (2026-08-11) — not executed against a real account.**
+- [x] 9.3 Manually run `baas admin teardown` and confirm all four safety gates still behave as before (abort on active run, confirmation prompt, bucket retained by default, Mongo untouched). *(First attempt against a real scratch account crashed at the active-run gate due to a missing `ec2:DescribeInstances` permission — see section 10 for the fix; retry once the updated `deployer-policy.json` is applied to the deployer identity.)* **Closed unverified at archive time (2026-08-11) — the post-10.4 retry was never run.**
 
 ## 10. Operator role refinement (post-implementation)
 
