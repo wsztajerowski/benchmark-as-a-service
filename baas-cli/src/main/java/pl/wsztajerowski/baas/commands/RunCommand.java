@@ -11,6 +11,8 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
+import pl.wsztajerowski.baas.infra.ImageBuilderService;
+import pl.wsztajerowski.baas.infra.RunnerImage;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
@@ -90,6 +92,10 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--branch", description = "Branch label for result path (defaults to current git branch).")
     String branch;
 
+    // No --image-version: exactly one image is maintained, so there is nothing to select between.
+    @Option(names = "--ami-id", description = "Launch from this AMI instead of the published runner image.")
+    String amiIdOverride;
+
     private final ConfigService configService = new ConfigService();
 
     /**
@@ -104,6 +110,20 @@ public class RunCommand implements Callable<Integer> {
         return Optional.of(
             "No aws.operatorProfile configured — using the default AWS credential chain. "
                 + "Set one with: baas config set --operator-profile <profile-name>");
+    }
+
+    /**
+     * The AMI a run will launch from, or empty when there is none to launch from.
+     *
+     * <p>Empty is a hard stop, not a fallback: `baas run` has no boot-time install path, and
+     * inventing one would mean two provisioning paths whose results are silently incomparable.
+     * Resolution happens before the JAR upload so a missing image costs nothing.
+     */
+    public static Optional<RunnerImage> resolveRunnerImage(
+        ImageBuilderService images, String prefix, String amiIdOverride) {
+        return amiIdOverride != null
+            ? images.describeImage(amiIdOverride)
+            : images.currentImage("/" + prefix + "/runner/ami-id");
     }
 
     @Override
@@ -122,29 +142,57 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, benchmarkParams);
 
-        // 1. Build
+        operatorCredentialsWarning(config).ifPresent(logger::warn);
+        var factory = new AwsClientFactory(
+            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+
+        // 1. Resolve the runner image, before the build and before anything is uploaded or
+        //    launched. A missing image is a hard stop — there is no fallback to AL2023 + yum,
+        //    since two provisioning paths would produce silently incomparable results — so
+        //    discovering it here costs two API calls rather than a full Maven build first.
+        RunnerImage runnerImage;
+        try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
+            var resolved = resolveRunnerImage(
+                new ImageBuilderService(imageBuilder, ec2, ssm), config.getPrefix(), amiIdOverride);
+
+            if (resolved.isEmpty()) {
+                if (amiIdOverride != null) {
+                    logger.error("AMI {} does not exist in {}. Nothing was launched.",
+                        amiIdOverride, config.getAws().getRegion());
+                } else {
+                    logger.error("""
+                            No runner image is published for this account ({}).
+                              Build one:  baas admin build-image
+                            Nothing was launched — the runner boots from a purpose-built AMI and \
+                            there is no boot-time install path.""",
+                        config.getAws().getRegion());
+                }
+                return 1;
+            }
+            runnerImage = resolved.get();
+        }
+        logger.debug("Resolved runner AMI: {} (image version {})",
+            runnerImage.amiId(), runnerImage.imageVersion());
+
+        // 2. Build
         if (!skipBuild) {
             runMavenBuild();
         }
 
-        // 2. Determine JAR path
+        // 3. Determine JAR path
         Path jarPath = benchmarkJar != null ? benchmarkJar : Path.of(config.getBenchmark().getJarPath());
         if (!jarPath.toFile().exists()) {
             logger.error("Benchmark JAR not found: {}\nRun without --skip-build or specify --benchmark-jar.", jarPath);
             return 1;
         }
 
-        // 3. Generate IDs
+        // 4. Generate IDs
         String timestamp = TS.format(LocalDateTime.now());
         String requestId = benchmarkType + "-" + timestamp;
         String resultPath = resolvedBranch + "/" + benchmarkType + "/" + timestamp;
         logger.debug("Results will land under s3://{}/{}", config.getAws().getBucket(), resultPath);
 
-        operatorCredentialsWarning(config).ifPresent(logger::warn);
-        var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
-
-        // 4. Upload JARs
+        // 5. Upload JARs
         logger.info("Uploading benchmark JAR to S3...");
         String benchmarkJarKey = "runs/" + requestId + "/benchmark.jar";
         try (var s3 = factory.s3()) {
@@ -160,33 +208,33 @@ public class RunCommand implements Callable<Integer> {
             }
         }
 
-        // 5. Get AMI
-        String amiId;
-        try (var ssm = factory.ssm()) {
-            amiId = new SsmService(ssm).getParameter(
-                "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64");
-        }
-        logger.debug("Resolved AL2023 AMI: {}", amiId);
-
         // 6. Build user-data
         String userData = new UserDataScriptBuilder().build(
             config.getAws().getRegion(), config.getAws().getBucket(), config.getPrefix(),
             benchmarkType, requestId, resultPath, resolvedTimeout, resolvedWallClock,
-            config.getBenchmark().getAsyncProfilerVersion(), runnerJarS3Key,
+            runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
             benchmarkParams);
         // The script is what actually decides whether a run works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 7. Launch instance
-        logger.info("Launching EC2 instance ({})...", resolvedInstanceType);
+        // 7. Launch instance. imageVersion and instanceType ride along as result tags so that
+        //    `baas results` can spot a comparison group whose rows sat on different environments
+        //    without fetching a single S3 object.
+        logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
+        Map<String, String> tags = new LinkedHashMap<>(extraTags);
+        tags.putIfAbsent("instanceType", resolvedInstanceType);
+        if (runnerImage.imageVersion() != null) {
+            tags.putIfAbsent("imageVersion", runnerImage.imageVersion());
+        }
+
         String instanceId;
         try (var ec2 = factory.ec2()) {
             instanceId = new Ec2ProvisioningService(ec2).runInstance(
-                amiId, resolvedInstanceType,
+                runnerImage.amiId(), resolvedInstanceType,
                 config.getAws().getSubnetId(), config.getAws().getSecurityGroupId(),
                 config.getAws().getRunnerInstanceProfileName(),
-                userData, requestId, extraTags);
+                userData, requestId, tags);
         }
         logger.info("Instance launched: {}", instanceId);
         logger.info("Request ID: {}", requestId);

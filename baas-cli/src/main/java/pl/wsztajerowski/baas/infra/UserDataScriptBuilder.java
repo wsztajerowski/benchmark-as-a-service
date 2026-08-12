@@ -6,6 +6,9 @@ import java.util.List;
 
 public class UserDataScriptBuilder {
 
+    /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
+    public static final int MANIFEST_SCHEMA_VERSION = 1;
+
     // Static script body — variables are prepended by build()
     private static final String SCRIPT_BODY = """
         TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \\
@@ -25,17 +28,9 @@ public class UserDataScriptBuilder {
         ) &
         WATCHDOG_PID=$!
 
-        # Install runtime
-        yum update -y
-        yum install -y java-25-amazon-corretto-headless
-
-        # async-profiler (jmh-with-async only)
-        if [[ "${BENCHMARK_TYPE}" == "jmh-with-async" ]]; then
-          mkdir -p /app
-          wget -nv "https://github.com/async-profiler/async-profiler/releases/download/v${ASYNC_PROFILER_VERSION}/async-profiler-${ASYNC_PROFILER_VERSION}-linux-x64.tar.gz" -O /tmp/ap.tar.gz
-          tar -xf /tmp/ap.tar.gz -C /tmp
-          mv /tmp/async-profiler-*-linux-x64 /app/async-profiler
-        fi
+        # Nothing is installed here. Corretto, perf, the AWS CLI and async-profiler are baked
+        # into the AMI by `baas admin build-image` from infra/runner-image.yaml — a runner that
+        # installed its own toolchain would measure on a slightly different machine every time.
 
         mkdir -p /app
         # Run from a real working directory. cloud-init starts us in /, and the runner
@@ -43,6 +38,71 @@ public class UserDataScriptBuilder {
         # walking the whole root filesystem, and dying on /proc entries that vanish
         # mid-walk. The GitHub Actions flow this replaced ran from its workspace dir.
         cd /app
+
+        # ── Environment manifest ──────────────────────────────────────────────────
+        # Written and uploaded BEFORE the benchmark, so a run that crashes still leaves a
+        # record of what it crashed on — the same reasoning that ships cloud-init-output.log.
+        # This is the observation; infra/runner-image.yaml is only the declaration, and this
+        # additionally carries what the image cannot control: instance type, CPU model,
+        # resolved patch levels.
+        # Every value is captured into a variable first, so the manifest body below is nothing but
+        # ${VAR} references. Inlining the command substitutions would put quotes, parentheses and
+        # awk programs inside a JSON string inside a heredoc — three levels of quoting, and a
+        # mistake in any of them produces a file that only fails weeks later in `baas env diff`.
+        json_escape() { printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g'; }
+        lscpu_field() { lscpu | grep -m1 "^$1" | cut -d: -f2- | tr -d ' '; }
+
+        INSTANCE_TYPE=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" \\
+          http://169.254.169.254/latest/meta-data/instance-type)
+        IMAGE_VERSION_ACTUAL=$(cat /etc/baas-image-version 2>/dev/null || echo "${IMAGE_VERSION}")
+        CPU_MODEL=$(json_escape "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')")
+        CPU_CORES=$(nproc)
+        CPU_THREADS_PER_CORE=$(lscpu_field "Thread")
+        CPU_MAX_MHZ=$(lscpu_field "CPU max MHz")
+        MEMORY_TOTAL_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+        SWAP_TOTAL_KB=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
+        OS_VERSION=$(json_escape "$(. /etc/os-release && echo "$PRETTY_NAME")")
+        KERNEL_RELEASE=$(uname -r)
+        JVM_VERSION=$(json_escape "$(java -version 2>&1 | head -1)")
+        PERF_VERSION=$(json_escape "$(perf --version 2>/dev/null | head -1 || echo absent)")
+        AWS_CLI_VERSION=$(json_escape "$(aws --version 2>&1 | head -1)")
+        ASYNC_PROFILER_VERSION=$(json_escape "$(/app/async-profiler/bin/asprof --version 2>&1 | head -1 || echo absent)")
+        PERF_EVENT_PARANOID=$(sysctl -n kernel.perf_event_paranoid 2>/dev/null)
+        KPTR_RESTRICT=$(sysctl -n kernel.kptr_restrict 2>/dev/null)
+        TRANSPARENT_HUGEPAGES=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null)
+
+        cat > /app/environment.json <<MANIFEST
+        {
+          "schemaVersion": ${MANIFEST_SCHEMA_VERSION},
+          "imageVersion": "${IMAGE_VERSION_ACTUAL}",
+          "amiId": "${AMI_ID}",
+          "instanceType": "${INSTANCE_TYPE}",
+          "region": "${AWS_REGION}",
+          "cpuModel": "${CPU_MODEL}",
+          "cpuCores": "${CPU_CORES}",
+          "cpuThreadsPerCore": "${CPU_THREADS_PER_CORE}",
+          "cpuMaxMhz": "${CPU_MAX_MHZ}",
+          "memoryTotalKb": "${MEMORY_TOTAL_KB}",
+          "swapTotalKb": "${SWAP_TOTAL_KB}",
+          "osVersion": "${OS_VERSION}",
+          "kernelRelease": "${KERNEL_RELEASE}",
+          "jvmVersion": "${JVM_VERSION}",
+          "perfVersion": "${PERF_VERSION}",
+          "awsCliVersion": "${AWS_CLI_VERSION}",
+          "asyncProfilerVersion": "${ASYNC_PROFILER_VERSION}",
+          "perfEventParanoid": "${PERF_EVENT_PARANOID}",
+          "kptrRestrict": "${KPTR_RESTRICT}",
+          "transparentHugepages": "${TRANSPARENT_HUGEPAGES}",
+          "benchmarkType": "${BENCHMARK_TYPE}"
+        }
+        MANIFEST
+
+        # Several hundred lines, kept out of environment.json so its ~20 high-signal fields
+        # stay readable.
+        rpm -qa | sort > /app/packages.txt
+
+        aws s3 cp /app/environment.json "s3://${S3_BUCKET}/${RESULT_PATH}/environment.json"
+        aws s3 cp /app/packages.txt "s3://${S3_BUCKET}/${RESULT_PATH}/packages.txt"
 
         # Download runner JAR: from S3 (if --runner-jar provided) or GitHub Releases
         if [[ -n "${RUNNER_JAR_S3_KEY}" ]]; then
@@ -66,11 +126,17 @@ public class UserDataScriptBuilder {
         # eval expands BENCHMARK_PARAMETERS (a double-quoted shell string) into an array
         # so params containing spaces are passed as single tokens to java.
         eval "BENCHMARK_PARAMS_ARRAY=(${BENCHMARK_PARAMETERS})"
+        # Tier 1 of the environment comparison: these two reach benchmarkMetadata.tags, so
+        # `baas results` can flag a group whose rows sat on different environments without
+        # fetching anything from S3. They are the values OBSERVED above, not the ones the CLI
+        # passed down, so a result's tags cannot disagree with its own environment.json.
         timeout "${BENCHMARK_TIMEOUT}" java -jar /app/benchmark-runner.jar "${BENCHMARK_TYPE}" \\
           --request-id     "${REQUEST_ID}" \\
           --result-path    "${RESULT_PATH}" \\
           --s3-bucket      "${S3_BUCKET}" \\
           --benchmark-path /app/benchmark-under-test.jar \\
+          --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
+          --tag "instanceType=${INSTANCE_TYPE}" \\
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 
@@ -90,7 +156,7 @@ public class UserDataScriptBuilder {
 
     public String build(String region, String bucket, String ssmPrefix, String benchmarkType,
                         String requestId, String resultPath, int benchmarkTimeoutSeconds,
-                        int wallClockHardKillSeconds, String asyncProfilerVersion,
+                        int wallClockHardKillSeconds, String imageVersion, String amiId,
                         String runnerJarS3Key, List<String> benchmarkParams) {
         String params = String.join(" ", benchmarkParams.stream()
             .map(p -> p.contains(" ") ? "\"" + p + "\"" : p)
@@ -106,12 +172,20 @@ public class UserDataScriptBuilder {
             "export RESULT_PATH='" + resultPath + "'\n" +
             "export BENCHMARK_TIMEOUT='" + benchmarkTimeoutSeconds + "'\n" +
             "export WALL_CLOCK_HARD_KILL='" + wallClockHardKillSeconds + "'\n" +
-            "export ASYNC_PROFILER_VERSION='" + asyncProfilerVersion + "'\n" +
-            "export RUNNER_JAR_S3_KEY='" + (runnerJarS3Key != null ? runnerJarS3Key : "") + "'\n" +
+            "export MANIFEST_SCHEMA_VERSION='" + MANIFEST_SCHEMA_VERSION + "'\n" +
+            // Recorded so a result can be traced to the image that produced it even if the
+            // pointer has since moved on. /etc/baas-image-version, baked in, wins when present.
+            "export IMAGE_VERSION='" + nullToEmpty(imageVersion) + "'\n" +
+            "export AMI_ID='" + nullToEmpty(amiId) + "'\n" +
+            "export RUNNER_JAR_S3_KEY='" + nullToEmpty(runnerJarS3Key) + "'\n" +
             "export BENCHMARK_PARAMETERS='" + params.replace("'", "'\\''") + "'\n" +
             "\n" +
             SCRIPT_BODY;
 
         return Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String nullToEmpty(String value) {
+        return value != null ? value : "";
     }
 }

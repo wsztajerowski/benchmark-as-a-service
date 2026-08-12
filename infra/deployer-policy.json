@@ -5,18 +5,24 @@
       "Sid": "CloudFormation",
       "Effect": "Allow",
       "Action": [
-        "cloudformation:CreateChangeSet",
         "cloudformation:CreateStack",
-        "cloudformation:DeleteChangeSet",
         "cloudformation:DeleteStack",
-        "cloudformation:DescribeChangeSet",
         "cloudformation:DescribeStackEvents",
         "cloudformation:DescribeStacks",
-        "cloudformation:ExecuteChangeSet",
-        "cloudformation:GetTemplate",
         "cloudformation:UpdateStack"
       ],
       "Resource": "arn:aws:cloudformation:${REGION}:${ACCOUNT_ID}:stack/baas-${PREFIX}/*"
+    },
+    {
+      "Sid": "CloudFormationValidateTemplate",
+      "Effect": "Allow",
+      "Action": "cloudformation:ValidateTemplate",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${REGION}"
+        }
+      }
     },
     {
       "Sid": "EC2",
@@ -37,19 +43,12 @@
         "ec2:DeleteRoute",
         "ec2:DeleteRouteTable",
         "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSnapshot",
         "ec2:DeleteSubnet",
         "ec2:DeleteVpc",
         "ec2:DeleteVpcEndpoints",
-        "ec2:DescribeAvailabilityZones",
-        "ec2:DescribeInstances",
-        "ec2:DescribeInternetGateways",
-        "ec2:DescribeRouteTables",
-        "ec2:DescribeSecurityGroups",
-        "ec2:DescribeSubnets",
-        "ec2:DescribeTags",
-        "ec2:DescribeVpcAttribute",
-        "ec2:DescribeVpcEndpoints",
-        "ec2:DescribeVpcs",
+        "ec2:DeregisterImage",
+        "ec2:Describe*",
         "ec2:DetachInternetGateway",
         "ec2:DisassociateRouteTable",
         "ec2:ModifySubnetAttribute",
@@ -73,20 +72,80 @@
       "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/${PREFIX}/mongo/connection-string"
     },
     {
+      "Sid": "SsmRunnerAmiPointer",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter"
+      ],
+      "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/${PREFIX}/runner/ami-id"
+    },
+    {
+      "Sid": "ImageBuilder",
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:CreateComponent",
+        "imagebuilder:CreateDistributionConfiguration",
+        "imagebuilder:CreateImagePipeline",
+        "imagebuilder:CreateImageRecipe",
+        "imagebuilder:CreateInfrastructureConfiguration",
+        "imagebuilder:Delete*",
+        "imagebuilder:StartImagePipelineExecution",
+        "imagebuilder:TagResource",
+        "imagebuilder:UntagResource",
+        "imagebuilder:Update*"
+      ],
+      "Resource": "arn:aws:imagebuilder:${REGION}:${ACCOUNT_ID}:*/${PREFIX}-runner*"
+    },
+    {
+      "Sid": "ImageBuilderRead",
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:Get*",
+        "imagebuilder:List*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "ImageBuilderServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/aws-service-role/imagebuilder.amazonaws.com/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": "imagebuilder.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassRolesToServices",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-image-build-role"
+      ]
+    },
+    {
       "Sid": "IAM",
       "Effect": "Allow",
       "Action": [
         "iam:AddRoleToInstanceProfile",
+        "iam:AttachRolePolicy",
         "iam:CreateInstanceProfile",
         "iam:CreateRole",
         "iam:DeleteInstanceProfile",
         "iam:DeleteRole",
         "iam:DeleteRolePolicy",
-        "iam:GetInstanceProfile",
-        "iam:GetRole",
-        "iam:GetRolePolicy",
-        "iam:ListAttachedRolePolicies",
-        "iam:ListRolePolicies",
+        "iam:DetachRolePolicy",
+        "iam:Get*",
+        "iam:List*",
         "iam:PutRolePolicy",
         "iam:RemoveRoleFromInstanceProfile",
         "iam:TagRole",
@@ -95,14 +154,10 @@
       "Resource": [
         "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
         "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-operator-role",
-        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-runner-role"
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-image-build-role",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-runner-role",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-image-build-role"
       ]
-    },
-    {
-      "Sid": "PassRunnerRoleToInstanceProfile",
-      "Effect": "Allow",
-      "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role"
     },
     {
       "Sid": "PreflightSimulation",
@@ -118,28 +173,8 @@
         "s3:DeleteBucket",
         "s3:DeleteObject",
         "s3:DeleteObjectVersion",
-        "s3:GetAccelerateConfiguration",
-        "s3:GetAnalyticsConfiguration",
-        "s3:GetBucketAcl",
-        "s3:GetBucketCORS",
-        "s3:GetBucketLocation",
-        "s3:GetBucketLogging",
-        "s3:GetBucketNotification",
-        "s3:GetBucketObjectLockConfiguration",
-        "s3:GetBucketOwnershipControls",
-        "s3:GetBucketPolicy",
-        "s3:GetBucketPublicAccessBlock",
-        "s3:GetBucketTagging",
-        "s3:GetBucketVersioning",
-        "s3:GetBucketWebsite",
-        "s3:GetEncryptionConfiguration",
-        "s3:GetIntelligentTieringConfiguration",
-        "s3:GetInventoryConfiguration",
-        "s3:GetLifecycleConfiguration",
-        "s3:GetMetricsConfiguration",
-        "s3:GetReplicationConfiguration",
-        "s3:ListBucket",
-        "s3:ListBucketVersions",
+        "s3:Get*",
+        "s3:List*",
         "s3:PutBucketPublicAccessBlock",
         "s3:PutBucketTagging",
         "s3:PutBucketVersioning",

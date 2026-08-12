@@ -34,7 +34,7 @@ the `baas run` project-layout assumption, and distribution mechanism.
 | 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Open |
 | 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Open |
 | 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | Open |
-| 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | Open |
+| 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | **Fixed** |
 | 9 | A7 | Runner-JAR discovery hardcodes the upstream repo | Med | Open |
 | 10 | A6 | Config: silent unknown keys, no schema version, stale default | Low | Open |
 | 11 | A9 | `requestId` collides at second granularity | Low | Open |
@@ -88,13 +88,21 @@ harder than described and the acceptance is on even safer ground.
 
 ## 2. S5 — user-data built by string concatenation · Med
 
-`UserDataScriptBuilder.build()` (~line 99-113) wraps every value in single quotes but only
+`UserDataScriptBuilder.build()` wraps every value in single quotes but only
 `BENCHMARK_PARAMETERS` gets `'` → `'\''` escaping. `RESULT_PATH` derives from the git branch, and
 git permits `'` in ref names, so `git checkout -b "x'whoami'"` injects into a root cloud-init
 script on a host whose instance profile can read the Mongo URI from SSM.
 
-**Proposed fix:** apply one escape helper to all eleven values, or emit the variable block as a
+**Proposed fix:** apply one escape helper to every value, or emit the variable block as a
 single base64 blob the script decodes so no value is ever parsed as shell.
+
+**Still open, and the surface grew.** `prebaked-runner-ami` replaced `ASYNC_PROFILER_VERSION` with
+`IMAGE_VERSION`, `AMI_ID` and `MANIFEST_SCHEMA_VERSION`, so the block is now thirteen exports on
+the same unescaped path — the count in the original wording ("all eleven values") is stale. The
+three new values are machine-generated (an `ami-` id, a semver from a repo file, an int constant)
+and none is attacker-influenced, so the exploitable input is unchanged: `RESULT_PATH` via the
+branch name. Fixing this should still be a single helper applied to the whole block rather than
+per-value patching.
 
 ## 3. S6 — `eval` on benchmark parameters · Med
 
@@ -143,13 +151,39 @@ filtering, grouping or max-selection.
 **Decide:** implement it (it was `benchmark_overview.sh`'s behaviour, now retired) or correct the
 doc. Actively misleading either way. `queryAll()` is also unpaginated.
 
-## 8. A8 — `yum update -y` on every boot · Med
+## 8. A8 — `yum update -y` on every boot · Med · **Fixed**
 
 `UserDataScriptBuilder` line ~29 unpins the OS between runs of a benchmarking tool, so a kernel or
 glibc change lands mid-experiment and reads as a score delta. Also spends paid instance-minutes
 every run.
 
 **Proposed fix:** pin the AMI, or drop the update in favour of a periodically rebuilt custom image.
+
+**Fixed** by `prebaked-runner-ami` (see `openspec/changes/prebaked-runner-ami/`). User-data now
+installs nothing: `yum update`, the Corretto install and the async-profiler download are gone, and
+a test asserts the rendered script contains no `yum` invocation. The runner boots from an AMI
+built by `baas admin build-image` from `infra/runner-image.yaml`, which pins the parent AL2023
+image by exact ID and pins Corretto, `perf`, the AWS CLI and async-profiler by exact version.
+
+The fix went further than the finding asked, because pinning alone would not have made runs
+comparable:
+
+- **The kernel tunables that move benchmark numbers are declared too** —
+  `perf_event_paranoid`, `kptr_restrict`, transparent hugepages, swap. Previously these were
+  whatever AL2023 defaulted to on the day an instance booted: uncontrolled variance sitting
+  directly under a profiler.
+- **Every run now records what it actually measured on** (`<result-path>/environment.json` plus
+  `packages.txt`), written before the benchmark so it survives a crash, and results carry
+  `imageVersion`/`instanceType` tags. Pinning stops drift going forward; the manifest is what lets
+  anyone check whether two *existing* results are comparable.
+
+Verified end to end against a live account, not just in unit tests: `perf` is present (the base
+AL2023 image ships none, so JMH's `-prof perf`/`perfnorm`/`perfasm` were broken before this),
+async-profiler resolves from the baked path and captures kernel stacks with resolved symbols, and
+the declared tunables are in effect on a launched runner.
+
+Note the side effect on the finding's second clause: boot time dropped from minutes of package
+installation to a **51-second** end-to-end run.
 
 ## 9. A7 — runner-JAR discovery hardcodes the upstream repo · Med
 

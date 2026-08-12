@@ -122,6 +122,119 @@ class CoreTemplateTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void stackNeverPerformsAnImageBuild() {
+        var resources = (Map<String, Object>) template.get("Resources");
+
+        assertThat(resources.values())
+            .as("AWS::ImageBuilder::Image builds during stack operations — it would add ~15 minutes "
+                + "to every `baas admin setup`, including ones that changed nothing about the image")
+            .noneSatisfy(resource ->
+                assertThat(((Map<String, Object>) resource).get("Type"))
+                    .isEqualTo("AWS::ImageBuilder::Image"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void imageRecipeVolumeMatchesTheRunnerVolume() {
+        var mappings = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "RunnerImageRecipe").get("BlockDeviceMappings");
+
+        assertThat(mappings)
+            .as("8 GB is exhausted by profiling artifacts, and the image caps what the runner gets")
+            .anySatisfy(mapping -> {
+                var ebs = (Map<String, Object>) mapping.get("Ebs");
+                assertThat(ebs).containsEntry("VolumeSize", 30).containsEntry("VolumeType", "gp3");
+            });
+    }
+
+    @Test
+    void imageRecipeIsPinnedToAnExactParentAmi() {
+        assertThat(InfraFixtures.properties(template, "RunnerImageRecipe").get("ParentImage"))
+            .as("the parent has to arrive as the rendered runner-image.yaml pin, not a selector")
+            .isEqualTo("RunnerParentAmiId");
+
+        var parameters = (Map<String, Object>) template.get("Parameters");
+        var parentImage = (Map<String, Object>) parameters.get("RunnerParentAmiId");
+        assertThat(parentImage.get("AllowedPattern"))
+            .as("an x.x.x semantic-version selector would re-base the environment silently")
+            .isEqualTo("^ami-[0-9a-f]+$");
+    }
+
+    /**
+     * Every Image Builder resource exposes a distinct {@code Arn} attribute, which is the shape
+     * where {@code Ref} is liable to return the name instead. These properties reject a name, and
+     * the pipeline ARN is handed straight to {@code StartImagePipelineExecution} — so the wiring
+     * asks for the ARN explicitly rather than relying on what {@code Ref} happens to yield.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void imageBuilderWiringAsksForArnsExplicitly() {
+        var pipeline = InfraFixtures.properties(template, "RunnerImagePipeline");
+        assertThat(pipeline)
+            .containsEntry("ImageRecipeArn", "RunnerImageRecipe.Arn")
+            .containsEntry("InfrastructureConfigurationArn", "RunnerImageInfrastructure.Arn")
+            .containsEntry("DistributionConfigurationArn", "RunnerImageDistribution.Arn");
+
+        var components = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "RunnerImageRecipe").get("Components");
+        assertThat(components)
+            .singleElement()
+            .satisfies(component ->
+                assertThat(component).containsEntry("ComponentArn", "RunnerImageComponent.Arn"));
+
+        var outputs = (Map<String, Object>) template.get("Outputs");
+        assertThat((Map<String, Object>) outputs.get("RunnerImagePipelineArn"))
+            .as("baas admin build-image passes this value verbatim to StartImagePipelineExecution")
+            .containsEntry("Value", "RunnerImagePipeline.Arn");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void buildInstanceRoleCannotLaunchOrEscalate() {
+        var policies = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "ImageBuildRole").get("Policies");
+
+        var actions = policies.stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .flatMap(document -> InfraFixtures.actions(document).stream())
+            .toList();
+
+        assertThat(actions)
+            .as("the build host installs packages; anything beyond writing its own logs is reach "
+                + "it has no use for")
+            .containsExactly("s3:PutObject")
+            .noneMatch(action -> action.startsWith("dynamodb:"))
+            .noneMatch(action -> action.startsWith("iam:"))
+            .doesNotContain("ec2:RunInstances");
+
+        assertThat(InfraFixtures.resources(
+            (Map<String, Object>) policies.getFirst().get("PolicyDocument")))
+            .as("build logs only — not the results the bucket also holds")
+            .containsExactly("${S3MainBucket.Arn}/image-builds/*");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void exactlyOneRunnerAmiPointerIsProvidedFor() {
+        var pointers = InfraFixtures.properties(template, "OperatorRole").get("Policies");
+        var statements = ((List<Map<String, Object>>) pointers).stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .flatMap(document -> InfraFixtures.resources(document).stream())
+            .filter(resource -> resource.contains("/runner/ami-id"))
+            .toList();
+
+        assertThat(statements)
+            .as("named slots or a second pointer would let two runs disagree about which image "
+                + "'the' image is")
+            .containsExactly(
+                "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id");
+
+        var outputs = (Map<String, Object>) template.get("Outputs");
+        assertThat(outputs).containsKey("RunnerAmiParameterName");
+    }
+
+    @Test
     void workingBucketSurvivesStackDeletion() {
         var bucket = InfraFixtures.resource(template, "S3MainBucket");
 

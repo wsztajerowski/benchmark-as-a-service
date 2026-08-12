@@ -40,6 +40,10 @@
             <artifactId>iam</artifactId>
         </dependency>
         <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>imagebuilder</artifactId>
+        </dependency>
+        <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-yaml</artifactId>
         </dependency>
@@ -98,6 +102,9 @@
                          renders it with the caller's account/region/prefix and prints it when a
                          permission is missing, so it has to be readable at runtime. -->
                     <include>deployer-policy.json</include>
+                    <!-- `baas admin build-image` renders the Image Builder component and recipe
+                         from this at runtime, so it ships rather than staying a repo file. -->
+                    <include>runner-image.yaml</include>
                 </includes>
             </resource>
         </resources>

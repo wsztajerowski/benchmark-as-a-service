@@ -60,14 +60,46 @@ next setup — `baas admin setup` detects that case and tells you how to recover
 Setup finishes by printing follow-up steps for the operator role. **Do them** — until you do,
 `baas run` uses your default credential chain rather than the narrow role.
 
-### 3. Allow the runner to reach MongoDB
+### 3. Build the runner image
+
+One-time, and again with deployer credentials. Takes ~15 minutes.
+
+```bash
+baas admin build-image
+```
+
+`baas run` **fails until this exists** — the runner boots from a purpose-built AMI and installs
+nothing at run time, so there is no fallback path. Setup deliberately does not do this for you: a
+build takes ~15 minutes and every re-setup would pay for it.
+
+What gets baked is declared in [`infra/runner-image.yaml`](infra/runner-image.yaml) — the pinned
+parent AL2023 AMI, Corretto, `perf`, the AWS CLI, async-profiler, and the kernel tunables that
+move benchmark numbers (`perf_event_paranoid`, `kptr_restrict`, transparent hugepages, swap).
+That file is the only place a tool version is written down, and `git log -p` on it is the image
+history.
+
+Changing a version is a one-line edit **plus** a bump of `imageVersion` in the same file. Image
+Builder components are immutable at a given version, so `baas admin build-image` checks that up
+front and refuses to start a build the stack would reject 15 minutes later:
+
+```
+Recipe version 1.0.0 is already registered and its content differs.
+Bump imageVersion in infra/runner-image.yaml.
+```
+
+Exactly one image exists at a time. A successful build publishes the new AMI to
+`/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a run launched during
+a build never resolves a deleted AMI. `baas admin image` reports what is currently published, and
+flags when your working tree declares a version you haven't built yet.
+
+### 4. Allow the runner to reach MongoDB
 
 If you're on Atlas, add an IP Access List entry. Runners get a **fresh public IP per run**, so
 there is no stable address to allowlist; covering them means `0.0.0.0/0`, gated by the connection
 string's credentials rather than by network. That trade-off is deliberate for v1 — see
 [`infra/README.md`](infra/README.md#mongodb-atlas-connectivity).
 
-### 4. Run a benchmark
+### 5. Run a benchmark
 
 From **your benchmark project's** directory, not this repo — `baas run` builds in the current
 working directory.
@@ -94,7 +126,7 @@ Useful options: `--skip-build`, `--benchmark-jar`, `--runner-jar`, `--instance-t
 parameters, the AMI, the CloudFormation parameters, and the full generated user-data script. It
 must come before the `--` separator, or it is passed to the benchmark instead.
 
-### 5. Read results
+### 6. Read results
 
 ```bash
 baas results
@@ -102,6 +134,47 @@ baas results
 
 Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`, reading the Mongo URI from
 SSM. No `mongosh` needed.
+
+### 7. Check that two results are comparable
+
+Every run records the environment it measured on, in two tiers.
+
+**Tier 1 — the results store.** Each result carries `imageVersion` and `instanceType` tags, so
+`baas results` can tell you that rows in front of you did *not* measure the same thing, without
+fetching anything:
+
+```
+These rows span runner image versions: 1.0.0, 1.1.0
+They did not all measure the same environment. Compare two of them with:
+  baas env diff <resultPathA> <resultPathB>
+```
+
+Rows are flagged, never filtered — the difference is the point, and whether it matters is your
+call. Runs recorded before this existed carry no tags and are not treated as a difference.
+
+**Tier 2 — the manifest.** `<result-path>/environment.json` holds ~20 fields describing what
+actually ran: image version and AMI, instance type, CPU model and topology, memory, OS and kernel,
+JVM and tool versions, and the kernel tunables in effect. `<result-path>/packages.txt` holds the
+full `rpm -qa`, kept separate so it doesn't drown the readable file.
+
+```bash
+baas env diff main/jmh/20260812_233528 main/jmh/20260813_000550
+```
+
+```
+FIELD          <run A>                         <run B>
+amiId          ami-091ea218d041f91eb           ami-0a89e2bd4bf6f208a
+imageVersion   1.0.0                           1.1.0
+jvmVersion     openjdk version "25.0.4" ...    openjdk version "25.0.3" ...
+```
+
+Result paths are `<branch>/<type>/<timestamp>`, as printed by `baas run`. Identical environments
+report no differences and exit 0.
+
+Note the split: `infra/runner-image.yaml` is the *declaration* — what was asked for.
+`environment.json` is the *observation* — what was got, including what the image cannot control
+(instance type, CPU model, resolved patch levels). Compare runs with the observation; never infer
+it from the declaration.
 
 ### Tear down
 
@@ -117,16 +190,20 @@ you type the stack name. The MongoDB cluster is never touched.
 
 ```
 baas run
+  ├─ resolve the runner AMI from /<prefix>/runner/ami-id  (fails here if unbuilt —
+  │    before the build, before any upload, before anything is launched)
   ├─ build the benchmark JAR in the current directory
   ├─ upload it to s3://<bucket>/runs/<requestId>/benchmark.jar
-  ├─ look up the latest Amazon Linux 2023 AMI via SSM
-  └─ ec2:RunInstances with a generated user-data script
-       ├─ install Amazon Corretto 25
+  └─ ec2:RunInstances from that AMI, with a generated user-data script
+       ├─ record the environment: environment.json + packages.txt, uploaded
+       │    BEFORE the benchmark starts, so a crashed run still says what it
+       │    crashed on  (nothing is installed — the toolchain is already baked)
        ├─ download benchmark-runner.jar (GitHub Releases, or S3 if overridden)
        ├─ read MONGO_CONNECTION_STRING from SSM
        ├─ run benchmark-runner.jar from /app
        │    └─ launch the benchmark JAR as a subprocess, parse results,
        │       upload output to S3, write documents to MongoDB
+       │       (tagged imageVersion + instanceType)
        ├─ write the run-status sentinel to S3
        └─ self-terminate
   ├─ poll run-status every 15s
@@ -151,7 +228,7 @@ Two roles, deliberately separate:
 
 | Role | Policy | Used by |
 |---|---|---|
-| Deployer | `infra/deployer-policy.json` | `baas admin setup` / `baas admin teardown` |
+| Deployer | `infra/deployer-policy.json` | `baas admin setup` / `baas admin build-image` / `baas admin teardown` |
 | Operator | `infra/operator-policy.json` (role created by the stack) | `baas run` / `baas results` |
 
 `aws.operatorProfile` in `~/.baas/config.yaml` does **not** fall back to `aws.profile`. That's

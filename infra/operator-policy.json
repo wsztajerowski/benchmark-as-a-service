@@ -6,7 +6,8 @@
       "Effect": "Allow",
       "Action": [
         "ec2:DescribeInstances",
-        "ec2:DescribeInstanceStatus"
+        "ec2:DescribeInstanceStatus",
+        "ec2:DescribeImages"
       ],
       "Resource": "*"
     },
@@ -75,10 +76,10 @@
       "Resource": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/RESOURCE_PREFIX/mongo/connection-string"
     },
     {
-      "Sid": "SsmAmiLookup",
+      "Sid": "SsmRunnerAmiPointer",
       "Effect": "Allow",
       "Action": "ssm:GetParameter",
-      "Resource": "arn:aws:ssm:REGION::parameter/aws/service/ami-amazon-linux-latest/*"
+      "Resource": "arn:aws:ssm:REGION:ACCOUNT_ID:parameter/RESOURCE_PREFIX/runner/ami-id"
     },
     {
       "Sid": "S3WorkingBucketAccess",

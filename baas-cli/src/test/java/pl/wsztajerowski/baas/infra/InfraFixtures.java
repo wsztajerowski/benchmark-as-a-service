@@ -84,6 +84,19 @@ final class InfraFixtures {
         return actions;
     }
 
+    /**
+     * Whether a policy permits an action, accounting for the {@code Service:Verb*} wildcards the
+     * deployer policy uses to stay inside IAM's document size limit.
+     *
+     * <p>Asserting on literal action strings would make every wildcard look like a removed
+     * permission, so these tests state what the policy lets a caller <em>do</em> instead of how it
+     * happens to be spelled. Effect is not consulted — the document contains only Allows.
+     */
+    static boolean grants(Map<String, Object> policyDocument, String action) {
+        return actions(policyDocument).stream().anyMatch(granted -> granted.equals(action)
+            || (granted.endsWith("*") && action.startsWith(granted.substring(0, granted.length() - 1))));
+    }
+
     @SuppressWarnings("unchecked")
     private static Map<String, Object> loadYaml(String classpathResource) {
         try (InputStream is = open(classpathResource)) {

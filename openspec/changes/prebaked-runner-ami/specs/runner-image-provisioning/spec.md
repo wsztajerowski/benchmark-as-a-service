@@ -2,8 +2,9 @@
 
 ### Requirement: Image definition is a versioned repository artifact
 `infra/runner-image.yaml` SHALL declare the image version, the pinned versions of every tool baked into
-the image (Amazon Corretto, async-profiler, AWS CLI), and the exact parent AL2023 AMI ID. It SHALL ship
-as a `baas-cli` classpath resource so the CLI can render it without repository access.
+the image (Amazon Corretto, async-profiler, `perf`, AWS CLI), and the exact parent AL2023 AMI ID. It SHALL
+ship as a `baas-cli` classpath resource so the CLI can render it without repository access. The file SHALL
+be the only place a tool version is declared.
 
 #### Scenario: Image definition ships in the JAR
 - **WHEN** `baas-cli.jar` is inspected
@@ -13,9 +14,30 @@ as a `baas-cli` classpath resource so the CLI can render it without repository a
 - **WHEN** `infra/runner-image.yaml` is read
 - **THEN** the parent image is an exact `ami-` identifier and not a `x.x.x` semantic-version selector
 
+#### Scenario: Changing a tool version is a one-line edit
+- **WHEN** a user changes the async-profiler version
+- **THEN** the only file requiring an edit is `infra/runner-image.yaml`
+
+### Requirement: The image declares the kernel tunables that affect measurement
+`infra/runner-image.yaml` SHALL declare `perf_event_paranoid`, `kptr_restrict`, the transparent hugepage
+mode, and the swap state, and the image build SHALL apply them so they are in effect at boot. These values
+SHALL NOT be left to the base image's defaults.
+
+#### Scenario: Tunables are declared alongside tool versions
+- **WHEN** `infra/runner-image.yaml` is read
+- **THEN** it declares `perf_event_paranoid`, `kptr_restrict`, transparent hugepage mode, and swap state
+
+#### Scenario: Tunables are in effect on a launched runner
+- **WHEN** an instance launched from the current AMI is inspected
+- **THEN** the running kernel reports the values declared in `infra/runner-image.yaml`
+
+#### Scenario: async-profiler can walk kernel stacks
+- **WHEN** a `jmh-with-async` benchmark runs on the current AMI
+- **THEN** profiling succeeds without a permissions error from `perf_event_open`
+
 ### Requirement: The runner installs no tooling at run time
-The user-data script SHALL NOT invoke `yum update`, install a JDK, or download async-profiler. Every
-tool the benchmark run requires SHALL already be present in the AMI.
+The user-data script SHALL NOT invoke `yum update`, install a JDK, or download async-profiler. Every tool
+the benchmark run requires SHALL already be present in the AMI.
 
 #### Scenario: User-data performs no package installation
 - **WHEN** `UserDataScriptBuilder.build(...)` output is decoded
@@ -24,127 +46,109 @@ tool the benchmark run requires SHALL already be present in the AMI.
 #### Scenario: Baked tooling is present and pinned
 - **WHEN** an instance launched from the current AMI is inspected
 - **THEN** `java -version` reports the Corretto version declared in `infra/runner-image.yaml`, and
-  `/app/async-profiler` exists at the declared version
+  `/app/async-profiler/lib/libasyncProfiler.so` exists at the declared version
 
-### Requirement: Recipe version is bumped automatically when content changes
+#### Scenario: Baked async-profiler is at the path the runner defaults to
+- **WHEN** `jmh-with-async` runs without an explicit `--async-path`
+- **THEN** the runner's default path resolves to the baked async-profiler
+
+### Requirement: Exactly one runner image exists at a time
+The system SHALL maintain exactly one runner AMI, published at `/<prefix>/runner/ami-id`. It SHALL NOT
+maintain named slots, an AMI history, or any second pointer. Each AMI SHALL carry the tags
+`baas-image-version` and `baas-parent-ami`.
+
+#### Scenario: A build replaces the previous image
+- **WHEN** `baas admin build-image` completes
+- **THEN** `/<prefix>/runner/ami-id` names the new AMI, and the AMI it replaced is deregistered and its
+  snapshots deleted
+
+#### Scenario: The pointer is repointed before the old image is removed
+- **WHEN** a build completes
+- **THEN** the new AMI ID is written to `/<prefix>/runner/ami-id` before the previous AMI is deregistered
+
+#### Scenario: Image identity is discoverable from the AMI itself
+- **WHEN** the current AMI is described
+- **THEN** its tags include `baas-image-version` naming its version and `baas-parent-ami` naming the exact
+  parent image it was built from
+
+#### Scenario: A failed build leaves the previous image in place
+- **WHEN** an image build fails
+- **THEN** `/<prefix>/runner/ami-id` is unchanged and the previous AMI is still registered
+
+### Requirement: The image version is bumped by hand and validated before building
 `baas admin build-image` SHALL render the Image Builder recipe and component from
-`infra/runner-image.yaml` and SHALL bump the recipe's patch version whenever the rendered content differs
-from the version currently registered. When the rendered content is unchanged, it SHALL NOT create a new
-recipe version.
+`infra/runner-image.yaml` using the `imageVersion` declared in that file. When that version is already
+registered with different content, the command SHALL fail before starting a build, naming the field to
+edit. It SHALL NOT derive or auto-increment a version.
 
-#### Scenario: Editing a tool version requires no manual version bump
-- **WHEN** a user changes only the async-profiler version in `infra/runner-image.yaml` and runs
-  `baas admin build-image`
-- **THEN** the command registers a new recipe version and completes without a CloudFormation
-  version-collision error
+#### Scenario: Stale version is rejected with an actionable message
+- **WHEN** a user edits a tool version but not `imageVersion`, and runs `baas admin build-image`
+- **THEN** the command exits non-zero, names `imageVersion` in `infra/runner-image.yaml`, and no build is
+  started
 
-#### Scenario: Unchanged content does not create a version
+#### Scenario: Unchanged content rebuilds without a version bump
 - **WHEN** `baas admin build-image` runs twice with no edit between runs
-- **THEN** the second run reuses the existing recipe version
+- **THEN** the second run reuses the registered recipe version and completes
 
-### Requirement: Two AMI slots with independent pointers
-The system SHALL maintain exactly two AMI slots. The `current` slot SHALL hold the newest image built
-from `infra/runner-image.yaml`, and the `adhoc` slot SHALL hold at most one image rebuilt from an
-archived template. Their AMI IDs SHALL be published at `/<prefix>/runner/ami-id` and
-`/<prefix>/runner/adhoc-ami-id`. Every AMI SHALL carry the tags `baas-image-version`, `baas-slot`, and
-`baas-parent-ami`.
+### Requirement: Every run records the environment it ran on
+Before starting the benchmark process, user-data SHALL write `<result-path>/environment.json` recording at
+least the image version and AMI ID, the instance type and region, the CPU model and topology, total
+memory, the OS version and kernel release, the JVM version, the baked tool versions, and the kernel
+tunables in effect. It SHALL also write `<result-path>/packages.txt` containing `rpm -qa`. Both SHALL be
+uploaded before the benchmark process starts. `environment.json` SHALL carry a `schemaVersion` field.
 
-#### Scenario: Current build replaces only the current slot
-- **WHEN** `baas admin build-image` completes while the adhoc slot is occupied
-- **THEN** `/<prefix>/runner/ami-id` points at the new AMI and `/<prefix>/runner/adhoc-ami-id` is
-  unchanged
+#### Scenario: Manifest accompanies a successful run
+- **WHEN** a benchmark completes
+- **THEN** `<result-path>/environment.json` and `<result-path>/packages.txt` exist alongside the run output
 
-#### Scenario: Adhoc build replaces only the adhoc slot
-- **WHEN** `baas admin build-image --from-version 1.2.0` completes
-- **THEN** `/<prefix>/runner/adhoc-ami-id` points at the new AMI and `/<prefix>/runner/ami-id` is
-  unchanged
+#### Scenario: Manifest survives a failed run
+- **WHEN** the benchmark process exits non-zero
+- **THEN** `<result-path>/environment.json` and `<result-path>/packages.txt` are still present
 
-#### Scenario: Slot is discoverable from the AMI itself
-- **WHEN** an AMI produced by either build path is described
-- **THEN** its tags include `baas-slot` naming its slot and `baas-image-version` naming its version
+#### Scenario: Manifest records what the image does not control
+- **WHEN** `environment.json` is read
+- **THEN** it records the instance type and CPU model, which are properties of the run rather than of the
+  image
 
-### Requirement: A slot's previous occupant is pruned at build start
-A build SHALL deregister the AMI previously occupying its target slot and delete that AMI's snapshots
-**before** starting the new build, so pruning cannot race a `baas run` that has already resolved an AMI
-ID.
+#### Scenario: Manifest is versioned
+- **WHEN** `environment.json` is read
+- **THEN** it carries a `schemaVersion` field identifying its structure
 
-#### Scenario: Previous AMI and snapshot are removed
-- **WHEN** `baas admin build-image` runs while the current slot holds AMI `ami-old`
-- **THEN** `ami-old` is deregistered and its snapshots are deleted before the new build is triggered
+### Requirement: Results carry coarse environment tags
+`baas run` SHALL record `imageVersion` and `instanceType` as result tags so that environment differences
+are detectable from the results store alone, without fetching any S3 object. `BenchmarkMetadata.tags` is a
+free-form `Map<String,String>`, so this SHALL require no schema change.
 
-#### Scenario: Pruning does not affect the other slot
-- **WHEN** an adhoc build prunes the adhoc slot
-- **THEN** the AMI in the current slot and its snapshots still exist
-
-#### Scenario: `--clear-adhoc` empties the adhoc slot
-- **WHEN** `baas admin build-image --clear-adhoc` runs with the adhoc slot occupied
-- **THEN** that AMI is deregistered, its snapshots are deleted, and
-  `/<prefix>/runner/adhoc-ami-id` no longer resolves to an existing image
-
-### Requirement: Build provenance is archived to S3
-Each successful build SHALL upload to the results bucket, under `images/by-version/<imageVersion>/`: the
-rendered `runner-image.yaml`, the rendered Image Builder `component.yaml`, a `packages.txt` containing
-`rpm -qa` captured from the built instance, and a `build.json` recording the resulting AMI ID, the exact
-parent AMI ID, artifact checksums, the region, and the build timestamp. It SHALL also write a pointer
-object at `images/by-ami/<amiId>` whose content identifies the image version.
-
-#### Scenario: Archive is complete after a build
-- **WHEN** `baas admin build-image` completes for version `1.3.0`
-- **THEN** `images/by-version/1.3.0/` contains `runner-image.yaml`, `component.yaml`, `packages.txt`, and
-  `build.json`
-
-#### Scenario: AMI ID resolves to its version without listing
-- **WHEN** the version for a known AMI ID is looked up
-- **THEN** it is obtained with a single `GetObject` on `images/by-ami/<amiId>`
-
-#### Scenario: No mutable shared index exists
-- **WHEN** the `images/` prefix is listed
-- **THEN** it contains no aggregate index object that concurrent builds would have to read and rewrite
-
-### Requirement: A historical image can be rebuilt from its archive
-`baas admin build-image --from-version <v>` SHALL fetch the archived template for `<v>`, register its
-recipe if that version is not already registered in the account, build the image into the `adhoc` slot,
-and SHALL NOT modify the CloudFormation stack.
-
-#### Scenario: Rebuild from an archived version
-- **WHEN** `baas admin build-image --from-version 1.2.0` runs and `images/by-version/1.2.0/` exists
-- **THEN** an AMI is produced from that archived template and published to the adhoc slot
-
-#### Scenario: Rebuild leaves infrastructure untouched
-- **WHEN** an adhoc rebuild completes
-- **THEN** the core stack's last-updated time is unchanged
-
-#### Scenario: Unknown version fails clearly
-- **WHEN** `baas admin build-image --from-version 9.9.9` runs and no such archive exists
-- **THEN** the command exits non-zero naming the version and the `images/by-version/` prefix it searched
-
-### Requirement: Rebuild drift is detected and reported
-A rebuild SHALL capture `rpm -qa` from the newly built instance and compare it against the
-`packages.txt` archived for that version. When the two differ, the resulting AMI SHALL be marked as
-drifted and the difference SHALL be reported to the operator.
-
-#### Scenario: Divergent rebuild is flagged
-- **WHEN** a rebuild of version `1.2.0` produces a package set differing from the archived manifest
-- **THEN** the command reports the differing packages and the resulting AMI is marked drifted
-
-#### Scenario: Faithful rebuild is not flagged
-- **WHEN** a rebuild produces a package set identical to the archived manifest
-- **THEN** the resulting AMI is not marked drifted
-
-### Requirement: Every result records the image that produced it
-`baas run` SHALL resolve the selected AMI's image metadata and pass `amiId`, `imageVersion`, and
-`imageSlot` into user-data, which SHALL forward them to the runner as result tags. When the selected AMI
-is marked drifted, `imageDrifted=true` SHALL also be recorded. `baas results` SHALL surface drift and
-SHALL NOT exclude drifted results automatically.
-
-#### Scenario: Image tags appear on results
+#### Scenario: Tags appear on stored results
 - **WHEN** a benchmark completes on the current AMI
-- **THEN** its stored result carries `amiId`, `imageVersion`, and `imageSlot=current` tags
+- **THEN** its stored result carries `imageVersion` and `instanceType` tags
 
-#### Scenario: Drifted adhoc run is distinguishable
-- **WHEN** a benchmark completes on a drifted adhoc AMI
-- **THEN** its stored result carries `imageSlot=adhoc` and `imageDrifted=true`
+#### Scenario: Mismatched environments are visible without S3 access
+- **WHEN** `baas results` returns a comparison group whose rows carry differing `imageVersion` values
+- **THEN** the difference is surfaced in the output
 
-#### Scenario: Drift is reported, not filtered
-- **WHEN** `baas results` returns rows that include a drifted run
-- **THEN** the drift is visible in the output and the row is still present
+#### Scenario: Differing environments are reported, not filtered
+- **WHEN** a comparison group contains rows from two different image versions
+- **THEN** both rows are still present in the output
+
+### Requirement: Environments can be compared field by field
+`baas env diff <resultPathA> <resultPathB>` SHALL fetch both runs' `environment.json` from the results
+bucket and report the fields that differ. It SHALL run under operator credentials, consistent with the
+other read-only day-to-day commands. Command payload SHALL be written to `System.out` so it remains
+pipeable.
+
+#### Scenario: Differing fields are reported
+- **WHEN** two runs used different JDK patch levels
+- **THEN** `baas env diff` reports the JDK field with both values
+
+#### Scenario: Identical environments report no differences
+- **WHEN** two runs used the same image version on the same instance type
+- **THEN** `baas env diff` reports no differing fields and exits 0
+
+#### Scenario: Missing manifest fails clearly
+- **WHEN** one of the given result paths has no `environment.json`
+- **THEN** the command exits non-zero naming the path it could not read
+
+#### Scenario: Diff uses operator credentials
+- **WHEN** `config.yaml` sets both `aws.profile` and `aws.operatorProfile` and `baas env diff` runs
+- **THEN** AWS clients are built from `aws.operatorProfile`

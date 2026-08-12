@@ -1,0 +1,77 @@
+# The measurement environment, declared.
+#
+# This file is the ONLY place a runner tool version is written down. `baas admin build-image`
+# renders it into an EC2 Image Builder component + recipe and bakes one AMI; `baas run` boots
+# from that AMI and installs nothing. Changing a tool version here and bumping `imageVersion`
+# is the whole workflow — there is no second file to keep in step.
+#
+# It is also the image history: `git log -p infra/runner-image.yaml` is the archive, and
+# `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image` is the way back.
+# Nothing in S3 duplicates that.
+#
+# What this file is NOT: a record of what a given run actually measured on. That is
+# <result-path>/environment.json, written per run, and it is strictly richer — it also carries
+# the instance type, the CPU model and the versions as they resolved. Compare two runs with
+# `baas env diff`, never by reading this file.
+
+# Semantic version of the image. Image Builder's Component and ImageRecipe are immutable at a
+# given version, so ANY edit below needs this bumped too. `baas admin build-image` preflights
+# that and refuses to start a ~15-minute build it knows will be rejected.
+imageVersion: "1.2.0"
+
+# Exact parent AMI, never a "latest" selector. A selector would silently re-base the whole
+# measurement environment on whatever AWS published that morning — the precise drift this
+# change exists to remove. Region-scoped: an AMI ID means nothing in another region.
+#
+# al2023-ami-kernel-default-x86_64, os-images release 2023.12.20260803.3
+parentImage:
+  region: eu-central-1
+  amiId: ami-070cc8ab883065d64
+
+tools:
+  # AL2023 `core` repo package, from the regional S3 mirror — no external Corretto repo is
+  # involved, which is what lets change 3 put the build behind a private subnet.
+  corretto:
+    package: java-25-amazon-corretto-headless
+    version: "25.0.4+7-1.amzn2023.1"
+
+  # perf is NOT in the base AMI (it belongs to no comps group, `ami` included), so JMH's
+  # -prof perf / perfnorm / perfasm are broken until it is baked. The version MUST match the
+  # parent AMI's kernel — the RPM is built from that same kernel build. The component
+  # smoke-tests it, so a mismatched pair fails the bake instead of a benchmark.
+  perf:
+    package: perf
+    version: "6.1.177-224.371.amzn2023"
+    # Informational: what the parent AMI runs. Kept beside the perf pin because they move together.
+    kernelRelease: "6.1.177-224.371.amzn2023"
+
+  # Preinstalled in the AL2023 `ami` group; pinned here so user-data's `aws s3 cp` calls run
+  # against a known version rather than whatever the AMI happened to ship.
+  awsCli:
+    package: awscli-2
+    version: "2.33.15-1.amzn2023.0.1"
+
+  # Downloaded from GitHub Releases at BAKE time (not run time). installPath must stay in step
+  # with the --async-path default in JmhWithAsyncProfilerSubcommand, which resolves
+  # <installPath>/lib/libasyncProfiler.so.
+  asyncProfiler:
+    version: "4.0"
+    installPath: /app/async-profiler
+
+# Kernel tunables that move benchmark numbers, declared instead of inherited.
+#
+# Left to AL2023's defaults these are whatever the base image shipped on the day an instance
+# booted — uncontrolled variance sitting directly under a profiler. async-profiler needs the
+# first two to walk kernel stacks at all. Applied via /etc/sysctl.d and kernel cmdline at bake
+# time, so they are in effect before the first warmup iteration.
+kernel:
+  # perf_event_open for non-root, with kernel-symbol resolution. Relaxes kernel isolation on
+  # an instance that runs arbitrary benchmark JARs — accepted: single-tenant and throwaway.
+  # See CLAUDE.md "Accepted risks".
+  perfEventParanoid: 1
+  kptrRestrict: 0
+  # THP "always" is AL2023's default and the one JVMs are tuned against; declared so a future
+  # base-image change cannot move it silently.
+  transparentHugepages: always
+  # Swapping mid-measurement produces an outlier indistinguishable from a real regression.
+  swap: disabled

@@ -20,6 +20,34 @@ Parameters:
     Description: Existing security group ID (used when UseExistingVpc=true).
     Type: String
     Default: ""
+  # The three below are rendered from infra/runner-image.yaml by RunnerImageRenderer. Both
+  # `baas admin setup` and `baas admin build-image` render them from the same classpath
+  # resource, so the two commands always submit identical values.
+  RunnerImageVersion:
+    Description: Semantic version of the runner image; versions the Component and ImageRecipe.
+    Type: String
+    Default: "1.0.0"
+    AllowedPattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+  RunnerParentAmiId:
+    Description: Exact parent AL2023 AMI the runner image is built from. Never a selector.
+    Type: String
+    Default: "ami-070cc8ab883065d64"
+    AllowedPattern: "^ami-[0-9a-f]+$"
+  RunnerImageComponentData:
+    Description: Rendered AWSTOE component document that bakes the runner toolchain.
+    Type: String
+    Default: |
+      name: baas-runner-toolchain
+      description: Placeholder; replaced by the rendered component on every CLI deploy.
+      schemaVersion: 1.0
+      phases:
+        - name: build
+          steps:
+            - name: Noop
+              action: ExecuteBash
+              inputs:
+                commands:
+                  - "true"
 
 Conditions:
   CreateNetworking: !Equals [!Ref UseExistingVpc, "false"]
@@ -238,6 +266,143 @@ Resources:
       Roles:
         - !Ref RunnerRole
 
+  # ─── Runner image build (EC2 Image Builder) ──────────────────────────────────
+  #
+  # Deliberately NO AWS::ImageBuilder::Image here. That resource performs a build during
+  # stack operations, which would add ~15 minutes to every `baas admin setup` — including
+  # setups that changed nothing about the image. Builds are triggered out of band by
+  # `baas admin build-image` via StartImagePipelineExecution; the stack holds only the
+  # durable configuration.
+
+  ImageBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourceNamePrefix}-image-build-role
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      # Both are required by Image Builder itself: SSM carries the build commands to the
+      # instance, and EC2InstanceProfileForImageBuilder covers the imagebuilder callbacks.
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/EC2InstanceProfileForImageBuilder
+      Policies:
+        - PolicyName: !Sub ${ResourceNamePrefix}-image-build-logs-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Build logs only. The build host never reads results and never launches
+              # anything, so this is its entire bucket reach.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${S3MainBucket.Arn}/image-builds/*"
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+  ImageBuildInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-image-build-role
+      Path: /
+      Roles:
+        - !Ref ImageBuildRole
+
+  RunnerImageComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner-toolchain
+      Description: Bakes the runner toolchain and kernel tunables declared in infra/runner-image.yaml.
+      Platform: Linux
+      # A Component is immutable at a given version, so changing Data without bumping
+      # RunnerImageVersion is rejected. `baas admin build-image` preflights exactly that.
+      Version: !Ref RunnerImageVersion
+      Data: !Ref RunnerImageComponentData
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner
+      Version: !Ref RunnerImageVersion
+      ParentImage: !Ref RunnerParentAmiId
+      Components:
+        # GetAtt .Arn rather than Ref throughout the Image Builder wiring: every one of these
+        # resources exposes a distinct Arn attribute, which is exactly the shape where Ref is
+        # liable to return the name instead. These properties reject a name, and the pipeline
+        # ARN below is handed straight to StartImagePipelineExecution.
+        - ComponentArn: !GetAtt RunnerImageComponent.Arn
+      BlockDeviceMappings:
+        # 30 GB, matching what Ec2ProvisioningService requests at launch. The AL2023
+        # default of 8 GB is exhausted by profiling artifacts.
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImageInfrastructure:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner-build
+      InstanceProfileName: !Ref ImageBuildInstanceProfile
+      # The build host is not the measurement host — it only installs packages, so the
+      # instance family it uses has no bearing on any benchmark score.
+      InstanceTypes:
+        - c5.large
+      SubnetId: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
+      SecurityGroupIds:
+        - !If [CreateNetworking, !Ref RunnerSecurityGroup, !Ref ExistingSecurityGroupId]
+      TerminateInstanceOnFailure: true
+      Logging:
+        S3Logs:
+          S3BucketName: !Ref S3MainBucket
+          S3KeyPrefix: image-builds
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImageDistribution:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner
+      # Single region, matching the rest of the stack. The AMI tags are set here rather
+      # than by the CLI afterwards so they land atomically with the image — `baas admin
+      # image` reads them back as the image's identity.
+      Distributions:
+        - Region: !Ref AWS::Region
+          AmiDistributionConfiguration:
+            Name: !Sub "${ResourceNamePrefix}-runner-{{ imagebuilder:buildDate }}"
+            AmiTags:
+              project: !Sub ${ResourceNamePrefix}
+              baas-role: runner-image
+              baas-image-version: !Ref RunnerImageVersion
+              baas-parent-ami: !Ref RunnerParentAmiId
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImagePipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner
+      ImageRecipeArn: !GetAtt RunnerImageRecipe.Arn
+      InfrastructureConfigurationArn: !GetAtt RunnerImageInfrastructure.Arn
+      DistributionConfigurationArn: !GetAtt RunnerImageDistribution.Arn
+      Status: ENABLED
+      # No Schedule block: builds are operator-triggered. An image that rebuilt itself on a
+      # timer would move the measurement environment under results nobody was looking at.
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
   # BaasCliOperatorRole — assumed (via sts:AssumeRole) by whoever runs
   # `baas run`/`baas results`/`baas config` locally. Scoped exactly to this
   # stack's own resources (bucket, RunnerRole, mongo SSM path), which only
@@ -268,6 +433,10 @@ Resources:
                 Action:
                   - ec2:DescribeInstances
                   - ec2:DescribeInstanceStatus
+                  # `baas run` validates the AMI the pointer names before provisioning, so a
+                  # deregistered image fails locally instead of as InvalidAMIID.NotFound.
+                  # Describe* takes no resource-level scoping.
+                  - ec2:DescribeImages
                 Resource: "*"
               # RunInstances is authorized once per resource in the request, and
               # ec2:InstanceType is only populated for the instance leg. Carrying that
@@ -322,9 +491,12 @@ Resources:
                   - ssm:GetParameter
                   - ssm:PutParameter
                 Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
+              # The runner boots from a purpose-built image now, so the public AL2023 lookup
+              # path is gone and this pointer replaces it. Read-only: publishing it is
+              # `baas admin build-image`, which runs under the deployer.
               - Effect: Allow
                 Action: ssm:GetParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}::parameter/aws/service/ami-amazon-linux-latest/*"
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id"
         - PolicyName: !Sub ${ResourceNamePrefix}-operator-s3-policy
           PolicyDocument:
             Version: "2012-10-17"
@@ -371,6 +543,18 @@ Outputs:
     Value: !Ref RunnerInstanceProfile
   OperatorRoleArn:
     Value: !GetAtt OperatorRole.Arn
+  # `baas admin build-image` reads this and passes it verbatim to
+  # StartImagePipelineExecution, which rejects anything that is not an ARN.
+  RunnerImagePipelineArn:
+    Value: !GetAtt RunnerImagePipeline.Arn
+  RunnerImageRecipeName:
+    Value: !Sub ${ResourceNamePrefix}-runner
+  RunnerImageInfrastructureArn:
+    Value: !GetAtt RunnerImageInfrastructure.Arn
+  # Written by `baas admin build-image`, not by the stack — the AMI ID is not known until a
+  # build completes. Published here so the CLI and infra/README.md name one path.
+  RunnerAmiParameterName:
+    Value: !Sub /${ResourceNamePrefix}/runner/ami-id
   SubnetId:
     Value: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
   SecurityGroupId:

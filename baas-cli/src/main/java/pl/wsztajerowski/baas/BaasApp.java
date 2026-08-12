@@ -5,6 +5,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParseResult;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
+import pl.wsztajerowski.baas.commands.EnvCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
 import pl.wsztajerowski.baas.commands.admin.AdminCommand;
@@ -17,7 +18,8 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
         AdminCommand.class,
         ConfigCommand.class,
         RunCommand.class,
-        ResultsCommand.class
+        ResultsCommand.class,
+        EnvCommand.class
     },
     // picocli lists direct children only, so `baas admin deployer-policy` is invisible here —
     // and it is the one command a new user needs *before* anything else works. Lines stay under
@@ -27,6 +29,7 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
         "First run, in order:",
         "  baas admin deployer-policy             # attach to your own identity",
         "  baas admin setup                       # deploy the stack",
+        "  baas admin build-image                 # bake the runner AMI (~15 min)",
         "  baas config set --operator-profile <p> # day-to-day credentials",
         "  baas run jmh -- MyBenchmark -f 1       # note the -- separator",
         "",

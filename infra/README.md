@@ -5,8 +5,36 @@ The infrastructure is split into two stacks. Run commands from this directory.
 ## Stack 1: `baas-core` — shared infrastructure
 
 Deploys networking (VPC, subnet, IGW, S3 gateway endpoint, security group), the S3 working
-bucket, and the EC2 runner IAM role. This is the same stack that `baas admin setup` deploys on a
-user's account.
+bucket, the EC2 runner IAM role, and the EC2 Image Builder resources that bake the runner AMI.
+This is the same stack that `baas admin setup` deploys on a user's account.
+
+**The Image Builder half** — `Component`, `ImageRecipe`, `InfrastructureConfiguration`,
+`DistributionConfiguration`, `ImagePipeline`, plus an `ImageBuildRole` + instance profile — holds
+only durable configuration. There is deliberately **no `AWS::ImageBuilder::Image`**: that resource
+performs a build during stack operations, so every `baas admin setup` would take ~15 minutes even
+when nothing about the image changed. Builds are triggered out of band by `baas admin build-image`
+via `StartImagePipelineExecution`.
+
+`ImageBuildRole` carries `AmazonSSMManagedInstanceCore` and `EC2InstanceProfileForImageBuilder`
+(both required by Image Builder itself) plus a single inline grant: `s3:PutObject` on
+`<bucket>/image-builds/*`. The build host installs packages and writes its own logs; it never
+reads results, launches instances, or touches IAM.
+
+Three stack parameters carry the image definition in from `infra/runner-image.yaml`:
+`RunnerImageVersion`, `RunnerParentAmiId`, and `RunnerImageComponentData` (the rendered AWSTOE
+document). `baas admin setup` and `baas admin build-image` both render them from the same
+classpath resource, so the two commands always submit identical values — if setup let the
+template's placeholder default stand, it would register a no-op component at the declared version
+and Image Builder would then reject the real one at that same version.
+
+Deploying this template **by hand** with `aws cloudformation deploy` leaves those three parameters
+at their defaults, which registers the placeholder component. Use `baas admin setup` unless you
+are deliberately deploying without an image and intend to pass the parameters yourself.
+
+If this is the first Image Builder pipeline in the account, the deploying identity needs
+`iam:CreateServiceLinkedRole` for `imagebuilder.amazonaws.com` — the service provisions
+`AWSServiceRoleForImageBuilder` on first use, and the stack fails with `AccessDenied` on
+`RunnerImagePipeline` without it.
 
 ```bash
 aws cloudformation deploy \
@@ -75,24 +103,46 @@ hold the deployer policy permanently; don't skip assuming the operator role.
 
 ### `BaasCliDeployerPolicy` — elevated, admin-only, per caller
 
-Required by `baas admin setup` and `baas admin teardown`. Attach this only to identities that
-provision or tear down the core stack — it should not be held as a standing policy for routine
-benchmark runs.
+Required by `baas admin setup`, `baas admin build-image` and `baas admin teardown`. Attach this
+only to identities that provision, image or tear down the core stack — it should not be held as a
+standing policy for routine benchmark runs.
 
 **It is rendered per identity, not shared.** Every resource it names derives from the caller's
 account, region and ARN-hash prefix — `baas-<prefix>` for the bucket, `<prefix>-runner-role` for
 the role, `/<prefix>/mongo/…` for the parameter. [`deployer-policy.json`](./deployer-policy.json)
-is therefore a *template* carrying `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` / `${BOUNDARY_ARN}`
-placeholders, and must never be attached in that form. Two callers get two different policies,
-and neither can reach the other's stack, bucket or parameter.
+is therefore a *template* carrying `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders, and
+must never be attached in that form. Two callers get two different policies, and neither can reach
+the other's stack, bucket or parameter.
 
 This one **cannot** be created by the core stack itself — you need deployer permissions
 *before* the stack exists in order to create it, so CloudFormation can never be the thing
 that grants permission to create CloudFormation stacks.
 
-It has to be a **customer-managed policy**, not an inline user policy: the document is over
-2 KB minified, and IAM caps inline *user* policies at 2 048 characters (managed policies get
-6 144). `aws iam put-user-policy` will reject it.
+It has to be a **customer-managed policy**. The rendered document is ~3.9 KB with whitespace
+stripped, which is what IAM counts, and the limits are:
+
+| Attachment | Cap | Fits? |
+|---|---|---|
+| Customer-managed policy | 6144, to itself | yes — use this |
+| Inline policy on a user or group | 5120, **shared across every inline policy on that principal** | only if little else is inline there |
+| Inline policy on a user (`put-user-policy`) | 2048 | no |
+
+The inline case is the trap: the cap is a budget shared with whatever else is attached, so the
+policy can fit today and be rejected after an unrelated addition. A `DeployerPolicyTest` case holds
+the rendered size under 4096 to keep headroom, which is why several statements wildcard a whole
+verb class (`ec2:Describe*`, `s3:Get*`, `imagebuilder:Get*`) instead of enumerating actions.
+`Create` is deliberately not wildcarded — `imagebuilder:CreateImage` must stay excluded, and
+`s3:Put*` would grant `PutObject`.
+
+Two grants look wrong and are not:
+
+- **`ImageBuilderRead` uses `Resource: "*"`.** Image Builder authorises read operations against the
+  collection (`component/*`) even when the call names one specific ARN, so a prefix-scoped resource
+  can never satisfy them. Everything that *acts* — create, delete, update, tag, start a build —
+  stays pinned to `<prefix>-runner*`.
+- **`CloudFormationValidateTemplate` uses `Resource: "*"`.** The action parses a template body and
+  reads no account state; AWS offers no resource-level permission for it. It is a separate
+  statement so the stack-scoped `CloudFormation` grant stays scoped to one stack.
 
 ```bash
 # The user renders their own policy...

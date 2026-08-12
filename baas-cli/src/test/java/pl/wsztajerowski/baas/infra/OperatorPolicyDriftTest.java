@@ -45,6 +45,48 @@ class OperatorPolicyDriftTest {
             .isEqualTo(fromTemplate);
     }
 
+    /**
+     * The whole point of the credential split: `baas run` resolves the image, `baas admin
+     * build-image` publishes it. An operator who could also build or retire images could move
+     * the measurement environment under results without holding deployer credentials.
+     */
+    @Test
+    void operatorCanResolveTheImageButNotPublishOrRetireIt() {
+        Set<String> actions = InfraFixtures.actions(InfraFixtures.operatorPolicy());
+
+        assertThat(actions)
+            .as("`baas run` reads the pointer and validates the AMI it names")
+            .contains("ssm:GetParameter", "ec2:DescribeImages");
+
+        assertThat(actions)
+            .noneMatch(action -> action.startsWith("imagebuilder:"))
+            .doesNotContain("ec2:DeregisterImage", "ec2:CreateImage", "ec2:DeleteSnapshot");
+    }
+
+    @Test
+    void operatorCannotWriteTheAmiPointer() {
+        var pointerWrites = referenceStatements().stream()
+            .filter(statement -> strings(statement.get("Action")).contains("ssm:PutParameter"))
+            .flatMap(statement -> strings(statement.get("Resource")).stream())
+            .filter(resource -> resource.contains("/runner/ami-id"))
+            .toList();
+
+        assertThat(pointerWrites)
+            .as("publishing the image is a deployer action; the mongo path is the only "
+                + "ssm:PutParameter an operator gets")
+            .isEmpty();
+    }
+
+    /**
+     * The runner boots from a purpose-built image now. Leaving the public AL2023 lookup granted
+     * would document reach the role no longer has any use for.
+     */
+    @Test
+    void publicAmiLookupPathIsNoLongerGranted() {
+        assertThat(InfraFixtures.resources(InfraFixtures.operatorPolicy()))
+            .noneMatch(resource -> resource.contains("ami-amazon-linux-latest"));
+    }
+
     @Test
     void passRoleIsPinnedToASingleAccount() {
         var passRole = referenceStatements().stream()

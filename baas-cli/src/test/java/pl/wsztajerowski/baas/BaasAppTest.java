@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +68,25 @@ class BaasAppTest {
 
         assertThat(result.subcommand().matchedPositionalValue(1, java.util.List.<String>of()))
             .containsExactly("MyBenchmark", "-f", "1", "-wi", "1");
+    }
+
+    /**
+     * SimpleLogger pins a logger's level when the logger is constructed, and every baas command
+     * holds a {@code static final Logger} built while picocli instantiates the subcommand tree —
+     * before {@code execute()}. Only this pre-scan runs early enough, so the image commands added
+     * later inherit -v only as long as it keeps working.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"build-image", "image", "setup"})
+    void argvPreScanRaisesVerbosityForAdminSubcommands(String subcommand) {
+        System.clearProperty(LoggingMixin.LEVEL_PROPERTY);
+        try {
+            LoggingMixin.applyEarlyVerbosity(new String[]{"admin", subcommand, "-v"});
+
+            assertThat(System.getProperty(LoggingMixin.LEVEL_PROPERTY)).isEqualTo("debug");
+        } finally {
+            System.clearProperty(LoggingMixin.LEVEL_PROPERTY);
+        }
     }
 
     @Test

@@ -15,6 +15,7 @@ import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.io.IOException;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -116,22 +117,45 @@ public class ResultsCommand implements Callable<Integer> {
         System.out.println("[");
         for (int i = 0; i < rows.size(); i++) {
             ResultRow r = rows.get(i);
-            System.out.printf(
+            // imageVersion/instanceType ride along so a machine consumer can tell comparable rows
+            // from incomparable ones — the table says so in prose, and `| jq` cannot read prose.
+            // Null for every run recorded before the prebaked-image change.
+            System.out.printf(Locale.ROOT,
                 "  {\"requestId\":\"%s\",\"benchmarkName\":\"%s\",\"benchmarkType\":\"%s\"," +
-                "\"mode\":\"%s\",\"score\":%.6f,\"scoreError\":%.6f,\"scoreUnit\":\"%s\",\"createdAt\":\"%s\"}%s%n",
+                "\"mode\":\"%s\",\"score\":%s,\"scoreError\":%s,\"scoreUnit\":\"%s\"," +
+                "\"createdAt\":\"%s\",\"imageVersion\":%s,\"instanceType\":%s}%s%n",
                 r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
-                r.score(), r.scoreError(), r.scoreUnit(), r.createdAt(),
+                jsonNumber(r.score()), jsonNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
+                jsonOrNull(r.imageVersion()), jsonOrNull(r.instanceType()),
                 i < rows.size() - 1 ? "," : "");
         }
         System.out.println("]");
     }
 
     private void printCsv(List<ResultRow> rows) {
-        System.out.println("requestId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt");
+        System.out.println(
+            "requestId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt,imageVersion,instanceType");
         for (ResultRow r : rows) {
-            System.out.printf("%s,%s,%s,%s,%.6f,%.6f,%s,%s%n",
+            // Locale.ROOT for the same reason as printJson — a comma decimal separator turns one
+            // CSV column into two.
+            System.out.printf(Locale.ROOT, "%s,%s,%s,%s,%.6f,%.6f,%s,%s,%s,%s%n",
                 r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
-                r.score(), r.scoreError(), r.scoreUnit(), r.createdAt());
+                r.score(), r.scoreError(), r.scoreUnit(), r.createdAt(),
+                r.imageVersion() != null ? r.imageVersion() : "",
+                r.instanceType() != null ? r.instanceType() : "");
         }
+    }
+
+    /** A missing tag is JSON null, not the string "null" — the two mean different things here. */
+    private static String jsonOrNull(String value) {
+        return value != null ? "\"" + value + "\"" : "null";
+    }
+
+    /**
+     * JSON has no NaN or Infinity literal, and a single-iteration JMH run reports {@code NaN}
+     * score error routinely — emitting it produces a document {@code jq} refuses outright.
+     */
+    private static String jsonNumber(double value) {
+        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "null";
     }
 }

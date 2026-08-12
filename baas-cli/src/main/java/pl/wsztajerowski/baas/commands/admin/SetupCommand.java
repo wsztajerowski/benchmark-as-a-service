@@ -12,6 +12,7 @@ import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.DeployerPolicyRenderer;
 import pl.wsztajerowski.baas.infra.DeployerPreflight;
+import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 
@@ -150,6 +151,11 @@ public class SetupCommand implements Callable<Integer> {
         params.put("ExistingVpcId", existingVpcId != null ? existingVpcId : "");
         params.put("ExistingSubnetId", existingSubnetId != null ? existingSubnetId : "");
         params.put("ExistingSecurityGroupId", existingSecurityGroupId != null ? existingSecurityGroupId : "");
+        // The same rendering `baas admin build-image` submits. Letting the template's placeholder
+        // default stand here would register a no-op component at the declared version, and Image
+        // Builder would then refuse the real one at that same version — immutability, hit from a
+        // direction nobody would think to look.
+        params.putAll(new RunnerImageRenderer().stackParameters());
 
         // The bucket is declared DeletionPolicy: Retain, so deleting the stack leaves it
         // behind — and the prefix is a hash of the caller ARN, so the next setup asks for
@@ -200,6 +206,16 @@ public class SetupCommand implements Callable<Integer> {
                          Until you do, `baas run` uses the default credential chain, not this role.""",
                 operatorRoleArn);
         }
+
+        // Setup deliberately does not build the image — that is a ~15-minute operation and every
+        // re-setup would pay for it. It is a hard precondition of `baas run`, so say so here
+        // rather than letting the first run be where the user finds out.
+        logger.info("""
+                Next: build the runner image.
+                      baas admin build-image
+                    Takes ~15 minutes and publishes an AMI to /{}/runner/ami-id.
+                    `baas run` fails until it exists — there is no boot-time install path.""",
+            resolvedPrefix);
 
         if (mongoUri != null) {
             try (var ssm = factory.ssm()) {

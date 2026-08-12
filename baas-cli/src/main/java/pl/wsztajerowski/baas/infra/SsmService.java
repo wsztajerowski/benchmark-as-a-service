@@ -33,6 +33,20 @@ public class SsmService {
         }
     }
 
+    /**
+     * A plain String parameter, for values that are not secrets — the runner AMI pointer is read by
+     * every {@code baas run}, and a SecureString would need {@code kms:Decrypt} on the operator role
+     * to publish an ID that is not sensitive.
+     */
+    public void putStringParameter(String name, String value) {
+        ssm.putParameter(PutParameterRequest.builder()
+            .name(name)
+            .value(value)
+            .type(ParameterType.STRING)
+            .overwrite(true)
+            .build());
+    }
+
     public void putSecureParameter(String name, String value) {
         ssm.putParameter(PutParameterRequest.builder()
             .name(name)

@@ -14,6 +14,8 @@ import pl.wsztajerowski.baas.LoggingMixin;
     },
     subcommands = {
         SetupCommand.class,
+        BuildImageCommand.class,
+        ImageCommand.class,
         TeardownCommand.class,
         DeployerPolicyCommand.class
     }
