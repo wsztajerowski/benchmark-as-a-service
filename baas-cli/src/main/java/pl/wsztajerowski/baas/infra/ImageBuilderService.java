@@ -72,9 +72,26 @@ public class ImageBuilderService {
         // scale, and it fails loudly as InvalidAMIID.NotFound rather than silently.
         replaced
             .filter(previous -> !previous.equals(newAmiId))
-            .ifPresent(this::retire);
+            .ifPresent(this::retireQuietly);
 
         return newAmiId;
+    }
+
+    /**
+     * Retirement is cleanup, and by this point the pointer already names the replacement — so a
+     * failure here must not fail a command whose paid work has succeeded.
+     *
+     * <p>The usual cause is an AMI someone already removed by hand, which leaves nothing to do
+     * anyway; reporting that as a failed build invites a second ~15-minute rebuild for no reason.
+     * Same argument as the snapshot loop inside {@link #retire}, one level up.
+     */
+    private void retireQuietly(String amiId) {
+        try {
+            retire(amiId);
+        } catch (Ec2Exception e) {
+            logger.warn("Could not retire replaced image {}: {}. The new image is published and "
+                + "in use; the old one may need removing by hand.", amiId, e.getMessage());
+        }
     }
 
     /**
@@ -139,9 +156,18 @@ public class ImageBuilderService {
      * at all. Filtering that by version matches nothing, so the preflight silently concludes the
      * version is unregistered and lets the build proceed into a stack update that Image Builder
      * then rejects — which is the failure this method exists to prevent. Found by running it.
+     *
+     * <p>Paginated defensively rather than to fix an observed failure. {@code ListComponents} caps
+     * a page at 25, and reading only the first page is the same shape of blindness as
+     * {@code byName} above — it cannot distinguish "not registered" from "not on this page". In
+     * this design that gap is currently unreachable: {@code Version} is a replacement property on
+     * {@code AWS::ImageBuilder::Component}, so every bump has CloudFormation create the new
+     * version and delete its predecessor, leaving exactly one registered at a time. The preflight
+     * works precisely because that one is the current one. Paginating costs nothing at one version
+     * and stops the gap opening if components are ever retained.
      */
     Optional<String> registeredComponentData(String componentName, String imageVersion) {
-        var versions = imageBuilder.listComponents(r -> r
+        var versions = imageBuilder.listComponentsPaginator(r -> r
                 .owner("Self")
                 .filters(Filter.builder().name("name").values(componentName).build()))
             .componentVersionList();

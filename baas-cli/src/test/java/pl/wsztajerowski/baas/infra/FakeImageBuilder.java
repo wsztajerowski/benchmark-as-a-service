@@ -34,6 +34,12 @@ class FakeImageBuilder implements ImagebuilderClient {
     final List<String> startedPipelines = new ArrayList<>();
     /** byName queries cannot return a version, so the preflight must never issue one. */
     int byNameQueries;
+    /**
+     * Versions returned per page, mirroring the real 25 cap. 0 means "all in one page", which is
+     * what every test that does not care about pagination wants.
+     */
+    int pageSize;
+    int pagesServed;
 
     String amiId = "ami-unset";
     ImageStatus terminalStatus = ImageStatus.AVAILABLE;
@@ -78,14 +84,28 @@ class FakeImageBuilder implements ImagebuilderClient {
                 .build();
         }
 
-        var versions = registeredComponents.keySet().stream()
+        var all = registeredComponents.keySet().stream()
             .map(version -> ComponentVersion.builder()
                 .name(name)
                 .version(version)
                 .arn(prefix + version)
                 .build())
             .toList();
-        return ListComponentsResponse.builder().componentVersionList(versions).build();
+
+        pagesServed++;
+        if (pageSize <= 0) {
+            return ListComponentsResponse.builder().componentVersionList(all).build();
+        }
+
+        // Image Builder caps a page at 25 and hands back a nextToken. A caller that reads only the
+        // first response sees a truncated version list and cannot tell that it is truncated.
+        int from = request.nextToken() == null ? 0 : Integer.parseInt(request.nextToken());
+        int to = Math.min(from + pageSize, all.size());
+        var page = ListComponentsResponse.builder().componentVersionList(all.subList(from, to));
+        if (to < all.size()) {
+            page.nextToken(Integer.toString(to));
+        }
+        return page.build();
     }
 
     @Override

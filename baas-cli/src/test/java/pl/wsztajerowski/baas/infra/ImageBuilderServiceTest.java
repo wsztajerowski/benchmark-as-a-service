@@ -95,6 +95,27 @@ class ImageBuilderServiceTest {
         assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage"));
     }
 
+    /**
+     * Retirement runs after the pointer already names the new image, so everything that matters
+     * has succeeded by the time it can fail. An AMI someone already removed by hand leaves nothing
+     * to retire; failing the command for that would report a good build as broken and invite a
+     * second ~15-minute rebuild.
+     */
+    @Test
+    void aReplacedImageThatIsAlreadyGoneDoesNotFailTheBuild() throws Exception {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        // Deliberately absent from ec2.images: describeImages answers InvalidAMIID.NotFound.
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
+
+        assertThat(published).isEqualTo(NEW_AMI);
+        assertThat(ssm.parameters)
+            .as("the build succeeded and the pointer moved — cleanup failing afterwards changes neither")
+            .containsEntry(POINTER, NEW_AMI);
+    }
+
     @Test
     void identityTagsAreLeftAloneWhenTheDistributionConfigurationAlreadySetThem() throws Exception {
         imageBuilder.amiId = NEW_AMI;
@@ -181,6 +202,32 @@ class ImageBuilderServiceTest {
         assertThat(imageBuilder.byNameQueries)
             .as("byName returns an x.x.x placeholder carrying no version to compare against")
             .isZero();
+    }
+
+    /**
+     * Guards the API contract, not an observed failure. The stack replaces the Component on every
+     * version bump and deletes its predecessor, so only one version is registered at a time and
+     * the first page always holds it. This pins the query against the day that stops being true —
+     * reading a single page cannot tell "not registered" from "not on this page", which is the
+     * same blindness as {@code byName} above and fails the same way: a doomed build starts.
+     */
+    @Test
+    void preflightFindsAVersionBeyondTheFirstPage() {
+        for (int minor = 0; minor <= 30; minor++) {
+            imageBuilder.registeredComponents.put("1." + minor + ".0", "# published " + minor);
+        }
+        imageBuilder.pageSize = 25;
+
+        assertThatThrownBy(() -> service()
+            .preflightVersion("a1b2c3d4-runner-toolchain", "1.30.0", "# edited"))
+            .as("version 1.30.0 is registered, just not on the first page")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("1.30.0");
+
+        assertThat(imageBuilder.pagesServed)
+            .as("one request means only the first 25 versions were ever considered")
+            .isGreaterThan(1);
+        assertThat(imageBuilder.startedPipelines).isEmpty();
     }
 
     @Test
