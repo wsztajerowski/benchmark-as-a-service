@@ -218,9 +218,15 @@ public class RunCommand implements Callable<Integer> {
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 7. Launch instance. imageVersion and instanceType ride along as result tags so that
-        //    `baas results` can spot a comparison group whose rows sat on different environments
-        //    without fetching a single S3 object.
+        // 7. Launch instance. These are EC2 *instance* tags — console visibility and the
+        //    `baas-role` scoping that RunnerRole's TerminateInstances condition depends on. They
+        //    are NOT what `baas results` reads: ResultsQueryService reads
+        //    benchmarkMetadata.tags, which is populated only by the runner's own --tag options,
+        //    emitted by UserDataScriptBuilder from the values observed on the instance. Tagging
+        //    the instance instead is how every stored result ended up with a null imageVersion
+        //    once already; the tier-1 comparison then silently never fires. Don't treat the two
+        //    lines below as covering that — see
+        //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
         logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
         Map<String, String> tags = new LinkedHashMap<>(extraTags);
         tags.putIfAbsent("instanceType", resolvedInstanceType);

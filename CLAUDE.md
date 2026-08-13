@@ -100,9 +100,15 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **Creating the first pipeline in an account needs `iam:CreateServiceLinkedRole`** for
   `imagebuilder.amazonaws.com`. Appears in no SDK call and no resource schema; only a real deploy
   finds it.
-- **The Image Builder wiring uses `!GetAtt <X>.Arn`, never `!Ref`.** Each of these resources exposes
-  a distinct `Arn` attribute — the shape where `Ref` is liable to return the name — and the
-  properties, plus `StartImagePipelineExecution`, reject a name.
+- **The four Image Builder *cross-resource* references use `!GetAtt <X>.Arn`, never `!Ref`** —
+  `ImageRecipe.Components[].ComponentArn`, and the pipeline's `ImageRecipeArn`,
+  `InfrastructureConfigurationArn` and `DistributionConfigurationArn`. Each of those resources
+  exposes a distinct `Arn` attribute — the shape where `Ref` is liable to return the name — and the
+  properties, plus `StartImagePipelineExecution`, reject a name. This does **not** generalise to the
+  block as a whole, where every other reference is correctly a `!Ref`: `InstanceProfileName` wants a
+  *name* (`!Ref` on an `AWS::IAM::InstanceProfile` returns exactly that, and `!GetAtt …Arn` breaks
+  it), `SubnetId`/`SecurityGroupIds` want ids, and the version/data/parent-image properties are
+  template parameters.
 - **No `AWS::ImageBuilder::Image` in the template.** That resource builds during stack operations,
   adding ~15 minutes to every `baas admin setup`.
 

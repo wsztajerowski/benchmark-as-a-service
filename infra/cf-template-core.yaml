@@ -333,10 +333,12 @@ Resources:
       Version: !Ref RunnerImageVersion
       ParentImage: !Ref RunnerParentAmiId
       Components:
-        # GetAtt .Arn rather than Ref throughout the Image Builder wiring: every one of these
-        # resources exposes a distinct Arn attribute, which is exactly the shape where Ref is
-        # liable to return the name instead. These properties reject a name, and the pipeline
-        # ARN below is handed straight to StartImagePipelineExecution.
+        # GetAtt .Arn for the cross-resource references only — this one and the pipeline's three
+        # below. Each of those resources exposes a distinct Arn attribute, which is exactly the
+        # shape where Ref is liable to return the name instead; the properties reject a name, and
+        # the pipeline ARN is handed straight to StartImagePipelineExecution.
+        # The Refs elsewhere in this block are correct and must stay: InstanceProfileName takes a
+        # name, SubnetId/SecurityGroupIds take ids, the rest are template parameters.
         - ComponentArn: !GetAtt RunnerImageComponent.Arn
       BlockDeviceMappings:
         # 30 GB, matching what Ec2ProvisioningService requests at launch. The AL2023
