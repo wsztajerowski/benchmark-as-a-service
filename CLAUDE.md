@@ -25,10 +25,10 @@ neither dispatches nor depends on the workflows.
 Sequence diagrams for the main CLI commands: [`docs/diagrams/`](docs/diagrams/) (Mermaid sources,
 no checked-in SVGs — update the `.mmd` when a command changes). Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change
-records: `openspec/changes/*/design.md`.
+records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
-**Open review findings live in [`docs/review/`](docs/review/)** — one file per module, each entry
-marked Open or Fixed. An in-progress walkthrough works through them by severity; read the relevant
+**Open review findings live in [`docs/review/`](docs/review/)** — one file per module, plus one per
+reviewed change (`prebaked-runner-ami-review.md`), each entry marked Open or Fixed. An in-progress walkthrough works through them by severity; read the relevant
 file before proposing security or architecture work, and update the status table when one is
 fixed. Items already in *Accepted risks* below are excluded from both files on purpose.
 
@@ -162,7 +162,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   against the fake benchmarks on real EC2, but through `workflow_dispatch` — the GHA path, which
   installs its own async-profiler and never boots the runner AMI. So CI cannot catch a bad bake,
   and `RunCommand.call()` is executed by no test at all. Verification of the baked image is manual
-  (`openspec/changes/prebaked-runner-ami/tasks.md` §11).
+  (`openspec/changes/archive/2026-08-14-prebaked-runner-ami/tasks.md` §11).
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`. The local act
   E2E additionally needs `/baas/mongo/connection-string` as a SecureString.
