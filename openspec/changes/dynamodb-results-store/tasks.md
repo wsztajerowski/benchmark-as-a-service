@@ -1,16 +1,107 @@
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Count the JMH and JCStress documents in Atlas and record the totals; confirm the working set is
+- [x] 1.1 Count the JMH and JCStress documents in Atlas and record the totals; confirm the working set is
   small enough that a single partition sweep is viable (~10k fine, ~100k slow, ~1M fails)
-- [ ] 1.2 If the count lands near or above 100k, adopt the year-sharded partition key
+
+  **Finding:** `jmh_benchmarks: 121`, `jcstress_tests: 0`. Total = 121 documents. Far below the ~10k
+  "fine" threshold — a single partition sweep is trivially viable at current scale.
+
+- [x] 1.2 If the count lands near or above 100k, adopt the year-sharded partition key
   (`RESULT#<project>#<yyyy>`) before implementing anything else, and revise `design.md`
-- [ ] 1.3 Inventory the distinct tag keys present in the Atlas data and confirm the known-key vocabulary
+
+  **Finding:** 121 << 100k. Per the task-1 brief's ruling, `design.md` and
+  `specs/results-store-schema/spec.md` are left unmodified — `pk = RESULT#<project>` stands with no
+  year-sharding. Numbers recorded above in 1.1.
+
+- [x] 1.3 Inventory the distinct tag keys present in the Atlas data and confirm the known-key vocabulary
   covers them; record any key the migration must map or drop
-- [ ] 1.4 Confirm `environment.json` actually carries CPU model, CPU architecture and JDK version in a
+
+  **Finding:** distinct tag keys observed across `jmh_benchmarks` (`jcstress_tests` is empty, so it
+  contributes nothing): `branch`, `exclude_from_results`, `imageVersion`, `instanceType`, `options`,
+  `project`, `source`, `type`.
+  - Covered by the known vocabulary already documented in `proposal.md`/`design.md`: `exclude_from_results`,
+    `imageVersion`, `instanceType`, `options`, `project`, `type`. `branch` is present too, but `design.md`
+    already treats it as a deliberate custom tag, not a known key — no action needed.
+  - Known-vocabulary keys **absent** from the historical data: `commit`, `jdk`, `cpuModel`, `cpuArch`.
+    Expected — these are the tags `baas run --tag`/environment-observation threading was never wired to
+    emit (the exact gap `design.md`'s Risks section calls "`baas run --tag` currently reaches nothing").
+  - **`source` is not in the known vocabulary and must be mapped or dropped.** Present on 36/121 docs,
+    values `gha-e2e-test`, `gha-e2e-test-async`, `gha-e2e-test-profilers` — all CI e2e-workflow markers
+    (`e2e-cloud-test.yml`'s `workflow_dispatch` path), not something `baas run` itself ever wrote. Not
+    decided here (out of this task's scope per the brief); flagged for task 9.4 to either map it into a
+    known/custom tag as-is (unknown tags pass through with a CLI warning per `design.md`) or drop it
+    during migration.
+
+- [x] 1.4 Confirm `environment.json` actually carries CPU model, CPU architecture and JDK version in a
   form the runner can copy into tags without new observation work
-- [ ] 1.5 Confirm the retained MongoDB adapter has no consumer inside `baas-cli` — if any CLI code path
+
+  **Finding — variable inventory in `UserDataScriptBuilder.SCRIPT_BODY`** (baas-cli/src/main/java/pl/wsztajerowski/baas/infra/UserDataScriptBuilder.java):
+  - `CPU_MODEL` — line 58: `CPU_MODEL=$(json_escape "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')")`. Already written into `environment.json` as `"cpuModel"`. **Exists.**
+  - `JVM_VERSION` — line 66: `JVM_VERSION=$(json_escape "$(java -version 2>&1 | head -1)")`. Already
+    written into `environment.json` as `"jvmVersion"`. **Exists, and already captures the JDK version** —
+    the full first line of `java -version` output (e.g. `openjdk version "21.0.5" 2024-10-15 LTS`).
+  - `cpuArch` — **does not exist.** No `uname -m` capture, no `CPU_ARCH`/`cpuArch` variable anywhere in
+    `SCRIPT_BODY`, no `"cpuArch"` field in the `environment.json` heredoc. Confirms the brief's expected
+    finding exactly: `CPU_MODEL` and `JVM_VERSION` exist, `cpuArch` does not and must be added in Task 4.
+
+  **Most important finding (per ruling a):** `openspec/changes/dynamodb-results-store/plan.md`'s Task 4
+  (lines 465-560) currently plans to add a **new, independent** `JDK_VERSION` variable:
+  `JDK_VERSION=$(java -version 2>&1 | head -1 | sed -n 's/.*"\(.*\)".*/\1/p')` — a **second** invocation of
+  `java -version`, re-parsed with `sed` to extract just the version number, then forwarded as `--tag
+  "jdk=${JDK_VERSION}"`. This duplicates `JVM_VERSION`, which already captures the same underlying
+  observation (the same `java -version` first line) and is already the value written into
+  `environment.json`'s `"jvmVersion"` field. Two consequences:
+  1. It re-runs `java -version` a second time for information the script already captured once.
+  2. It computes the `jdk` tag from a **separate** subprocess invocation rather than from `JVM_VERSION`
+     itself, which is exactly the shape `tasks.md` 2.4 says to avoid: "taking the values from the same
+     shell variables the environment manifest uses." Deriving `JDK_VERSION` via `sed` on `$JVM_VERSION`
+     (not a fresh `java -version` call) would guarantee the `jdk` tag can never disagree with
+     `environment.json`'s `jvmVersion`, which is the CLAUDE.md invariant this whole pattern exists to
+     protect ("a result's tags cannot disagree with its own `environment.json`").
+  **Recommendation for Task 4 (not applied here — no code changes in this task):** compute `JDK_VERSION`
+  as `JDK_VERSION=$(printf '%s' "$JVM_VERSION" | sed -n 's/.*"\(.*\)".*/\1/p')` (or similar, deriving from
+  the already-captured `$JVM_VERSION`), not a second `java -version` invocation.
+
+- [x] 1.5 Confirm the retained MongoDB adapter has no consumer inside `baas-cli` — if any CLI code path
   reads Mongo, the "CLI never learns Mongo exists" decision needs revisiting
-- [ ] 1.6 Decide the `project` value migrated rows receive when they carry no `project` tag
+
+  **Finding:** `grep -rn "mongo\|Mongo" --include="*.java" baas-cli/src/main` hits more files than the
+  brief's illustrative list. Confirmed present, all matching the brief's expectation:
+  `ResultsQueryService.java`, `ResultsCommand.java`, `SetupCommand.java`, `ConfigSetSubcommand.java`,
+  `ConfigSyncSubcommand.java` (comment only).
+  Additional hits, all of which this change's own `tasks.md`/`proposal.md` already schedules for removal:
+  `UserDataScriptBuilder.java` (SSM connection-string fetch — removed by task 7.5),
+  `ConfigShowSubcommand.java` (masked Mongo URI display — removed by task 7.10),
+  `RunCommand.java` (SSM lookup + `ResultsQueryService` call in `showResults()`, plus two comment lines —
+  listed in `proposal.md`'s Impact section; reworked as a natural consequence of task 6.2's
+  `ResultsQueryService` rewrite, though no task item names `showResults()` explicitly).
+  **Two genuine gaps, not currently covered by any numbered task:**
+  1. **`DeployerPreflight.java`** (line 68) builds an `ssm:PutParameter` `SimulatePrincipalPolicy` probe
+     against `arn:aws:ssm:...:parameter/<prefix>/mongo/connection-string` as part of `baas admin setup`'s
+     preflight. Not named in `tasks.md` §4 or §7, nor in `proposal.md`'s Impact list. Needs removing (or
+     replacing with an equivalent DynamoDB-table probe) alongside task 4.7/4.8.
+  2. **`TeardownCommand.java`** (lines 99-104, 115) unconditionally deletes the
+     `/<prefix>/mongo/connection-string` SSM parameter on every teardown and logs "MongoDB cluster NOT
+     touched...". Task 7.9 only covers the confirmation *prompt* text; this delete-block and log line are
+     not scoped to any task and will reference a parameter that (per task 10.1) is deleted by hand during
+     cutover — leaving dead/misleading code post-migration.
+  **Conclusion:** the "CLI never learns Mongo exists" decision itself is not invalidated — every hit found
+  is either already scheduled for removal or is small cleanup naturally within task 7's scope — but the
+  task list is missing explicit coverage for `DeployerPreflight.java` and `TeardownCommand.java`'s Mongo
+  SSM delete block. Recommend folding both into task 7 (e.g. new items 7.11, 7.12) before implementation.
+
+- [x] 1.6 Decide the `project` value migrated rows receive when they carry no `project` tag
+
+  **Data:** of 121 total `jmh_benchmarks` docs, 80 carry `project=lynx-journal`; 41 carry no `project` tag
+  at all. Of those 41: 36 also carry `source` = `gha-e2e-test`/`gha-e2e-test-async`/`gha-e2e-test-profilers`
+  (CI e2e-workflow fixture runs against `fake-jmh-benchmarks`, not real `lynx-journal` measurements); the
+  remaining 5 carry neither `project` nor `source` (minimal tags — e.g. only `imageVersion`/`instanceType`
+  — consistent with very early/manual runs before tagging existed).
+  **Recommendation (not decided unilaterally — for ratification):** default untagged rows to a distinct
+  sentinel value, e.g. `unknown`, rather than folding them into `lynx-journal` — 36 of the 41 are
+  demonstrably CI test-fixture runs, not `lynx-journal` measurements, and collapsing them into that
+  project's partition would misrepresent its benchmark history in `baas results` grouping/best-score
+  selection.
 
 ## 2. Tag pass-through (prerequisite — nothing downstream works without it)
 
