@@ -213,7 +213,7 @@ public class RunCommand implements Callable<Integer> {
             config.getAws().getRegion(), config.getAws().getBucket(), config.getPrefix(),
             benchmarkType, requestId, resultPath, resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            benchmarkParams);
+            benchmarkParams, Map.of());
         // The script is what actually decides whether a run works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);

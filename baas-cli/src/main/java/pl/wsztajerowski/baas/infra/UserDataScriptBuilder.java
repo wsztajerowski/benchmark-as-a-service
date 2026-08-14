@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.infra;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Map;
 
 public class UserDataScriptBuilder {
 
@@ -126,6 +127,10 @@ public class UserDataScriptBuilder {
         # eval expands BENCHMARK_PARAMETERS (a double-quoted shell string) into an array
         # so params containing spaces are passed as single tokens to java.
         eval "BENCHMARK_PARAMS_ARRAY=(${BENCHMARK_PARAMETERS})"
+        # Caller-supplied tags (project, commit, and any --tag the operator passed). Same
+        # export-then-eval pattern as BENCHMARK_PARAMETERS, so values containing spaces stay
+        # single argv tokens. Instance-observed tags are appended separately below.
+        eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"
         # Tier 1 of the environment comparison: these two reach benchmarkMetadata.tags, so
         # `baas results` can flag a group whose rows sat on different environments without
         # fetching anything from S3. They are the values OBSERVED above, not the ones the CLI
@@ -137,6 +142,7 @@ public class UserDataScriptBuilder {
           --benchmark-path /app/benchmark-under-test.jar \\
           --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
           --tag "instanceType=${INSTANCE_TYPE}" \\
+          "${RUNNER_TAGS_ARRAY[@]}" \\
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 
@@ -157,10 +163,15 @@ public class UserDataScriptBuilder {
     public String build(String region, String bucket, String ssmPrefix, String benchmarkType,
                         String requestId, String resultPath, int benchmarkTimeoutSeconds,
                         int wallClockHardKillSeconds, String imageVersion, String amiId,
-                        String runnerJarS3Key, List<String> benchmarkParams) {
+                        String runnerJarS3Key, List<String> benchmarkParams,
+                        Map<String, String> runnerTags) {
         String params = String.join(" ", benchmarkParams.stream()
             .map(p -> p.contains(" ") ? "\"" + p + "\"" : p)
             .toList());
+
+        String tagArgs = runnerTags.entrySet().stream()
+            .map(e -> "--tag \"" + e.getKey() + "=" + e.getValue() + "\"")
+            .collect(java.util.stream.Collectors.joining(" "));
 
         String script = "#!/bin/bash\n" +
             "# No set -e — errors handled explicitly so watchdog always starts\n" +
@@ -179,6 +190,7 @@ public class UserDataScriptBuilder {
             "export AMI_ID='" + nullToEmpty(amiId) + "'\n" +
             "export RUNNER_JAR_S3_KEY='" + nullToEmpty(runnerJarS3Key) + "'\n" +
             "export BENCHMARK_PARAMETERS='" + params.replace("'", "'\\''") + "'\n" +
+            "export RUNNER_TAGS='" + tagArgs.replace("'", "'\\''") + "'\n" +
             "\n" +
             SCRIPT_BODY;
 

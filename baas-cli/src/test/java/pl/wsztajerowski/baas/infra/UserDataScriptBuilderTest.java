@@ -14,10 +14,15 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 class UserDataScriptBuilderTest {
 
     private String script() {
+        return script(Map.of());
+    }
+
+    private String script(Map<String, String> runnerTags) {
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-a1b2c3d4", "a1b2c3d4", "jmh",
             "jmh-20260724_120000", "main/jmh/20260724_120000", 7200, 7500,
-            "1.0.0", "ami-0123456789abcdef0", null, List.of("MyBenchmark", "-f", "1"));
+            "1.0.0", "ami-0123456789abcdef0", null, List.of("MyBenchmark", "-f", "1"),
+            runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
 
@@ -244,5 +249,41 @@ class UserDataScriptBuilderTest {
             .as("rpm -qa is several hundred lines and would drown the manifest's ~20 useful fields")
             .contains("rpm -qa")
             .contains("/app/packages.txt");
+    }
+
+    /**
+     * `baas run --tag` used to reach the EC2 instance only, so no result from the CLI path
+     * carried a caller tag. The whole tag-based query model depends on this reaching the runner.
+     */
+    @Test
+    void forwardsCallerSuppliedTagsToTheRunner() {
+        String script = script(Map.of("project", "lynx-journal", "experiment", "gc tuning"));
+
+        assertThat(script)
+            .contains("--tag \"project=lynx-journal\"")
+            .contains("--tag \"experiment=gc tuning\"");
+
+        assertThat(script.indexOf("RUNNER_TAGS_ARRAY[@]"))
+            .as("caller tags have to be arguments of the runner invocation itself")
+            .isGreaterThan(script.indexOf("java -jar /app/benchmark-runner.jar"))
+            .isLessThan(script.indexOf("EXIT_CODE=$?"));
+    }
+
+    @Test
+    void rendersNoTagArgumentsWhenNoneAreSupplied() {
+        String script = script(Map.of());
+
+        assertThat(script)
+            .as("an empty array must still expand cleanly under the eval pattern")
+            .contains("export RUNNER_TAGS=''");
+    }
+
+    @Test
+    void escapesSingleQuotesInTagValues() {
+        String script = script(Map.of("note", "it's fine"));
+
+        assertThat(script)
+            .as("the export is single-quoted, so an embedded quote must be escaped")
+            .contains("--tag \"note=it'\\''s fine\"");
     }
 }
