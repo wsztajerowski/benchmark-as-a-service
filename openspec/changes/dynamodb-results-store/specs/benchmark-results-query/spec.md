@@ -1,107 +1,120 @@
 ## ADDED Requirements
 
+### Requirement: Results are loaded with a single query on the project partition
+`baas results` SHALL retrieve its working set with one `Query` on `pk = RESULT#<project>`, and SHALL NOT
+issue a `Scan`. Filters other than request ID SHALL be applied to the returned rows rather than by
+selecting a different index.
+
+#### Scenario: The unfiltered command does not scan
+- **WHEN** `baas results` is invoked with no filter
+- **THEN** the operation issued is a `Query` on the project partition, not a `Scan`
+
+#### Scenario: Tag filters do not change the access path
+- **WHEN** `baas results --tag branch=main` is invoked
+- **THEN** the same project-partition `Query` is issued, with the tag applied as a predicate
+
 ### Requirement: Results for one run are queryable by request ID
-`baas results --request-id <id>` SHALL return every result of that run using a single `Query` on
-`pk = RUN#<id>`, without a table scan.
+`baas results --request-id <id>` SHALL return every measurement of that run using a single `Query` on the
+request-ID index, without a table scan.
 
 #### Scenario: All benchmarks of a run are returned
-- **WHEN** a run produced three JMH benchmarks and `--request-id` names it
+- **WHEN** a run produced three JMH benchmark methods and `--request-id` names it
 - **THEN** three rows are returned
 
 #### Scenario: Unknown request ID returns nothing
 - **WHEN** `--request-id` names a run that does not exist
 - **THEN** no rows are returned and the command exits 0
 
-### Requirement: Results are queryable by branch, newest first
-`baas results --branch <name>` SHALL query `pk = TAG#branch#<name>` in descending sort-key order, so the
-most recent results are returned first, without a table scan.
+### Requirement: Results are filterable by any tag
+`baas results --tag <key>=<value>` SHALL return measurements carrying that tag, for any tag key, whether
+or not the key is in the known-key vocabulary.
 
-#### Scenario: Newest results come first
-- **WHEN** three runs on `main` were stored at different times and `--branch main` is queried
-- **THEN** rows are returned in descending `createdAt` order
-
-#### Scenario: Branch query does not scan
-- **WHEN** `--branch main` is queried
-- **THEN** the operation issued is a `Query`, not a `Scan`
-
-### Requirement: Results are queryable by benchmark over time
-`baas results --benchmark <fullyQualifiedClassName>` SHALL query `pk = BENCH#<fqcn>`, returning every
-method of that class. When a method is also given, the query SHALL additionally constrain the sort key
-with `begins_with(<methodName>#)`.
-
-#### Scenario: All methods of a class
-- **WHEN** a class has results for two benchmark methods and only the class is given
-- **THEN** results for both methods are returned
-
-#### Scenario: One method's history
-- **WHEN** a class and one method are given
-- **THEN** only that method's results are returned, ordered by `createdAt`
-
-### Requirement: Results are queryable by arbitrary tag
-`baas results --tag <key>=<value>` SHALL query `pk = TAG#<key>#<value>` in descending order, for any tag
-key that was recorded, without a table scan.
-
-#### Scenario: Project tag is queryable
-- **WHEN** results tagged `project=lynx-journal` exist and `--tag project=lynx-journal` is queried
+#### Scenario: Known tag filters
+- **WHEN** results tagged `jdk=25.0.4` exist and `--tag jdk=25.0.4` is queried
 - **THEN** those results are returned
 
-#### Scenario: Arbitrary custom tag is queryable
+#### Scenario: Custom tag filters
 - **WHEN** results tagged `experiment=gc-tuning` exist and `--tag experiment=gc-tuning` is queried
-- **THEN** those results are returned without a table scan
+- **THEN** those results are returned
 
-### Requirement: Recent results are available without a filter
-`baas results` with no filter SHALL query the month-partitioned time index in descending order, walking
-back through earlier months until the requested limit is satisfied or the archive is exhausted.
+#### Scenario: Repeated tag options combine conjunctively
+- **WHEN** `--tag jdk=25.0.4 --tag cpuArch=aarch64` is given
+- **THEN** only measurements carrying both tags are returned
 
-#### Scenario: Recent results without a scan
-- **WHEN** `baas results` is invoked with no filter
-- **THEN** rows are returned newest-first and no `Scan` is issued
+### Requirement: Benchmark name matching accepts a regular expression
+`baas results --benchmark-name <pattern>` SHALL match the benchmark name as a regular expression, applied
+to the rows returned by the partition query.
 
-#### Scenario: Limit spans a month boundary
-- **WHEN** the current month holds fewer results than the requested limit
-- **THEN** the previous month is queried to make up the difference
+#### Scenario: Substring pattern matches
+- **WHEN** `--benchmark-name Queue` is given and two benchmark classes contain that substring
+- **THEN** measurements from both are returned
+
+#### Scenario: Fully qualified name matches
+- **WHEN** `--benchmark-name pl.wsztajerowski.MyBenchmark` is given and results exist
+- **THEN** those results are returned
+
+### Requirement: Living-branch filtering uses one query
+`baas results --living-branches` SHALL filter the returned rows by the branches present in the current
+git repository, using the same single partition query rather than one query per branch. When no
+measurement carries a `branch` tag, the filter SHALL be a no-op rather than an error.
+
+#### Scenario: Branch filtering issues one query
+- **WHEN** `--living-branches` is invoked with eight remote branches present
+- **THEN** exactly one `Query` is issued
+
+#### Scenario: Untagged results are unaffected
+- **WHEN** `--living-branches` is invoked and no measurement carries a `branch` tag
+- **THEN** the command returns rows and exits 0
 
 ### Requirement: Excluded results are filtered out
-`baas results` SHALL omit results tagged `exclude_from_results=true`, applying the filter server-side via
-a filter expression on the projected `excludeFromResults` attribute.
+`baas results` SHALL omit measurements tagged `exclude_from_results=true`, applying the filter server-side
+via a filter expression.
 
 #### Scenario: Excluded run is omitted
-- **WHEN** a branch holds two results, one tagged `exclude_from_results=true`
+- **WHEN** a project holds two results for a benchmark, one tagged `exclude_from_results=true`
 - **THEN** only the other is returned
 
 #### Scenario: Filter is applied server-side
 - **WHEN** a query runs
-- **THEN** the request carries a filter expression on `excludeFromResults`
+- **THEN** the request carries a filter expression covering `exclude_from_results`
 
 ### Requirement: Results are grouped with the best score kept
-`baas results` SHALL group returned rows by `(benchmark, branch)` and keep only the highest-scoring row
-per group. Grouping and selection SHALL be applied client-side over the returned rows, since DynamoDB
-performs no aggregation.
+`baas results` SHALL group returned rows by benchmark and a grouping tag, and keep only the
+highest-scoring row per group. The grouping tag SHALL default to `branch`. Rows lacking the grouping tag
+SHALL be collected into a single untagged group rather than dropped.
 
 #### Scenario: Best of several runs is kept
-- **WHEN** the same benchmark on the same branch has three results with different scores
+- **WHEN** the same benchmark with the same grouping tag value has three results with different scores
 - **THEN** one row is returned, carrying the highest score
 
-#### Scenario: Same benchmark on two branches stays separate
-- **WHEN** a benchmark has results on `main` and on a feature branch
+#### Scenario: Two grouping values stay separate
+- **WHEN** a benchmark has results tagged `branch=main` and `branch=feature-x`
 - **THEN** two rows are returned, one per branch
 
-### Requirement: Benchmark matching is exact or prefix, not regular expression
-`--benchmark` SHALL match a fully-qualified class name exactly, optionally narrowed by a method prefix. It
-SHALL NOT accept a regular expression, and an input that was previously valid as a regular expression
-SHALL fail with a message naming the supported forms.
+#### Scenario: Untagged rows are not lost
+- **WHEN** some measurements carry no `branch` tag
+- **THEN** they are grouped together and reported, not silently discarded
 
-#### Scenario: Regular expression is rejected clearly
-- **WHEN** `--benchmark ".*Queue.*"` is given
-- **THEN** the command exits non-zero explaining that exact class names and method prefixes are supported
+### Requirement: A run's artifacts can be downloaded from S3
+The CLI SHALL provide a command that downloads every S3 artifact for a run — the result JSON,
+`environment.json`, process output, `packages.txt`, logs and profiling artifacts — to a local directory.
 
-#### Scenario: Exact class name matches
-- **WHEN** `--benchmark pl.wsztajerowski.MyBenchmark` is given and results exist
-- **THEN** those results are returned
+#### Scenario: Whole run is retrieved
+- **WHEN** the download command is invoked for a completed run
+- **THEN** the local directory contains the run's result JSON, `environment.json`, process output and any
+  profiling artifacts
+
+#### Scenario: Data absent from the item is recoverable
+- **WHEN** a measurement's `rawData` is needed
+- **THEN** it is available in the downloaded result JSON
+
+#### Scenario: Unknown run reports clearly
+- **WHEN** the download command names a run with no S3 prefix
+- **THEN** the command exits non-zero naming the run, and creates no partial directory
 
 ### Requirement: Command payloads stay on standard output
-`baas results` SHALL continue to write its table, JSON, and CSV payloads to `System.out` rather than
-through the logger, so `--format json | jq` and `--format csv > file` remain usable.
+`baas results` SHALL write its table, JSON and CSV payloads to `System.out` rather than through the
+logger, so `--format json | jq` and `--format csv > file` remain usable.
 
 #### Scenario: JSON output is machine-readable
 - **WHEN** `baas results --format json` is piped to a JSON parser

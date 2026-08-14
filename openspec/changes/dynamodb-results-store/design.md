@@ -3,154 +3,197 @@
 Measurements currently live in a MongoDB Atlas cluster that BaaS connects to but never provisions. Two
 modules reach it independently: `benchmark-runner` writes through Morphia entities, and `baas-cli` reads
 through raw `org.bson.Document` field paths (`"_id.requestId"`, `"benchmarkMetadata.tags.branch"`). The
-two have no shared contract, so a schema change breaks reads silently rather than at compile time
-(finding A3).
+two share no contract, so a schema change breaks reads silently rather than at compile time (finding
+**A3**).
 
-The store is also the last reason a runner needs public internet on its data path: Atlas serves clients on
+Atlas is also the last reason a runner needs public internet on its data path: it serves clients on
 27017 over the public internet, behind an `0.0.0.0/0` access list because runners get a fresh public IP
 per run. DynamoDB has a free gateway endpoint, so moving the store removes both the external dependency
-and the network constraint.
+and the network constraint that blocks the sibling `private-runner-network` change.
 
-Existing history matters and will be migrated once. Query patterns required: one run's results, a branch's
-results newest-first, a benchmark's results over time, and — newly — search by arbitrary tag.
+The access pattern was **derived from evidence rather than assumed** — see `brainstorm.md` for the full
+analysis. Two sources were used: the retired `scripts/benchmark_overview.sh` (recovered via
+`git show 889731b^`), which is the tool that was actually used day to day, and a 90-question catalogue
+of what a results viewer could plausibly be asked, supplied as discussion input rather than as
+requirements. The historical tool always filtered `project` + `type` — a match set that is essentially
+the whole dataset — then grouped `(benchmark, branch)` client-side and kept the best score. It has no
+time-based access pattern, no request-id lookup and no arbitrary-tag search. Of the 90 questions, 20 are
+selection and 70 are computations over a selected set. Both sources say the same thing: the workload is
+*load a coarse working set and compute over it*, not *seek a key*.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- The results store is created, tagged, and retained by the same CloudFormation stack as every other BaaS
+- The results store is created, tagged and retained by the same CloudFormation stack as every other BaaS
   resource.
-- All four query patterns are index-backed, with no table scan on the normal path.
-- One definition of the stored shape, shared by both modules.
-- Items stay far below DynamoDB's 400 KB limit while full-fidelity results remain retrievable.
+- The queries `baas results` actually serves are answered by a single `Query`, with no table scan.
+- One definition of the stored shape and its tag vocabulary, shared by both modules.
+- Items stay far below DynamoDB's 400 KB limit while full-fidelity results remain retrievable from S3.
+- `benchmark-runner` remains usable as a standalone JAR against a user's own MongoDB.
 - Existing Atlas history is carried over without loss.
 - No standing cost beyond per-request billing.
 
 **Non-Goals:**
 
-- Preserving the Mongo document shape. The stored shape is redesigned around the access patterns.
-- Regular-expression benchmark matching. It cannot be index-backed.
-- Cross-region replication, point-in-time recovery, or a TTL. The dataset is small and its value is
-  historical; none of these earn their complexity yet.
+- Preserving the Mongo document shape. The stored shape is redesigned around the access pattern.
+- Analytical querying — comparison, regression detection, trend, ranking, comparability scoring. These
+  are 70 of the 90 catalogued questions and none of them is made cheaper by indexing.
+- Index-backed arbitrary tag search, a time index, or per-dimension GSIs.
+- Cross-region replication, point-in-time recovery, or a TTL.
+- MongoDB anywhere in `baas-cli`. The retained adapter is runner-local and invisible to the CLI.
 - Changing the AMI, the termination layers, or the subnet model. Those belong to the sibling changes.
-- A general-purpose query API. `baas results` is the only consumer.
 
 ## Decisions
 
-### Single table with inverted index items, no GSIs
+### The table is one item per measurement on a per-project partition, with no derived index items
 
-One table holds result items plus derived index items:
+```
+pk  = RESULT#<project>
+sk  = <fqcn>#<method>#<createdAt>#<requestId>     (JMH)
+sk  = JCSTRESS#<createdAt>#<requestId>            (JCStress)
+GSI = pk: requestId, sk: <fqcn>#<method>
+```
 
-| Item | pk | sk |
-|---|---|---|
-| JMH result | `RUN#<requestId>` | `BENCH#<fqcn>#<method>#<type>` |
-| JCStress result | `RUN#<requestId>` | `JCSTRESS` |
-| tag index | `TAG#<key>#<value>` | `<createdAt>#<requestId>#<name>` |
-| benchmark index | `BENCH#<fqcn>` | `<method>#<createdAt>#<requestId>` |
-| time index | `ALL#<yyyy-mm>` | `<createdAt>#<requestId>#<name>` |
+`sk` is benchmark-major then chronological, which serves three patterns from one ordering: the latest
+result for a benchmark (`begins_with` + descending + `Limit 1`), a benchmark's history in order, and
+grouping — rows arrive grouped by benchmark, so bucketing happens within one benchmark at a time and
+never needs a global sort. The GSI covers `--request-id`, the only pattern the base key cannot reach
+because `requestId` sits at the tail of `sk`.
 
-`branch` and `project` are already tags, so an index-backed tag search subsumes both — and arbitrary tag
-search comes free, which is the deciding factor.
+*Alternatives considered.* **Hand-written inverted index items** (the previous design: a
+`TAG#<key>#<value>` index, a benchmark index partitioned on class, and a month-partitioned `ALL#<yyyy-mm>`
+time index, six to eight items per result in one `BatchWriteItem`) lost because its sole advantage was
+index-backed arbitrary tag search — a requirement the previous design admits was invented during design,
+and which neither historical tool has ever had. The time index likewise served a query that has never
+existed. It optimises selective lookups the workload does not perform, while the dominant query cannot
+be indexed away in any case, and it costs runner-owned index consistency, a reserved non-indexed tag-key
+set, a hot `TAG#branch#main` partition, and a delete path for derived items.
+**One or two GSIs** lost because the dominant sweep is still not selective, so it degrades to a `Scan`
+regardless; each new filterable dimension needs another GSI plus a backfill, against a list of roughly
+eighteen dimensions and a hard cap of twenty; and single-dimension GSIs do not serve conjunctive filters.
 
-*Alternatives considered.* A single table with `BRANCH` and `BENCH` GSIs is less runner code and AWS
-maintains the indexes, but arbitrary tag search is then permanently unreachable — it degrades to
-`Scan` + filter — and each new indexed dimension needs a GSI plus a backfill. Two tables mirroring the
-existing collections is the smallest conceptual leap but doubles the infrastructure and index work while
-still leaving tag search unsolved.
+### `type` is deliberately excluded from the partition key
 
-The cost objection to writing index items by hand does not hold: a GSI replicates writes automatically, so
-manual index items cost the same order of write units with a projection under our control. At six to eight
-tiny items per result on on-demand billing, this is a fraction of a cent per run.
+`type` has four values (`jmh`, `jmh-with-profiler`, `jmh-with-async`, `jcstress`). Keying on it would
+split the same benchmark's comparable JMH-family results across partitions, so it stays a tag.
 
-The accepted cost is that the runner owns index consistency, and deleting a run means deleting its derived
-items. Results are write-once and every key is deterministic, so this stays bounded.
+### `project` is derived from the git repo name, overridable with `--project`
 
-### The benchmark index is partitioned on the class, not the full method name
+It needs no configuration and matches the existing behaviour that `baas run` builds in the current
+working directory.
 
-`pk = BENCH#<fqcn>` with the method in the sort key answers two questions from one partition: all methods
-of a class is a plain `Query`, and one method over time is `begins_with(sk, "<method>#")`. A flat
-`BENCH#<fqcn>.<method>` partition would answer only the second, and "how did this whole benchmark class
-move" would need one query per method.
+*Alternatives considered.* A config field is explicit but needs a defined failure when unset and does not
+travel with the project. The Maven `artifactId` is stable and meaningful but couples the partition key to
+the build file and breaks under `--benchmark-jar --skip-build`. A single fixed partition is simplest but
+concentrates every write on one unbounded key — which this design rejects for the same reason the
+previous one rejected a single `ALL` time partition.
 
-### The time index is month-partitioned
+### MongoDB survives as a runner-local write adapter, invisible to the CLI
 
-`ALL#<yyyy-mm>` bounds partition size while still serving "recent N" without a scan. A single `ALL`
-partition would grow unboundedly and concentrate every write on one key; a day-partitioned index would
-force many queries to satisfy a modest limit.
+`benchmark-runner` is a standalone artifact — one JAR, no stack, no CLI — and that deployment must keep
+working against a user's own MongoDB. Inside BaaS, DynamoDB is the only store.
 
-### Summary in DynamoDB, verbatim JMH JSON in S3
+This is what makes the retained adapter free of consequences elsewhere: BaaS never selects Mongo, so
+`RunnerSecurityGroup` still drops 27017, `private-runner-network` stays unblocked, and no NAT gateway
+cost appears. It also avoids a read-side asymmetry — `baas results` never needs to read Mongo, because
+anything BaaS produced is in DynamoDB, and a standalone user reads their own store however they like.
 
-`Metric.rawData` is `List<List<Double>>` — per-fork, per-iteration samples — and is the one field that can
-approach the 400 KB item limit. Nothing in the codebase reads it back. So the item holds the queryable
-summary and references `resultJsonKey`; `rawData` and `scorePercentiles` live only in the verbatim JMH JSON
-now uploaded to the run's S3 prefix, and `secondaryMetrics` is reduced to score and unit per metric.
+**The port speaks domain, not storage.** Each adapter owns its physical layout, so one item per
+measurement maps cleanly to one document per measurement and nothing DynamoDB-specific leaks through the
+interface. The previous design's six-to-eight derived items would have made a shared port impossible.
 
-This also closes the documented "measurements live only in MongoDB, there is no `result.json`" gap as a
-side effect.
+*Alternatives considered.* Deleting Mongo outright is the smallest surface but forecloses the standalone
+deployment entirely. Making the adapter permanent and first-class *including in the CLI* would require
+two query implementations, two integration suites, and would leave query capability varying by backend.
 
-*Alternatives considered.* Keeping the full structure minus `rawData` stays closest to today's shape but
-still risks large items on wide benchmarks. A gzipped blob attribute is compact but opaque to PartiQL, the
-console, and any future query. Spilling to S3 only above a size threshold preserves full fidelity but
-creates two code paths where the rarely-exercised one is the untested one.
+### Tags are the uniform query surface, governed by a known-key vocabulary
 
-### Low-level client with an explicit mapper
+Every queryable dimension is a tag — `project`, `type`, `commit`, `jdk`, `cpuModel`, `cpuArch`,
+`instanceType`, `imageVersion` — rather than a mix of typed fields and tags. Under client-side evaluation
+this costs nothing: a `Map<String,String>` entry filters exactly as fast as a top-level attribute, so the
+field-versus-tag boundary is a schema-discipline question, not a capability one. Only what composes the
+partition key must be structurally guaranteed.
 
-The Enhanced Client's model is one annotated class per table, which fights a single-table design holding
-heterogeneous item types — each type needs its own `TableSchema` and manual key composition regardless —
-and Java records need hand-written builders for `@DynamoDbImmutable` anyway. A ~150-line explicit
-`Map<String, AttributeValue>` mapper gives exact control over key encoding and doubles as the schema
-contract.
+This matches the existing invariant that the runner reports the environment it *observed* via `--tag`, so
+a result's tags cannot disagree with its own `environment.json`.
 
-*Alternatives considered.* Enhanced Client with `@DynamoDbImmutable` was rejected because most of its
-convenience is lost in a single-table layout. Enhanced Client with mutable beans would additionally abandon
-the immutable-record convention used consistently across the entities package.
+Free-form tags fail silently on typos — `--tag jvm=21` returning nothing is indistinguishable from "no
+results". The mitigation is a known-tag-key vocabulary as constants in `baas-model`, written by the runner
+and validated by the CLI, with unknown keys permitted but warned about. This is finding **A3**'s lesson
+applied to tags.
 
-### A new shared module owns the stored shape
+`cpuModel` and `cpuArch` are kept separate because they answer different questions — the specific CPU
+versus ARM64-vs-x86 — and both are already captured in `environment.json`, so this is a copy rather than
+new observation work.
 
-`baas-model` holds the item shapes, key encoding, attribute-name constants, and the mapper, and both
-`benchmark-runner` and `baas-cli` depend on it. This is the structural fix for finding A3: an incompatible
-key-encoding change now breaks compilation instead of returning zero rows.
+### `branch` is a custom user tag, not a known key
 
-`JmhResult` and `Metric` stay in `benchmark-runner` as *parsing* types for JMH's JSON output and map into
-the stored shape — parsing an external format and defining our storage format are different jobs and
-should not share a class.
+The vocabulary covers dimensions the runner can *observe* on the instance or the CLI can derive
+unambiguously. `branch` is a workflow concept that only some callers have, so a user who wants
+branch-aware results passes `--tag branch=<name>` like any other custom dimension.
 
-*Alternatives considered.* Having `baas-cli` depend on `benchmark-runner` avoids a new module but couples
-the laptop-side tool to the EC2-side tool's full dependency tree and blurs a module boundary the project
-draws deliberately. Keeping duplicated constants leaves A3 open.
+**Consequence:** the documented `baas results` behaviour groups by `(benchmark, branch)`. With `branch`
+optional, grouping cannot assume it exists, so the grouping key becomes `(benchmark, <group-tag>)`
+defaulting to `branch`, and rows missing that tag group under a single untagged bucket rather than being
+dropped or erroring. `--living-branches` filters on the tag when present and is a no-op when absent.
 
-### Timestamps become fixed-width UTC ISO-8601 strings
+### DynamoDB holds the index; S3 holds the fidelity; the CLI can fetch a whole run
+
+The item carries what is needed to list, filter and locate. Everything else — the verbatim JMH result
+JSON, `environment.json`, logs, profiling artifacts — stays in S3, and this change adds the CLI capability
+to download a run's entire prefix. Shipping a thin item without that fetch would leave a promise the CLI
+could not keep. Uploading the verbatim JMH result JSON also closes the documented "measurements live only
+in MongoDB, there is no `result.json`" gap.
+
+### Analytics is deferred to an export bridge, not served by the key schema
+
+Of the 90 catalogued questions, 70 are computations over a selected set — pairwise comparison, regression
+detection, trend, ranking, comparability reasoning. None becomes cheaper by indexing, and serving them
+would need roughly eighteen filterable dimensions. Three model extensions were considered and deferred on
+that basis: **precomputed statistics** (`scoreError` already conveys spread for a table view, and
+`rawData`/`scorePercentiles` remain in the S3 result JSON), **`release` and `PR` provenance** (`PR` is a CI
+concept not sourceable from `baas run` on a laptop; `commit` is kept because `git rev-parse HEAD` is
+trivially available), and **JCStress per-test items** (`JCStressResult` names only non-passing tests —
+passing ones are counted, never named — so per-test granularity would cover failures only, and those
+result files are already in S3).
+
+### A low-level client with an explicit mapper, in a shared module
+
+The Enhanced Client's model is one annotated class per table and Java records need hand-written builders
+for `@DynamoDbImmutable` anyway. An explicit `Map<String, AttributeValue>` mapper gives exact control over
+key encoding and doubles as the schema contract. It lives in `baas-model` alongside the item shape, key
+encoding and tag vocabulary, so an incompatible change breaks compilation instead of returning zero rows.
+
+`baas-model` sits on `baas-cli`'s classpath and must therefore stay **Mongo-free**; the runner's Mongo
+adapter maps the same neutral shape independently. `JmhResult` and `Metric` stay in `benchmark-runner` as
+*parsing* types for JMH's JSON output — parsing an external format and defining our storage format are
+different jobs.
+
+### Timestamps are fixed-width UTC ISO-8601 strings
 
 `createdAt` is a `LocalDateTime` today, produced from `OffsetDateTime.now(ZoneOffset.UTC)` in one place and
-left implicit in another. Sort keys must sort chronologically as *strings*, so the stored form is a
+left implicit in another. Sort keys must sort chronologically *as strings*, so the stored form is a
 fixed-width UTC ISO-8601 instant. Variable-width or zone-ambiguous formatting would silently misorder
-results — the failure would look like missing data rather than a formatting bug.
+results, and the failure would look like missing data rather than a formatting bug.
 
 ### `upsert` is deleted
 
-The `DatabaseService.upsert` API — field-path filters and `set` operators — is called by none of the four
-subcommand services. Porting a Mongo-shaped update-operator surface to DynamoDB for zero callers is pure
-cost, and its field-path shape would leak Mongo semantics into a store that does not share them.
+`DatabaseService.upsert` — field-path filters and `set` operators — is called by none of the four
+subcommand services. Porting a Mongo-shaped update-operator surface for zero callers is pure cost, and its
+field-path shape would leak Mongo semantics into a port that must serve both adapters.
 
-### Negation is not indexable, so exclusion is a filter expression
+### Exclusion is a server-side filter; grouping is client-side
 
-`exclude_from_results=true` must be applied *negatively*, and no index answers "not tagged X". So
-`excludeFromResults` is projected onto index items and applied via `FilterExpression` server-side. Worth
-recording explicitly because it is the kind of constraint that gets discovered late and then papered over
-with a scan.
-
-### D1's grouping is client-side
-
-The exclusion filter is server-side; grouping by `(benchmark, branch)` and keeping the highest score are
-applied client-side over the returned rows, because DynamoDB performs no aggregation. At the row counts
-`baas results` deals with, pulling a bounded query result and reducing it locally is the correct trade
-rather than a limitation worked around.
+`exclude_from_results=true` must be applied *negatively*, and no index answers "not tagged X", so it is a
+`FilterExpression` on the projected attribute. Grouping and best-score selection are client-side because
+DynamoDB performs no aggregation. Recorded explicitly because it is the kind of constraint that gets
+discovered late and then papered over with a scan.
 
 ### Discarding results requires `--no-database`
 
-Today an empty connection string selects a no-op store, so a run reports success while the paid
-measurements are thrown away. Absence of configuration becomes a hard failure and discarding requires
-naming the intent.
+Today an empty connection string selects a no-op store, so a run reports success while paid measurements
+are thrown away. Absence of configuration becomes a hard failure and discarding requires naming the intent.
 
 ### The table is retained, and setup pre-checks for it
 
@@ -160,64 +203,77 @@ CloudFormation error that never names the culprit, so `SetupCommand`'s existing 
 
 ### Migration is a throwaway script
 
-`scripts/migrate-atlas-to-dynamodb` reads Atlas and writes result plus index items, idempotently and with
-a dry-run, then is deleted. This keeps `mongodb-driver-sync` out of the shipped CLI permanently.
-Acknowledged: nothing in CI exercises `scripts/`, so the script is protected only by its dry-run and by
-manual verification against row counts.
+`scripts/migrate-atlas-to-dynamodb` reads Atlas and writes result items, idempotently and with a dry-run,
+then is deleted. This keeps `mongodb-driver-sync` out of the shipped CLI permanently. Acknowledged:
+nothing in CI exercises `scripts/`, so the script is protected only by its dry-run and by manual
+verification against row counts.
 
 ## Risks / Trade-offs
 
+- **The working-set sweep is the load-bearing assumption** → At roughly 1 KB per item, 10k items is
+  ~10 MB and sub-second; 100k is ~100 MB and noticeably slow; past ~1M it fails. Count the Atlas rows
+  before implementing (tasks §1). Documented escape hatch: shard `pk` by year
+  (`RESULT#<project>#<yyyy>`), costing one query per year spanned.
+- **`baas run --tag` currently reaches nothing** → The entire tag-based query model depends on threading
+  `extraTags` through `UserDataScriptBuilder`. Verified as a blocking assumption before implementation,
+  and covered by a test asserting a user tag reaches the runner rather than only the instance — mirroring
+  the existing `passesEnvironmentTagsToTheRunnerNotJustToTheInstance`.
+- **Renaming a git repository splits history across partitions** → Accepted at current scale, since
+  `project` is derived from the repo name. Recoverable by re-writing keys; `--project` overrides.
 - **Item size is bounded by convention, not by construction** → `tags` and the reduced `secondaryMetrics`
-  are still unbounded in principle. Add an explicit size assertion in the mapper's tests and fail the
-  write loudly rather than truncating.
-- **High-cardinality tags cause useless write amplification** → A tag such as `options=<params>`, unique
-  per run, produces one index item per run in its own partition and can never be usefully queried. The
-  reserved tag-key set must exclude such keys from indexing; getting this list wrong costs writes, not
-  correctness.
-- **A very active branch concentrates writes on one partition key** → `TAG#branch#main` is a single
-  partition. Benchmark writes are small and infrequent relative to DynamoDB's per-partition limits, and
-  on-demand adaptive capacity absorbs the rest, but this is the first place to look if throttling ever
-  appears.
-- **The runner owns index consistency** → A partial batch failure could leave a result without its index
-  items. Retry with backoff, and treat ultimate failure as run failure so the discrepancy is visible
-  rather than silent. Deterministic keys make a re-import idempotent.
-- **Deleting a run requires deleting derived items** → No delete path exists today and none is added.
-  Documented as a constraint rather than solved speculatively.
-- **Regular-expression benchmark matching is lost** → Real capability reduction. Mitigated by exposing
-  `--tag`, which covers the "several related benchmarks" case better than a name pattern did, and by
-  failing with a message that names the supported forms rather than silently matching nothing.
+  are unbounded in principle. Assert size in the mapper's tests and fail the write loudly rather than
+  truncating.
+- **Two adapters mean two write paths to keep behaviourally aligned** → Mitigated by the port speaking
+  domain only, and by running the same store contract test against both adapters.
 - **Timestamp format changes are silent if wrong** → Assert lexicographic ordering equals chronological
-  ordering in a unit test over a set of instants spanning month and year boundaries.
+  ordering in a unit test over instants spanning month and year boundaries.
 - **Migration fidelity** → The Mongo `_id` is composite for JMH and a bare `requestId` for JCStress. The
-  script must derive both key forms and reproduce the index items a live write would have produced.
-  Verify by comparing row counts and spot-checking scores before decommissioning Atlas.
-- **Two breaking CLI changes land together** → `--mongo-uri` removal and the `--benchmark` semantics change
-  both break scripted use. Both are called out in the proposal's migration notes; at current scale the
+  script must derive both key forms. Verify by comparing row counts and spot-checking scores before
+  decommissioning Atlas.
+- **`--mongo-uri` removal breaks scripted use** → Called out in the migration notes; at current scale the
   affected surface is one operator.
 
 ## Migration Plan
 
-1. Ship the table, gateway endpoint, and IAM changes; deploy with `baas admin setup`. Atlas is untouched.
-2. Land `baas-model`, the store rewrite, and the query rewrite behind the new table, verified against
-   LocalStack.
-3. Run `scripts/migrate-atlas-to-dynamodb --dry-run`, review the reported counts, then run it for real.
-4. Verify: row counts match, `baas results --branch main` agrees with historical output modulo the
-   documented `tags.project` filter difference, and spot-checked scores are identical.
-5. Cut the runner over to DynamoDB and confirm a live run writes result and index items.
-6. Remove the Mongo dependency, the SSM parameter, `--mongo-uri`, and the Mongo test infrastructure.
-7. Decommission the Atlas cluster and delete the SSM parameter by hand.
-8. Delete the migration script.
+1. Fix the `--tag` threading and confirm a user tag reaches a stored result. Nothing else works without it.
+2. Ship the table, gateway endpoint and IAM changes; deploy with `baas admin setup`. Atlas is untouched.
+3. Land `baas-model`, the `ResultsStore` port, the DynamoDB adapter and the query rewrite, verified
+   against LocalStack. The Mongo adapter is refactored onto the port in the same step.
+4. Run `scripts/migrate-atlas-to-dynamodb --dry-run`, review the reported counts, then run it for real.
+5. Verify: row counts match, `baas results` agrees with historical output modulo the documented
+   `tags.project` filter difference, and spot-checked scores are identical.
+6. Cut the runner over to DynamoDB and confirm a live run writes its items.
+7. Remove `--mongo-uri`, the SSM parameter, and Mongo from `baas-cli` only.
+8. Decommission the Atlas cluster and delete the SSM parameter by hand.
+9. Delete the migration script.
 
-**Rollback:** until step 6, the Mongo code path is still present and the Atlas cluster still holds the
-data, so reverting the runner and CLI restores the previous behaviour. After step 6, rollback means
-restoring those commits; the DynamoDB table is retained regardless, so no measurement is lost either way.
+**Rollback:** until step 7 the Mongo path is still selectable and Atlas still holds the data, so reverting
+the runner and CLI restores previous behaviour. After step 7, rollback means restoring those commits; the
+DynamoDB table is retained regardless, so no measurement is lost either way.
+
+## Resolved Questions
+
+- **Which tag keys belong in a reserved, non-indexed set?** — Moot. There are no tag index items, so
+  high-cardinality keys such as `options` cost nothing beyond their own bytes. *Evidence:* the inverted
+  index was dropped.
+- **Should any `Scan` capability be retained for ad-hoc investigation?** — No. Every supported query is a
+  `Query` on the project partition or the `requestId` GSI. *Evidence:* `benchmark_overview.sh` and
+  `ResultsQueryService` between them use no pattern that a partition sweep does not cover.
+- **Does `baas results` need a `--since` bound?** — No. *Evidence:* neither the historical script nor the
+  current CLI has any time-based filter, ordering or limit; the month-partitioned time index in the
+  previous design served a query that has never existed.
+- **Field or tag for provenance?** — Tag, uniformly. *Evidence:* under client-side evaluation the boundary
+  makes no performance difference, so uniformity wins on schema discipline.
+- **Where does `project` come from?** — The git repo name, overridable with `--project`.
+- **Is the whole-run S3 download part of this change?** — Yes. It is the justification for a thin item.
 
 ## Open Questions
 
-- Which tag keys belong in the reserved, non-indexed set? `options` is the clear first entry given its
-  per-run cardinality. Decide from the tag keys actually present in the Atlas data during migration.
-- Should any `Scan` capability be retained for ad-hoc investigation, or should the absence of an index be a
-  hard "not supported"? Leaning toward no scan on the normal path, with unfiltered queries served by the
-  time index.
-- Does `baas results` need a `--since` bound? The time index makes it cheap, but no requirement asks for it
-  yet.
+- **How large is the Atlas dataset?** Blocking; see tasks §1. Determines whether the single-partition
+  sweep holds or the year-shard escape hatch is needed immediately.
+- **What `project` do migrated rows get?** Historical rows carry `project=lynx-journal` from the GHA path
+  and can key off it directly, but rows lacking the tag need a default decided during migration.
+- **Does the CLI need a memory bound on the sweep?** `--limit` bounds output, not rows read. Probably
+  unnecessary at current scale; revisit once the row count is known.
+- **What is the S3 fetch command's surface?** Whether it is a subcommand of `baas results`, a sibling of
+  `baas env diff`, or its own verb is a CLI-surface question to settle in the spec.
