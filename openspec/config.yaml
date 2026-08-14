@@ -1,20 +1,55 @@
 schema: superspec
 
-# Project context (optional)
-# This is shown to AI when creating artifacts.
-# Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+# Injected into every artifact's instructions (50KB cap; larger is silently dropped).
+# Deliberately a pointer, not a copy: CLAUDE.md is the single source for invariants, and a
+# second copy here is the one nobody would re-read when an invariant changes.
+context: |
+  BaaS runs JMH/JCStress benchmarks on throwaway EC2 instances. The product is a *comparison*
+  between measurements, so anything that changes the runner environment can silently invalidate
+  historical results — that risk outranks elegance in every design decision here.
 
-# Per-artifact rules (optional)
-# Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+  Read before writing any artifact:
+  - CLAUDE.md — *Invariants* (breaking one costs money or loses data) and *Accepted risks*
+    (settled decisions; do not re-raise them as problems).
+  - docs/review/*.md — open findings, cited by ID (A3, S8, D1…).
+
+  Real AWS spend per run. The project's standing cost was zero until the runner AMI snapshot
+  (~$0.20/mo), so any new standing cost is a change in kind and must be argued, not absorbed.
+
+# Additive to the schema's own guidance. Keys must be SuperSpec artifact IDs:
+# brainstorm, proposal, design, specs, tasks, plan, apply, verify, finalize.
+rules:
+  brainstorm:
+    - Check CLAUDE.md's Accepted risks table before proposing an approach. Those are decided;
+      reopening one needs new information that changes the trade-off, not a fresh opinion.
+    - For anything touching the runner, the image, or user-data, state explicitly what the change
+      does to comparability with existing results.
+
+  proposal:
+    - Structure as "## Why", "## What Changes", "## Capabilities" (New/Modified), "## Impact".
+    - Mark breaking changes **BREAKING** inline in What Changes.
+    - Impact must include a Cost line whenever AWS resources change, and must name what is
+      deliberately NOT changed — especially invariants preserved.
+    - Cite the docs/review finding IDs the change closes.
+
+  design:
+    - Phrase each "### " heading under Decisions as the decision asserted, not the topic.
+    - Record rejected alternatives with the reason they lost.
+    - Move answered questions from Open Questions to Resolved Questions with the evidence.
+
+  specs:
+    - Capability slugs must match an existing openspec/specs/ directory, or appear under New
+      Capabilities in the proposal.
+
+  tasks:
+    - 'Section 1 is always "Verify blocking assumptions": anything that would invalidate the
+      design gets resolved before implementation tasks.'
+    - The final section is end-to-end verification, marked explicitly manual for anything on the
+      `baas run` path — no automated test covers it.
+    - Include tasks to update CLAUDE.md when an invariant changes, and the docs/review status
+      table when a finding is closed.
+
+  verify:
+    - For measurement-affecting changes, compare a benchmark score against a pre-change run and
+      investigate any difference rather than accepting it. Note run-to-run variance is large
+      (CI history spans 10.0M-29.6M ops/s on one benchmark), so state what the spread was.
