@@ -27,6 +27,7 @@ buildNumber.properties
 ### Claude Code ###
 # Shared: .claude/skills, .claude/commands. Personal, never shared:
 .claude/settings.local.json
+.claude/worktrees/
 
 #Others
 *.pem
