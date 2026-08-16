@@ -281,6 +281,51 @@ class UserDataScriptBuilderTest {
             .contains("\"instanceType\": \"${INSTANCE_TYPE}\"");
     }
 
+    // ─── Observed JDK/CPU tags (Task 4) ──────────────────────────────────────────
+    //
+    // These three tags are captured as shell variables ON the instance, the same rule that
+    // already governs imageVersion/instanceType — a result's tags must never be able to disagree
+    // with that same run's environment.json. `jdk` is derived from JVM_VERSION_RAW, the SAME
+    // single `java -version` observation the manifest's escaped jvmVersion is built from, not a
+    // second independent call.
+
+    @Test
+    void forwardsObservedEnvironmentTagsToTheRunner() {
+        String script = script();
+
+        assertThat(script)
+            .contains("--tag \"jdk=${JDK_VERSION}\"")
+            .contains("--tag \"cpuModel=${CPU_MODEL_RAW}\"")
+            .contains("--tag \"cpuArch=${CPU_ARCH}\"");
+    }
+
+    @Test
+    void observedTagsAreCapturedBeforeTheyAreUsed() {
+        String script = script();
+
+        assertThat(script.indexOf("JDK_VERSION=$("))
+            .as("jdk is derived from the raw JVM version observation, not a second java -version call")
+            .isGreaterThan(script.indexOf("JVM_VERSION_RAW=$("));
+        assertThat(script.indexOf("--tag \"jdk="))
+            .isGreaterThan(script.indexOf("JDK_VERSION=$("));
+        assertThat(script.indexOf("--tag \"cpuArch="))
+            .isGreaterThan(script.indexOf("CPU_ARCH=$("));
+    }
+
+    @Test
+    void manifestCarriesCpuArchSoTagsCannotDisagreeWithIt() {
+        String script = script();
+
+        assertThat(script)
+            .as("a tag with no manifest counterpart breaks the observed-values invariant")
+            .contains("\"cpuArch\": \"${CPU_ARCH}\"");
+    }
+
+    @Test
+    void manifestSchemaVersionIsBumpedForTheNewField() {
+        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION).isEqualTo(2);
+    }
+
     @Test
     void capturesTheFullPackageListSeparately() {
         assertThat(script())

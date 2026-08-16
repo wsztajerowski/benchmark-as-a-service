@@ -8,7 +8,7 @@ import java.util.Map;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 1;
+    public static final int MANIFEST_SCHEMA_VERSION = 2;
 
     // Static script body — variables are prepended by build()
     private static final String SCRIPT_BODY = """
@@ -56,7 +56,11 @@ public class UserDataScriptBuilder {
         INSTANCE_TYPE=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" \\
           http://169.254.169.254/latest/meta-data/instance-type)
         IMAGE_VERSION_ACTUAL=$(cat /etc/baas-image-version 2>/dev/null || echo "${IMAGE_VERSION}")
-        CPU_MODEL=$(json_escape "$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')")
+        CPU_MODEL_RAW=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ *//')
+        CPU_MODEL=$(json_escape "$CPU_MODEL_RAW")
+        # uname -m cannot emit a double quote or backslash, so — unlike every other value
+        # captured here — this one needs no escaping before it reaches the manifest.
+        CPU_ARCH=$(uname -m)
         CPU_CORES=$(nproc)
         CPU_THREADS_PER_CORE=$(lscpu_field "Thread")
         CPU_MAX_MHZ=$(lscpu_field "CPU max MHz")
@@ -64,7 +68,11 @@ public class UserDataScriptBuilder {
         SWAP_TOTAL_KB=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
         OS_VERSION=$(json_escape "$(. /etc/os-release && echo "$PRETTY_NAME")")
         KERNEL_RELEASE=$(uname -r)
-        JVM_VERSION=$(json_escape "$(java -version 2>&1 | head -1)")
+        JVM_VERSION_RAW=$(java -version 2>&1 | head -1)
+        JVM_VERSION=$(json_escape "$JVM_VERSION_RAW")
+        # jdk tag: same observation as JVM_VERSION_RAW above, projected to the bare version
+        # number (e.g. "25") instead of the full escaped line — not a second `java -version`.
+        JDK_VERSION=$(printf '%s' "$JVM_VERSION_RAW" | sed -n 's/.*"\\(.*\\)".*/\\1/p')
         PERF_VERSION=$(json_escape "$(perf --version 2>/dev/null | head -1 || echo absent)")
         AWS_CLI_VERSION=$(json_escape "$(aws --version 2>&1 | head -1)")
         ASYNC_PROFILER_VERSION=$(json_escape "$(/app/async-profiler/bin/asprof --version 2>&1 | head -1 || echo absent)")
@@ -80,6 +88,7 @@ public class UserDataScriptBuilder {
           "instanceType": "${INSTANCE_TYPE}",
           "region": "${AWS_REGION}",
           "cpuModel": "${CPU_MODEL}",
+          "cpuArch": "${CPU_ARCH}",
           "cpuCores": "${CPU_CORES}",
           "cpuThreadsPerCore": "${CPU_THREADS_PER_CORE}",
           "cpuMaxMhz": "${CPU_MAX_MHZ}",
@@ -142,6 +151,9 @@ public class UserDataScriptBuilder {
           --benchmark-path /app/benchmark-under-test.jar \\
           --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
           --tag "instanceType=${INSTANCE_TYPE}" \\
+          --tag "jdk=${JDK_VERSION}" \\
+          --tag "cpuModel=${CPU_MODEL_RAW}" \\
+          --tag "cpuArch=${CPU_ARCH}" \\
           "${RUNNER_TAGS_ARRAY[@]}" \\
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
