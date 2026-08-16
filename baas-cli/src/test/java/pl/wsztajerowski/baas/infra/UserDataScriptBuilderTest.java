@@ -396,4 +396,13 @@ class UserDataScriptBuilderTest {
     void rendersZeroArrayElementsWhenNoTagsAreSupplied() throws Exception {
         assertThat(evaluateRunnerTagsArray(Map.of())).isEmpty();
     }
+
+    @Test
+    void callerTagsPrecedeBenchmarkParameters() {
+        String script = script(Map.of("project", "lynx-journal"));
+
+        assertThat(script.indexOf("RUNNER_TAGS_ARRAY[@]"))
+            .as("a tag rendered after the params array would be parsed as a JMH argument")
+            .isLessThan(script.indexOf("BENCHMARK_PARAMS_ARRAY[@]"));
+    }
 }

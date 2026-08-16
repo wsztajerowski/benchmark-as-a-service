@@ -92,6 +92,9 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--branch", description = "Branch label for result path (defaults to current git branch).")
     String branch;
 
+    @Option(names = "--project", description = "Project name for the results partition (defaults to the git repository name).")
+    String project;
+
     // No --image-version: exactly one image is maintained, so there is nothing to select between.
     @Option(names = "--ami-id", description = "Launch from this AMI instead of the published runner image.")
     String amiIdOverride;
@@ -133,14 +136,20 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
+        // Resolved before any AWS call — a Maven build and an S3 upload both come later in this
+        // method, and neither should run for a request that is going to fail anyway because it
+        // can't be attributed to a project. resolveProject() throws IllegalStateException with a
+        // message naming --project when this isn't a git repository and none was passed.
+        String resolvedProject = resolveProject();
+
         BaasConfig config = configService.load();
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
         int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
             : (timeoutSeconds != null ? timeoutSeconds + 300 : config.getEc2().getWallClockHardKillSeconds());
         String resolvedBranch = branch != null ? branch : currentGitBranch();
-        logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, params={}",
-            resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, benchmarkParams);
+        logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, project={}, params={}",
+            resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, resolvedProject, benchmarkParams);
 
         operatorCredentialsWarning(config).ifPresent(logger::warn);
         var factory = new AwsClientFactory(
@@ -209,11 +218,12 @@ public class RunCommand implements Callable<Integer> {
         }
 
         // 6. Build user-data
+        Map<String, String> runnerTags = buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit());
         String userData = new UserDataScriptBuilder().build(
             config.getAws().getRegion(), config.getAws().getBucket(), config.getPrefix(),
             benchmarkType, requestId, resultPath, resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            benchmarkParams, Map.of());
+            benchmarkParams, runnerTags);
         // The script is what actually decides whether a run works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
@@ -364,5 +374,70 @@ public class RunCommand implements Callable<Integer> {
         } catch (Exception e) {
             return "unknown";
         }
+    }
+
+    /** Split out from the git call so the parsing is unit-testable without a repository. */
+    static String projectFromToplevel(String toplevel) {
+        if (toplevel == null || toplevel.isBlank()) return null;
+        String trimmed = toplevel.strip();
+        while (trimmed.endsWith("/")) trimmed = trimmed.substring(0, trimmed.length() - 1);
+        int slash = trimmed.lastIndexOf('/');
+        String name = slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
+        return name.isEmpty() ? null : name;
+    }
+
+    private String gitOutput(String... args) {
+        return gitOutput(Path.of(".").toAbsolutePath().normalize(), args);
+    }
+
+    /**
+     * Package-private overload taking an explicit working directory. Real callers always go
+     * through the no-arg overload above; this one exists so
+     * {@link #resolveProject(Path)}'s "not a git repository" throw can be exercised by a real
+     * git invocation in a test, without needing to leave this repository (which is always a git
+     * repo at test time).
+     */
+    String gitOutput(Path workingDir, String... args) {
+        try {
+            var pb = new ProcessBuilder(args).redirectErrorStream(true).directory(workingDir.toFile());
+            var proc = pb.start();
+            String out = new String(proc.getInputStream().readAllBytes()).trim();
+            return proc.waitFor() == 0 ? out : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String resolveProject() {
+        return resolveProject(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /** Package-private overload for the same testability reason as {@link #gitOutput(Path, String...)}. */
+    String resolveProject(Path workingDir) {
+        if (project != null && !project.isBlank()) return project;
+        String derived = projectFromToplevel(gitOutput(workingDir, "git", "rev-parse", "--show-toplevel"));
+        if (derived == null) {
+            throw new IllegalStateException(
+                "Cannot determine the project name: not inside a git repository. Pass --project <name>.");
+        }
+        return derived;
+    }
+
+    private String currentGitCommit() {
+        String commit = gitOutput("git", "rev-parse", "HEAD");
+        return commit != null ? commit : "unknown";
+    }
+
+    /**
+     * Extracted from call() so it can be tested without AWS. Caller tags come first so a
+     * deliberate --tag project=... still wins over the derived value.
+     */
+    Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit) {
+        Map<String, String> tags = new LinkedHashMap<>();
+        tags.put("project", project);
+        tags.put("commit", commit);
+        tags.put("type", benchmarkType);
+        tags.putAll(extraTags);
+        return tags;
     }
 }
