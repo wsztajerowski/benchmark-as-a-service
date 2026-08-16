@@ -86,7 +86,10 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--max-wall-clock", description = "Absolute wall-clock cap in seconds.")
     Integer wallClockSeconds;
 
-    @Option(names = "--tag", description = "Extra EC2 instance tags (key=value).")
+    @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
+        + "the EC2 instance. Rejected for machine-observed keys (imageVersion, instanceType, jdk, cpuModel, "
+        + "cpuArch, type) — those are captured on the instance so a result's tags can't disagree with its "
+        + "own environment.json.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
     @Option(names = "--branch", description = "Branch label for result path (defaults to current git branch).")
@@ -429,10 +432,35 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
+     * Tag keys populated from values observed on the instance, plus {@code type} — derived from
+     * the executed subcommand, not from anything measured, but the same defect class: a caller
+     * override would make a JMH run report {@code type=jcstress} while the manifest and the
+     * actual subcommand disagree. A result's tags must never be able to disagree with that same
+     * run's {@code environment.json} (see {@code UserDataScriptBuilder}'s {@code --tag} block),
+     * so {@link #buildRunnerTags} rejects a caller {@code --tag} for any of these outright rather
+     * than silently dropping or overriding it. {@code project} and {@code commit} are
+     * deliberately NOT in this set — design.md specifies the caller wins for those.
+     */
+    static final List<String> RESERVED_TAG_KEYS =
+        List.of("imageVersion", "instanceType", "jdk", "cpuModel", "cpuArch", "type");
+
+    /**
      * Extracted from call() so it can be tested without AWS. Caller tags come first so a
-     * deliberate --tag project=... still wins over the derived value.
+     * deliberate --tag project=... still wins over the derived value. A caller tag colliding with
+     * a {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or
+     * allowed to override — a silently discarded tag is its own surprise.
      */
     Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit) {
+        List<String> collided = RESERVED_TAG_KEYS.stream().filter(extraTags::containsKey).toList();
+        if (!collided.isEmpty()) {
+            throw new IllegalArgumentException(
+                "--tag " + String.join(", ", collided) + " cannot be set from the command line: "
+                    + (collided.size() == 1 ? "it is" : "they are")
+                    + " observed on the instance (or derived from the benchmark type), and a "
+                    + "caller override would let a result's tags disagree with its own "
+                    + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
+                    + ". --project and --commit remain overridable.");
+        }
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put("project", project);
         tags.put("commit", commit);

@@ -136,25 +136,33 @@ public class UserDataScriptBuilder {
         # eval expands BENCHMARK_PARAMETERS (a double-quoted shell string) into an array
         # so params containing spaces are passed as single tokens to java.
         eval "BENCHMARK_PARAMS_ARRAY=(${BENCHMARK_PARAMETERS})"
-        # Caller-supplied tags (project, commit, and any --tag the operator passed). Same
-        # export-then-eval pattern as BENCHMARK_PARAMETERS, so values containing spaces stay
-        # single argv tokens. Instance-observed tags are appended separately below.
+        # Caller-supplied tags (project, commit, and any --tag the operator passed).
+        # RunCommand.buildRunnerTags already rejects a caller tag whose key is
+        # machine-observed (imageVersion, instanceType, jdk, cpuModel, cpuArch, type), so
+        # this array should never actually collide with the five observed --tag lines
+        # below. Same export-then-eval pattern as BENCHMARK_PARAMETERS, so values
+        # containing spaces stay single argv tokens.
         eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"
-        # Tier 1 of the environment comparison: these two reach benchmarkMetadata.tags, so
-        # `baas results` can flag a group whose rows sat on different environments without
-        # fetching anything from S3. They are the values OBSERVED above, not the ones the CLI
-        # passed down, so a result's tags cannot disagree with its own environment.json.
+        # Tier 1 of the environment comparison: the five --tag lines below reach
+        # benchmarkMetadata.tags, so `baas results` can flag a group whose rows sat on
+        # different environments without fetching anything from S3. They are the values
+        # OBSERVED above, not the ones the CLI passed down, so a result's tags cannot
+        # disagree with its own environment.json. They are listed AFTER the caller-tags
+        # expansion above, not before, as defence in depth: the runner parses --tag into
+        # a picocli Map option, which is LAST-WINS on a duplicate key, so this order keeps
+        # the observed value in charge even if a reserved key ever slips past the
+        # CLI-side guard above.
         timeout "${BENCHMARK_TIMEOUT}" java -jar /app/benchmark-runner.jar "${BENCHMARK_TYPE}" \\
           --request-id     "${REQUEST_ID}" \\
           --result-path    "${RESULT_PATH}" \\
           --s3-bucket      "${S3_BUCKET}" \\
           --benchmark-path /app/benchmark-under-test.jar \\
+          "${RUNNER_TAGS_ARRAY[@]}" \\
           --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
           --tag "instanceType=${INSTANCE_TYPE}" \\
           --tag "jdk=${JDK_VERSION}" \\
           --tag "cpuModel=${CPU_MODEL_RAW}" \\
           --tag "cpuArch=${CPU_ARCH}" \\
-          "${RUNNER_TAGS_ARRAY[@]}" \\
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 

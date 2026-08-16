@@ -105,13 +105,13 @@
 
 ## 2. Tag pass-through (prerequisite — nothing downstream works without it)
 
-- [ ] 2.1 Thread `RunCommand`'s `extraTags` into `UserDataScriptBuilder` and emit one `--tag` argument per
+- [x] 2.1 Thread `RunCommand`'s `extraTags` into `UserDataScriptBuilder` and emit one `--tag` argument per
   entry in the runner invocation
-- [ ] 2.2 Add `--project` to `baas run`, defaulting to the git repository name, and forward it as a tag
-- [ ] 2.3 Derive `commit` from `git rev-parse HEAD` and forward it as a tag
-- [ ] 2.4 Capture JDK version, CPU model and CPU architecture on the instance and forward them as tags,
+- [x] 2.2 Add `--project` to `baas run`, defaulting to the git repository name, and forward it as a tag
+- [x] 2.3 Derive `commit` from `git rev-parse HEAD` and forward it as a tag
+- [x] 2.4 Capture JDK version, CPU model and CPU architecture on the instance and forward them as tags,
   taking the values from the same shell variables the environment manifest uses
-- [ ] 2.5 Extend the existing `passesEnvironmentTagsToTheRunnerNotJustToTheInstance` test to cover user
+- [x] 2.5 Extend the existing `passesEnvironmentTagsToTheRunnerNotJustToTheInstance` test to cover user
   tags, `project` and `commit`
 - [ ] 2.6 Verify against a real run that a user tag reaches the stored result, not only the instance
 

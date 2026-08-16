@@ -3,10 +3,12 @@ package pl.wsztajerowski.baas.infra;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import picocli.CommandLine;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
@@ -230,7 +232,7 @@ class UserDataScriptBuilderTest {
             .doesNotContain("$(");
 
         String resolved = manifest
-            .replace("${MANIFEST_SCHEMA_VERSION}", "1")
+            .replace("${MANIFEST_SCHEMA_VERSION}", String.valueOf(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION))
             .replaceAll("\\$\\{[A-Z_]+}", "sample-value");
 
         assertThatCode(() -> {
@@ -310,6 +312,8 @@ class UserDataScriptBuilderTest {
             .isGreaterThan(script.indexOf("JDK_VERSION=$("));
         assertThat(script.indexOf("--tag \"cpuArch="))
             .isGreaterThan(script.indexOf("CPU_ARCH=$("));
+        assertThat(script.indexOf("--tag \"cpuModel="))
+            .isGreaterThan(script.indexOf("CPU_MODEL_RAW=$("));
     }
 
     @Test
@@ -449,5 +453,65 @@ class UserDataScriptBuilderTest {
         assertThat(script.indexOf("RUNNER_TAGS_ARRAY[@]"))
             .as("a tag rendered after the params array would be parsed as a JMH argument")
             .isLessThan(script.indexOf("BENCHMARK_PARAMS_ARRAY[@]"));
+    }
+
+    // ─── Final-review I1: defence in depth against a colliding caller tag ────────
+    //
+    // RunCommand.buildRunnerTags now rejects a caller --tag whose key is machine-observed before
+    // the script is ever built. The test below proves a SECOND, independent line of defence: even
+    // if a reserved key ever slipped past that guard, SCRIPT_BODY's own ordering must still make
+    // the observed value win. The runner parses --tag into a picocli Map<String,String> option
+    // (ApiCommonSharedOptions#tags) and duplicate keys are LAST-WINS — verified empirically against
+    // picocli 4.7.7 — so this test reproduces the exact argv picocli would see for the runner
+    // invocation (in the SAME textual order SCRIPT_BODY emits it) and feeds it through picocli
+    // itself, rather than merely asserting on string positions.
+
+    @CommandLine.Command
+    static class TagMapProbe {
+        @CommandLine.Option(names = "--tag")
+        Map<String, String> tags;
+    }
+
+    @Test
+    void observedTagValueWinsOverACollidingCallerTagUnderPicocliParsing() throws Exception {
+        String script = script(Map.of("jdk", "attacker-supplied"));
+
+        assertThat(script)
+            .as("the caller tag must actually be rendered into RUNNER_TAGS")
+            .contains("--tag \"jdk=attacker-supplied\"");
+
+        String invocation = script.substring(
+            script.indexOf("java -jar /app/benchmark-runner.jar"),
+            script.indexOf("EXIT_CODE=$?"));
+
+        // "${RUNNER_TAGS_ARRAY[@]}" expands to the caller's --tag args at THIS position in the
+        // invocation; only its position relative to the observed jdk tag line matters, since the
+        // array's own content (the literal caller value) lives in the earlier `export
+        // RUNNER_TAGS=...` line, asserted above.
+        int callerArrayIndex = invocation.indexOf("RUNNER_TAGS_ARRAY[@]");
+        int observedTagIndex = invocation.indexOf("--tag \"jdk=${JDK_VERSION}\"");
+        assertThat(callerArrayIndex).as("caller tags array must be expanded in the invocation").isNotNegative();
+        assertThat(observedTagIndex).as("observed jdk tag must be rendered in the invocation").isNotNegative();
+
+        // The argv order picocli would actually see is purely a function of SCRIPT_BODY's static
+        // text layout — bash array/literal expansion does not reorder arguments — so reproducing
+        // that textual order with concrete values reproduces picocli's real parsing outcome.
+        List<String> argv = new ArrayList<>();
+        if (callerArrayIndex < observedTagIndex) {
+            argv.add("--tag"); argv.add("jdk=attacker-supplied");
+            argv.add("--tag"); argv.add("jdk=OBSERVED_ON_INSTANCE");
+        } else {
+            argv.add("--tag"); argv.add("jdk=OBSERVED_ON_INSTANCE");
+            argv.add("--tag"); argv.add("jdk=attacker-supplied");
+        }
+
+        var probe = new TagMapProbe();
+        new CommandLine(probe).parseArgs(argv.toArray(new String[0]));
+
+        assertThat(probe.tags)
+            .as("SCRIPT_BODY must render \"${RUNNER_TAGS_ARRAY[@]}\" BEFORE the five observed "
+                + "--tag lines, so picocli's last-wins Map parsing keeps the observed value even "
+                + "if a reserved key ever slips past RunCommand.buildRunnerTags's own guard")
+            .containsEntry("jdk", "OBSERVED_ON_INSTANCE");
     }
 }
