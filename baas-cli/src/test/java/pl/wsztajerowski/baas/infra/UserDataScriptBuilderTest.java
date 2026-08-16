@@ -2,16 +2,23 @@ package pl.wsztajerowski.baas.infra;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
 class UserDataScriptBuilderTest {
+
+    @TempDir
+    Path tempDir;
 
     private String script() {
         return script(Map.of());
@@ -24,6 +31,37 @@ class UserDataScriptBuilderTest {
             "1.0.0", "ami-0123456789abcdef0", null, List.of("MyBenchmark", "-f", "1"),
             runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Actually runs the generated {@code export RUNNER_TAGS=...} line through bash, then the
+     * script's own {@code eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"} line — the exact two-parse
+     * sequence the real user-data script performs — and returns the resulting array elements.
+     *
+     * A substring check on the rendered script text cannot catch either of the round-1 defects:
+     * the export line is always "correct" by construction (it's just Java string concatenation),
+     * and the bug only exists in what bash's SECOND parse (the eval) does with that text. Only
+     * executing it proves the fix.
+     */
+    private List<String> evaluateRunnerTagsArray(Map<String, String> runnerTags) throws Exception {
+        String script = script(runnerTags);
+        String exportLine = script.lines()
+            .filter(l -> l.startsWith("export RUNNER_TAGS="))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no RUNNER_TAGS export line in generated script"));
+
+        String harness = exportLine + "\n"
+            + "eval \"RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})\"\n"
+            + "for element in \"${RUNNER_TAGS_ARRAY[@]}\"; do printf '%s\\n' \"$element\"; done\n";
+
+        Process process = new ProcessBuilder("bash", "-c", harness).start();
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        String stderr = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8);
+        boolean finished = process.waitFor(10, TimeUnit.SECONDS);
+        assertThat(finished).as("bash harness must not hang").isTrue();
+        assertThat(process.exitValue()).as("bash harness stderr: " + stderr).isZero();
+
+        return stdout.lines().toList();
     }
 
     @Test
@@ -285,5 +323,77 @@ class UserDataScriptBuilderTest {
         assertThat(script)
             .as("the export is single-quoted, so an embedded quote must be escaped")
             .contains("--tag \"note=it'\\''s fine\"");
+    }
+
+    // ─── Fix round 1: a tag value is DATA, never re-parsed as shell ──────────────
+    //
+    // RUNNER_TAGS is exported once (parse 1: bash's own single-quote handling) and then handed to
+    // `eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"` (parse 2: eval re-parses the expanded text as
+    // shell source). A substring check on the rendered script text cannot see what parse 2 does —
+    // the export line is "correct" by construction regardless of what eval later makes of it. The
+    // tests below actually run both parses through bash and assert on the resulting array.
+
+    /**
+     * CRITICAL (round-1 finding 1): an unescaped {@code $(...)} inside a tag value used to
+     * execute during {@code eval}, with RunnerRole's IAM permissions — including SSM read of the
+     * MongoDB connection string, a permission the operator policy deliberately withholds. A
+     * caller-controlled tag value must never be able to run anything.
+     */
+    @Test
+    void doesNotExecuteCommandSubstitutionOrExpansionInTagValues() throws Exception {
+        Path marker = tempDir.resolve("PWNED");
+        String payload = "x$(touch " + marker + ")y `id` ${HOME}/z";
+
+        List<String> elements = evaluateRunnerTagsArray(Map.of("note", payload));
+
+        assertThat(Files.exists(marker))
+            .as("a tag value must never be re-parsed as shell — command substitution must not run")
+            .isFalse();
+        assertThat(elements)
+            .as("$(...), backticks and ${...} must survive as literal, unexpanded text")
+            .containsExactly("--tag", "note=" + payload);
+    }
+
+    /**
+     * Round-1 finding 2: a double quote in a tag value was silently stripped by eval's second
+     * parse instead of reaching {@code benchmarkMetadata.tags} intact.
+     */
+    @Test
+    void preservesDoubleQuotesInTagValues() throws Exception {
+        List<String> elements = evaluateRunnerTagsArray(Map.of("note", "say \"hi\""));
+
+        assertThat(elements)
+            .as("a double quote in a tag value must reach the runner unstripped")
+            .containsExactly("--tag", "note=say \"hi\"");
+    }
+
+    @Test
+    void preservesBackslashesInTagValues() throws Exception {
+        List<String> elements = evaluateRunnerTagsArray(Map.of("path", "C:\\temp\\run"));
+
+        assertThat(elements)
+            .containsExactly("--tag", "path=C:\\temp\\run");
+    }
+
+    @Test
+    void preservesSpacesAsASingleArgvTokenForTagValues() throws Exception {
+        List<String> elements = evaluateRunnerTagsArray(Map.of("experiment", "gc tuning"));
+
+        assertThat(elements)
+            .as("a value containing a space must still be exactly one argv token")
+            .containsExactly("--tag", "experiment=gc tuning");
+    }
+
+    @Test
+    void preservesSingleQuotesAsLiteralTextInTagValuesWhenActuallyEvaluated() throws Exception {
+        List<String> elements = evaluateRunnerTagsArray(Map.of("note", "it's fine"));
+
+        assertThat(elements)
+            .containsExactly("--tag", "note=it's fine");
+    }
+
+    @Test
+    void rendersZeroArrayElementsWhenNoTagsAreSupplied() throws Exception {
+        assertThat(evaluateRunnerTagsArray(Map.of())).isEmpty();
     }
 }

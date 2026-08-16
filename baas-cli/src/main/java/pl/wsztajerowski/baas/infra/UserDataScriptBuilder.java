@@ -169,8 +169,18 @@ public class UserDataScriptBuilder {
             .map(p -> p.contains(" ") ? "\"" + p + "\"" : p)
             .toList());
 
+        // Each --tag "k=v" segment is re-parsed by the script's own
+        // `eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"` (see SCRIPT_BODY) — a SECOND shell parse,
+        // distinct from the export-line parse the outer single-quote escaping below protects.
+        // Inside that second parse, k/v sit in a double-quoted segment, where \, ", $ and ` are
+        // still live metacharacters (double quotes suppress word-splitting and globbing, but NOT
+        // command/variable substitution). An unescaped $(...) or ` there executes with RunnerRole's
+        // IAM permissions — including the SSM read the operator policy deliberately withholds —
+        // so every occurrence of those four characters must be backslash-escaped first, the same
+        // way json_escape protects values destined for the double-quoted JSON manifest below.
         String tagArgs = runnerTags.entrySet().stream()
-            .map(e -> "--tag \"" + e.getKey() + "=" + e.getValue() + "\"")
+            .map(e -> "--tag \"" + escapeForEvaledDoubleQuote(e.getKey()) + "="
+                + escapeForEvaledDoubleQuote(e.getValue()) + "\"")
             .collect(java.util.stream.Collectors.joining(" "));
 
         String script = "#!/bin/bash\n" +
@@ -199,5 +209,26 @@ public class UserDataScriptBuilder {
 
     private static String nullToEmpty(String value) {
         return value != null ? value : "";
+    }
+
+    /**
+     * Escapes a caller-supplied tag key/value so it survives, as literal text, the SECOND shell
+     * parse performed by {@code eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"} in SCRIPT_BODY. That
+     * eval re-parses the segment as shell source, where the value sits inside a double-quoted
+     * {@code "k=v"} token; \, ", $ and ` are the characters double quotes do NOT neutralize
+     * (only word-splitting and globbing are suppressed), so each occurrence is backslash-escaped
+     * — turning {@code $(cmd)}, {@code `cmd`} and {@code ${var}} into inert text instead of a
+     * command/variable substitution, and letting a literal " or \\ round-trip unmolested.
+     */
+    private static String escapeForEvaledDoubleQuote(String value) {
+        StringBuilder escaped = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\\' || c == '"' || c == '$' || c == '`') {
+                escaped.append('\\');
+            }
+            escaped.append(c);
+        }
+        return escaped.toString();
     }
 }
