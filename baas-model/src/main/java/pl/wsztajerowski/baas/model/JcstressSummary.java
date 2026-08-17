@@ -16,8 +16,8 @@ public record JcstressSummary(
     Map<String, String> interesting
 ) {
     public JcstressSummary {
-        failed = Map.copyOf(failed);
-        errors = Map.copyOf(errors);
-        interesting = Map.copyOf(interesting);
+        failed = failed == null ? Map.of() : Map.copyOf(failed);
+        errors = errors == null ? Map.of() : Map.copyOf(errors);
+        interesting = interesting == null ? Map.of() : Map.copyOf(interesting);
     }
 }
