@@ -45,6 +45,7 @@
                                     <excludes>
                                         <exclude>org.mongodb:*</exclude>
                                         <exclude>dev.morphia:*</exclude>
+                                        <exclude>dev.morphia.morphia:*</exclude>
                                     </excludes>
                                     <message>baas-model is on baas-cli's classpath and must stay Mongo-free (design.md non-goal).</message>
                                 </bannedDependencies>
