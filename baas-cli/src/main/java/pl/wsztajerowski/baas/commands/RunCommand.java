@@ -16,6 +16,7 @@ import pl.wsztajerowski.baas.infra.RunnerImage;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
+import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.io.IOException;
@@ -440,9 +441,10 @@ public class RunCommand implements Callable<Integer> {
      * so {@link #buildRunnerTags} rejects a caller {@code --tag} for any of these outright rather
      * than silently dropping or overriding it. {@code project} and {@code commit} are
      * deliberately NOT in this set — design.md specifies the caller wins for those.
+     *
+     * <p>Defined once in baas-model so the CLI and the runner cannot drift apart.
      */
-    static final List<String> RESERVED_TAG_KEYS =
-        List.of("imageVersion", "instanceType", "jdk", "cpuModel", "cpuArch", "type");
+    static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
 
     /**
      * Extracted from call() so it can be tested without AWS. Caller tags come first so a

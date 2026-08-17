@@ -16,6 +16,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>pl.wsztajerowski</groupId>
+            <artifactId>baas-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>ec2</artifactId>
         </dependency>
