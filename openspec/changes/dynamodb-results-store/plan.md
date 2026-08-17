@@ -101,6 +101,8 @@ In `pom.xml`, replace the `<modules>` block:
 
 The enforcer rule is the mechanical guarantee that this module never gains a Mongo dependency — a comment would not survive a careless `mvn dependency` addition.
 
+**Both Morphia groupIds are listed deliberately.** This repo uses `dev.morphia.morphia:morphia-core` (see `benchmark-runner/pom.xml:32`), and `bannedDependencies` excludes do *not* prefix-match across groupId segments — `dev.morphia:*` alone would silently fail to match the coordinate actually in use, giving a rule that looks protective and is not.
+
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
@@ -149,6 +151,7 @@ The enforcer rule is the mechanical guarantee that this module never gains a Mon
                                     <excludes>
                                         <exclude>org.mongodb:*</exclude>
                                         <exclude>dev.morphia:*</exclude>
+                                        <exclude>dev.morphia.morphia:*</exclude>
                                     </excludes>
                                     <message>baas-model is on baas-cli's classpath and must stay Mongo-free (design.md non-goal).</message>
                                 </bannedDependencies>
@@ -181,7 +184,18 @@ Then prove the rule actually fires — temporarily add to `baas-model/pom.xml`:
 ```
 
 Run: `mvn -pl baas-model verify`
-Expected: **FAIL** with the banned-dependency message. **Remove the dependency again** and re-run to confirm green. A rule that has never been seen to fail is not a rule.
+Expected: **FAIL** with the banned-dependency message. **Remove the dependency again** and re-run to confirm green.
+
+Repeat the same proof for the Morphia half, which is a *different* pattern and must be exercised separately:
+
+```xml
+        <dependency>
+            <groupId>dev.morphia.morphia</groupId>
+            <artifactId>morphia-core</artifactId>
+        </dependency>
+```
+
+A rule that has never been seen to fail is not a rule — and a rule where only one of its patterns has been seen to fail is worse, because the untested pattern is exactly where false confidence lives.
 
 - [ ] **Step 4: Commit**
 
