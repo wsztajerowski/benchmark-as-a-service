@@ -317,9 +317,12 @@ public record JcstressSummary(
     Map<String, String> interesting
 ) {
     public JcstressSummary {
-        failed = Map.copyOf(failed);
-        errors = Map.copyOf(errors);
-        interesting = Map.copyOf(interesting);
+        // Null-defaulted, not just copied — Map.copyOf(null) throws, and a parsing layer with
+        // zero errors will reasonably pass null. Must match StoredMeasurement's handling; two
+        // records in one package disagreeing about what null means is how NPEs get shipped.
+        failed = failed == null ? Map.of() : Map.copyOf(failed);
+        errors = errors == null ? Map.of() : Map.copyOf(errors);
+        interesting = interesting == null ? Map.of() : Map.copyOf(interesting);
     }
 }
 ```
