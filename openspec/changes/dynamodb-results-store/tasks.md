@@ -113,7 +113,21 @@
   taking the values from the same shell variables the environment manifest uses
 - [x] 2.5 Extend the existing `passesEnvironmentTagsToTheRunnerNotJustToTheInstance` test to cover user
   tags, `project` and `commit`
-- [ ] 2.6 Verify against a real run that a user tag reaches the stored result, not only the instance
+- [x] 2.6 Verify against a real run that a user tag reaches the stored result, not only the instance
+  Verified 2026-08-17 on request `jmh-20260817_220706` (instance `i-06d1766071d96fcbb`, c5.2xlarge,
+  ami-0aa25ec7fbf1c80f5, self-terminated). `baas run --tag experiment=gc-tuning` stored all nine
+  tags on the measurement: `experiment=gc-tuning` (the user tag this task exists to prove),
+  `project=dynamodb-results-store`, `commit=4e43c62`, `type=jmh`, plus the five observed ones.
+  Every observed tag matches that run's own `environment.json` exactly — `cpuArch=x86_64` (the new
+  field), `schemaVersion` 2, and `jdk=25.0.4` is precisely the quoted substring of
+  `jvmVersion="openjdk version \"25.0.4\" 2026-07-21 LTS"`, confirming the one-observation split.
+  `cpuModel`'s spaces and parentheses survived as a single token.
+  Also confirmed live, outside the task's strict scope:
+  - `baas run` outside a git repository exits 1 naming `--project` and makes NO AWS call at all.
+  - `--tag jdk=8` is rejected by name, but only AFTER the S3 upload — the parked non-fail-fast
+    finding, now observed rather than argued.
+  NOT verified: `--project` override on a live run (plan.md Task 5 Step 4) — needs a second paid
+  run; unit-tested only.
 
 ## 3. Shared model module
 
