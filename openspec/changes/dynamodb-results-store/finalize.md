@@ -6,40 +6,36 @@
 > from "keep as-is" to PR later).
 
 **Change**: `dynamodb-results-store`
-**Finalized at**: `2026-08-17 22:30`
+**Finalized at**: `2026-08-19 00:05`
 **Outcome**: `merge-locally`
 
 ---
 
 ## Branch state
 
-- **Branch**: `impl/dynamodb-results-store` (worktree branch)
+- **Branch**: `impl/ddb-phase2` (worktree branch, phase 2)
 - **Base branch**: `feat/baas-cli-openspec-test` (feature branch, NOT the integration branch)
-- **Final state**: `merged` (fast-forward, 9 commits)
+- **Final state**: `merged` (fast-forward, 16 commits)
 - **PR URL**: `N/A`
 
-**Push deliberately skipped, not forgotten.** The user chose a local-only merge. The local
-`feat/baas-cli-openspec-test` was already 16 commits ahead of `origin` with 0 behind before this
-merge; pushing would have published those 16 alongside this change's 9. Nothing has left the
-machine. `origin/feat/baas-cli-openspec-test` remains at `befb793`.
+**Push deliberately skipped**, matching the choice made at iteration 1's finalize. Nothing has left
+the machine. `origin/feat/baas-cli-openspec-test` is untouched.
 
-**Deviation from the canonical flow**: the schema's discovery step expects a worktree at
-`.worktrees/<change-name>/` on a branch named `<change-name>`. This change used
-`.claude/worktrees/dynamodb-results-store` on `impl/dynamodb-results-store`, because the native
-worktree tool branches from `origin/main` by default — and `origin/main` (`8038f67`) contains no
-`openspec/` directory at all, so a canonical worktree would have had no change artifacts in it.
-Branch names were resolved directly rather than by the discovery snippet.
+**Deviation from the canonical flow**: the schema expects `.worktrees/<change-name>/` on a branch
+named `<change-name>`. This iteration used `.claude/worktrees/ddb-phase2` on `impl/ddb-phase2`,
+because the native worktree tool branches from `origin/main` by default and `origin/main` contains
+no `openspec/` directory at all.
 
 ---
 
 ## Workspace
 
-- **Worktree**: `/Users/wiktor/workspace/way-to-neo/benchmark-as-a-service/.claude/worktrees/dynamodb-results-store`
+- **Worktree**: `/Users/wiktor/workspace/way-to-neo/benchmark-as-a-service/.claude/worktrees/ddb-phase2`
 - **Cleanup**: `removed`
 
-The SDD ledger at `.superpowers/sdd/plan/progress.md` lived inside the worktree and is gitignored,
-so it does not survive removal. Everything load-bearing from it was promoted into `apply.md`
-(deviations, parked findings, open decisions) and `verify.md` before cleanup.
+The SDD ledger and all eleven review-package diffs lived in the worktree's gitignored
+`.superpowers/` directory and did not survive removal. Everything load-bearing was promoted into
+`apply.md` and `verify.md` first; the working copies were also archived outside the repo.
 
 ---
 
@@ -47,8 +43,7 @@ so it does not survive removal. Everything load-bearing from it was promoted int
 
 - **Comment status**: `skipped (no PR)`
 
-`gh` is not authenticated in this environment (`HTTP 401: Bad credentials` on the GraphQL API), and
-no PR exists for the feature branch. Both independently make this a no-op.
+`gh` is unauthenticated in this environment and no PR exists for the feature branch.
 
 ---
 
@@ -56,69 +51,74 @@ no PR exists for the feature branch. Both independently make this a no-op.
 
 - **Baseline status at finish**: `passing`
 
-Full reactor `mvn clean verify` immediately before the merge, with `ASYNC_PATH` pointed at a
-library that exists on this machine: **BUILD SUCCESS** across all 5 modules — 187 unit tests and 5
-integration tests in `baas-cli`, 0 failures, 0 skipped. `benchmark-runner` passed in 3m29s.
-
-Note the `ASYNC_PATH` value in `plan.md` Task 4 Step 8 is the on-instance Linux path and does not
-exist on a dev machine; using it verbatim makes `JmhWithAsyncProfilerSubcommandServiceIT` silently
-skip rather than fail.
+Full reactor `mvn clean verify` at `d1e5953` with a real `ASYNC_PATH`: **BUILD SUCCESS** across all
+6 modules — `baas-model` 33/33, `baas-cli` 202/202, `S3UploadServiceIT` 5/5 against LocalStack, and
+the async-profiler IT confirmed running rather than silently skipping. The four commits after
+`d1e5953` are documentation only.
 
 ---
 
-## Scope of what was merged
+## What was merged
 
-**This does not complete the change.** `tasks.md` stands at **12 of 108**. §1 and §2 are closed;
-§3–§12 have no plan yet.
+**Phase 2 of a multi-phase change: `tasks.md` §3 and the additive part of §4.** The change stands
+at **29 of 108 tasks**.
 
-Merged: the tag pipeline. `baas run --tag k=v` previously set an EC2 *instance* tag only and never
-reached the stored result. It now reaches `benchmarkMetadata.tags`, alongside derived
-`project`/`commit` and instance-observed `jdk`/`cpuModel`/`cpuArch`, with `cpuArch` added to the
-environment manifest at `schemaVersion` 2.
+A new Mongo-free `baas-model` module holding the stored measurement shape, DynamoDB key encoding,
+the tag vocabulary and an explicit item mapper — plus the results table, its `requestId` index, a
+DynamoDB gateway endpoint, a stack output, and scoped IAM for the runner, operator and deployer.
 
-Proven on a live run (`jmh-20260817_220706`, real `c5.2xlarge`, self-terminated): all nine tags
-reached the stored measurement, and every observed tag matched that run's own `environment.json`.
+**Nothing is deployed, and nothing writes to or reads from the table.** The runner and CLI still
+use MongoDB Atlas. That is the point of this phase: it is purely additive, and every existing
+benchmark run continues to work exactly as before — verified across the whole diff, not per file.
 
-Two defects that the plan itself had authored were found by review and fixed:
+### Defects found by review that would have reached production
 
-1. **Shell injection via tag value** (Critical) — a tag containing `$(...)` executed on the
-   instance under `RunnerRole`, which holds an SSM read of the Mongo connection string that
-   `operator-policy.json` deliberately withholds from operators.
-2. **Caller tags overrode instance-observed ones** (Important) — `--tag jdk=8` stored `jdk=8` while
-   the same run's `environment.json` disagreed.
+1. **`NaN` would have lost entire runs.** DynamoDB's `N` type rejects `NaN`, and JMH reports it for
+   *any* single-iteration run, so `baas run jmh -- X -i 1` would have failed with an opaque
+   `ValidationException`. Found twice — once on the primary metric, once on secondary metrics.
+2. **Multi-mode runs would have silently overwritten each other.** The sort key omitted `mode`,
+   which the Mongo `_id` carried as `benchmarkType`, so `-bm thrpt,avgt` produced two rows
+   differentiated only by a millisecond timestamp. Caught before any migration wrote history onto
+   the key shape — after that it would have meant redoing the migration.
+
+Also fixed: a `Map.copyOf(null)` NPE; `createdAt` not round-tripping below millisecond precision;
+an enforcer rule whose Morphia pattern matched nothing in this repo; the table's key names existing
+in three unlinked copies; and a deploy preflight that simulated no DynamoDB action.
+
+Six of these originated in the plan itself rather than in implementation. Five separate implementers
+surfaced them by following their brief exactly and reporting what looked wrong instead of silently
+correcting it.
 
 ---
 
 ## Carried forward — not resolved by this finalize
 
-- **`verify.md` is stale.** Written at iteration 1 when task 2.6 was open; 2.6 was verified live
-  and committed as `ed3bc85` afterwards. Its ❌ FAIL verdict still stands, but now for one reason
-  only: 35 of 39 requirements are unimplemented, including two capabilities at 0%
-  (`benchmark-results-query`, `core-stack-provisioning`). Re-run verify at the next apply
-  iteration.
-- **`BENCHMARK_PARAMETERS` carries the same `eval` injection weakness** that was fixed for tags, so
-  an operator can still reach `RunnerRole`'s SSM read via a crafted benchmark parameter.
-  Pre-existing, outside all 108 task items. Wants its own change.
-- **Reserved-key validation is not fail-fast** (parked). It throws after the Maven build and the S3
-  upload rather than beside `resolveProject()`. Observed live: the rejection printed after
-  `Uploading benchmark JAR to S3...`. Not load-bearing — no instance launches, no data is lost.
-- **The tag vocabulary now exists in two places.** `RESERVED_TAG_KEYS` in `RunCommand` and shell
-  literals in `SCRIPT_BODY`. Task 3.6 must replace both with `baas-model`'s constants, not add a
-  third copy.
-- **Open decisions**: the §1.6 `unknown` sentinel (which collides with `currentGitCommit()`'s
-  existing `unknown` fallback), the `source` tag mapping at 9.4, and the two uncovered Mongo
-  references (`DeployerPreflight.java:68`, `TeardownCommand.java:99-104`).
-- **`--project` override was never verified on a live run** (`plan.md` Task 5 Step 4) — unit-tested
-  only; it needs a second paid launch.
+- **`verify.md` returns ❌ FAIL on scope.** 27 of 39 requirements remain, `benchmark-results-query`
+  at 0 of 9. Archiving would sync specs describing a store nothing uses. **Do not run
+  `/opsx:archive`.**
+- **Two spec drift warnings, both spec edits rather than code.** The gateway endpoint does not
+  exist on the `UseExistingVpc=true` path (mirroring `S3GatewayEndpoint`, but the spec does not say
+  so); and `core-stack-provisioning:24` forbids the runner "any delete action" while
+  `dynamodb:BatchWriteItem` grants batch deletes with no separate IAM check.
+- **`tasks.md` 4.3 and 4.8 stay open by design**, annotated inline so they are not read as
+  oversights.
+- **Before Task 8's deploy:** re-render and re-attach the deployer policy — the attached policy
+  holds no DynamoDB actions. `infra/README.md` documents the wrong attachment mechanism (a
+  customer-managed flow; it is inline on an IAM group) and cites the superseded 4096 figure.
+- **`BENCHMARK_PARAMETERS` still carries the `eval` injection weakness** fixed for tags in phase 1.
+  Outside all 108 task items; wants its own change.
+- **§9 blockers**: the `unknown` sentinel for untagged migrated rows (which collides with
+  `currentGitCommit()`'s existing `unknown` fallback) and the `source` tag mapping.
+- **`export-before-teardown` now exists** as a separate change and alters what §7's setup and
+  teardown behaviour should be. Plan §7 against it, not against the current `tasks.md` text.
 
 ---
 
 ## Next step
 
-**Do not run `/opsx:archive`.** Archiving syncs delta specs into `openspec/specs/`, which would
-make them claim a DynamoDB results store that does not exist — two capabilities are at 0%.
+Task 8 (live deploy) is the remaining gate for this phase and is human-triggered: it mutates the
+live CloudFormation stack and creates a `DeletionPolicy: Retain` table that outlives a teardown.
+Re-attach the deployer policy first.
 
-Instead: plan §3–§12. Regenerate `plan.md` scoped to §3–§9 and §11 against the confirmed partition
-key (`RESULT#<project>`, settled by Task 1's count of 121 documents), resolve the open decisions
-above first since §1.6 and the `source` mapping feed directly into §9, then re-enter apply as
-iteration 2.
+Otherwise, the next work is either planning §5–§12, or the `export-before-teardown` change, whose
+`brainstorm` artifact is ready.
