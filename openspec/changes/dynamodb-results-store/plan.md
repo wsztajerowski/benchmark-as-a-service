@@ -47,7 +47,7 @@ Phase 3 (migrate history) precedes Phase 4 (cut over) deliberately — that is `
 - **Sort keys must sort chronologically as strings.** Variable-width or zone-ambiguous timestamps misorder silently, and the failure looks like missing data rather than a formatting bug.
 - **No `Scan` capability anywhere.** Every supported query is a `Query` on the project partition or the `requestId` GSI.
 - **The table is `DeletionPolicy: Retain` *and* `UpdateReplacePolicy: Retain`**, mirroring `S3MainBucket`.
-- **The deployer policy is near IAM's size ceiling.** A `renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4096 non-whitespace chars. Wildcard verb classes rather than enumerating actions, but never wildcard `Create`.
+- **The deployer policy is near IAM's size ceiling.** A `renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4608 non-whitespace chars (raised from 4096; the policy is inline on an IAM group, 5120 shared, nothing else attached). Wildcard verb classes rather than enumerating actions, but never wildcard `Create`.
 - **Do not deploy anything in this phase.** `baas admin setup` is a Phase 2 *closing* step, gated on human approval — it mutates a live stack.
 - Run the full reactor before trusting green: `mvn -pl benchmark-runner verify` alone fails by design.
 - `ASYNC_PATH` must point at a library that **exists on the build machine** — the `/app/...` path in older notes is the on-instance Linux path and makes the async IT silently skip.
