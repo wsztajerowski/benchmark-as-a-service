@@ -17,10 +17,16 @@ public final class MeasurementItemMapper {
 
     public static final int MAX_ITEM_BYTES = 400 * 1024;
 
-    static final String PK = "pk";
-    static final String SK = "sk";
-    static final String GSI1PK = "gsi1pk";
-    static final String GSI1SK = "gsi1sk";
+    /**
+     * Public so {@code baas-cli}'s {@code CoreTemplateTest} can assert the CloudFormation table
+     * definition against these instead of re-typing the literals: a rename on either side then
+     * fails to compile instead of only failing at runtime, per run, after the EC2 instance is
+     * already paid for.
+     */
+    public static final String PK = "pk";
+    public static final String SK = "sk";
+    public static final String GSI1PK = "gsi1pk";
+    public static final String GSI1SK = "gsi1sk";
     static final String PROJECT = "project";
     static final String REQUEST_ID = "requestId";
     static final String CREATED_AT = "createdAt";
@@ -85,13 +91,20 @@ public final class MeasurementItemMapper {
         if (m.scoreError() != null && Double.isFinite(m.scoreError())) {
             item.put(SCORE_ERROR, n(m.scoreError()));
         }
-        if (!m.secondaryMetrics().isEmpty()) {
-            item.put(SECONDARY_METRICS, AttributeValue.fromM(
-                m.secondaryMetrics().entrySet().stream().collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    e -> AttributeValue.fromM(Map.of(
-                        METRIC_SCORE, n(e.getValue().score()),
-                        METRIC_UNIT, s(e.getValue().unit())))))));
+        Map<String, AttributeValue> secondaryMetrics = m.secondaryMetrics().entrySet().stream()
+            // DynamoDB's N type rejects NaN/Infinity outright (GCProfiler's allocated/durationSeconds
+            // rate is NaN on a zero-duration window — a real case), and s(null) for a missing unit
+            // yields an AttributeValue with no datatype set, which DynamoDB rejects as empty. Either
+            // condition would fail the whole PutItem, so an unusable entry is dropped rather than
+            // letting it take the entire measurement down with it.
+            .filter(e -> Double.isFinite(e.getValue().score()) && e.getValue().unit() != null)
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                e -> AttributeValue.fromM(Map.of(
+                    METRIC_SCORE, n(e.getValue().score()),
+                    METRIC_UNIT, s(e.getValue().unit())))));
+        if (!secondaryMetrics.isEmpty()) {
+            item.put(SECONDARY_METRICS, AttributeValue.fromM(secondaryMetrics));
         }
         if (!m.tags().isEmpty()) {
             item.put(TAGS, AttributeValue.fromM(

@@ -38,7 +38,7 @@ class MeasurementItemMapperTest {
         assertThat(item.get("sk").s()).startsWith("pl.wsztajerowski.fake.Incrementing_Synchronized#");
         assertThat(item.get("gsi1pk").s()).isEqualTo("jmh-20260817_220706");
         assertThat(item.get("gsi1sk").s())
-            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized");
+            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#thrpt");
     }
 
     @Test
@@ -121,6 +121,83 @@ class MeasurementItemMapperTest {
 
         assertThat(item).doesNotContainKey("score");
         assertThat(MeasurementItemMapper.fromItem(item).score()).isNull();
+    }
+
+    /**
+     * JMH's GCProfiler computes rates as allocated / durationSeconds, so a zero-duration window
+     * yields a non-finite secondary metric — a real case, not a defensive one. score/scoreError
+     * already normalize non-finite values to absent (see the two tests above); secondaryMetrics
+     * needs the same guard, per entry, or DynamoDB's N type rejects the whole PutItem with an
+     * opaque ValidationException and the entire measurement is lost over one bad rate.
+     */
+    @Test
+    void aSecondaryMetricWithANonFiniteScoreIsDroppedRatherThanRejectedByDynamoDb() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withBadSecondaryMetric = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            original.score(), original.scoreError(), original.scoreUnit(),
+            Map.of(
+                "gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec"),
+                "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")),
+            original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        var item = MeasurementItemMapper.toItem(withBadSecondaryMetric);
+
+        var secondaryMetrics = item.get("secondaryMetrics").m();
+        assertThat(secondaryMetrics).doesNotContainKey("gc.alloc.rate");
+        assertThat(secondaryMetrics).containsKey("gc.alloc.rate.norm");
+        assertThat(MeasurementItemMapper.fromItem(item).secondaryMetrics())
+            .doesNotContainKey("gc.alloc.rate")
+            .containsKey("gc.alloc.rate.norm");
+    }
+
+    /**
+     * s(null) yields an AttributeValue with no datatype set, which DynamoDB rejects with "Supplied
+     * AttributeValue is empty" — the same class of whole-PutItem failure as the non-finite case
+     * above, just triggered by a null unit instead of a bad score.
+     */
+    @Test
+    void aSecondaryMetricWithANullUnitIsDroppedRatherThanStoredEmpty() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withNullUnit = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            original.score(), original.scoreError(), original.scoreUnit(),
+            Map.of(
+                "gc.alloc.rate", new SecondaryMetric(1234.5, null),
+                "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")),
+            original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        var item = MeasurementItemMapper.toItem(withNullUnit);
+
+        var secondaryMetrics = item.get("secondaryMetrics").m();
+        assertThat(secondaryMetrics).doesNotContainKey("gc.alloc.rate");
+        assertThat(secondaryMetrics).containsKey("gc.alloc.rate.norm");
+    }
+
+    /**
+     * When every secondary metric is dropped, the attribute itself must be omitted rather than
+     * stored as an empty map — matching the same "absent, not empty" convention the mapper already
+     * applies elsewhere (see absentOptionalAttributesAreOmittedRatherThanStoredAsNull).
+     */
+    @Test
+    void secondaryMetricsIsOmittedEntirelyWhenEveryEntryIsUnusable() {
+        var original = StoredMeasurementFixtures.jmh();
+        var allBad = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            original.score(), original.scoreError(), original.scoreUnit(),
+            Map.of("gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec")),
+            original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        var item = MeasurementItemMapper.toItem(allBad);
+
+        assertThat(item).doesNotContainKey("secondaryMetrics");
+        assertThat(MeasurementItemMapper.fromItem(item).secondaryMetrics()).isEmpty();
     }
 
     /**

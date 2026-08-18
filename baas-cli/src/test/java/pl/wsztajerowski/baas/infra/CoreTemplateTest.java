@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.infra;
 
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.ResultKeys;
 
 import java.util.List;
 import java.util.Map;
@@ -264,14 +266,15 @@ class CoreTemplateTest {
 
         var keySchema = (List<Map<String, Object>>) properties.get("KeySchema");
         assertThat(keySchema).hasSize(2);
-        assertThat(keySchema.get(0)).containsEntry("AttributeName", "pk").containsEntry("KeyType", "HASH");
-        assertThat(keySchema.get(1)).containsEntry("AttributeName", "sk").containsEntry("KeyType", "RANGE");
+        assertThat(keySchema.get(0)).containsEntry("AttributeName", MeasurementItemMapper.PK).containsEntry("KeyType", "HASH");
+        assertThat(keySchema.get(1)).containsEntry("AttributeName", MeasurementItemMapper.SK).containsEntry("KeyType", "RANGE");
 
         var attributeDefinitions = (List<Map<String, Object>>) properties.get("AttributeDefinitions");
         assertThat(attributeDefinitions)
             .as("all four key attributes — table keys and GSI keys alike — must be pinned to S")
             .extracting(attribute -> attribute.get("AttributeName"))
-            .containsExactlyInAnyOrder("pk", "sk", "gsi1pk", "gsi1sk");
+            .containsExactlyInAnyOrder(MeasurementItemMapper.PK, MeasurementItemMapper.SK,
+                MeasurementItemMapper.GSI1PK, MeasurementItemMapper.GSI1SK);
         assertThat(attributeDefinitions)
             .extracting(attribute -> attribute.get("AttributeType"))
             .containsOnly("S");
@@ -284,12 +287,12 @@ class CoreTemplateTest {
         var indexes = (List<Map<String, Object>>) properties.get("GlobalSecondaryIndexes");
 
         assertThat(indexes).hasSize(1);
-        assertThat(indexes.get(0).get("IndexName")).isEqualTo("requestId-index");
+        assertThat(indexes.get(0).get("IndexName")).isEqualTo(ResultKeys.REQUEST_ID_INDEX_NAME);
 
         var keySchema = (List<Map<String, Object>>) indexes.get(0).get("KeySchema");
         assertThat(keySchema).hasSize(2);
-        assertThat(keySchema.get(0)).containsEntry("AttributeName", "gsi1pk").containsEntry("KeyType", "HASH");
-        assertThat(keySchema.get(1)).containsEntry("AttributeName", "gsi1sk").containsEntry("KeyType", "RANGE");
+        assertThat(keySchema.get(0)).containsEntry("AttributeName", MeasurementItemMapper.GSI1PK).containsEntry("KeyType", "HASH");
+        assertThat(keySchema.get(1)).containsEntry("AttributeName", MeasurementItemMapper.GSI1SK).containsEntry("KeyType", "RANGE");
 
         var projection = (Map<String, Object>) indexes.get(0).get("Projection");
         assertThat(projection.get("ProjectionType")).isEqualTo("ALL");
@@ -325,8 +328,15 @@ class CoreTemplateTest {
             .containsEntry("Value", "ResultsTable");
     }
 
+    /**
+     * NOT a proof the runner cannot delete: {@code dynamodb:BatchWriteItem} carries
+     * {@code DeleteRequest} entries and gets no separate {@code dynamodb:DeleteItem} IAM check, so
+     * granting it grants deletes too. That is consistent with existing posture — the runner already
+     * holds {@code s3:DeleteObject} on the whole bucket — so the grant stays. This test only proves
+     * the runner is never granted read (Scan/Query) or the standalone single-item delete action.
+     */
     @Test
-    void theRunnerCanWriteResultsButNeverReadOrDeleteThem() {
+    void theRunnerCanWriteAndBatchDeleteResultsButNeverReadOrSingleItemDeleteThem() {
         var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("RunnerRole"));
 
         assertThat(actions).containsExactlyInAnyOrder("dynamodb:PutItem", "dynamodb:BatchWriteItem");

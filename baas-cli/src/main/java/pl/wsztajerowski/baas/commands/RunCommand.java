@@ -464,9 +464,9 @@ public class RunCommand implements Callable<Integer> {
                     + ". --project and --commit remain overridable.");
         }
         Map<String, String> tags = new LinkedHashMap<>();
-        tags.put("project", project);
-        tags.put("commit", commit);
-        tags.put("type", benchmarkType);
+        tags.put(TagKeys.PROJECT, project);
+        tags.put(TagKeys.COMMIT, commit);
+        tags.put(TagKeys.TYPE, benchmarkType);
         tags.putAll(extraTags);
         return tags;
     }

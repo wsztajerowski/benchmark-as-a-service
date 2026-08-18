@@ -60,16 +60,7 @@ public class DeployerPreflight {
             return List.of();
         }
 
-        Map<String, String> actionToResource = new LinkedHashMap<>();
-        actionToResource.put("cloudformation:CreateStack",
-            "arn:aws:cloudformation:%s:%s:stack/baas-%s/*".formatted(region, accountId, prefix));
-        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::baas-" + prefix);
-        actionToResource.put("ssm:PutParameter",
-            "arn:aws:ssm:%s:%s:parameter/%s/mongo/connection-string".formatted(region, accountId, prefix));
-        actionToResource.put("iam:GetRole",
-            "arn:aws:iam::%s:role/%s-runner-role".formatted(accountId, prefix));
-        actionToResource.put("iam:CreateRole",
-            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
+        Map<String, String> actionToResource = criticalActionsToResources(accountId, region, prefix);
 
         try {
             var denied = actionToResource.entrySet().stream()
@@ -90,6 +81,30 @@ public class DeployerPreflight {
                 e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * The critical-action-to-resource map simulated above, extracted so it can be asserted on
+     * directly without an {@link IamClient} — every entry here has to stay unconditioned and
+     * resource-scoped, the shape {@code SimulatePrincipalPolicy} can actually answer.
+     */
+    static Map<String, String> criticalActionsToResources(String accountId, String region, String prefix) {
+        Map<String, String> actionToResource = new LinkedHashMap<>();
+        actionToResource.put("cloudformation:CreateStack",
+            "arn:aws:cloudformation:%s:%s:stack/baas-%s/*".formatted(region, accountId, prefix));
+        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::baas-" + prefix);
+        actionToResource.put("ssm:PutParameter",
+            "arn:aws:ssm:%s:%s:parameter/%s/mongo/connection-string".formatted(region, accountId, prefix));
+        actionToResource.put("iam:GetRole",
+            "arn:aws:iam::%s:role/%s-runner-role".formatted(accountId, prefix));
+        actionToResource.put("iam:CreateRole",
+            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
+        // dynamodb:CreateTable is unconditioned and resource-scoped, same as the five above — a
+        // deployer running with a stale attached policy previously passed preflight only to have
+        // the real stack update fail partway on this action and roll back.
+        actionToResource.put("dynamodb:CreateTable",
+            "arn:aws:dynamodb:%s:%s:table/baas-%s-results".formatted(region, accountId, prefix));
+        return actionToResource;
     }
 
     /**

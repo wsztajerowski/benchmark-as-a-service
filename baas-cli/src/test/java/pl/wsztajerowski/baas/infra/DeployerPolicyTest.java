@@ -294,8 +294,13 @@ class DeployerPolicyTest {
             .toList();
 
         assertThat(dynamoDbResources)
+            .as("a resource merely lacking the literal 'dynamodb:*:*:table/*' substring, such as "
+                + "'arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/*', would pass a substring check "
+                + "while still granting cross-prefix access — prefix-exactness is the whole point of "
+                + "the rendered template, so assert the resource names exactly this caller's table")
             .isNotEmpty()
-            .allSatisfy(resource -> assertThat(resource).doesNotContain("dynamodb:*:*:table/*"));
+            .allSatisfy(resource -> assertThat(resource)
+                .endsWith("table/baas-" + InfraFixtures.PREFIX + "-results"));
     }
 
     /**

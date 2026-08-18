@@ -39,6 +39,7 @@ public final class ResultKeys {
         }
         return measurement.benchmarkClass()
             + SEPARATOR + measurement.benchmarkMethod()
+            + SEPARATOR + modeOrEmpty(measurement.mode())
             + SEPARATOR + timestamp
             + SEPARATOR + measurement.requestId();
     }
@@ -51,7 +52,20 @@ public final class ResultKeys {
         if (measurement.kind() == MeasurementKind.JCSTRESS) {
             return JCSTRESS_SK_PREFIX + measurement.requestId();
         }
-        return measurement.benchmarkClass() + SEPARATOR + measurement.benchmarkMethod();
+        return measurement.benchmarkClass()
+            + SEPARATOR + measurement.benchmarkMethod()
+            + SEPARATOR + modeOrEmpty(measurement.mode());
+    }
+
+    /**
+     * A run with {@code -bm thrpt,avgt} produces two results whose class+method are identical;
+     * without mode in the key those rows are differentiated only by a millisecond timestamp, and a
+     * same-millisecond collision silently overwrites one via PutItem. Rendered as an empty string
+     * rather than omitted so the key always has the same number of {@code #}-separated fields — a
+     * variable field count would be worse than a blank one.
+     */
+    private static String modeOrEmpty(String mode) {
+        return mode == null ? "" : mode;
     }
 
     public static String formatTimestamp(Instant instant) {

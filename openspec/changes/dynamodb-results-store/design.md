@@ -50,9 +50,9 @@ selection and 70 are computations over a selected set. Both sources say the same
 
 ```
 pk  = RESULT#<project>
-sk  = <fqcn>#<method>#<createdAt>#<requestId>     (JMH)
-sk  = JCSTRESS#<createdAt>#<requestId>            (JCStress)
-GSI = pk: requestId, sk: <fqcn>#<method>
+sk  = <fqcn>#<method>#<mode>#<createdAt>#<requestId>     (JMH)
+sk  = JCSTRESS#<createdAt>#<requestId>                   (JCStress)
+GSI = pk: requestId, sk: <fqcn>#<method>#<mode>
 ```
 
 `sk` is benchmark-major then chronological, which serves three patterns from one ordering: the latest
@@ -60,6 +60,15 @@ result for a benchmark (`begins_with` + descending + `Limit 1`), a benchmark's h
 grouping — rows arrive grouped by benchmark, so bucketing happens within one benchmark at a time and
 never needs a global sort. The GSI covers `--request-id`, the only pattern the base key cannot reach
 because `requestId` sits at the tail of `sk`.
+
+`mode` sits between `method` and `createdAt` because the Mongo store this replaces keyed on
+`(requestId, benchmarkName, benchmarkType)` where `benchmarkType` is the JMH mode: `-bm thrpt,avgt` in
+one run produces two results with identical class+method, and without mode in the key they are
+differentiated only by a millisecond timestamp — a same-millisecond collision silently overwrites one
+via `PutItem`. A null mode (JCStress has none) renders as an empty field rather than being omitted, so
+the key always carries a fixed number of `#`-separated fields. This keeps the benchmark-major-then-
+chronological property and improves it: a benchmark's history within one mode is now contiguous, and
+`begins_with(<fqcn>#<method>)` still returns all modes.
 
 *Alternatives considered.* **Hand-written inverted index items** (the previous design: a
 `TAG#<key>#<value>` index, a benchmark index partitioned on class, and a month-partitioned `ALL#<yyyy-mm>`

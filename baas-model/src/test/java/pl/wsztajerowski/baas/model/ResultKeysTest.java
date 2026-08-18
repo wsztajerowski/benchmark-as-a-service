@@ -21,6 +21,33 @@ class ResultKeysTest {
         assertThat(ResultKeys.sortKey(StoredMeasurementFixtures.jmh())).isEqualTo(
             "pl.wsztajerowski.fake.Incrementing_Synchronized"
                 + "#incrementUsingSynchronized"
+                + "#thrpt"
+                + "#2026-08-17T22:07:06.123Z"
+                + "#jmh-20260817_220706");
+    }
+
+    /**
+     * The Mongo store this replaces keyed on (requestId, benchmarkName, benchmarkType) where
+     * benchmarkType is the JMH mode — so `-bm thrpt,avgt` in one run produces two results whose
+     * class+method are identical. Without mode in the key, those two rows are differentiated only
+     * by a millisecond timestamp, and a same-millisecond collision silently overwrites one via
+     * PutItem. Mode has to render as a field even when null, or the key would have a variable
+     * number of `#`-separated fields depending on whether mode was set.
+     */
+    @Test
+    void jmhSortKeyRendersNullModeAsAnEmptyFieldToKeepTheFieldCountFixed() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withoutMode = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), null,
+            original.score(), original.scoreError(), original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        assertThat(ResultKeys.sortKey(withoutMode)).isEqualTo(
+            "pl.wsztajerowski.fake.Incrementing_Synchronized"
+                + "#incrementUsingSynchronized"
+                + "#"
                 + "#2026-08-17T22:07:06.123Z"
                 + "#jmh-20260817_220706");
     }
@@ -37,7 +64,22 @@ class ResultKeysTest {
 
         assertThat(ResultKeys.requestIndexPartitionKey(m.requestId())).isEqualTo("jmh-20260817_220706");
         assertThat(ResultKeys.requestIndexSortKey(m))
-            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized");
+            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#thrpt");
+    }
+
+    /** Two modes benchmarked in one run must not collapse onto one requestId-index GSI row. */
+    @Test
+    void theRequestIndexSortKeyRendersNullModeAsAnEmptyFieldToo() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withoutMode = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), null,
+            original.score(), original.scoreError(), original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        assertThat(ResultKeys.requestIndexSortKey(withoutMode))
+            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#");
     }
 
     @Test
