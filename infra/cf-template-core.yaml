@@ -305,6 +305,15 @@ Resources:
               - Effect: Allow
                 Action: ssm:GetParameter
                 Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
+        - PolicyName: !Sub ${ResourceNamePrefix}-runner-dynamodb-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:BatchWriteItem
+                Resource: !GetAtt ResultsTable.Arn
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -458,8 +467,9 @@ Resources:
 
   # BaasCliOperatorRole — assumed (via sts:AssumeRole) by whoever runs
   # `baas run`/`baas results`/`baas config` locally. Scoped exactly to this
-  # stack's own resources (bucket, RunnerRole, mongo SSM path), which only
-  # CloudFormation can do precisely since it knows those ARNs at deploy time.
+  # stack's own resources (bucket, RunnerRole, mongo SSM path, results table),
+  # which only CloudFormation can do precisely since it knows those ARNs at
+  # deploy time.
   # Trust is scoped to the account root — this keeps `baas admin setup`
   # parameter-free, since the stack has no way to know which specific human
   # IAM identity should get operator access. Actual gating happens per-user:
@@ -579,6 +589,20 @@ Resources:
               - Effect: Allow
                 Action: cloudformation:DescribeStacks
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/baas-${ResourceNamePrefix}/*"
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-dynamodb-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # A Query against a GSI authorises on the index ARN, not the table's — both
+              # are granted here or `baas results --request-id` fails at runtime with an
+              # opaque AccessDenied, long after the deploy looked successful.
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                Resource:
+                  - !GetAtt ResultsTable.Arn
+                  - !Sub "${ResultsTable.Arn}/index/*"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}

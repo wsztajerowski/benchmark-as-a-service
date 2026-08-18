@@ -163,6 +163,8 @@ class OperatorPolicyDriftTest {
             .replace("${S3MainBucket.Arn}", "arn:aws:s3:::baas-RESOURCE_PREFIX")
             .replace("S3MainBucket.Arn", "arn:aws:s3:::baas-RESOURCE_PREFIX")
             .replace("RunnerRole.Arn", "arn:aws:iam::ACCOUNT_ID:role/RESOURCE_PREFIX-runner-role")
+            .replace("${ResultsTable.Arn}", "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/baas-RESOURCE_PREFIX-results")
+            .replace("ResultsTable.Arn", "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/baas-RESOURCE_PREFIX-results")
             .replace("${AWS::Partition}", "aws")
             .replace("${AWS::Region}", "REGION")
             .replace("${AWS::AccountId}", "ACCOUNT_ID")

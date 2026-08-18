@@ -166,6 +166,21 @@
       "Resource": "arn:aws:iam::${ACCOUNT_ID}:*"
     },
     {
+      "Sid": "ResultsTableLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:Describe*",
+        "dynamodb:UpdateTimeToLive",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/baas-${PREFIX}-results"
+    },
+    {
       "Sid": "S3WorkingBucketLifecycle",
       "Effect": "Allow",
       "Action": [

@@ -106,6 +106,18 @@
       "Effect": "Allow",
       "Action": "cloudformation:DescribeStacks",
       "Resource": "arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/baas-RESOURCE_PREFIX/*"
+    },
+    {
+      "Sid": "DynamoDbResultsTableRead",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:Query",
+        "dynamodb:GetItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/baas-RESOURCE_PREFIX-results",
+        "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/baas-RESOURCE_PREFIX-results/index/*"
+      ]
     }
   ]
 }

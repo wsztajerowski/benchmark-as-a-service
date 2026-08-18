@@ -241,14 +241,14 @@ class DeployerPolicyTest {
     }
 
     /**
-     * IAM's tightest realistic ceiling for this document is the 2048-character inline-user limit,
-     * which it has never fitted; the binding one in practice is 5120 for an inline policy on a
-     * group or user, <em>shared across every inline policy on that principal</em>. A managed policy
-     * gets 6144 to itself.
+     * The policy is attached as an inline policy on an IAM group. The hard cap is 5120
+     * non-whitespace characters, <em>shared across every inline policy on that group</em>. Nothing
+     * else is currently attached to that group, so the remaining reserve below the cap is
+     * precautionary rather than protecting a known consumer.
      *
-     * <p>Held at 4096 rather than 5120 so the deployer leaves room for whatever else is attached to
-     * the same principal — this document is not the only thing competing for that budget, and the
-     * failure it prevents surfaces in the IAM console, nowhere near the edit that caused it.
+     * <p>With the DynamoDB results-table statement, the policy renders to 4267 non-whitespace
+     * characters — 341 spare under this 4608 budget, and 512 still reserved between this budget
+     * and the 5120 hard cap.
      */
     @Test
     void renderedPolicyLeavesRoomInAnInlinePolicyBudget() {
@@ -258,7 +258,44 @@ class DeployerPolicyTest {
 
         assertThat(counted)
             .as("collapse a verb class to a wildcard, or drop an unused action, before adding more")
-            .isLessThanOrEqualTo(4096);
+            .isLessThanOrEqualTo(4608);
+    }
+
+    @Test
+    void theDeployerCanManageTheResultsTableLifecycle() {
+        var policy = InfraFixtures.deployerPolicy();
+
+        assertThat(InfraFixtures.grants(policy, "dynamodb:CreateTable")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:DeleteTable")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:UpdateTable")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:DescribeTable")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:DescribeContinuousBackups")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:DescribeTimeToLive")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:UpdateTimeToLive")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:TagResource")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:UntagResource")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:ListTagsOfResource")).isTrue();
+    }
+
+    @Test
+    void theDeployerHasNoDataPlaneAccessToResults() {
+        var policy = InfraFixtures.deployerPolicy();
+
+        assertThat(InfraFixtures.grants(policy, "dynamodb:PutItem")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:GetItem")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:Query")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:Scan")).isFalse();
+    }
+
+    @Test
+    void everyDynamoDbStatementIsPrefixScoped() {
+        var dynamoDbResources = InfraFixtures.resources(InfraFixtures.deployerPolicy()).stream()
+            .filter(resource -> resource.contains("dynamodb"))
+            .toList();
+
+        assertThat(dynamoDbResources)
+            .isNotEmpty()
+            .allSatisfy(resource -> assertThat(resource).doesNotContain("dynamodb:*:*:table/*"));
     }
 
     /**

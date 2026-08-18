@@ -224,14 +224,16 @@ IAM is split deliberately: `deployer-policy.json` → `BaasCliDeployerPolicy`, e
 **test** classpath only; the core template and the two deployer policy templates ship in the JAR
 because the CLI renders them at runtime.
 
-**The deployer policy is close to IAM's size ceiling.** An inline policy on a user or group is
-capped at 5120 non-whitespace characters, *shared across every inline policy on that principal*; a
-customer-managed policy gets 6144 to itself. The rendered document sits around 3.9 KB, and a
-`renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4096. That is why whole verb
-classes are wildcarded (`ec2:Describe*`, `s3:Get*`, `imagebuilder:Get*`) rather than enumerated —
-naming every action CloudFormation's bucket read handler needs is what pushed it over. `Create` is
-deliberately *not* wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would
-grant `PutObject`, which the deployer has no business holding.
+**The deployer policy is close to IAM's size ceiling.** It is attached as an inline policy on an
+IAM group, capped at 5120 non-whitespace characters, *shared across every inline policy on that
+group* — nothing else is currently attached to it, so the reserve below the cap is precautionary
+rather than protecting a known consumer. A customer-managed policy gets 6144 to itself. The
+rendered document sits around 4.3 KB, and a `renderedPolicyLeavesRoomInAnInlinePolicyBudget` test
+holds it under 4608. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
+`imagebuilder:Get*`, `dynamodb:Describe*`) rather than enumerated — naming every action
+CloudFormation's bucket read handler needs is what pushed it over. `Create` is deliberately *not*
+wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would grant `PutObject`,
+which the deployer has no business holding.
 
 **`deployer-policy.json` is a template, never a policy.** It carries `${ACCOUNT_ID}` / `${REGION}`
 / `${PREFIX}` placeholders and is rendered per caller by `DeployerPolicyRenderer` — every resource

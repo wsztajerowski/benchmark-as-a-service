@@ -269,8 +269,10 @@ class CoreTemplateTest {
 
         var attributeDefinitions = (List<Map<String, Object>>) properties.get("AttributeDefinitions");
         assertThat(attributeDefinitions)
-            .filteredOn(attribute -> attribute.get("AttributeName").equals("pk")
-                || attribute.get("AttributeName").equals("sk"))
+            .as("all four key attributes — table keys and GSI keys alike — must be pinned to S")
+            .extracting(attribute -> attribute.get("AttributeName"))
+            .containsExactlyInAnyOrder("pk", "sk", "gsi1pk", "gsi1sk");
+        assertThat(attributeDefinitions)
             .extracting(attribute -> attribute.get("AttributeType"))
             .containsOnly("S");
     }
@@ -321,5 +323,46 @@ class CoreTemplateTest {
         assertThat(outputs).containsKey("ResultsTableName");
         assertThat((Map<String, Object>) outputs.get("ResultsTableName"))
             .containsEntry("Value", "ResultsTable");
+    }
+
+    @Test
+    void theRunnerCanWriteResultsButNeverReadOrDeleteThem() {
+        var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("RunnerRole"));
+
+        assertThat(actions).containsExactlyInAnyOrder("dynamodb:PutItem", "dynamodb:BatchWriteItem");
+        assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query");
+    }
+
+    @Test
+    void theOperatorCanReadResultsButNeverWriteThem() {
+        var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("OperatorRole"));
+
+        assertThat(actions).containsExactlyInAnyOrder("dynamodb:Query", "dynamodb:GetItem");
+        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:Scan", "dynamodb:DeleteItem");
+    }
+
+    @Test
+    void theOperatorIsGrantedTheIndexArnBecauseAGsiQueryAuthorisesOnTheIndex() {
+        assertThat(InfraFixtures.resources(dynamoDbPolicyDocumentFor("OperatorRole")))
+            .as("a Query against a GSI authorises on the index ARN, not the table's")
+            .anySatisfy(resource -> assertThat(resource).contains("index"));
+    }
+
+    @Test
+    void noDynamoDbGrantUsesAWildcardResource() {
+        assertThat(InfraFixtures.resources(dynamoDbPolicyDocumentFor("RunnerRole"))).doesNotContain("*");
+        assertThat(InfraFixtures.resources(dynamoDbPolicyDocumentFor("OperatorRole"))).doesNotContain("*");
+    }
+
+    /** The named-policy list entry (not statement) on {@code logicalId} that grants DynamoDB actions. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> dynamoDbPolicyDocumentFor(String logicalId) {
+        var policies = (List<Map<String, Object>>) InfraFixtures.properties(template, logicalId).get("Policies");
+        return policies.stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .filter(document -> InfraFixtures.actions(document).stream()
+                .anyMatch(action -> action.startsWith("dynamodb:")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No dynamodb policy document on " + logicalId));
     }
 }
