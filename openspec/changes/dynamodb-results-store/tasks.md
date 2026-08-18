@@ -131,35 +131,41 @@
 
 ## 3. Shared model module
 
-- [ ] 3.1 Create the `baas-model` module and register it in the root `pom.xml` reactor ahead of
+- [x] 3.1 Create the `baas-model` module and register it in the root `pom.xml` reactor ahead of
   `benchmark-runner` and `baas-cli`; assert it has no MongoDB dependency
-- [ ] 3.2 Define the stored measurement shape, covering both JMH and JCStress
-- [ ] 3.3 Implement key encoding for `pk`, both `sk` forms and the request-ID index, in one class with no
+- [x] 3.2 Define the stored measurement shape, covering both JMH and JCStress
+- [x] 3.3 Implement key encoding for `pk`, both `sk` forms and the request-ID index, in one class with no
   duplicated literals
-- [ ] 3.4 Implement fixed-width UTC ISO-8601 timestamp formatting for sort keys
-- [ ] 3.5 Unit-test that lexicographic ordering of formatted timestamps equals chronological ordering
+- [x] 3.4 Implement fixed-width UTC ISO-8601 timestamp formatting for sort keys
+- [x] 3.5 Unit-test that lexicographic ordering of formatted timestamps equals chronological ordering
   across month and year boundaries
-- [ ] 3.6 Define the known-tag-key vocabulary as constants
-- [ ] 3.7 Implement the `Map<String, AttributeValue>` mapper both ways
-- [ ] 3.8 Unit-test mapper round trips for a JMH measurement and a JCStress measurement
-- [ ] 3.9 Unit-test that a realistic measurement serializes well under 400 KB, and that an oversized one
+- [x] 3.6 Define the known-tag-key vocabulary as constants
+- [x] 3.7 Implement the `Map<String, AttributeValue>` mapper both ways
+- [x] 3.8 Unit-test mapper round trips for a JMH measurement and a JCStress measurement
+- [x] 3.9 Unit-test that a realistic measurement serializes well under 400 KB, and that an oversized one
   fails loudly rather than being truncated
 
 ## 4. CloudFormation and IAM
 
-- [ ] 4.1 Add the results table to `cf-template-core.yaml`: `pk`/`sk` String keys, on-demand billing, one
+- [x] 4.1 Add the results table to `cf-template-core.yaml`: `pk`/`sk` String keys, on-demand billing, one
   `requestId` GSI, no TTL, `DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`
-- [ ] 4.2 Add a DynamoDB gateway endpoint associated with the runner's route table
+- [x] 4.2 Add a DynamoDB gateway endpoint associated with the runner's route table
 - [ ] 4.3 Remove TCP 27017 egress from `RunnerSecurityGroup`
-- [ ] 4.4 Add a table-name stack output
-- [ ] 4.5 Scope `RunnerRole` to `dynamodb:PutItem` and `BatchWriteItem` on the table only
-- [ ] 4.6 Grant `BaasCliOperatorRole` `dynamodb:Query` and `GetItem` on the table and its index only
-- [ ] 4.7 Add the table lifecycle actions to `deployer-policy.json`, prefix-scoped with no `Resource: "*"`
+  DEFERRED to the cutover phase, not an oversight: the runner still writes to Atlas until
+  §5 lands, and `CLAUDE.md` states omitting 27017 makes every run fail at the database
+  write. design.md's migration plan step 2 governs — "Atlas is untouched".
+- [x] 4.4 Add a table-name stack output
+- [x] 4.5 Scope `RunnerRole` to `dynamodb:PutItem` and `BatchWriteItem` on the table only
+- [x] 4.6 Grant `BaasCliOperatorRole` `dynamodb:Query` and `GetItem` on the table and its index only
+- [x] 4.7 Add the table lifecycle actions to `deployer-policy.json`, prefix-scoped with no `Resource: "*"`
 - [ ] 4.8 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
   `cf-template-ci.yaml`, and `RunnerRole`
-- [ ] 4.9 Add template tests: no interface endpoint for DynamoDB, no port 27017 rule, runner cannot `Scan`
+  DEFERRED to the cutover phase, not an oversight: the runner still writes to Atlas until
+  §5 lands, and `CLAUDE.md` states omitting 27017 makes every run fail at the database
+  write. design.md's migration plan step 2 governs — "Atlas is untouched".
+- [x] 4.9 Add template tests: no interface endpoint for DynamoDB, no port 27017 rule, runner cannot `Scan`
   or `DeleteItem`, operator cannot `PutItem`
-- [ ] 4.10 Extend `DeployerPolicyTest` for the new DynamoDB statements and the removed Mongo statements,
+- [x] 4.10 Extend `DeployerPolicyTest` for the new DynamoDB statements and the removed Mongo statements,
   and confirm the rendered policy still fits the inline-policy budget
 
 ## 5. Runner store port and adapters
