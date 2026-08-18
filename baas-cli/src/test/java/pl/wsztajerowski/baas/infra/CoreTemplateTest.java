@@ -243,4 +243,83 @@ class CoreTemplateTest {
             .containsEntry("DeletionPolicy", "Retain")
             .containsEntry("UpdateReplacePolicy", "Retain");
     }
+
+    @Test
+    void theResultsTableIsRetainedOnBothDeleteAndReplace() {
+        var table = InfraFixtures.resource(template, "ResultsTable");
+
+        assertThat(table)
+            .as("benchmark history outlives the stack, same as the bucket — losing it to a stray "
+                + "teardown or a replacement update is not recoverable")
+            .containsEntry("DeletionPolicy", "Retain")
+            .containsEntry("UpdateReplacePolicy", "Retain");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theResultsTableIsOnDemandWithStringKeys() {
+        var properties = InfraFixtures.properties(template, "ResultsTable");
+
+        assertThat(properties.get("BillingMode")).isEqualTo("PAY_PER_REQUEST");
+
+        var keySchema = (List<Map<String, Object>>) properties.get("KeySchema");
+        assertThat(keySchema).hasSize(2);
+        assertThat(keySchema.get(0)).containsEntry("AttributeName", "pk").containsEntry("KeyType", "HASH");
+        assertThat(keySchema.get(1)).containsEntry("AttributeName", "sk").containsEntry("KeyType", "RANGE");
+
+        var attributeDefinitions = (List<Map<String, Object>>) properties.get("AttributeDefinitions");
+        assertThat(attributeDefinitions)
+            .filteredOn(attribute -> attribute.get("AttributeName").equals("pk")
+                || attribute.get("AttributeName").equals("sk"))
+            .extracting(attribute -> attribute.get("AttributeType"))
+            .containsOnly("S");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theResultsTableHasExactlyOneIndexKeyedOnRequestId() {
+        var properties = InfraFixtures.properties(template, "ResultsTable");
+        var indexes = (List<Map<String, Object>>) properties.get("GlobalSecondaryIndexes");
+
+        assertThat(indexes).hasSize(1);
+        assertThat(indexes.get(0).get("IndexName")).isEqualTo("requestId-index");
+
+        var keySchema = (List<Map<String, Object>>) indexes.get(0).get("KeySchema");
+        assertThat(keySchema).hasSize(2);
+        assertThat(keySchema.get(0)).containsEntry("AttributeName", "gsi1pk").containsEntry("KeyType", "HASH");
+        assertThat(keySchema.get(1)).containsEntry("AttributeName", "gsi1sk").containsEntry("KeyType", "RANGE");
+
+        var projection = (Map<String, Object>) indexes.get(0).get("Projection");
+        assertThat(projection.get("ProjectionType")).isEqualTo("ALL");
+    }
+
+    @Test
+    void theResultsTableHasNoTimeToLive() {
+        assertThat(InfraFixtures.properties(template, "ResultsTable"))
+            .doesNotContainKey("TimeToLiveSpecification");
+    }
+
+    /** A gateway endpoint is free; an interface endpoint bills hourly per AZ. */
+    @Test
+    void dynamoDbIsReachedThroughAGatewayEndpointNotAnInterfaceEndpoint() {
+        var resource = InfraFixtures.resource(template, "DynamoDbGatewayEndpoint");
+        var properties = InfraFixtures.properties(template, "DynamoDbGatewayEndpoint");
+
+        assertThat(resource.get("Condition"))
+            .as("mirrors S3GatewayEndpoint — under UseExistingVpc=true the operator supplies their "
+                + "own networking and the stack creates no endpoint at all")
+            .isEqualTo("CreateNetworking");
+        assertThat(properties.get("VpcEndpointType")).isEqualTo("Gateway");
+        assertThat(String.valueOf(properties.get("ServiceName"))).contains("dynamodb");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theTableNameIsAStackOutput() {
+        var outputs = (Map<String, Object>) template.get("Outputs");
+
+        assertThat(outputs).containsKey("ResultsTableName");
+        assertThat((Map<String, Object>) outputs.get("ResultsTableName"))
+            .containsEntry("Value", "ResultsTable");
+    }
 }

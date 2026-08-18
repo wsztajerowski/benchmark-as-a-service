@@ -133,6 +133,20 @@ Resources:
       RouteTableIds:
         - !Ref PublicRouteTable
 
+  # Free, unlike an interface endpoint (which bills hourly per AZ). Under
+  # UseExistingVpc=true this is skipped, same as S3GatewayEndpoint — the operator
+  # supplies their own networking and runner traffic to DynamoDB goes out via
+  # whatever route that networking already provides.
+  DynamoDbGatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateNetworking
+    Properties:
+      VpcId: !Ref BaasVpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PublicRouteTable
+
   RunnerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Condition: CreateNetworking
@@ -208,6 +222,43 @@ Resources:
           Value: !Sub ${ResourceNamePrefix}
         - Key: baas-role
           Value: working-bucket
+
+  # ─── DynamoDB Results Table ────────────────────────────────────────────────────
+
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    # Benchmark history outlives any single stack, same as S3MainBucket above.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub baas-${ResourceNamePrefix}-results
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: requestId-index
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: baas-role
+          Value: results
 
   # ─── IAM ──────────────────────────────────────────────────────────────────────
 
@@ -537,6 +588,8 @@ Outputs:
     Value: !Ref S3MainBucket
   S3BucketArn:
     Value: !GetAtt S3MainBucket.Arn
+  ResultsTableName:
+    Value: !Ref ResultsTable
   RunnerRoleName:
     Value: !Ref RunnerRole
   RunnerRoleArn:
