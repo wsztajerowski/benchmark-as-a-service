@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.model;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -77,5 +78,69 @@ class MeasurementItemMapperTest {
 
         assertThat(MeasurementItemMapper.fromItem(item))
             .isEqualTo(StoredMeasurementFixtures.jmh());
+    }
+
+    /**
+     * DynamoDB's N type rejects NaN outright, and JMH reports NaN scoreError for any
+     * single-iteration run — a real, not hypothetical, case. Normalizing to absent (rather than
+     * letting PutItem reject the whole item) matches the convention ResultsCommand already applies
+     * when formatting for display. This makes the round trip deliberately LOSSY for non-finite
+     * input: NaN goes in, null comes back. That is intentional — do not "fix" it back.
+     */
+    @Test
+    void aNaNScoreErrorIsNormalizedToAbsentRatherThanRejectedByDynamoDb() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withNaNScoreError = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            original.score(), Double.NaN, original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        var item = MeasurementItemMapper.toItem(withNaNScoreError);
+
+        assertThat(item).doesNotContainKey("scoreError");
+        assertThat(MeasurementItemMapper.fromItem(item).scoreError()).isNull();
+    }
+
+    /**
+     * Same normalization as the NaN scoreError case above, but for score and +Infinity instead of
+     * NaN — DynamoDB's N type rejects both equally. Deliberately lossy: Infinity in, null out.
+     */
+    @Test
+    void aPositiveInfinityScoreIsNormalizedToAbsentRatherThanRejectedByDynamoDb() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withInfiniteScore = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Double.POSITIVE_INFINITY, original.scoreError(), original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        var item = MeasurementItemMapper.toItem(withInfiniteScore);
+
+        assertThat(item).doesNotContainKey("score");
+        assertThat(MeasurementItemMapper.fromItem(item).score()).isNull();
+    }
+
+    /**
+     * design.md derives createdAt from OffsetDateTime.now(ZoneOffset.UTC), which on modern JVMs
+     * carries sub-millisecond resolution. StoredMeasurement truncates createdAt to milliseconds on
+     * construction (see StoredMeasurementTest), so a measurement built from such a clock still
+     * round-trips even though the input Instant did not start out millisecond-precise.
+     */
+    @Test
+    void aMeasurementBuiltFromANanosecondPrecisionClockStillRoundTrips() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withNanosecondPrecisionClock = new StoredMeasurement(
+            original.project(), original.requestId(),
+            Instant.parse("2026-08-17T22:07:06.123456789Z"), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            original.score(), original.scoreError(), original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+
+        assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(withNanosecondPrecisionClock)))
+            .isEqualTo(withNanosecondPrecisionClock);
     }
 }

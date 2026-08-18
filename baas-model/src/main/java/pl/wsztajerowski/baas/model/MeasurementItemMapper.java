@@ -50,6 +50,14 @@ public final class MeasurementItemMapper {
 
     private MeasurementItemMapper() {}
 
+    /**
+     * Non-finite {@code score}/{@code scoreError} are treated as absent, not stored. DynamoDB's
+     * {@code N} type rejects both {@code NaN} and {@code Infinity} at the API boundary, and JMH
+     * reports a {@code NaN} scoreError for any single-iteration run — a real case, not a
+     * defensive one — so writing it through unconditionally would fail the whole {@code PutItem}
+     * for an otherwise-valid measurement. This mirrors the null-for-non-finite convention already
+     * used by {@code ResultsCommand} when formatting for display.
+     */
     public static Map<String, AttributeValue> toItem(StoredMeasurement m) {
         Map<String, AttributeValue> item = new LinkedHashMap<>();
 
@@ -71,10 +79,10 @@ public final class MeasurementItemMapper {
         putIfPresent(item, RESULT_JSON_KEY, m.resultJsonKey());
         putIfPresent(item, ENVIRONMENT_JSON_KEY, m.environmentJsonKey());
 
-        if (m.score() != null) {
+        if (m.score() != null && Double.isFinite(m.score())) {
             item.put(SCORE, n(m.score()));
         }
-        if (m.scoreError() != null) {
+        if (m.scoreError() != null && Double.isFinite(m.scoreError())) {
             item.put(SCORE_ERROR, n(m.scoreError()));
         }
         if (!m.secondaryMetrics().isEmpty()) {

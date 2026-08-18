@@ -32,6 +32,10 @@ public record StoredMeasurement(
         require(project, "project");
         require(requestId, "requestId");
         if (createdAt == null) throw new IllegalArgumentException("createdAt is required");
+        // Truncated because the sort-key format carries exactly three fractional digits; keeping
+        // sub-millisecond precision here would make fromItem(toItem(m)) unequal to m for any
+        // clock with finer resolution than the stored form.
+        createdAt = createdAt.truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         if (kind == null) throw new IllegalArgumentException("kind is required");
         if (kind == MeasurementKind.JMH) {
             require(benchmarkClass, "benchmarkClass");
