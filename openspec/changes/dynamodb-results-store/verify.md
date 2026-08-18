@@ -5,8 +5,8 @@
 > Failed checks must be fixed in the corresponding artifact, then re-run verify.
 
 **Change**: `dynamodb-results-store`
-**Verified at**: `2026-08-16 23:40`
-**Iteration**: `1`
+**Verified at**: `2026-08-19 00:05`
+**Iteration**: `2`
 **Verifier**: `Claude Opus 5, controller session (subagent-driven-development)`
 
 ---
@@ -15,15 +15,9 @@
 
 - [x] All items `"valid": true`
 
-**Result**:
-
 ```text
 items: 5, passed: 5, failed: 0
-  change: 2 passed, 0 failed
-  spec:   3 passed, 0 failed
 ```
-
-No failures.
 
 ---
 
@@ -31,26 +25,21 @@ No failures.
 
 - [ ] All `- [ ]` have been changed to `- [x]`
 
-**11 of 108 complete.** §1.1–1.6 and §2.1–2.5 are ticked; 97 remain.
-
-**Incomplete tasks**:
+**29 of 108 complete** (was 12 at iteration 1). §1, §2 and §3 are closed; §4 is closed except two
+items held back deliberately.
 
 | Task | Reason incomplete | Blocks archive? |
 |---|---|---|
-| 2.6 | Live-AWS verification (`plan.md` Task 5). Not run — real EC2 spend. | **Yes** |
-| §3 (3.1–3.9) | `baas-model` module. No plan exists yet. | **Yes** |
-| §4 (4.1–4.10) | CloudFormation table, endpoint, IAM. No plan. | **Yes** |
-| §5 (5.1–5.12) | Runner store adapters. No plan. | **Yes** |
-| §6 (6.1–6.13) | CLI query layer. No plan. | **Yes** |
-| §7 (7.1–7.10) | Config and command wiring. No plan. | **Yes** |
-| §8 (8.1–8.11) | Test infrastructure. No plan. | **Yes** |
-| §9 (9.1–9.8) | Atlas → DynamoDB migration. No plan. | **Yes** |
-| §10–§12 | Decommission, docs, manual verification. No plan. | **Yes** |
+| 4.3 — remove TCP 27017 egress | **Deliberate.** The runner still writes to Atlas until §5 lands; `CLAUDE.md` states omitting 27017 makes every run fail at the database write. Annotated inline in tasks.md. | Yes, until the cutover |
+| 4.8 — remove Mongo SSM grants | **Deliberate.** Same reason; user-data still fetches the connection string from SSM. | Yes, until the cutover |
+| §5 (5.1–5.12) | Runner store adapters. No plan. | Yes |
+| §6 (6.1–6.13) | CLI query layer. No plan. | Yes |
+| §7 (7.1–7.10) | Config and command wiring. No plan. **Now interacts with the new `export-before-teardown` change.** | Yes |
+| §8 (8.1–8.11) | Test infrastructure. No plan. | Yes |
+| §9 (9.1–9.8) | Atlas → DynamoDB migration. No plan; blocked on two decisions. | Yes |
+| §10–§12 | Decommission, docs, manual verification. No plan. | Yes |
 
-This is **scope, not failure**. `plan.md` deliberately covers §1–§2 only, because task 1.2 could
-have changed the partition key that §3 and §6 encode. Task 1 settled it — 121 documents, far below
-the 100k threshold — so `pk = RESULT#<project>` stands. §3–§12 now need a plan before they can be
-applied.
+`plan.md` Task 8 (live deploy) also has not run — it is a human gate, not an omission.
 
 ---
 
@@ -58,12 +47,10 @@ applied.
 
 | Capability | Sync status | Notes |
 |---|---|---|
-| `cli-command-structure` | ✗ pending sync | Exists in `openspec/specs/`. Only 2 of its 9 requirements are implemented. |
-| `results-store-schema` | ✗ pending sync | New capability, not yet in `openspec/specs/`. 2 of 13 requirements implemented. |
-| `benchmark-results-query` | ✗ pending sync | New capability. **0 of 9** requirements implemented — entirely §6. |
-| `core-stack-provisioning` | ✗ pending sync | Exists in `openspec/specs/`. **0 of 9** requirements implemented — entirely §4. |
-
-Pending sync is correct at this stage; sync happens at archive.
+| `results-store-schema` | ✗ pending sync | New capability. 5 of 13 requirements now met (was 2). |
+| `core-stack-provisioning` | ✗ pending sync | Exists in `openspec/specs/`. 5 of 9 met (was 0). |
+| `cli-command-structure` | ✗ pending sync | Exists. 2 of 9 met — unchanged this phase. |
+| `benchmark-results-query` | ✗ pending sync | New capability. **0 of 9** — entirely §6. |
 
 ---
 
@@ -71,22 +58,27 @@ Pending sync is correct at this stage; sync happens at archive.
 
 | Sample item | design description | specs counterpart | Gap |
 |---|---|---|---|
-| `branch` is a user tag, not a known key | design.md: not in the vocabulary | `results-store-schema:87-92` omits `branch`; `--tag branch=main` is a custom tag | None — pinned by `doesNotTagBranchAutomatically` |
-| Caller wins for `project` | design.md:222 | `cli-command-structure:33-39` | None — pinned by `anExplicitTagOverridesTheDerivedValue` |
-| Observed tags match `environment.json` | design.md invariant | `results-store-schema:94-97` | None — this is what the fix in `1b55203` restored |
-| `pk = RESULT#<project>` | design.md key block | `results-store-schema:31-48` | None — Task 1 confirmed the count keeps it unchanged |
-| Vocabulary defined once, shared | design.md shared model module | `results-store-schema:89-90` | **See WARNING-1** |
+| Key shape | design.md:53, now `<fqcn>#<method>#<mode>#<createdAt>#<requestId>` | `results-store-schema:31` | **Closed this iteration.** `mode` was missing from both; the review caught it and design.md was updated with the code. |
+| Gateway not interface endpoint | design.md (free vs hourly) | `core-stack-provisioning:3` | None — both scenarios pinned by template tests |
+| Runner write-only | design.md | `core-stack-provisioning:24` | See WARNING-2 |
+| Deployer table lifecycle | design.md | `core-stack-provisioning:56` | None. The spec names `DescribeTimeToLive` explicitly; `dynamodb:Describe*` covers it, and the budget scenario is asserted |
+| Shape defined once, shared | design.md:161-171 | `results-store-schema:153` | None — `baas-model` is on both consumers' reactor path; the runner does not yet *use* it (§5) |
 
-**Drift warnings** (non-blocking):
+**Drift warnings:**
 
-- **WARNING-1 — the tag vocabulary now exists in two places.**
-  `results-store-schema:89-90` requires the key names be *"defined once as constants in the shared
-  model module and used by both the runner and the CLI"*. That module (`baas-model`, task 3.1/3.6)
-  does not exist yet, so `RunCommand.java:444-445` hard-codes `RESERVED_TAG_KEYS` and
-  `UserDataScriptBuilder`'s `SCRIPT_BODY` hard-codes the same names again as shell literals. The
-  two lists agree today (`RESERVED_TAG_KEYS` is the vocabulary minus `project` and `commit`, which
-  are deliberately caller-overridable), but nothing enforces that. **Task 3.6 must replace both
-  with the shared constants, not merely add a third copy.**
+- **WARNING-1 — the gateway endpoint does not exist on the existing-VPC path.**
+  `core-stack-provisioning:3` requires an endpoint "associated with the runner's route table".
+  `DynamoDbGatewayEndpoint` carries `Condition: CreateNetworking`, mirroring `S3GatewayEndpoint`,
+  so under `UseExistingVpc=true` no endpoint is created and DynamoDB traffic takes the operator's
+  existing route. This is a deliberate match to how S3 already behaves, but the spec does not say
+  so. Either the spec should record the exception or the requirement should be scoped to the
+  stack-managed-networking case.
+- **WARNING-2 — `core-stack-provisioning:24` says the runner "SHALL NOT be granted … any delete
+  action", but `dynamodb:BatchWriteItem` carries `DeleteRequest` and gets no separate IAM check.**
+  The grant is intentional and consistent with the runner's existing `s3:DeleteObject`, and the
+  test was renamed to state what it actually proves — but as written the spec and the
+  implementation disagree. The spec should be amended to permit batch deletes explicitly, or the
+  grant reduced to `PutItem` alone.
 
 ---
 
@@ -95,36 +87,40 @@ Pending sync is correct at this stage; sync happens at archive.
 - [x] No unstaged files in the worktree
 - [ ] All related commits have been pushed
 
-**Commit range**: `9529b17..d2b0b0c` (7 commits)
+**Commit range**: `c920bac..7fb9f90` (15 commits)
 
-Branch `impl/dynamodb-results-store` is local only — never pushed, and no PR exists. It has not
-been merged back into `feat/baas-cli-openspec-test`. That is the finalize artifact's job.
+`impl/ddb-phase2` is local only, not merged into `feat/baas-cli-openspec-test`, never pushed. That
+is finalize's job.
 
 ---
 
-## Requirement-level evidence for the implemented scope
+## Test evidence
 
-Of 39 requirements across the four delta specs, **4 are in phase-1 scope**. All 4 are satisfied at
-the code level:
+| Suite | Result |
+|---|---|
+| `mvn -pl baas-model test` | **33/33** |
+| `mvn -pl baas-cli test` | **202/202** |
+| Full reactor `mvn clean verify` | **BUILD SUCCESS**, 6 modules, async-profiler IT ran (not skipped) |
 
-| Requirement | Evidence | Status |
-|---|---|---|
-| `cli-command-structure:20` User tags passed through to the runner | `UserDataScriptBuilder` renders one `--tag` per entry; `forwardsCallerSuppliedTagsToTheRunner`, `rendersNoTagArgumentsWhenNoneAreSupplied` | ✅ |
-| `cli-command-structure:33` Project derived, with an override | `--project`, `projectFromToplevel`, `resolveProject`; `derivesProjectFromTheRepositoryDirectoryName`, `resolveProjectThrowsOutsideAGitRepository` | ✅ code / ⚠️ see below |
-| `results-store-schema:57` `project` derived from git repo name | same | ✅ |
-| `results-store-schema:107` User tags reach the stored result | Scenario "rendered user-data carries the tag" ✅ tested. Scenario "a user tag is present on the stored result" ⚠️ **needs a live run** | ⚠️ partial |
+## Requirement coverage
 
-**Scenario gaps:**
+**12 of 39 requirements fully satisfied at code level** (was 4), plus 2 partial.
 
-- `cli-command-structure:41-43` — "exits non-zero and **no EC2 instance is launched**". Structurally
-  satisfied: `resolveProject()` is the first statement in `call()`, ahead of image resolution, the
-  Maven build and the S3 upload. **No automated test pins it**, because `call()` is executed by no
-  test in this repo. Confirmable only by task 2.6.
-- `results-store-schema:111-113` — "the stored measurement's tags contain `branch=main`". Cannot be
-  verified without a live run. This is exactly task 2.6.
-- `results-store-schema:99-101` — unknown-tag-key warning. Belongs to §6, not implemented.
-- `results-store-schema:103-105` — custom tags "usable as filters". Storage half works; the filter
-  half is §6.
+Closed this iteration: `results-store-schema` item key encoding, chronological string timestamps,
+and shape-defined-once; `core-stack-provisioning` gateway endpoint, runner write-only, operator
+read-only, deployer lifecycle, and table-name output.
+
+Partial: `results-store-schema:3` (table exists; CLI config wiring is 7.1) and
+`results-store-schema:87` (vocabulary defined once and used by the CLI; the runner does not consume
+`baas-model` until §5).
+
+**Deliberately unsatisfied:** `core-stack-provisioning:17` (runner egress no longer includes 27017)
+and `:74` (setup detects a retained table). The first is 4.3; the second is 7.8.
+
+**Unverifiable without a deploy:** every scenario phrased "WHEN the core stack is deployed" —
+the gateway endpoint's existence, the table's presence, and "setup creates the table under the
+deployer policy alone". CloudFormation proves itself only at deploy time, and `plan.md` Task 8 is
+where that happens.
 
 ---
 
@@ -134,30 +130,26 @@ the code level:
 - [ ] ⚠️ PASS WITH WARNINGS
 - [x] ❌ FAIL — not archivable
 
-**This is not a defect verdict.** Every check that applies to the *applied scope* passed:
-structural validation 5/5, worktree clean, 187/187 unit tests, full reactor `BUILD SUCCESS`, all 4
-in-scope requirements implemented, no design contradictions, and the two defects review found
-(shell injection via tag value; caller tags overriding observed ones) are fixed and independently
-re-verified.
+**Phase 2's own scope is complete and clean.** Every check that applies to it passed: validation
+5/5, worktree clean, 235 tests green across both modules, full reactor success, 12 of 39
+requirements met, two documented drift warnings, and six defects found by review — two of which
+(`NaN` losing whole runs, multi-mode results overwriting each other) would have reached production.
 
-The change fails verification because **it is 11/108 complete and 35 of 39 requirements are
-unimplemented**. Archiving now would sync delta specs describing a DynamoDB results store that
-does not exist — including two entire capabilities (`benchmark-results-query`,
-`core-stack-provisioning`) at 0% — into `openspec/specs/`, making the specs claim capabilities the
-code does not have.
+The change fails verification for the same structural reason as iteration 1: **29 of 108 tasks and
+27 of 39 requirements remain**, including `benchmark-results-query` at 0 of 9. Archiving would sync
+delta specs describing a DynamoDB results store that nothing writes to and nothing reads from.
 
-**Next step**:
+**Next step:**
 
-Do **not** proceed to finalize or archive. Two independent tracks:
+1. **Finalize** — merge `impl/ddb-phase2` into `feat/baas-cli-openspec-test`. The branch is
+   reviewed clean and additive; leaving it unmerged risks it rotting against `main`.
+2. **Then, before Task 8's deploy:** re-render and re-attach the deployer policy. The attached
+   policy holds no DynamoDB actions; `DeployerPreflight` now detects that rather than failing
+   mid-update, but detection is not the fix. `infra/README.md` describes the wrong attachment
+   mechanism for doing it.
+3. **Resolve the two drift warnings above** — both are spec edits, not code.
+4. **Plan §5–§12**, noting the new `export-before-teardown` change alters what §7's setup and
+   teardown behaviour should be.
 
-1. **Close phase 1** — run `plan.md` Task 5 (live AWS: a real `baas run` with a custom tag,
-   confirming tags reach the stored result and agree with `environment.json`). That ticks task 2.6
-   and closes the two scenario gaps above. Costs real EC2 spend.
-2. **Plan phase 2** — regenerate `plan.md` scoped to §3–§9 and §11 against the now-confirmed
-   partition key, then re-enter apply. Resolve the three open decisions in `apply.md` first; §1.6's
-   `unknown` sentinel and §9.4's `source` tag mapping both feed directly into §9.
-
-Re-run verify after each apply iteration; increment the iteration counter from `apply.md`.
-
-> **Convergence loop reminder**: FAIL here is a scope verdict, not a code verdict — there is
-> nothing in the applied work to send back to the executor.
+> FAIL here is a scope verdict, not a code verdict. There is nothing in the applied work to send
+> back to the executor.
