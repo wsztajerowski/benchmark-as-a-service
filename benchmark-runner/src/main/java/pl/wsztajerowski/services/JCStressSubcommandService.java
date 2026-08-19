@@ -3,15 +3,17 @@ package pl.wsztajerowski.services;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
-import pl.wsztajerowski.entities.jcstress.JCStressTest;
-import pl.wsztajerowski.entities.jcstress.JCStressTestMetadata;
-import pl.wsztajerowski.infra.DatabaseService;
+import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.results.JCStressMeasurementMapper;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
 
 import java.nio.file.Path;
+import java.time.Instant;
+import java.util.List;
 
 import static pl.wsztajerowski.commands.JCStressHtmlResultParser.getJCStressHtmlResultParser;
 import static pl.wsztajerowski.process.BenchmarkProcessBuilder.benchmarkProcessBuilder;
@@ -20,14 +22,14 @@ public class JCStressSubcommandService {
     private static final Logger logger = LoggerFactory.getLogger(JCStressSubcommandService.class);
     private final CommonSharedOptions commonOptions;
     private final StorageService storageService;
-    private final DatabaseService databaseService;
+    private final ResultsStore resultsStore;
     private final Path benchmarkPath;
 
     private final JCStressOptions jcStressOptions;
 
-    JCStressSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+    JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
         this.storageService = storageService;
-        this.databaseService = databaseService;
+        this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;
         this.benchmarkPath = benchmarkPath;
         this.jcStressOptions = jcStressOptions;
@@ -68,16 +70,6 @@ public class JCStressSubcommandService {
         JCStressResult jcStressResult = getJCStressHtmlResultParser(resultFilepath, outputPath)
             .parse();
 
-        logger.info("Saving benchmarks into DB with id: {}", commonOptions.requestId());
-        JCStressTest stressTestResult = new JCStressTest(
-            commonOptions.requestId(),
-            new JCStressTestMetadata(commonOptions.tags()),
-            jcStressResult);
-
-        logger.debug("JCStress results: {}", stressTestResult);
-        databaseService
-            .save(stressTestResult);
-
         jcStressResult
             .getAllUnsuccessfulTest()
             .forEach((testName, s3Key) ->
@@ -87,5 +79,18 @@ public class JCStressSubcommandService {
                         .saveFile(Path.of(s3Key), reportPath.resolve(testOutputFilename));
                 }
             );
+
+        // Store last: a run that fails here must still leave its S3 artifacts behind.
+        List<StoredMeasurement> measurements = List.of(JCStressMeasurementMapper.toMeasurement(
+            jcStressResult,
+            commonOptions.project(),
+            commonOptions.requestId(),
+            Instant.now(),
+            commonOptions.tags(),
+            outputPath.toString(),
+            outputPath.resolve("environment.json").toString()));
+
+        logger.info("Storing JCStress summary for request {}", commonOptions.requestId());
+        resultsStore.write(measurements);
     }
 }

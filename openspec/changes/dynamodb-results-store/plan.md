@@ -71,7 +71,7 @@ Covers 5.2 and 5.3.
 
 **Why the port takes a `List`.** One item per measurement, batched per run: `BatchWriteItem` takes at most 25 items, and a JMH run produces several measurements. A single-item `write` would push the batching decision into every caller.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -98,12 +98,12 @@ class NoOpResultsStoreTest {
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `mvn -pl baas-model install -DskipTests && mvn -pl benchmark-runner test -Dtest=NoOpResultsStoreTest`
 Expected: FAIL to compile — `ResultsStore` and `NoOpResultsStore` do not exist.
 
-- [ ] **Step 3: Add the `baas-model` dependency**
+- [x] **Step 3: Add the `baas-model` dependency**
 
 `benchmark-runner/pom.xml` does not depend on `baas-model` yet, and the port below imports
 `StoredMeasurement`. Add it first or nothing compiles:
@@ -116,7 +116,7 @@ Expected: FAIL to compile — `ResultsStore` and `NoOpResultsStore` do not exist
         </dependency>
 ```
 
-- [ ] **Step 4: Create the port and its exception**
+- [x] **Step 4: Create the port and its exception**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -160,7 +160,7 @@ public class ResultsStoreException extends RuntimeException {
 }
 ```
 
-- [ ] **Step 4: Create the no-op store**
+- [x] **Step 4: Create the no-op store**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -187,19 +187,19 @@ public class NoOpResultsStore implements ResultsStore {
 }
 ```
 
-- [ ] **Step 5: Confirm `upsert` has no callers, then delete the old interfaces**
+- [x] **Step 5: Confirm `upsert` has no callers, then delete the old interfaces**
 
 Run: `grep -rn "\.upsert(" benchmark-runner/src/main`
 Expected: no matches. **If this finds a caller, stop and report it** — the deletion assumption is wrong.
 
 Then delete `DatabaseService.java` and `NoOpDatabaseService.java`. Leave `DocumentDbService.java` and `DatabaseServiceBuilder.java` for now — Tasks 2 and 6 replace them, and deleting them here breaks compilation before their replacements exist. The module will not fully compile until Task 8; that is expected, so run only the named test class until then.
 
-- [ ] **Step 6: Run and confirm green**
+- [x] **Step 6: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=NoOpResultsStoreTest`
 Expected: PASS, 2 tests.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/infra/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
@@ -227,7 +227,7 @@ Covers 5.5.
 
 **Store the neutral shape, not the old entities.** Writing `StoredMeasurement` (wrapped in a Morphia entity for its `@Id`) rather than reconstructing `JmhBenchmark`/`JCStressTest` keeps one shape alive instead of two. Two shapes is the drift this whole change exists to remove.
 
-- [ ] **Step 1: Create the shared test fixture**
+- [x] **Step 1: Create the shared test fixture**
 
 `benchmark-runner/src/test/java/pl/wsztajerowski/infra/StoredMeasurementFixtures.java`:
 
@@ -266,7 +266,7 @@ final class StoredMeasurementFixtures {
 }
 ```
 
-- [ ] **Step 2: Write the failing integration test**
+- [x] **Step 2: Write the failing integration test**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -309,12 +309,12 @@ class MongoResultsStoreIT extends TestcontainersWithS3AndMongoBaseIT {
 
 **Read `TestcontainersWithS3AndMongoBaseIT` first.** If it does not already expose a `datastore()` accessor, add one following whatever it already provides — do not restructure the class.
 
-- [ ] **Step 3: Run and confirm failure**
+- [x] **Step 3: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=MongoResultsStoreIT`
 Expected: FAIL to compile — `MongoResultsStore` does not exist.
 
-- [ ] **Step 4: Create the Morphia entity**
+- [x] **Step 4: Create the Morphia entity**
 
 Must live in `pl.wsztajerowski.entities` — Morphia auto-maps that package, and a class outside it is never mapped.
 
@@ -355,7 +355,7 @@ public class MongoMeasurementDocument {
 }
 ```
 
-- [ ] **Step 5: Implement the adapter**
+- [x] **Step 5: Implement the adapter**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -413,12 +413,12 @@ the new port, and Task 9's contract suite proves it again against both adapters.
 replacing coverage, not dropping it. It will not compile after Task 1 regardless, since it
 references the removed `DatabaseService`.
 
-- [ ] **Step 6: Run and confirm green**
+- [x] **Step 6: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=MongoResultsStoreIT`
 Expected: PASS, 2 tests. Requires Docker.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
@@ -452,13 +452,13 @@ Covers 5.8.
 
 **Do not add a non-finite guard here.** `MeasurementItemMapper` already drops non-finite values on the way into DynamoDB; duplicating it would hide the case from the test that covers it.
 
-- [ ] **Step 1: Read the real types first**
+- [x] **Step 1: Read the real types first**
 
 Run: `cat benchmark-runner/src/main/java/pl/wsztajerowski/entities/jmh/JmhResult.java benchmark-runner/src/main/java/pl/wsztajerowski/entities/jmh/Metric.java`
 
 The accessor names used below (`benchmark()`, `mode()`, `primaryMetric()`, `score()`, `scoreError()`, `scoreUnit()`, `secondaryMetrics()`) are the expected shape. **If the real records differ, adapt and say so in your report** — do not invent a shape.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```java
 package pl.wsztajerowski.results;
@@ -507,12 +507,12 @@ class JmhMeasurementMapperTest {
 
 Add a private `map(String benchmarkName)` helper that builds a minimal `JmhResult` — using whatever constructor or builder the real record provides — and calls the mapper with `project="p"`, `requestId="r"`, `createdAt=Instant.parse("2026-08-19T09:00:00.000Z")`, `tags=Map.of()`, `resultPath="main/jmh/ts"`, `resultJsonKey="main/jmh/ts/jmh-result.json"`, `environmentJsonKey="main/jmh/ts/environment.json"`.
 
-- [ ] **Step 3: Run and confirm failure**
+- [x] **Step 3: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JmhMeasurementMapperTest`
 Expected: FAIL to compile — `JmhMeasurementMapper` does not exist.
 
-- [ ] **Step 4: Implement the mapper**
+- [x] **Step 4: Implement the mapper**
 
 ```java
 package pl.wsztajerowski.results;
@@ -579,12 +579,12 @@ public final class JmhMeasurementMapper {
 }
 ```
 
-- [ ] **Step 5: Run and confirm green**
+- [x] **Step 5: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JmhMeasurementMapperTest`
 Expected: PASS, 4 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/results/ benchmark-runner/src/test/java/pl/wsztajerowski/results/
@@ -607,13 +607,13 @@ Covers 5.9.
 
 **One summary, not one item per test.** `JCStressResult` reports counts for everything but **names only non-passing tests** — passing ones are counted, never named. Per-test items would therefore cover failures only, and the result files are already in S3. So a JCStress run produces exactly **one** measurement, with `benchmarkClass`, `benchmarkMethod`, `mode`, `score`, `scoreError` and `scoreUnit` all null and the counts in `JcstressSummary`.
 
-- [ ] **Step 1: Read the real types first**
+- [x] **Step 1: Read the real types first**
 
 Run: `cat benchmark-runner/src/main/java/pl/wsztajerowski/entities/jcstress/JCStressResult.java benchmark-runner/src/main/java/pl/wsztajerowski/entities/jcstress/JCStressResultBuilder.java`
 
 The accessor names below are the expected shape. Adapt to the real record and report any difference. The module already has a builder — use it in the test rather than inventing a constructor.
 
-- [ ] **Step 2: Write the failing tests**
+- [x] **Step 2: Write the failing tests**
 
 ```java
 package pl.wsztajerowski.results;
@@ -655,12 +655,12 @@ class JCStressMeasurementMapperTest {
 }
 ```
 
-- [ ] **Step 3: Run and confirm failure**
+- [x] **Step 3: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JCStressMeasurementMapperTest`
 Expected: FAIL to compile.
 
-- [ ] **Step 4: Implement the mapper**
+- [x] **Step 4: Implement the mapper**
 
 ```java
 package pl.wsztajerowski.results;
@@ -711,12 +711,12 @@ public final class JCStressMeasurementMapper {
 
 `JcstressSummary` null-defaults its three maps, so a null from `JCStressResult` is safe.
 
-- [ ] **Step 5: Run and confirm green**
+- [x] **Step 5: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JCStressMeasurementMapperTest`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/results/ benchmark-runner/src/test/java/pl/wsztajerowski/results/
@@ -743,7 +743,7 @@ Covers 5.1, 5.4 and 5.6.
 
 **Why the retry loop is not optional.** `BatchWriteItem` reports throttling and partial success by **returning** the leftovers in `unprocessedItems` rather than failing. Ignoring that field loses measurements while the call looks successful — precisely the silent-loss class this project's invariants exist to prevent.
 
-- [ ] **Step 1: Add the dependencies**
+- [x] **Step 1: Add the dependencies**
 
 In `benchmark-runner/pom.xml`, inside `<dependencies>`:
 
@@ -758,7 +758,7 @@ No `<version>` — the root pom imports the AWS SDK BOM. **Keep `mongodb-driver-
 
 `baas-model` is already a dependency — Task 1 added it, because the port imports `StoredMeasurement`. Do not add it twice.
 
-- [ ] **Step 2: Write the fake client**
+- [x] **Step 2: Write the fake client**
 
 A hand-written fake keeps the retry logic testable without Docker.
 
@@ -828,7 +828,7 @@ class RecordingDynamoDbClient implements DynamoDbClient {
 
 If `DynamoDbClient` is an interface with many default methods this compiles as-is; if the compiler demands more, implement only what it names and let everything else inherit.
 
-- [ ] **Step 3: Write the failing tests**
+- [x] **Step 3: Write the failing tests**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -893,12 +893,12 @@ class DynamoDbResultsStoreTest {
 }
 ```
 
-- [ ] **Step 4: Run and confirm failure**
+- [x] **Step 4: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=DynamoDbResultsStoreTest`
 Expected: FAIL to compile — `DynamoDbResultsStore` does not exist.
 
-- [ ] **Step 5: Implement the adapter**
+- [x] **Step 5: Implement the adapter**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -1004,12 +1004,12 @@ public class DynamoDbResultsStore implements ResultsStore {
 }
 ```
 
-- [ ] **Step 6: Run and confirm green**
+- [x] **Step 6: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=DynamoDbResultsStoreTest`
 Expected: PASS, 4 tests. The retry test sleeps ~100ms; that is intentional and cheap.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add benchmark-runner/pom.xml benchmark-runner/src/main/java/pl/wsztajerowski/infra/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
@@ -1035,7 +1035,7 @@ Covers 5.7.
 
 This is a **breaking change for standalone `benchmark-runner` users** who relied on the lenient behaviour. Deliberate; note it in your report so it reaches release notes.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -1105,12 +1105,12 @@ class ResultsStoreBuilderTest {
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=ResultsStoreBuilderTest`
 Expected: FAIL to compile.
 
-- [ ] **Step 3: Implement the builder**
+- [x] **Step 3: Implement the builder**
 
 Structure: count how many of `{tableName, connectionString, noDatabase}` are set. Zero → `IllegalStateException` whose message names `--no-database`. More than one → `IllegalStateException` containing the word "both". Exactly one → construct the matching adapter.
 
@@ -1132,12 +1132,12 @@ For DynamoDB, apply `endpointOverride` when `withDynamoDbEndpoint` is set, so Lo
 
 Then delete `DatabaseServiceBuilder.java`.
 
-- [ ] **Step 4: Run and confirm green**
+- [x] **Step 4: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=ResultsStoreBuilderTest`
 Expected: PASS, 7 tests.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/infra/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
@@ -1162,7 +1162,7 @@ Covers 5.10 and 5.11.
 
 **Why S3 first.** A run that fails at the store must still leave its artifacts behind — the whole point of the S3 layout is that a failed run stays diagnosable. Store-first would lose the JSON along with the measurements.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Extend the existing JMH integration test (read it first and follow its harness):
 
@@ -1175,12 +1175,12 @@ Extend the existing JMH integration test (read it first and follow its harness):
     }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JmhSubcommandServiceIT`
 Expected: FAIL — no `jmh-result.json` in the bucket.
 
-- [ ] **Step 3: Upload the JSON and compute `createdAt` once per run**
+- [x] **Step 3: Upload the JSON and compute `createdAt` once per run**
 
 In `JmhSubcommandService`, after the benchmark process exits and **before** the result loop:
 
@@ -1199,16 +1199,16 @@ Then build a `List<StoredMeasurement>` from the loop via `JmhMeasurementMapper.t
 
 **Known limitation — record it, do not fix it here.** Two results differing only by `@Param` values collide on the sort key, because params are not part of it. This is pre-existing: the Mongo `_id` had the same shape, and `options=<params>` is still captured as a tag. **Do not change the key shape to fix it** — §9 migrates history onto the current shape, and changing it afterwards means redoing the migration. Raise it in your report so it can be decided deliberately.
 
-- [ ] **Step 4: Order the writes S3-first in all four services**
+- [x] **Step 4: Order the writes S3-first in all four services**
 
 Read each of the four services and ensure every S3 upload completes before `resultsStore.write(...)`. Move the store call to the end where it is not already last.
 
-- [ ] **Step 5: Run and confirm green**
+- [x] **Step 5: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JmhSubcommandServiceIT`
 Expected: PASS.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/services/ benchmark-runner/src/test/java/pl/wsztajerowski/services/
@@ -1232,7 +1232,7 @@ Covers 5.12.
 
 **`--project` becomes first-class.** `StoredMeasurement` requires a non-blank `project` — it composes the partition key. `baas run` already forwards `--tag project=<name>`, but the runner needs it as a value, not dug out of the tag map.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```java
 package pl.wsztajerowski.commands;
@@ -1272,12 +1272,12 @@ class ApiCommonSharedOptionsTest {
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest=ApiCommonSharedOptionsTest`
 Expected: FAIL to compile — the accessors do not exist.
 
-- [ ] **Step 3: Add the options**
+- [x] **Step 3: Add the options**
 
 ```java
     @Option(names = "--results-table", description = "DynamoDB table holding benchmark measurements.")
@@ -1295,16 +1295,16 @@ Expected: FAIL to compile — the accessors do not exist.
 
 Add matching accessors plus `buildResultsStore()` delegating to `ResultsStoreBuilder`. **Keep `--mongo-connection-string`** — it is how the standalone deployment selects Mongo, and §13 removes only the *CLI's* use of it.
 
-- [ ] **Step 4: Replace `DatabaseService` with `ResultsStore` throughout the services**
+- [x] **Step 4: Replace `DatabaseService` with `ResultsStore` throughout the services**
 
 Change the field type, constructor parameter and call site in each of the four `*SubcommandService` classes and their builders. The call becomes `resultsStore.write(measurements)` with a list built from the Task 3 and Task 4 mappers.
 
-- [ ] **Step 5: Run the whole module**
+- [x] **Step 5: Run the whole module**
 
 Run: `mvn -pl benchmark-runner test`
 Expected: PASS. This is the first point at which the module compiles fully again.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add benchmark-runner/src/main/java/pl/wsztajerowski/ benchmark-runner/src/test/java/pl/wsztajerowski/

@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.entities.jmh.JmhBenchmark;
+import pl.wsztajerowski.entities.MongoMeasurementDocument;
+import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
@@ -44,9 +46,9 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path profileResults = Files.createTempDirectory("prof-results");
         JmhWithProfilerSubcommandService sut = JmhWithProfilerSubcommandServiceBuilder.serviceBuilder()
-            .withMongoConnectionString(getConnectionString())
+            .withResultsStore(new MongoResultsStore(datastore()))
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(profileResults, "req-1", Map.of()))
+            .withCommonOptions(new CommonSharedOptions(profileResults, "req-1", "test-project", Map.of()))
             .withProfilerOptions(Map.of(
                 "gc", "churn=false;alloc=false",
                 "comp", "",
@@ -75,12 +77,12 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
         sut.executeCommand();
 
         // then
-        String collectionName = JmhBenchmark.class.getAnnotation(Entity.class).value();
+        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
         helper.assertFindResult(collectionName, all(), documents ->
             assertThat(documents.first())
                 .isNotNull()
-                .containsEntry("_t", "JmhBenchmark")
-                .extracting("jmhResult.secondaryMetrics", as(MAP))
+                .extracting("measurement", as(MAP))
+                .extracting("secondaryMetrics", as(MAP))
                 .containsKeys("gc.count", "class.load", "compiler.time.total")
                 .doesNotContainKeys("gc.churn.G1_Eden_Space", "gc.alloc.rate")
         );

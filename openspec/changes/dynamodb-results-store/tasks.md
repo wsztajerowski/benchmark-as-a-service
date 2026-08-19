@@ -186,21 +186,21 @@ Atlas being retained as rollback until §14.
 
 ## 5. Runner store port and adapters
 
-- [ ] 5.1 Add the DynamoDB SDK dependency to `benchmark-runner`; keep `mongodb-driver-sync` and Morphia
-- [ ] 5.2 Replace `DatabaseService` with a storage-neutral `ResultsStore` port exposing only a write
-- [ ] 5.3 Delete the `UpsertService` interface and its implementations
-- [ ] 5.4 Implement the DynamoDB adapter: one item per measurement, batched per run
-- [ ] 5.5 Refactor `DocumentDbService` into a MongoDB adapter implementing the same port
-- [ ] 5.6 Implement retry with backoff, and non-zero exit when the write ultimately fails
-- [ ] 5.7 Rewrite the builder to select an adapter from table name, connection string, or `--no-database`,
+- [x] 5.1 Add the DynamoDB SDK dependency to `benchmark-runner`; keep `mongodb-driver-sync` and Morphia
+- [x] 5.2 Replace `DatabaseService` with a storage-neutral `ResultsStore` port exposing only a write
+- [x] 5.3 Delete the `UpsertService` interface and its implementations
+- [x] 5.4 Implement the DynamoDB adapter: one item per measurement, batched per run
+- [x] 5.5 Refactor `DocumentDbService` into a MongoDB adapter implementing the same port
+- [x] 5.6 Implement retry with backoff, and non-zero exit when the write ultimately fails
+- [x] 5.7 Rewrite the builder to select an adapter from table name, connection string, or `--no-database`,
   making ambiguous or absent configuration a hard failure
-- [ ] 5.8 Map `JmhResult` into the stored shape, dropping `rawData` and `scorePercentiles` and reducing
+- [x] 5.8 Map `JmhResult` into the stored shape, dropping `rawData` and `scorePercentiles` and reducing
   `secondaryMetrics` to score and unit
-- [ ] 5.9 Map `JCStressResult` into the stored shape, keeping the counts and the three test maps
-- [ ] 5.10 Upload the verbatim JMH result JSON to the run's S3 result path and record `resultJsonKey`,
+- [x] 5.9 Map `JCStressResult` into the stored shape, keeping the counts and the three test maps
+- [x] 5.10 Upload the verbatim JMH result JSON to the run's S3 result path and record `resultJsonKey`,
   `resultPath` and `environmentJsonKey`
-- [ ] 5.11 Order the writes S3-first, then store, in all four subcommand services
-- [ ] 5.12 Update `TestWrapper` for the new options and store wiring
+- [x] 5.11 Order the writes S3-first, then store, in all four subcommand services
+- [x] 5.12 Update `TestWrapper` for the new options and store wiring
 
 ## 6. CLI query layer
 

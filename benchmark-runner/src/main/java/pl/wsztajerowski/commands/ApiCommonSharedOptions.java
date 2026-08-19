@@ -3,6 +3,8 @@ package pl.wsztajerowski.commands;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.infra.ResultsStore;
+import pl.wsztajerowski.infra.ResultsStoreBuilder;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.S3Options;
 
@@ -23,6 +25,20 @@ public class ApiCommonSharedOptions {
 
     @Option(names = {"-id","--request-id"}, description = "Request ID. Default value: ISO 8601 format of UTC current date-time.")
     String requestId;
+
+    @Option(names = "--project", description = "Project name; composes the results partition key.")
+    String project;
+
+    @Option(names = "--results-table", description = "DynamoDB table holding benchmark measurements.")
+    String resultsTableName;
+
+    @Option(names = "--no-database", description = "Discard measurements instead of storing them. Explicit opt-in; absent configuration is an error.")
+    boolean noDatabase;
+
+    @Option(names = "--dynamodb-endpoint",
+        defaultValue = "${AWS_ENDPOINT_URL_DYNAMODB}",
+        description = "Custom DynamoDB endpoint, for LocalStack.")
+    URI dynamoDbEndpoint;
 
     @Option(names = {"--mongo-connection-string", "-m"},
         defaultValue = "${MONGO_CONNECTION_STRING}",
@@ -49,11 +65,47 @@ public class ApiCommonSharedOptions {
             .orElse(Path.of(nonNullRequestId));
         Map<String, String> tagMap = Optional.ofNullable(tags)
             .orElse(Collections.emptyMap());
-        return new CommonSharedOptions(nonNullResultPath, nonNullRequestId, tagMap);
+        return new CommonSharedOptions(nonNullResultPath, nonNullRequestId, getProject(), tagMap);
+    }
+
+    /**
+     * Falls back to a {@code project} tag so {@code baas run}'s existing {@code --tag project=…}
+     * keeps working, then to {@code unknown} — a blank project would be rejected by
+     * {@code StoredMeasurement} after the benchmark has already been paid for and run.
+     */
+    public String getProject() {
+        if (project != null && !project.isBlank()) {
+            return project;
+        }
+        return Optional.ofNullable(tags)
+            .map(t -> t.get("project"))
+            .filter(value -> !value.isBlank())
+            .orElse("unknown");
+    }
+
+    public String getResultsTableName() {
+        return resultsTableName;
+    }
+
+    public boolean isNoDatabase() {
+        return noDatabase;
+    }
+
+    public URI getDynamoDbEndpoint() {
+        return dynamoDbEndpoint;
     }
 
     public URI getMongoConnectionString() {
         return mongoConnectionString;
+    }
+
+    public ResultsStore buildResultsStore() {
+        return ResultsStoreBuilder.builder()
+            .withTableName(resultsTableName)
+            .withConnectionString(mongoConnectionString)
+            .withNoDatabase(noDatabase)
+            .withDynamoDbEndpoint(dynamoDbEndpoint)
+            .build();
     }
 
     public S3Options getS3Options() {

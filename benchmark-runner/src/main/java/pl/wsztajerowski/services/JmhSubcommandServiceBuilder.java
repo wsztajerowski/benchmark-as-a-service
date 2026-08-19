@@ -1,20 +1,18 @@
 package pl.wsztajerowski.services;
 
-import pl.wsztajerowski.infra.DatabaseService;
+import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
-import java.net.URI;
 
 import static java.util.Objects.requireNonNull;
-import static pl.wsztajerowski.infra.DatabaseServiceBuilder.getMorphiaServiceBuilder;
 
 public final class JmhSubcommandServiceBuilder {
     private StorageService storageService;
     private CommonSharedOptions commonOptions;
     private JmhOptions jmhOptions;
-    private URI mongoConnectionString;
+    private ResultsStore resultsStore;
 
     private JmhSubcommandServiceBuilder() {
     }
@@ -33,8 +31,8 @@ public final class JmhSubcommandServiceBuilder {
         return this;
     }
 
-    public JmhSubcommandServiceBuilder withMongoConnectionString(URI mongoConnectionString) {
-        this.mongoConnectionString = mongoConnectionString;
+    public JmhSubcommandServiceBuilder withResultsStore(ResultsStore resultsStore) {
+        this.resultsStore = resultsStore;
         return this;
     }
 
@@ -45,9 +43,7 @@ public final class JmhSubcommandServiceBuilder {
 
     public JmhSubcommandService build() {
         requireNonNull(storageService, "Please provide a storage service");
-        DatabaseService databaseService = getMorphiaServiceBuilder()
-            .withConnectionString(mongoConnectionString)
-            .build();
-        return new JmhSubcommandService(storageService, databaseService, commonOptions, jmhOptions);
+        requireNonNull(resultsStore, "Please provide a results store");
+        return new JmhSubcommandService(storageService, resultsStore, commonOptions, jmhOptions);
     }
 }

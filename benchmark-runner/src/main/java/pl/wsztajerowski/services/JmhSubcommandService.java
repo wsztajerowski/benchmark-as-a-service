@@ -3,24 +3,20 @@ package pl.wsztajerowski.services;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
-import pl.wsztajerowski.entities.jmh.BenchmarkMetadata;
-import pl.wsztajerowski.entities.jmh.JmhBenchmark;
-import pl.wsztajerowski.entities.jmh.JmhBenchmarkId;
-import pl.wsztajerowski.entities.jmh.JmhResult;
-import pl.wsztajerowski.infra.DatabaseService;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.results.JmhRunResults;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.util.List;
 
 import static java.text.MessageFormat.format;
 import static pl.wsztajerowski.FileUtils.ensurePathExists;
-import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
 
 public class JmhSubcommandService {
@@ -28,11 +24,11 @@ public class JmhSubcommandService {
     private final CommonSharedOptions commonOptions;
     private final JmhOptions jmhOptions;
     private final StorageService storageService;
-    private final DatabaseService databaseService;
+    private final ResultsStore resultsStore;
 
-    JmhSubcommandService(StorageService storageService, DatabaseService databaseService, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
+    JmhSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
         this.storageService = storageService;
-        this.databaseService = databaseService;
+        this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;
         this.jmhOptions = jmhOptions;
     }
@@ -71,17 +67,10 @@ public class JmhSubcommandService {
         }
 
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
-        for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
-            logger.debug("JMH result: {}", jmhResult);
-            JmhBenchmarkId benchmarkId = new JmhBenchmarkId(
-                commonOptions.requestId(),
-                jmhResult.benchmark(),
-                jmhResult.mode());
-            logger.info("Saving results in DB with ID: {}", benchmarkId);
-            var tags = commonOptions.tags();
-            var now = OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime();
-            JmhBenchmark jmhBenchmark = new JmhBenchmark(benchmarkId, jmhResult, new BenchmarkMetadata(tags, now, null));
-            databaseService.save(jmhBenchmark);
-        }
+        List<StoredMeasurement> measurements = JmhRunResults.uploadJsonAndMap(
+            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput());
+
+        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
+        resultsStore.write(measurements);
     }
 }

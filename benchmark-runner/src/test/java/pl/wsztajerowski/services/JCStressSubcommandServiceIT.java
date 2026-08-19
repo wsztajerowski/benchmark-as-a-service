@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.entities.jcstress.JCStressTest;
+import pl.wsztajerowski.entities.MongoMeasurementDocument;
+import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
@@ -45,9 +47,9 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 .withProcessOutput(tempDirectory.resolve("jcstress.txt"))
                 .build();
         JCStressSubcommandService sut = serviceBuilder()
-            .withMongoConnectionString(getConnectionString())
+            .withResultsStore(new MongoResultsStore(datastore()))
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Collections.emptyMap()))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", "test-project", Collections.emptyMap()))
             .withJCStressOptions(jcStressOptions)
             .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())
             .build();
@@ -56,15 +58,15 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         sut.executeCommand();
 
         // then
-        String collectionName = JCStressTest.class.getAnnotation(Entity.class).value();
+        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
         helper.assertFindResult(collectionName, all(), documents ->
             assertThat(documents.first())
                 .isNotNull()
-                .containsEntry("_t", "JCStressTest")
-                .extracting("result", as(MAP))
+                .extracting("measurement", as(MAP))
+                .extracting("jcstress", as(MAP))
                     .containsEntry("totalTests", 2)
                     .containsEntry("passedTests", 1)
-                    .extracting("testsWithFailedResults", as(MAP))
+                    .extracting("failed", as(MAP))
                         .containsKey("pl.wsztajerowski.IntegerIncrementing.TestWithForbiddenResults")
         );
 
