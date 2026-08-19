@@ -1,406 +1,228 @@
-# DynamoDB Results Store — Implementation Plan (Phase 2: §3 + §4-additive)
+# DynamoDB Results Store — Implementation Plan (Phase 3: §5 + supporting §8)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Land the shared `baas-model` module and provision the DynamoDB table, gateway endpoint and IAM grants — without touching Atlas, so every existing run keeps working.
+**Goal:** Give `benchmark-runner` the ability to write measurements to DynamoDB through a storage-neutral port, with the MongoDB adapter refactored onto the same port — without cutting anything over.
 
-**Architecture:** `baas-model` is a new Mongo-free module holding the stored measurement shape, key encoding, timestamp formatting, tag vocabulary and an explicit `Map<String, AttributeValue>` mapper. It sits ahead of `benchmark-runner` and `baas-cli` in the reactor so an incompatible change breaks compilation rather than returning zero rows. CloudFormation gains the table, a free gateway endpoint and scoped IAM — all additive, nothing removed.
+**Architecture:** `DatabaseService` (a Mongo-shaped interface with `save` and an `upsert` builder) is replaced by `ResultsStore`, a port that speaks the domain: it accepts a list of `StoredMeasurement` from `baas-model` and writes it. Two adapters implement it — DynamoDB and MongoDB — and a builder selects exactly one. The four subcommand services map their result types into `StoredMeasurement` and hand the list to the port.
 
-**Tech Stack:** Java 25, Maven multi-module, AWS SDK v2 (BOM-managed at the root), JUnit 6, AssertJ, CloudFormation.
-
----
-
-## ⚠️ SEQUENCING HAZARD — why §4 is split
-
-`tasks.md` §4 lists ten items as one block. **Two of them must not ship in this phase:**
-
-| Task | Why it is deferred |
-|---|---|
-| **4.3** Remove TCP 27017 egress from `RunnerSecurityGroup` | The runner still writes to Atlas until §5 lands. `CLAUDE.md` states plainly: *"omitting 27017 makes every run fail at the database write."* Deploying 4.3 now breaks **every run** until the cutover completes. |
-| **4.8** Remove Mongo SSM grants | Same reason — user-data still fetches the connection string from SSM until §7.5. Removing the grant strands the runner. |
-
-`design.md`'s own Migration Plan resolves this: step 2 is *"Ship the table, gateway endpoint and IAM changes; deploy with `baas admin setup`. **Atlas is untouched.**"* — and the Mongo removal is step 7, after the cutover. `tasks.md` §4's ordering contradicts `design.md`; **`design.md` governs.**
-
-Both tasks move to Phase 4. Do not tick 4.3 or 4.8 in this phase.
+**Tech Stack:** Java 25, Maven multi-module, AWS SDK v2 (BOM-managed), Morphia + `mongodb-driver-sync` (retained), JUnit 6, AssertJ, Testcontainers 2.x, LocalStack.
 
 ---
 
-## Scope and phase map
+## Scope: build the write path, cut nothing over
 
-This plan covers §3 and the additive part of §4 only. The remainder is mapped at the bottom; each phase needs its own plan, because a plan should produce working, testable software on its own and §5–§7 form a single atomic cutover that cannot be split.
+After this phase the runner **still writes to MongoDB on every real run**. The DynamoDB adapter exists, is selectable, and is covered by integration tests — but `UserDataScriptBuilder` still passes a Mongo connection string and no table name, so nothing changes in production.
 
-| Phase | Sections | Deployable alone? | Blocked by |
-|---|---|---|---|
-| 1 ✅ done | §1, §2 | yes | — |
-| **2 — this plan** | §3, §4 minus 4.3/4.8 | yes, and inert | — |
-| 3 | §9 migration | yes | D2 + `source` mapping |
-| 4 | §5, §6, §7, §8, 4.3, 4.8 | **atomic** — must land together | Phase 2 deployed |
-| 5 | §10, §11, §12 | yes | Phase 4 verified live |
+The cutover is §13, and it lands only after §9 has migrated history. See the execution-order table at the top of `tasks.md`.
 
-Phase 3 (migrate history) precedes Phase 4 (cut over) deliberately — that is `design.md`'s order, and it means the table already holds history when reads switch.
+**Covered here:** 5.1–5.12, and 8.1–8.5, 8.7, 8.9, 8.10, 8.11.
+**Deliberately excluded:** 8.6 (query tests — needs §6's query layer) and 8.8 (download test — needs 7.7).
 
 ## Global Constraints
 
-- **`pom.xml` version stays `0.0.0-semantically-released`.** Never bump by hand; `release.yml` sets it.
-- **`baas-model` must stay Mongo-free.** It lands on `baas-cli`'s classpath, and *"MongoDB anywhere in `baas-cli`"* is an explicit non-goal. Enforce mechanically, not by convention.
-- **The AWS SDK BOM is imported at the root `pom.xml`.** Declare `software.amazon.awssdk:dynamodb` with **no `<version>`**.
-- **Sort keys must sort chronologically as strings.** Variable-width or zone-ambiguous timestamps misorder silently, and the failure looks like missing data rather than a formatting bug.
-- **No `Scan` capability anywhere.** Every supported query is a `Query` on the project partition or the `requestId` GSI.
-- **The table is `DeletionPolicy: Retain` *and* `UpdateReplacePolicy: Retain`**, mirroring `S3MainBucket`.
-- **The deployer policy is near IAM's size ceiling.** A `renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4608 non-whitespace chars (raised from 4096; the policy is inline on an IAM group, 5120 shared, nothing else attached). Wildcard verb classes rather than enumerating actions, but never wildcard `Create`.
-- **Do not deploy anything in this phase.** `baas admin setup` is a Phase 2 *closing* step, gated on human approval — it mutates a live stack.
-- Run the full reactor before trusting green: `mvn -pl benchmark-runner verify` alone fails by design.
-- `ASYNC_PATH` must point at a library that **exists on the build machine** — the `/app/...` path in older notes is the on-instance Linux path and makes the async IT silently skip.
+- **`pom.xml` version stays `0.0.0-semantically-released`.** Never bump by hand.
+- **`baas-model` must stay Mongo-free.** A maven-enforcer rule bans `org.mongodb:*`, `dev.morphia:*` and `dev.morphia.morphia:*` there, bound to `validate`. `benchmark-runner` keeps both — the ban is scoped to the model module only.
+- **`mvn -pl benchmark-runner verify` alone FAILS by design.** It needs the `fake-jmh-benchmarks` and `fake-stress-tests` shaded JARs in the local repo. A fresh worktree also needs `mvn -pl baas-model install -DskipTests` once.
+- **`ASYNC_PATH` must point at a library that exists on the build machine.** The `/app/...` value in older notes is the on-instance Linux path; using it makes `JmhWithAsyncProfilerSubcommandServiceIT` **silently skip** rather than fail. On this machine: `/Users/wiktor/workspace/async-profiler/lib/libasyncProfiler.dylib`.
+- **Morphia auto-maps everything under `pl.wsztajerowski.entities`** — the retained Mongo adapter depends on it, so new entity classes must live there.
+- **JUnit 6 (`6.0.2`) and Testcontainers 2.x.** Integration tests pin `mongo:7.0.5`.
+- **S3 is written before the store.** A run that fails at the store must still leave its artifacts behind.
+- **Do not touch `UserDataScriptBuilder`, the 27017 egress rule, or any Mongo SSM grant.** Those are §13 and §14.
 
 ## File Structure
 
 | File | Responsibility | Change |
 |---|---|---|
-| `pom.xml` | Reactor | Add `baas-model` **before** `benchmark-runner` and `baas-cli` |
-| `baas-model/pom.xml` | Module descriptor | Create; DynamoDB SDK; enforcer banning Mongo |
-| `baas-model/src/main/java/pl/wsztajerowski/baas/model/StoredMeasurement.java` | The stored shape, both kinds | Create |
-| `.../model/SecondaryMetric.java`, `.../model/JcstressSummary.java` | Value types | Create |
-| `.../model/ResultKeys.java` | `pk`, both `sk` forms, GSI keys, timestamp format | Create |
-| `.../model/TagKeys.java` | Known-key vocabulary as constants | Create |
-| `.../model/MeasurementItemMapper.java` | `Map<String, AttributeValue>` both ways | Create |
-| `baas-cli/pom.xml` | CLI deps | Add `baas-model` |
-| `baas-cli/.../commands/RunCommand.java` | Reserved-key check | Replace the local literal list with `TagKeys` |
-| `infra/cf-template-core.yaml` | Core stack | Add table, GSI, gateway endpoint, output, IAM |
-| `infra/deployer-policy.json` | Deployer template | Add table lifecycle, prefix-scoped |
-| `baas-cli/src/test/.../infra/CoreTemplateTest.java` | Template guards | Extend |
+| `benchmark-runner/.../infra/ResultsStore.java` | The port: write-only, domain-shaped | Create |
+| `benchmark-runner/.../infra/ResultsStoreException.java` | Fatal store failure | Create |
+| `benchmark-runner/.../infra/DynamoDbResultsStore.java` | DynamoDB adapter, batched, retrying | Create |
+| `benchmark-runner/.../infra/MongoResultsStore.java` | MongoDB adapter on the same port | Create (from `DocumentDbService`) |
+| `benchmark-runner/.../infra/NoOpResultsStore.java` | Explicit discard, only via `--no-database` | Create (from `NoOpDatabaseService`) |
+| `benchmark-runner/.../infra/ResultsStoreBuilder.java` | Selects one adapter, fails on ambiguity | Create (from `DatabaseServiceBuilder`) |
+| `DatabaseService`, `DocumentDbService`, `NoOpDatabaseService`, `DatabaseServiceBuilder` | Superseded | Delete |
+| `benchmark-runner/.../entities/MongoMeasurementDocument.java` | Morphia entity wrapping a measurement | Create |
+| `benchmark-runner/.../results/JmhMeasurementMapper.java` | `JmhResult` → `StoredMeasurement` | Create |
+| `benchmark-runner/.../results/JCStressMeasurementMapper.java` | `JCStressResult` → `StoredMeasurement` | Create |
+| `benchmark-runner/.../services/*SubcommandService.java` | Four write paths | Modify |
+| `benchmark-runner/.../commands/ApiCommonSharedOptions.java` | New options | Modify |
+| `benchmark-runner/src/test/.../TestcontainersWithDynamoDbBaseIT.java` | LocalStack with DynamoDB | Create |
+| `benchmark-runner/src/test/.../infra/ResultsStoreContractTest.java` | One suite, both adapters | Create |
+| `docker-compose.yaml`, `jmh-with-profiler.sh`, `jmh-with-async.sh` | Local dev | Modify |
 
 ---
 
-## Task 1: Create the `baas-model` module, mechanically Mongo-free
+## Task 1: The `ResultsStore` port, and deleting `upsert`
 
-Covers 3.1.
-
-**Files:**
-- Create: `baas-model/pom.xml`
-- Modify: `pom.xml` (`<modules>`, lines 232-237)
-- Create: `baas-model/src/main/java/pl/wsztajerowski/baas/model/package-info.java`
-
-**Interfaces:**
-- Produces: Maven coordinates `pl.wsztajerowski:baas-model`, package `pl.wsztajerowski.baas.model`, on the reactor ahead of both consumers.
-
-- [ ] **Step 1: Add the module to the reactor, ordered first**
-
-In `pom.xml`, replace the `<modules>` block:
-
-```xml
-    <modules>
-        <module>baas-model</module>
-        <module>fake-jmh-benchmarks</module>
-        <module>fake-stress-tests</module>
-        <module>benchmark-runner</module>
-        <module>baas-cli</module>
-    </modules>
-```
-
-- [ ] **Step 2: Create `baas-model/pom.xml`**
-
-The enforcer rule is the mechanical guarantee that this module never gains a Mongo dependency — a comment would not survive a careless `mvn dependency` addition.
-
-**Both Morphia groupIds are listed deliberately.** This repo uses `dev.morphia.morphia:morphia-core` (see `benchmark-runner/pom.xml:32`), and `bannedDependencies` excludes do *not* prefix-match across groupId segments — `dev.morphia:*` alone would silently fail to match the coordinate actually in use, giving a rule that looks protective and is not.
-
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-
-    <parent>
-        <groupId>pl.wsztajerowski</groupId>
-        <artifactId>benchmark-as-a-service</artifactId>
-        <version>0.0.0-semantically-released</version>
-    </parent>
-
-    <artifactId>baas-model</artifactId>
-    <name>BaaS shared model</name>
-
-    <dependencies>
-        <dependency>
-            <groupId>software.amazon.awssdk</groupId>
-            <artifactId>dynamodb</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-enforcer-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>ban-mongodb</id>
-                        <goals><goal>enforce</goal></goals>
-                        <configuration>
-                            <rules>
-                                <bannedDependencies>
-                                    <excludes>
-                                        <exclude>org.mongodb:*</exclude>
-                                        <exclude>dev.morphia:*</exclude>
-                                        <exclude>dev.morphia.morphia:*</exclude>
-                                    </excludes>
-                                    <message>baas-model is on baas-cli's classpath and must stay Mongo-free (design.md non-goal).</message>
-                                </bannedDependencies>
-                            </rules>
-                            <fail>true</fail>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-        </plugins>
-    </build>
-</project>
-```
-
-If `maven-enforcer-plugin` has no version managed in the parent's `<pluginManagement>`, add one there (`3.5.0`) rather than pinning it here.
-
-- [ ] **Step 3: Verify the module builds and the ban is active**
-
-Run: `mvn -pl baas-model verify`
-Expected: BUILD SUCCESS.
-
-Then prove the rule actually fires — temporarily add to `baas-model/pom.xml`:
-
-```xml
-        <dependency>
-            <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver-sync</artifactId>
-            <version>5.2.1</version>
-        </dependency>
-```
-
-Run: `mvn -pl baas-model verify`
-Expected: **FAIL** with the banned-dependency message. **Remove the dependency again** and re-run to confirm green.
-
-Repeat the same proof for the Morphia half, which is a *different* pattern and must be exercised separately:
-
-```xml
-        <dependency>
-            <groupId>dev.morphia.morphia</groupId>
-            <artifactId>morphia-core</artifactId>
-        </dependency>
-```
-
-A rule that has never been seen to fail is not a rule — and a rule where only one of its patterns has been seen to fail is worse, because the untested pattern is exactly where false confidence lives.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add pom.xml baas-model/
-git commit -m "feat(model): add Mongo-free baas-model module to the reactor"
-```
-
----
-
-## Task 2: Define the stored measurement shape
-
-Covers 3.2.
+Covers 5.2 and 5.3.
 
 **Files:**
-- Create: `baas-model/src/main/java/pl/wsztajerowski/baas/model/StoredMeasurement.java`
-- Create: `.../model/SecondaryMetric.java`
-- Create: `.../model/JcstressSummary.java`
-- Test: `baas-model/src/test/java/pl/wsztajerowski/baas/model/StoredMeasurementTest.java`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/ResultsStore.java`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/ResultsStoreException.java`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/NoOpResultsStore.java`
+- Delete: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/DatabaseService.java`, `NoOpDatabaseService.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/NoOpResultsStoreTest.java`
 
 **Interfaces:**
-- Produces: `StoredMeasurement` (record), `MeasurementKind` (enum `JMH`, `JCSTRESS`), `SecondaryMetric`, `JcstressSummary`. Task 3 keys off `kind`, `benchmarkClass`, `benchmarkMethod`, `createdAt`, `requestId`, `project`. Task 5 maps every component.
+- Consumes: `pl.wsztajerowski.baas.model.StoredMeasurement` from `baas-model`.
+- Produces: `ResultsStore.write(List<StoredMeasurement>)` returning `void`, throwing `ResultsStoreException`. Tasks 2, 5 and 6 implement and select it; Task 8 calls it.
 
-**Why these fields and no others.** The item carries what is needed to *list, filter and locate*. `rawData` and `scorePercentiles` are deliberately absent — they stay in the verbatim JMH JSON in S3, and `resultJsonKey` is how you get there. `secondaryMetrics` is reduced to score and unit for the same reason.
+**Why `upsert` goes.** `DatabaseService.upsert` exposes a Mongo-shaped update-operator builder (`byFieldValue`/`setValue`/`execute`) and is called by **none** of the four subcommand services. Porting a field-path surface for zero callers would leak Mongo semantics into a port that must serve both adapters.
+
+**Why the port takes a `List`.** One item per measurement, batched per run: `BatchWriteItem` takes at most 25 items, and a JMH run produces several measurements. A single-item `write` would push the batching decision into every caller.
 
 - [ ] **Step 1: Write the failing test**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.infra;
 
 import org.junit.jupiter.api.Test;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import java.util.List;
 
-class StoredMeasurementTest {
+import static org.assertj.core.api.Assertions.assertThatCode;
+
+class NoOpResultsStoreTest {
 
     @Test
-    void aJmhMeasurementCarriesItsBenchmarkCoordinates() {
-        var m = StoredMeasurementFixtures.jmh();
-
-        assertThat(m.kind()).isEqualTo(MeasurementKind.JMH);
-        assertThat(m.benchmarkClass()).isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized");
-        assertThat(m.benchmarkMethod()).isEqualTo("incrementUsingSynchronized");
-        assertThat(m.jcstress()).isNull();
+    void discardsWithoutThrowing() {
+        assertThatCode(() -> new NoOpResultsStore().write(List.of()))
+            .doesNotThrowAnyException();
     }
 
     @Test
-    void aJcstressMeasurementHasNoBenchmarkMethodButCarriesCounts() {
-        var m = StoredMeasurementFixtures.jcstress();
-
-        assertThat(m.kind()).isEqualTo(MeasurementKind.JCSTRESS);
-        assertThat(m.benchmarkMethod()).isNull();
-        assertThat(m.jcstress().totalTests()).isEqualTo(12);
-    }
-
-    @Test
-    void tagsAreDefensivelyCopiedSoAStoredMeasurementCannotBeMutatedAfterConstruction() {
-        var mutable = new java.util.HashMap<String, String>();
-        mutable.put("project", "lynx-journal");
-        var m = StoredMeasurementFixtures.jmh().withTags(mutable);
-
-        mutable.put("project", "tampered");
-
-        assertThat(m.tags()).containsEntry("project", "lynx-journal");
-    }
-
-    @Test
-    void aJmhMeasurementRequiresItsBenchmarkCoordinates() {
-        assertThatThrownBy(() -> StoredMeasurementFixtures.jmh().withBenchmarkClass(null))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("benchmarkClass");
+    void toleratesANullListRatherThanFailingLate() {
+        assertThatCode(() -> new NoOpResultsStore().write(null))
+            .doesNotThrowAnyException();
     }
 }
 ```
 
-- [ ] **Step 2: Run and confirm it fails**
+- [ ] **Step 2: Run and confirm failure**
 
-Run: `mvn -pl baas-model test`
-Expected: FAIL to compile — none of these types exist.
+Run: `mvn -pl baas-model install -DskipTests && mvn -pl benchmark-runner test -Dtest=NoOpResultsStoreTest`
+Expected: FAIL to compile — `ResultsStore` and `NoOpResultsStore` do not exist.
 
-- [ ] **Step 3: Create the value types**
-
-`MeasurementKind.java`:
+- [ ] **Step 3: Create the port and its exception**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.infra;
 
-public enum MeasurementKind { JMH, JCSTRESS }
-```
+import pl.wsztajerowski.baas.model.StoredMeasurement;
 
-`SecondaryMetric.java`:
-
-```java
-package pl.wsztajerowski.baas.model;
-
-/** JMH secondary metrics reduced to what a table view needs; the full form stays in the S3 result JSON. */
-public record SecondaryMetric(double score, String unit) {}
-```
-
-`JcstressSummary.java`:
-
-```java
-package pl.wsztajerowski.baas.model;
-
-import java.util.Map;
+import java.util.List;
 
 /**
- * JCStress reports counts for everything and names only non-passing tests, so per-test items would
- * cover failures alone — hence one summary on one item, with the full result files in S3.
- */
-public record JcstressSummary(
-    int totalTests,
-    int passedTests,
-    int failedTests,
-    int errorTests,
-    Map<String, String> failed,
-    Map<String, String> errors,
-    Map<String, String> interesting
-) {
-    public JcstressSummary {
-        // Null-defaulted, not just copied — Map.copyOf(null) throws, and a parsing layer with
-        // zero errors will reasonably pass null. Must match StoredMeasurement's handling; two
-        // records in one package disagreeing about what null means is how NPEs get shipped.
-        failed = failed == null ? Map.of() : Map.copyOf(failed);
-        errors = errors == null ? Map.of() : Map.copyOf(errors);
-        interesting = interesting == null ? Map.of() : Map.copyOf(interesting);
-    }
-}
-```
-
-- [ ] **Step 4: Create `StoredMeasurement`**
-
-```java
-package pl.wsztajerowski.baas.model;
-
-import java.time.Instant;
-import java.util.Map;
-
-/**
- * One stored measurement — one DynamoDB item, one Mongo document. The port speaks this shape;
- * each adapter owns its own physical layout.
+ * Where a run's measurements go. The port speaks the domain, not storage: each adapter owns its
+ * physical layout, so one item per measurement maps cleanly to one document per measurement and
+ * nothing DynamoDB-specific leaks through.
  *
- * <p>Full-fidelity data (rawData, scorePercentiles, logs, profiling artifacts) is NOT here. It
- * lives in S3 under {@code resultPath}, reachable via {@code resultJsonKey}.
+ * <p>Write-only by design. Reads belong to {@code baas-cli}, which never learns MongoDB exists.
  */
-public record StoredMeasurement(
-    String project,
-    String requestId,
-    Instant createdAt,
-    MeasurementKind kind,
-    String benchmarkClass,
-    String benchmarkMethod,
-    String mode,
-    Double score,
-    Double scoreError,
-    String scoreUnit,
-    Map<String, SecondaryMetric> secondaryMetrics,
-    JcstressSummary jcstress,
-    Map<String, String> tags,
-    String resultPath,
-    String resultJsonKey,
-    String environmentJsonKey
-) {
-    public StoredMeasurement {
-        require(project, "project");
-        require(requestId, "requestId");
-        if (createdAt == null) throw new IllegalArgumentException("createdAt is required");
-        if (kind == null) throw new IllegalArgumentException("kind is required");
-        if (kind == MeasurementKind.JMH) {
-            require(benchmarkClass, "benchmarkClass");
-            require(benchmarkMethod, "benchmarkMethod");
-        }
-        secondaryMetrics = secondaryMetrics == null ? Map.of() : Map.copyOf(secondaryMetrics);
-        tags = tags == null ? Map.of() : Map.copyOf(tags);
+public interface ResultsStore {
+
+    /**
+     * Writes every measurement from one run, or throws. Partial success is never reported — a
+     * caller that sees no exception may assume every measurement landed.
+     *
+     * @throws ResultsStoreException when the write ultimately fails after any configured retries
+     */
+    void write(List<StoredMeasurement> measurements);
+}
+```
+
+```java
+package pl.wsztajerowski.infra;
+
+/** Thrown when a run's measurements could not be stored. Fatal: the run must exit non-zero. */
+public class ResultsStoreException extends RuntimeException {
+
+    public ResultsStoreException(String message, Throwable cause) {
+        super(message, cause);
     }
 
-    private static void require(String value, String name) {
-        if (value == null || value.isBlank()) {
-            throw new IllegalArgumentException(name + " is required");
-        }
-    }
-
-    public StoredMeasurement withTags(Map<String, String> newTags) {
-        return new StoredMeasurement(project, requestId, createdAt, kind, benchmarkClass,
-            benchmarkMethod, mode, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
-            newTags, resultPath, resultJsonKey, environmentJsonKey);
-    }
-
-    public StoredMeasurement withBenchmarkClass(String newBenchmarkClass) {
-        return new StoredMeasurement(project, requestId, createdAt, kind, newBenchmarkClass,
-            benchmarkMethod, mode, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
-            tags, resultPath, resultJsonKey, environmentJsonKey);
+    public ResultsStoreException(String message) {
+        super(message);
     }
 }
 ```
 
-- [ ] **Step 5: Create the shared test fixtures**
-
-Tasks 3 and 5 reuse these, so they live in one place from the start.
-
-`baas-model/src/test/java/pl/wsztajerowski/baas/model/StoredMeasurementFixtures.java`:
+- [ ] **Step 4: Create the no-op store**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.infra;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+
+import java.util.List;
+
+/**
+ * Discards measurements. Selected ONLY by an explicit {@code --no-database}, never as a fallback
+ * for absent configuration — the previous behaviour, where an empty connection string silently
+ * selected a no-op, let a paid run report success while throwing its measurements away.
+ */
+public class NoOpResultsStore implements ResultsStore {
+    private static final Logger logger = LoggerFactory.getLogger(NoOpResultsStore.class);
+
+    @Override
+    public void write(List<StoredMeasurement> measurements) {
+        int count = measurements == null ? 0 : measurements.size();
+        logger.warn("--no-database: discarding {} measurement(s). Nothing was stored.", count);
+    }
+}
+```
+
+- [ ] **Step 5: Confirm `upsert` has no callers, then delete the old interfaces**
+
+Run: `grep -rn "\.upsert(" benchmark-runner/src/main`
+Expected: no matches. **If this finds a caller, stop and report it** — the deletion assumption is wrong.
+
+Then delete `DatabaseService.java` and `NoOpDatabaseService.java`. Leave `DocumentDbService.java` and `DatabaseServiceBuilder.java` for now — Tasks 2 and 6 replace them, and deleting them here breaks compilation before their replacements exist. The module will not fully compile until Task 8; that is expected, so run only the named test class until then.
+
+- [ ] **Step 6: Run and confirm green**
+
+Run: `mvn -pl benchmark-runner test -Dtest=NoOpResultsStoreTest`
+Expected: PASS, 2 tests.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add benchmark-runner/src/main/java/pl/wsztajerowski/infra/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
+git commit -m "feat(runner): add a storage-neutral ResultsStore port and delete the upsert surface"
+```
+
+---
+
+## Task 2: The MongoDB adapter on the new port
+
+Covers 5.5.
+
+**Files:**
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/MongoResultsStore.java`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/entities/MongoMeasurementDocument.java`
+- Create: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/StoredMeasurementFixtures.java`
+- Delete: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/DocumentDbService.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/MongoResultsStoreIT.java`
+
+**Interfaces:**
+- Consumes: `ResultsStore` from Task 1; `StoredMeasurement` and `ResultKeys` from `baas-model`.
+- Produces: `MongoResultsStore(Datastore datastore)` implementing `ResultsStore`; test fixture `StoredMeasurementFixtures.jmh(String method)`. Task 6's builder constructs the store; Tasks 5 and 9 reuse the fixture.
+
+**Why MongoDB survives at all.** `benchmark-runner` is a standalone artifact — one JAR, no stack, no CLI — and that deployment must keep working against a user's own MongoDB. Inside BaaS, DynamoDB becomes the only store. That is what makes the retained adapter free of consequences elsewhere: BaaS never selects Mongo, so §14 can eventually drop 27017 egress and `baas-cli` never needs a Mongo read path.
+
+**Store the neutral shape, not the old entities.** Writing `StoredMeasurement` (wrapped in a Morphia entity for its `@Id`) rather than reconstructing `JmhBenchmark`/`JCStressTest` keeps one shape alive instead of two. Two shapes is the drift this whole change exists to remove.
+
+- [ ] **Step 1: Create the shared test fixture**
+
+`benchmark-runner/src/test/java/pl/wsztajerowski/infra/StoredMeasurementFixtures.java`:
+
+```java
+package pl.wsztajerowski.infra;
+
+import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
 
 import java.time.Instant;
 import java.util.Map;
@@ -409,356 +231,502 @@ final class StoredMeasurementFixtures {
 
     private StoredMeasurementFixtures() {}
 
-    static StoredMeasurement jmh() {
+    static StoredMeasurement jmh(String method) {
         return new StoredMeasurement(
             "lynx-journal",
-            "jmh-20260817_220706",
-            Instant.parse("2026-08-17T22:07:06.123Z"),
+            "jmh-20260819_090000",
+            Instant.parse("2026-08-19T09:00:00.000Z"),
             MeasurementKind.JMH,
             "pl.wsztajerowski.fake.Incrementing_Synchronized",
-            "incrementUsingSynchronized",
+            method,
             "thrpt",
-            14075511.867,
-            10632927.824,
+            1234.5,
+            67.8,
             "ops/s",
-            Map.of("·gc.alloc.rate", new SecondaryMetric(1234.5, "MB/sec")),
-            null,
-            Map.of("project", "lynx-journal", "type", "jmh", "jdk", "25.0.4"),
-            "main/jmh/20260817_220706",
-            "main/jmh/20260817_220706/jmh-result.json",
-            "main/jmh/20260817_220706/environment.json");
-    }
-
-    static StoredMeasurement jcstress() {
-        return new StoredMeasurement(
-            "lynx-journal",
-            "jcstress-20260817_221500",
-            Instant.parse("2026-08-17T22:15:00.000Z"),
-            MeasurementKind.JCSTRESS,
-            null, null, null, null, null, null,
             Map.of(),
-            new JcstressSummary(12, 10, 1, 1,
-                Map.of("SomeTest", "FORBIDDEN"),
-                Map.of("OtherTest", "ERROR"),
-                Map.of("ThirdTest", "INTERESTING")),
-            Map.of("project", "lynx-journal", "type", "jcstress"),
-            "main/jcstress/20260817_221500",
             null,
-            "main/jcstress/20260817_221500/environment.json");
+            Map.of("project", "lynx-journal", "type", "jmh"),
+            "main/jmh/20260819_090000",
+            "main/jmh/20260819_090000/jmh-result.json",
+            "main/jmh/20260819_090000/environment.json");
     }
 }
 ```
 
+- [ ] **Step 2: Write the failing integration test**
+
+```java
+package pl.wsztajerowski.infra;
+
+import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
+import pl.wsztajerowski.entities.MongoMeasurementDocument;
+
+import java.util.List;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class MongoResultsStoreIT extends TestcontainersWithS3AndMongoBaseIT {
+
+    @Test
+    void writesOneDocumentPerMeasurement() {
+        var store = new MongoResultsStore(datastore());
+
+        store.write(List.of(
+            StoredMeasurementFixtures.jmh("methodOne"),
+            StoredMeasurementFixtures.jmh("methodTwo")));
+
+        assertThat(datastore().find(MongoMeasurementDocument.class).count()).isEqualTo(2);
+    }
+
+    @Test
+    void aRepeatedWriteIsIdempotent() {
+        var store = new MongoResultsStore(datastore());
+        var measurement = StoredMeasurementFixtures.jmh("methodOne");
+
+        store.write(List.of(measurement));
+        store.write(List.of(measurement));
+
+        assertThat(datastore().find(MongoMeasurementDocument.class).count())
+            .as("the same measurement written twice must not produce two documents")
+            .isEqualTo(1);
+    }
+}
+```
+
+**Read `TestcontainersWithS3AndMongoBaseIT` first.** If it does not already expose a `datastore()` accessor, add one following whatever it already provides — do not restructure the class.
+
+- [ ] **Step 3: Run and confirm failure**
+
+Run: `mvn -pl benchmark-runner test -Dtest=MongoResultsStoreIT`
+Expected: FAIL to compile — `MongoResultsStore` does not exist.
+
+- [ ] **Step 4: Create the Morphia entity**
+
+Must live in `pl.wsztajerowski.entities` — Morphia auto-maps that package, and a class outside it is never mapped.
+
+```java
+package pl.wsztajerowski.entities;
+
+import dev.morphia.annotations.Entity;
+import dev.morphia.annotations.Id;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+
+/**
+ * Wraps a measurement so Morphia has an {@code @Id} to key on. The id is the same {@code pk}/{@code
+ * sk} pair the DynamoDB adapter uses, so a repeated write replaces rather than duplicates — the
+ * property {@code PutItem} gives the other adapter for free.
+ */
+@Entity("measurements")
+public class MongoMeasurementDocument {
+
+    @Id
+    private String id;
+    private StoredMeasurement measurement;
+
+    @SuppressWarnings("unused") // Morphia requires a no-arg constructor
+    private MongoMeasurementDocument() {}
+
+    public MongoMeasurementDocument(String id, StoredMeasurement measurement) {
+        this.id = id;
+        this.measurement = measurement;
+    }
+
+    public String getId() {
+        return id;
+    }
+
+    public StoredMeasurement getMeasurement() {
+        return measurement;
+    }
+}
+```
+
+- [ ] **Step 5: Implement the adapter**
+
+```java
+package pl.wsztajerowski.infra;
+
+import dev.morphia.Datastore;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import pl.wsztajerowski.baas.model.ResultKeys;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+import pl.wsztajerowski.entities.MongoMeasurementDocument;
+
+import java.util.List;
+
+/**
+ * Retained so {@code benchmark-runner} keeps working as a standalone JAR against a user's own
+ * MongoDB. BaaS itself never selects this adapter — inside BaaS, DynamoDB is the only store.
+ */
+public class MongoResultsStore implements ResultsStore {
+    private static final Logger logger = LoggerFactory.getLogger(MongoResultsStore.class);
+
+    private final Datastore datastore;
+
+    public MongoResultsStore(Datastore datastore) {
+        this.datastore = datastore;
+    }
+
+    @Override
+    public void write(List<StoredMeasurement> measurements) {
+        if (measurements == null || measurements.isEmpty()) {
+            logger.warn("No measurements to store.");
+            return;
+        }
+        try {
+            for (StoredMeasurement measurement : measurements) {
+                String id = ResultKeys.partitionKey(measurement.project())
+                    + "|" + ResultKeys.sortKey(measurement);
+                datastore.save(new MongoMeasurementDocument(id, measurement));
+            }
+            logger.info("Stored {} measurement(s) in MongoDB.", measurements.size());
+        } catch (RuntimeException e) {
+            throw new ResultsStoreException(
+                "Failed to store " + measurements.size() + " measurement(s) in MongoDB", e);
+        }
+    }
+}
+```
+
+Note `datastore.save` rather than `insert` — `save` upserts on `@Id`, which is what makes the idempotency test pass. The old `DocumentDbService` used `insert`, which would throw a duplicate-key error on a repeat.
+
+Then delete `DocumentDbService.java`.
+
 - [ ] **Step 6: Run and confirm green**
 
-Run: `mvn -pl baas-model test`
-Expected: PASS, 4 tests.
+Run: `mvn -pl benchmark-runner test -Dtest=MongoResultsStoreIT`
+Expected: PASS, 2 tests. Requires Docker.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add baas-model/src
-git commit -m "feat(model): define the stored measurement shape for JMH and JCStress"
+git add benchmark-runner/src/main/java/pl/wsztajerowski/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
+git commit -m "feat(runner): refactor the MongoDB adapter onto the ResultsStore port"
 ```
 
 ---
 
-## Task 3: Key encoding and fixed-width timestamps
+## Task 3: Map `JmhResult` into `StoredMeasurement`
 
-Covers 3.3, 3.4, 3.5.
+Covers 5.8.
 
 **Files:**
-- Create: `baas-model/src/main/java/pl/wsztajerowski/baas/model/ResultKeys.java`
-- Test: `baas-model/src/test/java/pl/wsztajerowski/baas/model/ResultKeysTest.java`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/results/JmhMeasurementMapper.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/results/JmhMeasurementMapperTest.java`
 
 **Interfaces:**
-- Consumes: `StoredMeasurement`, `MeasurementKind` from Task 2.
-- Produces: `ResultKeys.partitionKey(String project)`, `ResultKeys.sortKey(StoredMeasurement)`, `ResultKeys.requestIndexPartitionKey(String requestId)`, `ResultKeys.requestIndexSortKey(StoredMeasurement)`, `ResultKeys.formatTimestamp(Instant)`, and the constants `ResultKeys.PK_PREFIX`, `ResultKeys.JCSTRESS_SK_PREFIX`, `ResultKeys.SEPARATOR`, `ResultKeys.REQUEST_ID_INDEX_NAME`. Task 5 and all of §6 use these; nothing else may construct a key by string concatenation.
+- Consumes: `pl.wsztajerowski.entities.jmh.JmhResult`.
+- Produces: `JmhMeasurementMapper.toMeasurement(JmhResult result, String project, String requestId, Instant createdAt, Map<String,String> tags, String resultPath, String resultJsonKey, String environmentJsonKey)` returning `StoredMeasurement`. Task 7 calls it.
 
-**The one subtlety that matters.** `Instant.toString()` is **not fixed width** — it omits trailing zero fractions, so `2026-01-01T00:00:00Z` and `2026-01-01T00:00:00.500Z` have different lengths and sort wrongly against each other once they are embedded mid-key. Use an explicit formatter with exactly three fractional digits.
+**Two details that will bite if missed:**
 
-- [ ] **Step 1: Write the failing tests**
+1. **JMH gives one fully-qualified string; the model wants two fields.** `jmhResult.benchmark()` is
+   `pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized` — class and method
+   joined by a dot. `StoredMeasurement` needs `benchmarkClass` and `benchmarkMethod` separately, and
+   `ResultKeys` builds the sort key from both. Split on the **last** dot.
+2. **What is dropped, and why.** `rawData` and `scorePercentiles` do not go in the item — they
+   dominate a JMH result's size and DynamoDB caps an item at 400 KB. Full fidelity stays in the
+   verbatim result JSON in S3, reachable via `resultJsonKey` (Task 7). `secondaryMetrics` is reduced
+   to score and unit.
+
+**Do not add a non-finite guard here.** `MeasurementItemMapper` already drops non-finite values on the way into DynamoDB; duplicating it would hide the case from the test that covers it.
+
+- [ ] **Step 1: Read the real types first**
+
+Run: `cat benchmark-runner/src/main/java/pl/wsztajerowski/entities/jmh/JmhResult.java benchmark-runner/src/main/java/pl/wsztajerowski/entities/jmh/Metric.java`
+
+The accessor names used below (`benchmark()`, `mode()`, `primaryMetric()`, `score()`, `scoreError()`, `scoreUnit()`, `secondaryMetrics()`) are the expected shape. **If the real records differ, adapt and say so in your report** — do not invent a shape.
+
+- [ ] **Step 2: Write the failing tests**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.results;
 
 import org.junit.jupiter.api.Test;
-
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Random;
+import pl.wsztajerowski.baas.model.MeasurementKind;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class ResultKeysTest {
+class JmhMeasurementMapperTest {
 
     @Test
-    void partitionKeyIsPrefixedProject() {
-        assertThat(ResultKeys.partitionKey("lynx-journal")).isEqualTo("RESULT#lynx-journal");
+    void splitsTheFullyQualifiedBenchmarkIntoClassAndMethod() {
+        var measurement = map("pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized");
+
+        assertThat(measurement.benchmarkClass()).isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized");
+        assertThat(measurement.benchmarkMethod()).isEqualTo("incrementUsingSynchronized");
     }
 
     @Test
-    void jmhSortKeyIsBenchmarkMajorThenChronological() {
-        assertThat(ResultKeys.sortKey(StoredMeasurementFixtures.jmh())).isEqualTo(
-            "pl.wsztajerowski.fake.Incrementing_Synchronized"
-                + "#incrementUsingSynchronized"
-                + "#2026-08-17T22:07:06.123Z"
-                + "#jmh-20260817_220706");
+    void splitsOnTheLastDotSoNestedClassesSurvive() {
+        var measurement = map("com.example.Outer$Inner.someMethod");
+
+        assertThat(measurement.benchmarkClass()).isEqualTo("com.example.Outer$Inner");
+        assertThat(measurement.benchmarkMethod()).isEqualTo("someMethod");
     }
 
     @Test
-    void jcstressSortKeyUsesAFixedPrefixBecauseThereIsNoBenchmarkMethod() {
-        assertThat(ResultKeys.sortKey(StoredMeasurementFixtures.jcstress()))
-            .isEqualTo("JCSTRESS#2026-08-17T22:15:00.000Z#jcstress-20260817_221500");
+    void aBenchmarkNameWithNoDotIsRejectedRatherThanSilentlyHalved() {
+        assertThatThrownBy(() -> map("nodothere"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("nodothere");
     }
 
     @Test
-    void theRequestIdIndexIsKeyedOnRequestIdThenBenchmark() {
-        var m = StoredMeasurementFixtures.jmh();
+    void carriesTheKindAndTheS3Pointers() {
+        var measurement = map("com.example.Bench.method");
 
-        assertThat(ResultKeys.requestIndexPartitionKey(m.requestId())).isEqualTo("jmh-20260817_220706");
-        assertThat(ResultKeys.requestIndexSortKey(m))
-            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized");
-    }
-
-    @Test
-    void formattedTimestampsAreAlwaysTheSameWidth() {
-        assertThat(ResultKeys.formatTimestamp(Instant.parse("2026-01-01T00:00:00Z")))
-            .hasSameSizeAs(ResultKeys.formatTimestamp(Instant.parse("2026-12-31T23:59:59.999Z")));
-    }
-
-    /** Instant.toString() drops trailing zero fractions — that is exactly the bug this guards. */
-    @Test
-    void aWholeSecondStillCarriesThreeFractionalDigits() {
-        assertThat(ResultKeys.formatTimestamp(Instant.parse("2026-01-01T00:00:00Z")))
-            .isEqualTo("2026-01-01T00:00:00.000Z");
-    }
-
-    @Test
-    void lexicographicOrderEqualsChronologicalOrderAcrossMonthAndYearBoundaries() {
-        List<Instant> chronological = List.of(
-            Instant.parse("2025-12-31T23:59:59.998Z"),
-            Instant.parse("2025-12-31T23:59:59.999Z"),
-            Instant.parse("2026-01-01T00:00:00.000Z"),
-            Instant.parse("2026-01-31T23:59:59.999Z"),
-            Instant.parse("2026-02-01T00:00:00.000Z"),
-            Instant.parse("2026-09-30T12:00:00.500Z"),
-            Instant.parse("2026-10-01T12:00:00.500Z"));
-
-        List<String> formatted = chronological.stream().map(ResultKeys::formatTimestamp).toList();
-
-        assertThat(formatted).isSorted();
-    }
-
-    @Test
-    void lexicographicOrderEqualsChronologicalOrderForRandomInstants() {
-        var random = new Random(20260817L);
-        var instants = new ArrayList<Instant>();
-        for (int i = 0; i < 500; i++) {
-            instants.add(Instant.ofEpochMilli(Math.abs(random.nextLong()) % 4_102_444_800_000L));
-        }
-        instants.sort(Instant::compareTo);
-
-        assertThat(instants.stream().map(ResultKeys::formatTimestamp).toList()).isSorted();
-    }
-
-    @Test
-    void timestampsAreRenderedInUtcRegardlessOfTheDefaultZone() {
-        var original = java.util.TimeZone.getDefault();
-        try {
-            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Pacific/Kiritimati"));
-            assertThat(ResultKeys.formatTimestamp(Instant.parse("2026-01-01T00:00:00Z")))
-                .isEqualTo("2026-01-01T00:00:00.000Z");
-        } finally {
-            java.util.TimeZone.setDefault(original);
-        }
+        assertThat(measurement.kind()).isEqualTo(MeasurementKind.JMH);
+        assertThat(measurement.resultJsonKey()).isEqualTo("main/jmh/ts/jmh-result.json");
+        assertThat(measurement.environmentJsonKey()).isEqualTo("main/jmh/ts/environment.json");
     }
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+Add a private `map(String benchmarkName)` helper that builds a minimal `JmhResult` — using whatever constructor or builder the real record provides — and calls the mapper with `project="p"`, `requestId="r"`, `createdAt=Instant.parse("2026-08-19T09:00:00.000Z")`, `tags=Map.of()`, `resultPath="main/jmh/ts"`, `resultJsonKey="main/jmh/ts/jmh-result.json"`, `environmentJsonKey="main/jmh/ts/environment.json"`.
 
-Run: `mvn -pl baas-model test -Dtest=ResultKeysTest`
-Expected: FAIL to compile — `ResultKeys` does not exist.
+- [ ] **Step 3: Run and confirm failure**
 
-- [ ] **Step 3: Implement `ResultKeys`**
+Run: `mvn -pl benchmark-runner test -Dtest=JmhMeasurementMapperTest`
+Expected: FAIL to compile — `JmhMeasurementMapper` does not exist.
+
+- [ ] **Step 4: Implement the mapper**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.results;
+
+import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.SecondaryMetric;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+import pl.wsztajerowski.entities.jmh.JmhResult;
 
 import java.time.Instant;
-import java.time.ZoneOffset;
-import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
- * The only place a DynamoDB key is constructed. Encoding a key by hand anywhere else is how a
- * query silently returns zero rows instead of failing to compile.
- *
- * <p>{@code sk} is benchmark-major then chronological, which serves three patterns from one
- * ordering: the latest result for a benchmark, a benchmark's history in order, and grouping.
+ * Maps JMH's parsing type into the stored shape. {@code rawData} and {@code scorePercentiles} are
+ * deliberately dropped — they dominate a JMH result's size and DynamoDB caps an item at 400 KB, so
+ * full fidelity lives in the verbatim result JSON in S3 and {@code resultJsonKey} points at it.
  */
-public final class ResultKeys {
+public final class JmhMeasurementMapper {
 
-    public static final String PK_PREFIX = "RESULT#";
-    public static final String JCSTRESS_SK_PREFIX = "JCSTRESS#";
-    public static final String SEPARATOR = "#";
-    public static final String REQUEST_ID_INDEX_NAME = "requestId-index";
+    private JmhMeasurementMapper() {}
 
-    /**
-     * Fixed width, always three fractional digits, always UTC. Instant.toString() omits trailing
-     * zero fractions, which makes keys of differing length that misorder as strings — and the
-     * failure surfaces as missing rows, not as a formatting error.
-     */
-    private static final DateTimeFormatter TIMESTAMP =
-        DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSS'Z'").withZone(ZoneOffset.UTC);
+    public static StoredMeasurement toMeasurement(
+        JmhResult result, String project, String requestId, Instant createdAt,
+        Map<String, String> tags, String resultPath, String resultJsonKey, String environmentJsonKey) {
 
-    private ResultKeys() {}
-
-    public static String partitionKey(String project) {
-        return PK_PREFIX + project;
-    }
-
-    public static String sortKey(StoredMeasurement measurement) {
-        String timestamp = formatTimestamp(measurement.createdAt());
-        if (measurement.kind() == MeasurementKind.JCSTRESS) {
-            return JCSTRESS_SK_PREFIX + timestamp + SEPARATOR + measurement.requestId();
+        String fullyQualified = result.benchmark();
+        int lastDot = fullyQualified.lastIndexOf('.');
+        if (lastDot < 0) {
+            throw new IllegalArgumentException(
+                "Benchmark name has no class/method separator: " + fullyQualified);
         }
-        return measurement.benchmarkClass()
-            + SEPARATOR + measurement.benchmarkMethod()
-            + SEPARATOR + timestamp
-            + SEPARATOR + measurement.requestId();
+
+        var primary = result.primaryMetric();
+        return new StoredMeasurement(
+            project,
+            requestId,
+            createdAt,
+            MeasurementKind.JMH,
+            fullyQualified.substring(0, lastDot),
+            fullyQualified.substring(lastDot + 1),
+            result.mode(),
+            primary == null ? null : primary.score(),
+            primary == null ? null : primary.scoreError(),
+            primary == null ? null : primary.scoreUnit(),
+            secondaryMetrics(result),
+            null,
+            tags,
+            resultPath,
+            resultJsonKey,
+            environmentJsonKey);
     }
 
-    public static String requestIndexPartitionKey(String requestId) {
-        return requestId;
-    }
-
-    public static String requestIndexSortKey(StoredMeasurement measurement) {
-        if (measurement.kind() == MeasurementKind.JCSTRESS) {
-            return JCSTRESS_SK_PREFIX + measurement.requestId();
+    private static Map<String, SecondaryMetric> secondaryMetrics(JmhResult result) {
+        if (result.secondaryMetrics() == null) {
+            return Map.of();
         }
-        return measurement.benchmarkClass() + SEPARATOR + measurement.benchmarkMethod();
-    }
-
-    public static String formatTimestamp(Instant instant) {
-        return TIMESTAMP.format(instant);
+        return result.secondaryMetrics().entrySet().stream()
+            .filter(entry -> entry.getValue() != null)
+            .collect(Collectors.toMap(
+                Map.Entry::getKey,
+                entry -> new SecondaryMetric(entry.getValue().score(), entry.getValue().scoreUnit())));
     }
 }
 ```
 
-- [ ] **Step 4: Run and confirm green**
+- [ ] **Step 5: Run and confirm green**
 
-Run: `mvn -pl baas-model test -Dtest=ResultKeysTest`
-Expected: PASS, 9 tests.
+Run: `mvn -pl benchmark-runner test -Dtest=JmhMeasurementMapperTest`
+Expected: PASS, 4 tests.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add baas-model/src/main/java/pl/wsztajerowski/baas/model/ResultKeys.java \
-        baas-model/src/test/java/pl/wsztajerowski/baas/model/ResultKeysTest.java
-git commit -m "feat(model): encode result keys with fixed-width UTC sort timestamps"
+git add benchmark-runner/src/main/java/pl/wsztajerowski/results/ benchmark-runner/src/test/java/pl/wsztajerowski/results/
+git commit -m "feat(runner): map JmhResult into the stored measurement shape"
 ```
 
 ---
 
-## Task 4: The tag vocabulary, defined once and adopted by the CLI
+## Task 4: Map `JCStressResult` into `StoredMeasurement`
 
-Covers 3.6, and closes the drift warning recorded in `verify.md` §4.
+Covers 5.9.
 
 **Files:**
-- Create: `baas-model/src/main/java/pl/wsztajerowski/baas/model/TagKeys.java`
-- Test: `baas-model/src/test/java/pl/wsztajerowski/baas/model/TagKeysTest.java`
-- Modify: `baas-cli/pom.xml` (add the `baas-model` dependency)
-- Modify: `baas-cli/src/main/java/pl/wsztajerowski/baas/commands/RunCommand.java` (`RESERVED_TAG_KEYS`, around line 444)
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/results/JCStressMeasurementMapper.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/results/JCStressMeasurementMapperTest.java`
 
 **Interfaces:**
-- Produces: `TagKeys.PROJECT`, `TYPE`, `COMMIT`, `JDK`, `CPU_MODEL`, `CPU_ARCH`, `INSTANCE_TYPE`, `IMAGE_VERSION`; `TagKeys.KNOWN` (all eight); `TagKeys.MACHINE_OBSERVED` (the six a caller may not set). §6.10's unknown-key warning uses `KNOWN`.
+- Consumes: `pl.wsztajerowski.entities.jcstress.JCStressResult`.
+- Produces: `JCStressMeasurementMapper.toMeasurement(JCStressResult result, String project, String requestId, Instant createdAt, Map<String,String> tags, String resultPath, String environmentJsonKey)` returning one `StoredMeasurement`. There is **no `resultJsonKey`** — JCStress produces HTML, not a result JSON.
 
-**This task exists to delete a duplicate, not just to add constants.** `RunCommand.RESERVED_TAG_KEYS` currently hard-codes the same six names, and `UserDataScriptBuilder.SCRIPT_BODY` hard-codes all of them again as shell literals. Adding a third copy would make things worse. The shell literals stay (they are inside a bash heredoc and cannot reference Java constants) but the Java list must become derived.
+**One summary, not one item per test.** `JCStressResult` reports counts for everything but **names only non-passing tests** — passing ones are counted, never named. Per-test items would therefore cover failures only, and the result files are already in S3. So a JCStress run produces exactly **one** measurement, with `benchmarkClass`, `benchmarkMethod`, `mode`, `score`, `scoreError` and `scoreUnit` all null and the counts in `JcstressSummary`.
 
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 1: Read the real types first**
+
+Run: `cat benchmark-runner/src/main/java/pl/wsztajerowski/entities/jcstress/JCStressResult.java benchmark-runner/src/main/java/pl/wsztajerowski/entities/jcstress/JCStressResultBuilder.java`
+
+The accessor names below are the expected shape. Adapt to the real record and report any difference. The module already has a builder — use it in the test rather than inventing a constructor.
+
+- [ ] **Step 2: Write the failing tests**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.results;
 
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.model.MeasurementKind;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class TagKeysTest {
+class JCStressMeasurementMapperTest {
 
     @Test
-    void theKnownVocabularyIsExactlyTheEightDocumentedKeys() {
-        assertThat(TagKeys.KNOWN).containsExactlyInAnyOrder(
-            "project", "type", "commit", "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion");
+    void producesOneMeasurementWithNoBenchmarkCoordinates() {
+        var measurement = map();
+
+        assertThat(measurement.kind()).isEqualTo(MeasurementKind.JCSTRESS);
+        assertThat(measurement.benchmarkClass()).isNull();
+        assertThat(measurement.benchmarkMethod()).isNull();
+        assertThat(measurement.mode()).isNull();
+        assertThat(measurement.score()).isNull();
     }
 
     @Test
-    void machineObservedKeysAreTheKnownKeysMinusTheCallerOverridableOnes() {
-        assertThat(TagKeys.MACHINE_OBSERVED)
-            .containsExactlyInAnyOrder("type", "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion")
-            .doesNotContain("project", "commit");
+    void carriesTheCountsAndTheThreeTestMaps() {
+        var summary = map().jcstress();
+
+        assertThat(summary.totalTests()).isEqualTo(12);
+        assertThat(summary.passedTests()).isEqualTo(10);
+        assertThat(summary.failedTests()).isEqualTo(1);
+        assertThat(summary.errorTests()).isEqualTo(1);
+        assertThat(summary.failed()).containsKey("SomeFailingTest");
+        assertThat(summary.errors()).containsKey("SomeErroringTest");
     }
 
     @Test
-    void machineObservedIsASubsetOfKnown() {
-        assertThat(TagKeys.KNOWN).containsAll(TagKeys.MACHINE_OBSERVED);
+    void hasNoResultJsonKeyBecauseJcstressProducesHtml() {
+        assertThat(map().resultJsonKey()).isNull();
     }
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [ ] **Step 3: Run and confirm failure**
 
-Run: `mvn -pl baas-model test -Dtest=TagKeysTest`
-Expected: FAIL to compile — `TagKeys` does not exist.
+Run: `mvn -pl benchmark-runner test -Dtest=JCStressMeasurementMapperTest`
+Expected: FAIL to compile.
 
-- [ ] **Step 3: Implement `TagKeys`**
+- [ ] **Step 4: Implement the mapper**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.results;
 
-import java.util.List;
-import java.util.Set;
+import pl.wsztajerowski.baas.model.JcstressSummary;
+import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+import pl.wsztajerowski.entities.jcstress.JCStressResult;
+
+import java.time.Instant;
+import java.util.Map;
 
 /**
- * The known-key tag vocabulary, defined once for both the runner and the CLI. Keys outside this
- * set are permitted — a query naming one warns rather than silently returning nothing.
+ * One measurement per JCStress run, not per test. JCStress names only non-passing tests — passing
+ * ones are counted, never named — so per-test items would cover failures only, and the full result
+ * files are already in S3 under the run's result path.
  */
-public final class TagKeys {
+public final class JCStressMeasurementMapper {
 
-    public static final String PROJECT = "project";
-    public static final String TYPE = "type";
-    public static final String COMMIT = "commit";
-    public static final String JDK = "jdk";
-    public static final String CPU_MODEL = "cpuModel";
-    public static final String CPU_ARCH = "cpuArch";
-    public static final String INSTANCE_TYPE = "instanceType";
-    public static final String IMAGE_VERSION = "imageVersion";
+    private JCStressMeasurementMapper() {}
 
-    public static final Set<String> KNOWN =
-        Set.of(PROJECT, TYPE, COMMIT, JDK, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
+    public static StoredMeasurement toMeasurement(
+        JCStressResult result, String project, String requestId, Instant createdAt,
+        Map<String, String> tags, String resultPath, String environmentJsonKey) {
 
-    /**
-     * Observed on the instance (or derived from the benchmark type), so a caller may not set them:
-     * an override would let a result's tags disagree with its own environment.json. `project` and
-     * `commit` are deliberately absent — design.md specifies caller-wins for those.
-     */
-    public static final List<String> MACHINE_OBSERVED =
-        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, CPU_MODEL, CPU_ARCH, TYPE);
-
-    private TagKeys() {}
+        return new StoredMeasurement(
+            project,
+            requestId,
+            createdAt,
+            MeasurementKind.JCSTRESS,
+            null, null, null, null, null, null,
+            Map.of(),
+            new JcstressSummary(
+                result.totalTests(),
+                result.passedTests(),
+                result.failedTests(),
+                result.errorTests(),
+                result.failed(),
+                result.errors(),
+                result.interesting()),
+            tags,
+            resultPath,
+            null,
+            environmentJsonKey);
+    }
 }
 ```
 
-- [ ] **Step 4: Run and confirm green**
+`JcstressSummary` null-defaults its three maps, so a null from `JCStressResult` is safe.
 
-Run: `mvn -pl baas-model test -Dtest=TagKeysTest`
+- [ ] **Step 5: Run and confirm green**
+
+Run: `mvn -pl benchmark-runner test -Dtest=JCStressMeasurementMapperTest`
 Expected: PASS, 3 tests.
 
-- [ ] **Step 5: Add the dependency to `baas-cli`**
+- [ ] **Step 6: Commit**
 
-In `baas-cli/pom.xml`, inside `<dependencies>`:
+```bash
+git add benchmark-runner/src/main/java/pl/wsztajerowski/results/ benchmark-runner/src/test/java/pl/wsztajerowski/results/
+git commit -m "feat(runner): map JCStressResult into a single stored measurement"
+```
+
+---
+
+## Task 5: The DynamoDB adapter, batched and retrying
+
+Covers 5.1, 5.4 and 5.6.
+
+**Files:**
+- Modify: `benchmark-runner/pom.xml`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/DynamoDbResultsStore.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/DynamoDbResultsStoreTest.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/RecordingDynamoDbClient.java`
+
+**Interfaces:**
+- Consumes: `ResultsStore`, `ResultsStoreException` from Task 1; `MeasurementItemMapper`, `StoredMeasurement` from `baas-model`; `StoredMeasurementFixtures` from Task 2.
+- Produces: `DynamoDbResultsStore(DynamoDbClient client, String tableName)` implementing `ResultsStore`. Task 6's builder constructs it; Tasks 9 and 10 test it against LocalStack.
+
+**Why `BatchWriteItem` in chunks of 25.** That is the hard API limit, and a JMH run with several methods or modes exceeds it easily.
+
+**Why the retry loop is not optional.** `BatchWriteItem` reports throttling and partial success by **returning** the leftovers in `unprocessedItems` rather than failing. Ignoring that field loses measurements while the call looks successful — precisely the silent-loss class this project's invariants exist to prevent.
+
+- [ ] **Step 1: Add the dependencies**
+
+In `benchmark-runner/pom.xml`, inside `<dependencies>`:
 
 ```xml
         <dependency>
@@ -766,822 +734,748 @@ In `baas-cli/pom.xml`, inside `<dependencies>`:
             <artifactId>baas-model</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+        </dependency>
 ```
 
-- [ ] **Step 6: Replace the CLI's duplicate list**
+No `<version>` on the SDK — the root pom imports the AWS SDK BOM. **Keep `mongodb-driver-sync` and `morphia-core` exactly as they are**; the retained adapter needs both.
 
-In `RunCommand.java`, add `import pl.wsztajerowski.baas.model.TagKeys;` and replace the literal list (around line 444) with:
+- [ ] **Step 2: Write the fake client**
+
+A hand-written fake keeps the retry logic testable without Docker.
 
 ```java
-    /** Defined once in baas-model so the CLI and the runner cannot drift apart. */
-    static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
+package pl.wsztajerowski.infra;
+
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+
+/** Records batch sizes and can simulate unprocessed items, without needing LocalStack. */
+class RecordingDynamoDbClient implements DynamoDbClient {
+
+    private final List<Integer> batchSizes = new ArrayList<>();
+    private int unprocessedOnFirstCall = 0;
+    private int alwaysUnprocessed = 0;
+
+    void returnUnprocessedOnFirstCall(int count) {
+        this.unprocessedOnFirstCall = count;
+    }
+
+    void alwaysReturnUnprocessed(int count) {
+        this.alwaysUnprocessed = count;
+    }
+
+    List<Integer> batchSizes() {
+        return batchSizes;
+    }
+
+    int callCount() {
+        return batchSizes.size();
+    }
+
+    @Override
+    public BatchWriteItemResponse batchWriteItem(BatchWriteItemRequest request) {
+        List<WriteRequest> submitted = request.requestItems().values().iterator().next();
+        batchSizes.add(submitted.size());
+        String table = request.requestItems().keySet().iterator().next();
+
+        int leftover = alwaysUnprocessed > 0 ? alwaysUnprocessed
+            : (batchSizes.size() == 1 ? unprocessedOnFirstCall : 0);
+
+        if (leftover <= 0) {
+            return BatchWriteItemResponse.builder().build();
+        }
+        return BatchWriteItemResponse.builder()
+            .unprocessedItems(Map.of(table, submitted.subList(0, Math.min(leftover, submitted.size()))))
+            .build();
+    }
+
+    @Override
+    public String serviceName() {
+        return "dynamodb";
+    }
+
+    @Override
+    public void close() {
+        // nothing to release
+    }
+}
 ```
 
-Do **not** change `buildRunnerTags`'s behaviour or its error message — the existing `RunCommandTest` cases pin both and must stay green.
+If `DynamoDbClient` is an interface with many default methods this compiles as-is; if the compiler demands more, implement only what it names and let everything else inherit.
 
-- [ ] **Step 7: Run the CLI suite**
-
-Run: `mvn -pl baas-model,baas-cli test`
-Expected: PASS. `RunCommandTest` must still be green, including `rejectsAReservedTagKey` and `anExplicitTagOverridesTheDerivedValue`.
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add baas-model/src baas-cli/pom.xml baas-cli/src/main/java/pl/wsztajerowski/baas/commands/RunCommand.java
-git commit -m "feat(model): define the tag vocabulary once and adopt it in baas-cli"
-```
-
----
-
-## Task 5: The `Map<String, AttributeValue>` mapper
-
-Covers 3.7, 3.8, 3.9.
-
-**Files:**
-- Create: `baas-model/src/main/java/pl/wsztajerowski/baas/model/MeasurementItemMapper.java`
-- Test: `baas-model/src/test/java/pl/wsztajerowski/baas/model/MeasurementItemMapperTest.java`
-
-**Interfaces:**
-- Consumes: `StoredMeasurement`, `ResultKeys` from Tasks 2-3.
-- Produces: `MeasurementItemMapper.toItem(StoredMeasurement)` returning `Map<String, AttributeValue>`; `MeasurementItemMapper.fromItem(Map<String, AttributeValue>)` returning `StoredMeasurement`; `MeasurementItemMapper.serializedSize(Map<String, AttributeValue>)` returning `int`; and the constant `MeasurementItemMapper.MAX_ITEM_BYTES`. The package-private attribute-name constants (`PK`, `SK`, `GSI1PK`, `GSI1SK`, `TAGS`, …) are what §6's `FilterExpression` builders reference — §6 must not write attribute names by hand.
-
-**Attribute names** (`pk`, `sk`, plus `gsi1pk`/`gsi1sk` for the index) are constants on the mapper. DynamoDB has no `null` attribute type worth using here — absent means absent, so optional fields are simply omitted and `fromItem` tolerates their absence.
-
-- [ ] **Step 1: Write the failing tests**
+- [ ] **Step 3: Write the failing tests**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.infra;
 
 import org.junit.jupiter.api.Test;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.List;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class MeasurementItemMapperTest {
+class DynamoDbResultsStoreTest {
 
     @Test
-    void aJmhMeasurementRoundTrips() {
-        var original = StoredMeasurementFixtures.jmh();
+    void splitsMoreThanTwentyFiveMeasurementsAcrossBatches() {
+        var client = new RecordingDynamoDbClient();
 
-        assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(original)))
-            .isEqualTo(original);
+        new DynamoDbResultsStore(client, "results").write(
+            IntStream.range(0, 30)
+                .mapToObj(i -> StoredMeasurementFixtures.jmh("method" + i))
+                .toList());
+
+        assertThat(client.batchSizes())
+            .as("BatchWriteItem caps at 25 items")
+            .containsExactly(25, 5);
     }
 
     @Test
-    void aJcstressMeasurementRoundTrips() {
-        var original = StoredMeasurementFixtures.jcstress();
+    void retriesUnprocessedItemsRatherThanLosingThem() {
+        var client = new RecordingDynamoDbClient();
+        client.returnUnprocessedOnFirstCall(2);
 
-        assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(original)))
-            .isEqualTo(original);
+        new DynamoDbResultsStore(client, "results").write(List.of(
+            StoredMeasurementFixtures.jmh("one"),
+            StoredMeasurementFixtures.jmh("two")));
+
+        assertThat(client.callCount())
+            .as("unprocessed items must be resubmitted, not dropped")
+            .isEqualTo(2);
     }
 
     @Test
-    void theItemCarriesBothKeyPairs() {
-        var item = MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh());
+    void throwsWhenItemsRemainUnprocessedAfterEveryRetry() {
+        var client = new RecordingDynamoDbClient();
+        client.alwaysReturnUnprocessed(1);
 
-        assertThat(item.get("pk").s()).isEqualTo("RESULT#lynx-journal");
-        assertThat(item.get("sk").s()).startsWith("pl.wsztajerowski.fake.Incrementing_Synchronized#");
-        assertThat(item.get("gsi1pk").s()).isEqualTo("jmh-20260817_220706");
-        assertThat(item.get("gsi1sk").s())
-            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized");
+        assertThatThrownBy(() ->
+            new DynamoDbResultsStore(client, "results").write(List.of(StoredMeasurementFixtures.jmh("one"))))
+            .isInstanceOf(ResultsStoreException.class)
+            .hasMessageContaining("unprocessed");
     }
 
     @Test
-    void absentOptionalAttributesAreOmittedRatherThanStoredAsNull() {
-        var item = MeasurementItemMapper.toItem(StoredMeasurementFixtures.jcstress());
+    void anEmptyListWritesNothingAndDoesNotThrow() {
+        var client = new RecordingDynamoDbClient();
 
-        assertThat(item).doesNotContainKey("resultJsonKey");
-        assertThat(item).doesNotContainKey("benchmarkMethod");
-    }
+        new DynamoDbResultsStore(client, "results").write(List.of());
 
-    @Test
-    void aRealisticMeasurementIsFarUnderTheItemLimit() {
-        var bytes = MeasurementItemMapper.serializedSize(
-            MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh()));
-
-        assertThat(bytes).isLessThan(4 * 1024);
-    }
-
-    @Test
-    void anOversizedMeasurementFailsLoudlyRatherThanBeingTruncated() {
-        Map<String, String> hugeTags = IntStream.range(0, 20_000)
-            .boxed()
-            .collect(Collectors.toMap(i -> "key" + i, i -> "value".repeat(10)));
-
-        var oversized = StoredMeasurementFixtures.jmh().withTags(hugeTags);
-
-        assertThatThrownBy(() -> MeasurementItemMapper.toItem(oversized))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("400")
-            .hasMessageContaining("jmh-20260817_220706");
-    }
-
-    @Test
-    void anUnknownAttributeInStoredDataDoesNotBreakReads() {
-        var item = new HashMap<>(MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh()));
-        item.put("attributeAddedByALaterVersion", AttributeValue.fromS("whatever"));
-
-        assertThat(MeasurementItemMapper.fromItem(item))
-            .isEqualTo(StoredMeasurementFixtures.jmh());
+        assertThat(client.callCount()).isZero();
     }
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [ ] **Step 4: Run and confirm failure**
 
-Run: `mvn -pl baas-model test -Dtest=MeasurementItemMapperTest`
-Expected: FAIL to compile — `MeasurementItemMapper` does not exist.
+Run: `mvn -pl benchmark-runner test -Dtest=DynamoDbResultsStoreTest`
+Expected: FAIL to compile — `DynamoDbResultsStore` does not exist.
 
-- [ ] **Step 3: Implement the mapper**
+- [ ] **Step 5: Implement the adapter**
 
 ```java
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.infra;
 
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;
+import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemResponse;
+import software.amazon.awssdk.services.dynamodb.model.PutRequest;
+import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
-import java.nio.charset.StandardCharsets;
-import java.time.Instant;
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 /**
- * The schema contract. An explicit mapper rather than the Enhanced Client, because key encoding
- * needs exact control and an incompatible change should break compilation here rather than return
- * zero rows at runtime.
+ * One item per measurement, batched per run.
+ *
+ * <p>{@code BatchWriteItem} reports throttling and partial success by RETURNING the leftovers in
+ * {@code unprocessedItems} rather than failing, so ignoring that field loses measurements while the
+ * call looks successful. The remainder is resubmitted with backoff, and anything still unprocessed
+ * at the end is fatal — a run that cannot store its results must exit non-zero.
  */
-public final class MeasurementItemMapper {
+public class DynamoDbResultsStore implements ResultsStore {
+    private static final Logger logger = LoggerFactory.getLogger(DynamoDbResultsStore.class);
 
-    public static final int MAX_ITEM_BYTES = 400 * 1024;
+    private static final int MAX_BATCH_SIZE = 25;
+    private static final int MAX_ATTEMPTS = 5;
+    private static final long INITIAL_BACKOFF_MILLIS = 100;
 
-    static final String PK = "pk";
-    static final String SK = "sk";
-    static final String GSI1PK = "gsi1pk";
-    static final String GSI1SK = "gsi1sk";
-    static final String PROJECT = "project";
-    static final String REQUEST_ID = "requestId";
-    static final String CREATED_AT = "createdAt";
-    static final String KIND = "kind";
-    static final String BENCHMARK_CLASS = "benchmarkClass";
-    static final String BENCHMARK_METHOD = "benchmarkMethod";
-    static final String MODE = "mode";
-    static final String SCORE = "score";
-    static final String SCORE_ERROR = "scoreError";
-    static final String SCORE_UNIT = "scoreUnit";
-    static final String SECONDARY_METRICS = "secondaryMetrics";
-    static final String JCSTRESS = "jcstress";
-    static final String TAGS = "tags";
-    static final String RESULT_PATH = "resultPath";
-    static final String RESULT_JSON_KEY = "resultJsonKey";
-    static final String ENVIRONMENT_JSON_KEY = "environmentJsonKey";
+    private final DynamoDbClient client;
+    private final String tableName;
 
-    private static final String TOTAL_TESTS = "totalTests";
-    private static final String PASSED_TESTS = "passedTests";
-    private static final String FAILED_TESTS = "failedTests";
-    private static final String ERROR_TESTS = "errorTests";
-    private static final String FAILED = "failed";
-    private static final String ERRORS = "errors";
-    private static final String INTERESTING = "interesting";
-    private static final String METRIC_SCORE = "score";
-    private static final String METRIC_UNIT = "unit";
+    public DynamoDbResultsStore(DynamoDbClient client, String tableName) {
+        this.client = client;
+        this.tableName = tableName;
+    }
 
-    private MeasurementItemMapper() {}
-
-    public static Map<String, AttributeValue> toItem(StoredMeasurement m) {
-        Map<String, AttributeValue> item = new LinkedHashMap<>();
-
-        item.put(PK, s(ResultKeys.partitionKey(m.project())));
-        item.put(SK, s(ResultKeys.sortKey(m)));
-        item.put(GSI1PK, s(ResultKeys.requestIndexPartitionKey(m.requestId())));
-        item.put(GSI1SK, s(ResultKeys.requestIndexSortKey(m)));
-
-        item.put(PROJECT, s(m.project()));
-        item.put(REQUEST_ID, s(m.requestId()));
-        item.put(CREATED_AT, s(ResultKeys.formatTimestamp(m.createdAt())));
-        item.put(KIND, s(m.kind().name()));
-
-        putIfPresent(item, BENCHMARK_CLASS, m.benchmarkClass());
-        putIfPresent(item, BENCHMARK_METHOD, m.benchmarkMethod());
-        putIfPresent(item, MODE, m.mode());
-        putIfPresent(item, SCORE_UNIT, m.scoreUnit());
-        putIfPresent(item, RESULT_PATH, m.resultPath());
-        putIfPresent(item, RESULT_JSON_KEY, m.resultJsonKey());
-        putIfPresent(item, ENVIRONMENT_JSON_KEY, m.environmentJsonKey());
-
-        if (m.score() != null) {
-            item.put(SCORE, n(m.score()));
+    @Override
+    public void write(List<StoredMeasurement> measurements) {
+        if (measurements == null || measurements.isEmpty()) {
+            logger.warn("No measurements to store.");
+            return;
         }
-        if (m.scoreError() != null) {
-            item.put(SCORE_ERROR, n(m.scoreError()));
+        List<WriteRequest> requests = measurements.stream()
+            .map(MeasurementItemMapper::toItem)
+            .map(item -> WriteRequest.builder()
+                .putRequest(PutRequest.builder().item(item).build())
+                .build())
+            .toList();
+
+        for (int start = 0; start < requests.size(); start += MAX_BATCH_SIZE) {
+            int end = Math.min(start + MAX_BATCH_SIZE, requests.size());
+            writeBatchWithRetries(new ArrayList<>(requests.subList(start, end)));
         }
-        if (!m.secondaryMetrics().isEmpty()) {
-            item.put(SECONDARY_METRICS, AttributeValue.fromM(
-                m.secondaryMetrics().entrySet().stream().collect(Collectors.toMap(
-                    Map.Entry::getKey,
-                    e -> AttributeValue.fromM(Map.of(
-                        METRIC_SCORE, n(e.getValue().score()),
-                        METRIC_UNIT, s(e.getValue().unit())))))));
-        }
-        if (!m.tags().isEmpty()) {
-            item.put(TAGS, AttributeValue.fromM(
-                m.tags().entrySet().stream()
-                    .collect(Collectors.toMap(Map.Entry::getKey, e -> s(e.getValue())))));
-        }
-        if (m.jcstress() != null) {
-            item.put(JCSTRESS, AttributeValue.fromM(toJcstressItem(m.jcstress())));
+        logger.info("Stored {} measurement(s) in DynamoDB table {}.", measurements.size(), tableName);
+    }
+
+    private void writeBatchWithRetries(List<WriteRequest> batch) {
+        List<WriteRequest> pending = batch;
+        long backoff = INITIAL_BACKOFF_MILLIS;
+
+        for (int attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            BatchWriteItemResponse response;
+            try {
+                response = client.batchWriteItem(BatchWriteItemRequest.builder()
+                    .requestItems(Map.of(tableName, pending))
+                    .build());
+            } catch (RuntimeException e) {
+                throw new ResultsStoreException(
+                    "Failed to write " + pending.size() + " measurement(s) to " + tableName, e);
+            }
+
+            Map<String, List<WriteRequest>> unprocessed = response.unprocessedItems();
+            if (unprocessed == null || unprocessed.get(tableName) == null
+                || unprocessed.get(tableName).isEmpty()) {
+                return;
+            }
+
+            pending = unprocessed.get(tableName);
+            logger.warn("{} item(s) unprocessed on attempt {}/{}; retrying in {}ms",
+                pending.size(), attempt, MAX_ATTEMPTS, backoff);
+            sleep(backoff);
+            backoff *= 2;
         }
 
-        int size = serializedSize(item);
-        if (size > MAX_ITEM_BYTES) {
-            throw new IllegalStateException(
-                "Measurement for request " + m.requestId() + " serializes to " + size
-                    + " bytes, above DynamoDB's 400 KB item limit. Refusing to truncate — "
-                    + "reduce the tag set or move the payload to S3.");
+        throw new ResultsStoreException(
+            pending.size() + " measurement(s) remained unprocessed after " + MAX_ATTEMPTS
+                + " attempts against " + tableName + ". Results were NOT stored.");
+    }
+
+    private static void sleep(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new ResultsStoreException("Interrupted while retrying a DynamoDB batch write", e);
         }
-        return item;
-    }
-
-    public static StoredMeasurement fromItem(Map<String, AttributeValue> item) {
-        return new StoredMeasurement(
-            str(item, PROJECT),
-            str(item, REQUEST_ID),
-            Instant.parse(str(item, CREATED_AT)),
-            MeasurementKind.valueOf(str(item, KIND)),
-            str(item, BENCHMARK_CLASS),
-            str(item, BENCHMARK_METHOD),
-            str(item, MODE),
-            dbl(item, SCORE),
-            dbl(item, SCORE_ERROR),
-            str(item, SCORE_UNIT),
-            secondaryMetricsFrom(item),
-            jcstressFrom(item),
-            tagsFrom(item),
-            str(item, RESULT_PATH),
-            str(item, RESULT_JSON_KEY),
-            str(item, ENVIRONMENT_JSON_KEY));
-    }
-
-    /**
-     * Approximates DynamoDB's own accounting: attribute names plus values, recursing into maps.
-     * Exactness is not required — the guard exists to fail loudly well before the real limit.
-     */
-    public static int serializedSize(Map<String, AttributeValue> item) {
-        int total = 0;
-        for (Map.Entry<String, AttributeValue> entry : item.entrySet()) {
-            total += utf8(entry.getKey()) + valueSize(entry.getValue());
-        }
-        return total;
-    }
-
-    private static Map<String, AttributeValue> toJcstressItem(JcstressSummary j) {
-        Map<String, AttributeValue> nested = new LinkedHashMap<>();
-        nested.put(TOTAL_TESTS, n(j.totalTests()));
-        nested.put(PASSED_TESTS, n(j.passedTests()));
-        nested.put(FAILED_TESTS, n(j.failedTests()));
-        nested.put(ERROR_TESTS, n(j.errorTests()));
-        nested.put(FAILED, stringMap(j.failed()));
-        nested.put(ERRORS, stringMap(j.errors()));
-        nested.put(INTERESTING, stringMap(j.interesting()));
-        return nested;
-    }
-
-    private static JcstressSummary jcstressFrom(Map<String, AttributeValue> item) {
-        AttributeValue value = item.get(JCSTRESS);
-        if (value == null || !value.hasM()) {
-            return null;
-        }
-        Map<String, AttributeValue> nested = value.m();
-        return new JcstressSummary(
-            intOf(nested, TOTAL_TESTS),
-            intOf(nested, PASSED_TESTS),
-            intOf(nested, FAILED_TESTS),
-            intOf(nested, ERROR_TESTS),
-            stringMapFrom(nested, FAILED),
-            stringMapFrom(nested, ERRORS),
-            stringMapFrom(nested, INTERESTING));
-    }
-
-    private static Map<String, SecondaryMetric> secondaryMetricsFrom(Map<String, AttributeValue> item) {
-        AttributeValue value = item.get(SECONDARY_METRICS);
-        if (value == null || !value.hasM()) {
-            return Map.of();
-        }
-        return value.m().entrySet().stream().collect(Collectors.toMap(
-            Map.Entry::getKey,
-            e -> new SecondaryMetric(
-                Double.parseDouble(e.getValue().m().get(METRIC_SCORE).n()),
-                e.getValue().m().get(METRIC_UNIT).s())));
-    }
-
-    private static Map<String, String> tagsFrom(Map<String, AttributeValue> item) {
-        AttributeValue value = item.get(TAGS);
-        if (value == null || !value.hasM()) {
-            return Map.of();
-        }
-        return value.m().entrySet().stream()
-            .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().s()));
-    }
-
-    private static AttributeValue stringMap(Map<String, String> source) {
-        return AttributeValue.fromM(source.entrySet().stream()
-            .collect(Collectors.toMap(Map.Entry::getKey, e -> s(e.getValue()))));
-    }
-
-    private static Map<String, String> stringMapFrom(Map<String, AttributeValue> nested, String name) {
-        AttributeValue value = nested.get(name);
-        if (value == null || !value.hasM()) {
-            return Map.of();
-        }
-        return value.m().entrySet().stream()
-            .collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().s()));
-    }
-
-    private static void putIfPresent(Map<String, AttributeValue> item, String name, String value) {
-        if (value != null) {
-            item.put(name, s(value));
-        }
-    }
-
-    private static String str(Map<String, AttributeValue> item, String name) {
-        AttributeValue value = item.get(name);
-        return value == null ? null : value.s();
-    }
-
-    private static Double dbl(Map<String, AttributeValue> item, String name) {
-        AttributeValue value = item.get(name);
-        return value == null ? null : Double.valueOf(value.n());
-    }
-
-    private static int intOf(Map<String, AttributeValue> item, String name) {
-        AttributeValue value = item.get(name);
-        return value == null ? 0 : Integer.parseInt(value.n());
-    }
-
-    private static int valueSize(AttributeValue value) {
-        if (value.s() != null) return utf8(value.s());
-        if (value.n() != null) return utf8(value.n());
-        if (value.hasM()) return serializedSize(value.m());
-        return 0;
-    }
-
-    private static int utf8(String value) {
-        return value.getBytes(StandardCharsets.UTF_8).length;
-    }
-
-    private static AttributeValue s(String value) {
-        return AttributeValue.fromS(value);
-    }
-
-    private static AttributeValue n(Number value) {
-        return AttributeValue.fromN(String.valueOf(value));
     }
 }
 ```
 
-Numbers round-trip exactly because `String.valueOf(double)` and `Double.parseDouble` are exact inverses for every `double`.
+- [ ] **Step 6: Run and confirm green**
 
-- [ ] **Step 4: Run and confirm green**
-
-Run: `mvn -pl baas-model test -Dtest=MeasurementItemMapperTest`
-Expected: PASS, 7 tests.
-
-- [ ] **Step 5: Run the whole module**
-
-Run: `mvn -pl baas-model test`
-Expected: PASS, 23 tests across the four test classes.
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add baas-model/src
-git commit -m "feat(model): map stored measurements to and from DynamoDB items"
-```
-
----
-
-## Task 6: The results table, its index, the gateway endpoint and the output
-
-Covers 4.1, 4.2, 4.4. **Does NOT cover 4.3** — see the sequencing hazard above.
-
-**Files:**
-- Modify: `infra/cf-template-core.yaml`
-- Test: `baas-cli/src/test/java/pl/wsztajerowski/baas/infra/CoreTemplateTest.java` (create if the existing template test lives elsewhere — locate it with `grep -rl "cf-template-core" baas-cli/src/test`)
-
-**Interfaces:**
-- Produces: logical resources `ResultsTable`, `DynamoDbGatewayEndpoint`; stack output `ResultsTableName`. §7.1 reads that output into `BaasConfig`.
-
-**The existing-VPC path is already settled by precedent.** `S3GatewayEndpoint` (line 126) carries `Condition: CreateNetworking`, so when `UseExistingVpc=true` the stack creates no gateway endpoint at all and the operator supplies their own networking. The DynamoDB endpoint mirrors that exactly — same condition, same shape, `RouteTableIds: [!Ref PublicRouteTable]`. Do not invent an `ExistingRouteTableId` parameter; that would diverge from how S3 already works.
-
-Note the consequence and state it in the commit message: under `UseExistingVpc=true` there is no DynamoDB gateway endpoint, so runner traffic to DynamoDB goes out via the existing route. That is the same trade-off already accepted for S3.
-
-- [ ] **Step 1: Write the failing template tests**
-
-Add to the core-template test class. Match the assertion style already used there (it parses the YAML — reuse the existing loader rather than adding a new one):
-
-```java
-    @Test
-    void theResultsTableIsRetainedOnBothDeleteAndReplace() {
-        var table = resource("ResultsTable");
-
-        assertThat(table.get("DeletionPolicy")).isEqualTo("Retain");
-        assertThat(table.get("UpdateReplacePolicy")).isEqualTo("Retain");
-    }
-
-    @Test
-    void theResultsTableIsOnDemandWithStringKeys() {
-        var properties = properties("ResultsTable");
-
-        assertThat(properties.get("BillingMode")).isEqualTo("PAY_PER_REQUEST");
-        assertThat(keySchema(properties)).containsExactly(entry("pk", "HASH"), entry("sk", "RANGE"));
-        assertThat(attributeTypes(properties)).containsEntry("pk", "S").containsEntry("sk", "S");
-    }
-
-    @Test
-    void theResultsTableHasExactlyOneIndexKeyedOnRequestId() {
-        var indexes = globalSecondaryIndexes("ResultsTable");
-
-        assertThat(indexes).hasSize(1);
-        assertThat(indexes.get(0).get("IndexName")).isEqualTo("requestId-index");
-    }
-
-    @Test
-    void theResultsTableHasNoTimeToLive() {
-        assertThat(properties("ResultsTable")).doesNotContainKey("TimeToLiveSpecification");
-    }
-
-    /** A gateway endpoint is free; an interface endpoint bills hourly per AZ. */
-    @Test
-    void dynamoDbIsReachedThroughAGatewayEndpointNotAnInterfaceEndpoint() {
-        var properties = properties("DynamoDbGatewayEndpoint");
-
-        assertThat(properties.get("VpcEndpointType")).isEqualTo("Gateway");
-        assertThat(String.valueOf(properties.get("ServiceName"))).contains("dynamodb");
-    }
-
-    @Test
-    void theTableNameIsAStackOutput() {
-        assertThat(outputs()).containsKey("ResultsTableName");
-    }
-
-    /**
-     * The runner still writes to Atlas until the cutover lands. Removing 27017 before then makes
-     * every run fail at the database write — deliberately deferred, see plan.md.
-     */
-    @Test
-    void runnerEgressStillPermits27017UntilTheCutover() {
-        assertThat(securityGroupEgressPorts("RunnerSecurityGroup")).contains(27017);
-    }
-```
-
-- [ ] **Step 2: Run and confirm failure**
-
-Run: `mvn -pl baas-cli test -Dtest=CoreTemplateTest`
-Expected: FAIL — `ResultsTable` and `DynamoDbGatewayEndpoint` are absent. `runnerEgressStillPermits27017UntilTheCutover` should PASS already.
-
-- [ ] **Step 3: Add the table to `cf-template-core.yaml`**
-
-Place it near `S3MainBucket` so the two retained resources sit together:
-
-```yaml
-  ResultsTable:
-    Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      TableName: !Sub baas-${ResourceNamePrefix}-results
-      BillingMode: PAY_PER_REQUEST
-      AttributeDefinitions:
-        - AttributeName: pk
-          AttributeType: S
-        - AttributeName: sk
-          AttributeType: S
-        - AttributeName: gsi1pk
-          AttributeType: S
-        - AttributeName: gsi1sk
-          AttributeType: S
-      KeySchema:
-        - AttributeName: pk
-          KeyType: HASH
-        - AttributeName: sk
-          KeyType: RANGE
-      GlobalSecondaryIndexes:
-        - IndexName: requestId-index
-          KeySchema:
-            - AttributeName: gsi1pk
-              KeyType: HASH
-            - AttributeName: gsi1sk
-              KeyType: RANGE
-          Projection:
-            ProjectionType: ALL
-      Tags:
-        - Key: baas-role
-          Value: results
-```
-
-`ResourceNamePrefix` is the template's existing parameter and `S3MainBucket` uses `BucketName: !Sub baas-${ResourceNamePrefix}` — the table name above mirrors that convention. Place the resource immediately after `S3MainBucket` (line 166) so the two retained resources are adjacent.
-
-- [ ] **Step 4: Add the gateway endpoint**
-
-```yaml
-  DynamoDbGatewayEndpoint:
-    Type: AWS::EC2::VPCEndpoint
-    Condition: CreateNetworking
-    Properties:
-      VpcId: !Ref BaasVpc
-      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
-      VpcEndpointType: Gateway
-      RouteTableIds:
-        - !Ref PublicRouteTable
-```
-
-Place it immediately after `S3GatewayEndpoint` (line 126-134), which this mirrors line for line.
-
-- [ ] **Step 5: Add the output**
-
-```yaml
-  ResultsTableName:
-    Value: !Ref ResultsTable
-```
-
-The template's outputs carry no `Description` and no `Export` — `BucketName`, `RunnerRoleName` and the rest are bare `Value:` entries. Match that; do not add an export nobody consumes.
-
-- [ ] **Step 6: Run the tests**
-
-Run: `mvn -pl baas-cli test -Dtest=CoreTemplateTest`
-Expected: PASS.
+Run: `mvn -pl benchmark-runner test -Dtest=DynamoDbResultsStoreTest`
+Expected: PASS, 4 tests. The retry test sleeps ~100ms; that is intentional and cheap.
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add infra/cf-template-core.yaml baas-cli/src/test/java/pl/wsztajerowski/baas/infra/CoreTemplateTest.java
-git commit -m "feat(infra): add the retained results table, its requestId index and a DynamoDB gateway endpoint"
+git add benchmark-runner/pom.xml benchmark-runner/src/main/java/pl/wsztajerowski/infra/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
+git commit -m "feat(runner): add a batching, retrying DynamoDB results store"
 ```
 
 ---
 
-## Task 7: Scoped IAM for the runner, the operator and the deployer
+## Task 6: Select exactly one adapter, and fail on ambiguity
 
-Covers 4.5, 4.6, 4.7, 4.9, 4.10. **Does NOT cover 4.8** — see the sequencing hazard above.
+Covers 5.7.
 
 **Files:**
-- Modify: `infra/cf-template-core.yaml` (`RunnerRole` at line 214, `OperatorRole` at line 417 — note the *logical* id is `OperatorRole`; `BaasCliOperatorRole` appears only in prose)
-- Modify: `infra/deployer-policy.json`
-- Test: `baas-cli/src/test/java/pl/wsztajerowski/baas/infra/CoreTemplateTest.java`
-- Test: `baas-cli/src/test/java/pl/wsztajerowski/baas/infra/DeployerPolicyTest.java`
+- Create: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/ResultsStoreBuilder.java`
+- Delete: `benchmark-runner/src/main/java/pl/wsztajerowski/infra/DatabaseServiceBuilder.java`
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/ResultsStoreBuilderTest.java`
 
 **Interfaces:**
-- Produces: the runner may `PutItem`/`BatchWriteItem` on the table only; the operator may `Query`/`GetItem` on the table and its index only; the deployer may manage the table's lifecycle, prefix-scoped.
+- Consumes: everything from Tasks 1, 2 and 5.
+- Produces: `ResultsStoreBuilder.builder().withTableName(String).withConnectionString(URI).withNoDatabase(boolean).withDynamoDbEndpoint(URI).build()` returning `ResultsStore`. Task 8 calls it.
 
-**Why the operator needs the index ARN explicitly.** A `Query` against a GSI authorises on the *index* ARN (`<table-arn>/index/*`), not the table ARN. Granting the table alone makes `--request-id` fail with an opaque AccessDenied at runtime, long after the deploy looks successful.
+**The behaviour change that matters.** Today `DatabaseServiceBuilder` returns `NoOpDatabaseService` when the connection string is null or empty — so a misconfigured run reports success and throws its measurements away. That is the documented trap. Absent configuration now becomes a **hard failure**, and discarding requires naming the intent with `--no-database`.
+
+This is a **breaking change for standalone `benchmark-runner` users** who relied on the lenient behaviour. Deliberate; note it in your report so it reaches release notes.
 
 - [ ] **Step 1: Write the failing tests**
 
-Add to `CoreTemplateTest`:
-
 ```java
-    @Test
-    void theRunnerCanWriteResultsButNeverReadOrDeleteThem() {
-        var actions = policyActionsFor("RunnerRole", "dynamodb");
+package pl.wsztajerowski.infra;
 
-        assertThat(actions).containsExactlyInAnyOrder("dynamodb:PutItem", "dynamodb:BatchWriteItem");
-        assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query");
+import org.junit.jupiter.api.Test;
+
+import java.net.URI;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class ResultsStoreBuilderTest {
+
+    @Test
+    void aTableNameSelectsDynamoDb() {
+        assertThat(ResultsStoreBuilder.builder().withTableName("results").build())
+            .isInstanceOf(DynamoDbResultsStore.class);
     }
 
     @Test
-    void theOperatorCanReadResultsButNeverWriteThem() {
-        var actions = policyActionsFor("OperatorRole", "dynamodb");
-
-        assertThat(actions).containsExactlyInAnyOrder("dynamodb:Query", "dynamodb:GetItem");
-        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:Scan", "dynamodb:DeleteItem");
+    void noDatabaseSelectsTheExplicitDiscardStore() {
+        assertThat(ResultsStoreBuilder.builder().withNoDatabase(true).build())
+            .isInstanceOf(NoOpResultsStore.class);
     }
 
     @Test
-    void theOperatorIsGrantedTheIndexArnBecauseAGsiQueryAuthorisesOnTheIndex() {
-        assertThat(policyResourcesFor("OperatorRole", "dynamodb"))
-            .anySatisfy(resource -> assertThat(String.valueOf(resource)).contains("index"));
+    void absentConfigurationIsAHardFailureRatherThanASilentDiscard() {
+        assertThatThrownBy(() -> ResultsStoreBuilder.builder().build())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("--no-database");
     }
 
     @Test
-    void noDynamoDbGrantUsesAWildcardResource() {
-        assertThat(policyResourcesFor("RunnerRole", "dynamodb")).doesNotContain("*");
-        assertThat(policyResourcesFor("OperatorRole", "dynamodb")).doesNotContain("*");
+    void anEmptyConnectionStringIsAlsoAHardFailure() {
+        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
+            .withConnectionString(URI.create("")).build())
+            .as("the previous behaviour silently discarded measurements here")
+            .isInstanceOf(IllegalStateException.class);
     }
+
+    @Test
+    void namingBothStoresIsRejectedRatherThanPickingOne() {
+        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
+            .withTableName("results")
+            .withConnectionString(URI.create("mongodb://localhost:27017/baas"))
+            .build())
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("both");
+    }
+
+    @Test
+    void noDatabaseAlongsideAStoreIsRejected() {
+        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
+            .withTableName("results")
+            .withNoDatabase(true)
+            .build())
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void aConnectionStringWithoutADatabaseNameIsRejected() {
+        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
+            .withConnectionString(URI.create("mongodb://localhost:27017"))
+            .build())
+            .hasMessageContaining("database name");
+    }
+}
 ```
-
-Add to `DeployerPolicyTest`:
-
-```java
-    @Test
-    void theDeployerCanManageTheResultsTableLifecycle() {
-        var actions = actionsForService("dynamodb");
-
-        assertThat(actions).contains(
-            "dynamodb:CreateTable", "dynamodb:DeleteTable", "dynamodb:UpdateTable",
-            "dynamodb:DescribeTable", "dynamodb:TagResource", "dynamodb:UntagResource",
-            "dynamodb:ListTagsOfResource", "dynamodb:UpdateTimeToLive", "dynamodb:DescribeTimeToLive");
-    }
-
-    @Test
-    void theDeployerHasNoDataPlaneAccessToResults() {
-        assertThat(actionsForService("dynamodb"))
-            .doesNotContain("dynamodb:PutItem", "dynamodb:GetItem", "dynamodb:Query", "dynamodb:Scan");
-    }
-
-    @Test
-    void everyDynamoDbStatementIsPrefixScoped() {
-        assertThat(resourcesForService("dynamodb"))
-            .isNotEmpty()
-            .allSatisfy(resource -> assertThat(resource).doesNotContain("dynamodb:*:*:table/*"));
-    }
-```
-
-`renderedPolicyLeavesRoomInAnInlinePolicyBudget` already exists — do not modify it. It is the guard that these additions must not break.
 
 - [ ] **Step 2: Run and confirm failure**
 
-Run: `mvn -pl baas-cli test -Dtest=CoreTemplateTest,DeployerPolicyTest`
-Expected: FAIL — no DynamoDB statements exist yet.
+Run: `mvn -pl benchmark-runner test -Dtest=ResultsStoreBuilderTest`
+Expected: FAIL to compile.
 
-- [ ] **Step 3: Grant the runner write-only access**
+- [ ] **Step 3: Implement the builder**
 
-`RunnerRole` carries a *list* of policies named `${ResourceNamePrefix}-runner-s3-policy` and `${ResourceNamePrefix}-runner-ec2-terminate-policy`. Add a third entry following that convention rather than appending a statement to the S3 policy:
+Structure: count how many of `{tableName, connectionString, noDatabase}` are set. Zero → `IllegalStateException` whose message names `--no-database`. More than one → `IllegalStateException` containing the word "both". Exactly one → construct the matching adapter.
 
-```yaml
-        - PolicyName: !Sub ${ResourceNamePrefix}-runner-dynamodb-policy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:PutItem
-                  - dynamodb:BatchWriteItem
-                Resource: !GetAtt ResultsTable.Arn
+Carry over the existing database-name check from `DatabaseServiceBuilder` verbatim — a Mongo connection string must still carry a database name, and that message is already good:
+
+```java
+        requireNonNull(database, "Connection string has to contain database name! Please provide connection string in form: mongodb://server:port/database_name");
 ```
 
-`AWS::DynamoDB::Table` exposes a distinct `Arn` attribute, so `!GetAtt ... .Arn` is correct here and `!Ref` (which returns the table *name*) would not be. Copy the `Version` line's exact quoting from the neighbouring policy.
+For DynamoDB, apply `endpointOverride` when `withDynamoDbEndpoint` is set, so LocalStack works in Task 9:
 
-- [ ] **Step 4: Grant the operator read-only access, table and index**
-
-Add a matching policy entry to `OperatorRole`:
-
-```yaml
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-dynamodb-policy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:Query
-                  - dynamodb:GetItem
-                Resource:
-                  - !GetAtt ResultsTable.Arn
-                  - !Sub '${ResultsTable.Arn}/index/*'
+```java
+        var clientBuilder = DynamoDbClient.builder();
+        if (dynamoDbEndpoint != null) {
+            clientBuilder.endpointOverride(dynamoDbEndpoint);
+        }
+        return new DynamoDbResultsStore(clientBuilder.build(), tableName);
 ```
 
-Also update the comment above `OperatorRole` (line 408-411), which currently describes the role as scoped to "bucket, RunnerRole, mongo SSM path" — add the results table. The mongo SSM path stays in that comment until 4.8 lands in Phase 4.
+Then delete `DatabaseServiceBuilder.java`.
 
-- [ ] **Step 5: Add the deployer's table lifecycle statement**
+- [ ] **Step 4: Run and confirm green**
 
-In `infra/deployer-policy.json`, add a statement using the existing `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders:
+Run: `mvn -pl benchmark-runner test -Dtest=ResultsStoreBuilderTest`
+Expected: PASS, 7 tests.
 
-```json
-    {
-      "Sid": "ResultsTableLifecycle",
-      "Effect": "Allow",
-      "Action": [
-        "dynamodb:CreateTable",
-        "dynamodb:DeleteTable",
-        "dynamodb:UpdateTable",
-        "dynamodb:DescribeTable",
-        "dynamodb:DescribeContinuousBackups",
-        "dynamodb:DescribeTimeToLive",
-        "dynamodb:UpdateTimeToLive",
-        "dynamodb:TagResource",
-        "dynamodb:UntagResource",
-        "dynamodb:ListTagsOfResource"
-      ],
-      "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/baas-${PREFIX}-results"
+- [ ] **Step 5: Commit**
+
+```bash
+git add benchmark-runner/src/main/java/pl/wsztajerowski/infra/ benchmark-runner/src/test/java/pl/wsztajerowski/infra/
+git commit -m "feat(runner): select one results store, and make absent configuration fatal"
+```
+
+---
+
+## Task 7: Upload the verbatim JMH result JSON, and order the writes S3-first
+
+Covers 5.10 and 5.11.
+
+**Files:**
+- Modify: `benchmark-runner/src/main/java/pl/wsztajerowski/services/JmhSubcommandService.java`
+- Modify: `JmhWithProfilerSubcommandService.java`, `JmhWithAsyncProfilerSubcommandService.java`, `JCStressSubcommandService.java`
+- Test: extend the existing JMH integration test
+
+**Interfaces:**
+- Produces: the S3 key `<resultPath>/jmh-result.json`, recorded on every measurement from that run as `resultJsonKey`.
+
+**Why this exists.** The item is deliberately thin — `rawData` and `scorePercentiles` are dropped — so something must keep full fidelity retrievable. Uploading the unmodified JMH result JSON also closes the documented gap that "measurements live only in MongoDB, there is no `result.json`".
+
+**Why S3 first.** A run that fails at the store must still leave its artifacts behind — the whole point of the S3 layout is that a failed run stays diagnosable. Store-first would lose the JSON along with the measurements.
+
+- [ ] **Step 1: Write the failing test**
+
+Extend the existing JMH integration test (read it first and follow its harness):
+
+```java
+    @Test
+    void uploadsTheVerbatimResultJsonSoTheThinItemStaysDefensible() {
+        // run the service against the fake benchmark, then:
+        assertThat(listObjectsInTestBucket().toString())
+            .contains("jmh-result.json");
     }
 ```
 
-The placeholders `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` are substituted per caller by `DeployerPolicyRenderer` — the file is a template, and attaching it unrendered grants nothing. Copy the partition style from the neighbouring statements in that same JSON file rather than from the YAML template.
+- [ ] **Step 2: Run and confirm failure**
 
-CloudFormation calls `DescribeContinuousBackups` and `DescribeTimeToLive` during table create even when neither is configured — omitting them produces a rollback whose message names the missing action, which is recoverable but wastes a full deploy cycle.
+Run: `mvn -pl benchmark-runner test -Dtest=JmhSubcommandServiceIT`
+Expected: FAIL — no `jmh-result.json` in the bucket.
 
-- [ ] **Step 6: Run the tests, including the size budget**
+- [ ] **Step 3: Upload the JSON and compute `createdAt` once per run**
 
-Run: `mvn -pl baas-cli test -Dtest=CoreTemplateTest,DeployerPolicyTest`
-Expected: PASS, **including** `renderedPolicyLeavesRoomInAnInlinePolicyBudget`. If the budget test now fails, do not raise the limit — collapse the new action list using a `dynamodb:Describe*` wildcard, keeping `Create`/`Delete`/`Update` enumerated.
+In `JmhSubcommandService`, after the benchmark process exits and **before** the result loop:
 
-- [ ] **Step 7: Run the full reactor**
+```java
+        String resultJsonKey = storageService.uploadFile(
+            jmhOptions.outputOptions().machineReadableOutput(),
+            commonOptions.resultPath().resolve("jmh-result.json"));
+        Instant createdAt = Instant.now();
+```
 
-Run: `ASYNC_PATH=<a library that exists on this machine> mvn clean verify`
-Expected: BUILD SUCCESS across all 6 modules.
+Match `storageService`'s real method name and signature — read `StorageService` first.
 
-- [ ] **Step 8: Commit**
+`createdAt` moves **out** of the loop. It is currently `OffsetDateTime.now(ZoneOffset.UTC).toLocalDateTime()` computed per result, which both loses the zone and makes two results from one run differ by a stray millisecond. One timestamp per run is correct: the sort key already differentiates measurements by `benchmarkClass`, `benchmarkMethod` and `mode`.
+
+Then build a `List<StoredMeasurement>` from the loop via `JmhMeasurementMapper.toMeasurement(...)` and call `resultsStore.write(measurements)` **once**, after the loop.
+
+**Known limitation — record it, do not fix it here.** Two results differing only by `@Param` values collide on the sort key, because params are not part of it. This is pre-existing: the Mongo `_id` had the same shape, and `options=<params>` is still captured as a tag. **Do not change the key shape to fix it** — §9 migrates history onto the current shape, and changing it afterwards means redoing the migration. Raise it in your report so it can be decided deliberately.
+
+- [ ] **Step 4: Order the writes S3-first in all four services**
+
+Read each of the four services and ensure every S3 upload completes before `resultsStore.write(...)`. Move the store call to the end where it is not already last.
+
+- [ ] **Step 5: Run and confirm green**
+
+Run: `mvn -pl benchmark-runner test -Dtest=JmhSubcommandServiceIT`
+Expected: PASS.
+
+- [ ] **Step 6: Commit**
 
 ```bash
-git add infra/cf-template-core.yaml infra/deployer-policy.json \
-        baas-cli/src/test/java/pl/wsztajerowski/baas/infra/
-git commit -m "feat(infra): scope DynamoDB access for the runner, operator and deployer"
+git add benchmark-runner/src/main/java/pl/wsztajerowski/services/ benchmark-runner/src/test/java/pl/wsztajerowski/services/
+git commit -m "feat(runner): upload the verbatim JMH result JSON and write S3 before the store"
 ```
 
 ---
 
-## Task 8: Deploy and verify — HUMAN GATE
+## Task 8: Wire the new options and store through the command layer
 
-**Files:** none. This mutates a live CloudFormation stack.
+Covers 5.12.
 
-**Do not run this without explicit human approval.** Everything above is inert until deployed; this step is where it becomes real. It is safe by design — purely additive, Atlas untouched — but it changes a live stack and creates a **retained** resource that will outlive a teardown.
+**Files:**
+- Modify: `benchmark-runner/src/main/java/pl/wsztajerowski/commands/ApiCommonSharedOptions.java`
+- Modify: the four `*SubcommandServiceBuilder` classes and their services
+- Test: `benchmark-runner/src/test/java/pl/wsztajerowski/commands/ApiCommonSharedOptionsTest.java`
 
-- [ ] **Step 1: Confirm the deployer identity**
+**Interfaces:**
+- Consumes: `ResultsStoreBuilder` from Task 6.
+- Produces: options `--results-table`, `--no-database`, `--dynamodb-endpoint`, `--project`; and `ApiCommonSharedOptions.buildResultsStore()` returning `ResultsStore`.
 
-```bash
-AWS_PROFILE=baas-admin aws sts get-caller-identity
+**`--project` becomes first-class.** `StoredMeasurement` requires a non-blank `project` — it composes the partition key. `baas run` already forwards `--tag project=<name>`, but the runner needs it as a value, not dug out of the tag map.
+
+- [ ] **Step 1: Write the failing tests**
+
+```java
+package pl.wsztajerowski.commands;
+
+import org.junit.jupiter.api.Test;
+import picocli.CommandLine;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class ApiCommonSharedOptionsTest {
+
+    @Test
+    void parsesTheResultsTableAndProject() {
+        var options = parse("--results-table", "baas-abc-results", "--project", "lynx-journal");
+
+        assertThat(options.getResultsTableName()).isEqualTo("baas-abc-results");
+        assertThat(options.getProject()).isEqualTo("lynx-journal");
+    }
+
+    @Test
+    void parsesNoDatabase() {
+        assertThat(parse("--no-database", "--project", "p").isNoDatabase()).isTrue();
+    }
+
+    @Test
+    void theMongoConnectionStringOptionSurvivesForStandaloneUse() {
+        var options = parse("--mongo-connection-string", "mongodb://h:27017/db", "--project", "p");
+
+        assertThat(options.getMongoConnectionString().toString()).contains("27017");
+    }
+
+    private static ApiCommonSharedOptions parse(String... args) {
+        var options = new ApiCommonSharedOptions();
+        new CommandLine(options).parseArgs(args);
+        return options;
+    }
+}
 ```
 
-- [ ] **Step 2: Deploy**
+- [ ] **Step 2: Run and confirm failure**
 
-```bash
-baas admin setup
+Run: `mvn -pl benchmark-runner test -Dtest=ApiCommonSharedOptionsTest`
+Expected: FAIL to compile — the accessors do not exist.
+
+- [ ] **Step 3: Add the options**
+
+```java
+    @Option(names = "--results-table", description = "DynamoDB table holding benchmark measurements.")
+    String resultsTableName;
+
+    @Option(names = "--no-database", description = "Discard measurements instead of storing them. Explicit opt-in; absent configuration is an error.")
+    boolean noDatabase;
+
+    @Option(names = "--dynamodb-endpoint", defaultValue = "${AWS_ENDPOINT_URL_DYNAMODB}", description = "Custom DynamoDB endpoint, for LocalStack.")
+    URI dynamoDbEndpoint;
+
+    @Option(names = "--project", description = "Project name; composes the results partition key.")
+    String project;
 ```
 
-Expected: the stack updates and reports the new `ResultsTableName` output.
+Add matching accessors plus `buildResultsStore()` delegating to `ResultsStoreBuilder`. **Keep `--mongo-connection-string`** — it is how the standalone deployment selects Mongo, and §13 removes only the *CLI's* use of it.
 
-- [ ] **Step 3: Confirm the table exists, is on-demand, and is empty**
+- [ ] **Step 4: Replace `DatabaseService` with `ResultsStore` throughout the services**
 
-```bash
-AWS_PROFILE=baas-admin aws dynamodb describe-table --table-name baas-3q7i7s65-results \
-  --query 'Table.{status:TableStatus,billing:BillingModeSummary.BillingMode,items:ItemCount,gsi:GlobalSecondaryIndexes[].IndexName}'
-```
+Change the field type, constructor parameter and call site in each of the four `*SubcommandService` classes and their builders. The call becomes `resultsStore.write(measurements)` with a list built from the Task 3 and Task 4 mappers.
 
-Expected: `ACTIVE`, `PAY_PER_REQUEST`, `0` items, one index named `requestId-index`.
+- [ ] **Step 5: Run the whole module**
 
-- [ ] **Step 4: Confirm the gateway endpoint is associated**
+Run: `mvn -pl benchmark-runner test`
+Expected: PASS. This is the first point at which the module compiles fully again.
 
-```bash
-AWS_PROFILE=baas-admin aws ec2 describe-vpc-endpoints \
-  --filters "Name=service-name,Values=com.amazonaws.eu-central-1.dynamodb" \
-  --query 'VpcEndpoints[].{id:VpcEndpointId,type:VpcEndpointType,state:State,routes:RouteTableIds}'
-```
-
-Expected: one `Gateway` endpoint, `available`, with at least one route table id.
-
-- [ ] **Step 5: Confirm Atlas is genuinely untouched — run a real benchmark**
-
-This is the check that matters. The whole point of deferring 4.3 and 4.8 is that existing runs keep working.
+- [ ] **Step 6: Commit**
 
 ```bash
-baas run --skip-build --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
-  --tag phase=2-smoke jmh -- Incrementing_Synchronized -f 1 -wi 1 -i 3
-```
-
-Expected: the run completes, results print, and the measurement lands **in Atlas** as before. If it fails at the database write, 4.3 or 4.8 was applied by mistake — revert and redeploy.
-
-- [ ] **Step 6: Tick §3 and the additive §4 items in `tasks.md`**
-
-Tick 3.1-3.9, 4.1, 4.2, 4.4, 4.5, 4.6, 4.7, 4.9, 4.10. **Leave 4.3 and 4.8 unticked** and annotate them with a pointer to the sequencing hazard.
-
-```bash
-git add openspec/changes/dynamodb-results-store/tasks.md
-git commit -m "docs(openspec): mark dynamodb-results-store §3 and additive §4 complete"
+git add benchmark-runner/src/main/java/pl/wsztajerowski/ benchmark-runner/src/test/java/pl/wsztajerowski/
+git commit -m "feat(runner): wire the results store and its options through the command layer"
 ```
 
 ---
 
-## Remaining phases — each needs its own plan
+## Task 9: LocalStack with DynamoDB, and one contract suite for both adapters
 
-Do not attempt these from this document; the detail is not here.
+Covers 8.1, 8.2 and 8.3.
 
-### Phase 3 — §9 Data migration (8 tasks)
+**Files:**
+- Create: `benchmark-runner/src/test/java/pl/wsztajerowski/TestcontainersWithDynamoDbBaseIT.java`
+- Create: `benchmark-runner/src/test/java/pl/wsztajerowski/infra/ResultsStoreContractTest.java`
+- Create: `DynamoDbResultsStoreContractIT.java`, `MongoResultsStoreContractIT.java`
+- Keep unchanged: `TestcontainersWithS3AndMongoBaseIT.java`, `MongoDbTestHelpers.java` (that is 8.2)
 
-Writes history into the table before reads switch to it. **Blocked on two decisions:**
+**Interfaces:**
+- Produces: abstract `ResultsStoreContractTest` with `protected abstract ResultsStore store()` and `protected abstract long storedCount()`, plus one concrete subclass per adapter.
 
-- **§1.6**: what `project` do the 41 untagged rows get? Recommended `unknown`; note it collides with `currentGitCommit()`'s existing `unknown` fallback, so decide whether the two should be distinguishable.
-- **§9.4**: map or drop the `source` tag (36 rows, `gha-e2e-test*`)?
+**Note on LocalStack.** `TestcontainersWithS3BaseIT` pins `localstack/localstack:0.12.16` and enables only `Service.S3`. Add `Service.DYNAMODB`. **Verify that version actually serves DynamoDB** — if it does not, bump the image and say so in your report rather than working around it. Create the table in `@BeforeEach` with `pk`/`sk` String keys and the `requestId-index` GSI on `gsi1pk`/`gsi1sk`, matching `infra/cf-template-core.yaml`.
 
-Both are recorded in `apply.md`. `design.md`'s Open Question *"How large is the Atlas dataset?"* is now **answered** — 121 documents — and that answer should be folded back into `design.md`.
+- [ ] **Step 1: Write the contract suite**
 
-### Phase 4 — the atomic cutover (§5, §6, §7, §8, plus 4.3 and 4.8; 47 tasks)
+```java
+package pl.wsztajerowski.infra;
 
-**These cannot be split.** §5 makes the runner write to DynamoDB; §6 makes the CLI read it; §7 removes `--mongo-uri`. Landing any subset leaves results written to one store and read from another. 4.3 and 4.8 join here because 27017 egress and the Mongo SSM grant become dead only once §5 and §7.5 land.
+import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
 
-Also fold in, from `apply.md`'s open items: `DeployerPreflight.java:68` and `TeardownCommand.java:99-104` hold Mongo references that no `tasks.md` item covers. They belong in §7 — add them as 7.11/7.12 when planning this phase.
+import java.util.List;
 
-Largest single risk: `RunCommand.call()` is executed by no test, so §7.6's "fail before provisioning when the table is unresolvable" has the same untestable shape that §2 hit. Plan a live verification step for it.
+import static org.assertj.core.api.Assertions.assertThat;
 
-### Phase 5 — §10, §11, §12 (24 tasks)
+/**
+ * One suite, both adapters. The port promises the same observable behaviour regardless of backing
+ * store, and the only way that stays true is to write the test once and run it twice.
+ */
+abstract class ResultsStoreContractTest {
 
-Decommission, documentation, manual verification. §10.2 (decommission the Atlas cluster) is **irreversible** and must be gated on Phase 3's migration being verified — row counts matching and spot-checked scores identical. §11 must fold in the `CLAUDE.md` invariant changes, including retiring *"the mongo URI never goes into user-data"* and *"measurements live only in MongoDB"*.
+    protected abstract ResultsStore store();
+
+    protected abstract long storedCount();
+
+    @Test
+    void writesOneRecordPerMeasurement() {
+        store().write(List.of(
+            StoredMeasurementFixtures.jmh("one"),
+            StoredMeasurementFixtures.jmh("two")));
+
+        assertThat(storedCount()).isEqualTo(2);
+    }
+
+    @Test
+    void aRepeatedWriteIsIdempotent() {
+        StoredMeasurement measurement = StoredMeasurementFixtures.jmh("one");
+
+        store().write(List.of(measurement));
+        store().write(List.of(measurement));
+
+        assertThat(storedCount())
+            .as("a re-run of the same measurement must not double-count it")
+            .isEqualTo(1);
+    }
+
+    @Test
+    void anEmptyWriteStoresNothingAndDoesNotThrow() {
+        store().write(List.of());
+
+        assertThat(storedCount()).isZero();
+    }
+}
+```
+
+- [ ] **Step 2: Run and confirm failure**
+
+Run: `mvn -pl benchmark-runner test -Dtest='*ContractIT'`
+Expected: FAIL — the concrete subclasses do not exist.
+
+- [ ] **Step 3: Add the LocalStack base class and both subclasses**
+
+Mirror `TestcontainersWithS3BaseIT`'s structure for `TestcontainersWithDynamoDbBaseIT`, adding `Service.DYNAMODB` and creating the table. Then write the two subclasses, each supplying `store()` and `storedCount()`.
+
+- [ ] **Step 4: Run and confirm green**
+
+Run: `mvn -pl benchmark-runner test -Dtest='*ContractIT'`
+Expected: PASS, 6 tests (3 × 2 adapters). Requires Docker.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add benchmark-runner/src/test/java/pl/wsztajerowski/
+git commit -m "test(runner): add LocalStack DynamoDB and one store contract suite for both adapters"
+```
 
 ---
 
-## Out of scope, still open
+## Task 10: Integration tests for the run-level guarantees
 
-`BENCHMARK_PARAMETERS` carries the same `eval` injection weakness that §2 fixed for tags, so an operator can still reach `RunnerRole`'s SSM read via a crafted benchmark parameter. It is outside all 108 task items and wants its own change. Recorded in `apply.md` and `finalize.md`.
+Covers 8.4, 8.5 and 8.7.
+
+**Files:**
+- Create: `benchmark-runner/src/test/java/pl/wsztajerowski/services/JmhStoreIntegrationIT.java`
+
+- [ ] **Step 1: Write the failing tests**
+
+```java
+    @Test
+    void aStoredRunProducesOneItemPerMeasurementAndNoOthers() {
+        runJmhServiceAgainstTheFakeBenchmark();
+
+        var items = scanTable();
+        assertThat(items).hasSize(expectedMeasurementCount);
+        assertThat(items)
+            .as("exactly one item per measurement — the design has no derived index items")
+            .allSatisfy(item -> assertThat(item.get("pk").s()).startsWith("RESULT#"));
+    }
+
+    @Test
+    void aStoreFailureExitsNonZeroAndLeavesS3ArtifactsIntact() {
+        pointTheStoreAtATableThatDoesNotExist();
+
+        assertThatThrownBy(this::runJmhServiceAgainstTheFakeBenchmark)
+            .isInstanceOf(ResultsStoreException.class);
+
+        assertThat(listObjectsInTestBucket().toString())
+            .as("a failed run must still be diagnosable from its S3 artifacts")
+            .contains("jmh-result.json");
+    }
+```
+
+`scanTable()` is a test helper using `DynamoDbClient.scan` — acceptable in a test even though production code never scans. Fill in the harness following the existing service ITs.
+
+- [ ] **Step 2: Run, confirm failure, implement, confirm green**
+
+Run: `mvn -pl benchmark-runner test -Dtest=JmhStoreIntegrationIT`
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add benchmark-runner/src/test/java/pl/wsztajerowski/services/
+git commit -m "test(runner): cover one-item-per-measurement and store-failure ordering"
+```
+
+---
+
+## Task 11: Local development environment and the full reactor
+
+Covers 8.9, 8.10 and 8.11.
+
+**Files:**
+- Modify: `docker-compose.yaml`, `jmh-with-profiler.sh`, `jmh-with-async.sh`, `openspec/changes/dynamodb-results-store/tasks.md`
+
+- [ ] **Step 1: Update `docker-compose.yaml`**
+
+Drop `mongo-express`, add `dynamodb` to LocalStack's `SERVICES`, keep `mongo`. There is **no init container** — the bucket and any SSM parameters are created by hand, and the table now needs the same. Put the `awslocal dynamodb create-table` invocation in a comment beside the service, matching the key schema in `infra/cf-template-core.yaml`.
+
+- [ ] **Step 2: Update the two scripts**
+
+Both currently pass a Mongo connection string. Give each a table name or `--no-database` — the silent fallback no longer exists, so an unchanged script would now fail with the builder's error.
+
+- [ ] **Step 3: Run the full reactor synchronously**
+
+```bash
+ASYNC_PATH=/Users/wiktor/workspace/async-profiler/lib/libasyncProfiler.dylib mvn clean verify
+```
+
+Expected: BUILD SUCCESS across all 6 modules, with `JmhWithAsyncProfilerSubcommandServiceIT` **running, not skipped**. **Wait for it in the same turn — do not background it.** Three agents on this change have lost work that way.
+
+- [ ] **Step 4: Tick the completed tasks**
+
+Tick 5.1–5.12 and 8.1–8.5, 8.7, 8.9, 8.10, 8.11 in `tasks.md`. **Leave 8.6 and 8.8 open** — they need §6 and 7.7 — and annotate each with why, following the style already used for 4.3 and 4.8.
+
+```bash
+git add docker-compose.yaml jmh-with-profiler.sh jmh-with-async.sh openspec/changes/dynamodb-results-store/tasks.md
+git commit -m "chore: point local dev at DynamoDB and mark §5 complete"
+```
+
+---
+
+## Self-review notes
+
+**Spec coverage.** 5.1 T5 · 5.2 T1 · 5.3 T1 · 5.4 T5 · 5.5 T2 · 5.6 T5 · 5.7 T6 · 5.8 T3 · 5.9 T4 · 5.10 T7 · 5.11 T7 · 5.12 T8 · 8.1 T9 · 8.2 T9 · 8.3 T9 · 8.4 T10 · 8.5 T2+T9 · 8.7 T10 · 8.9 T11 · 8.10 T11 · 8.11 T11. 8.6 and 8.8 excluded with reasons.
+
+**Known gaps, deliberately not fixed here:**
+
+- **`@Param` collision.** Two results differing only by `@Param` values share a sort key. Pre-existing — the Mongo `_id` had the same shape — and `options=<params>` remains a tag. Task 7 raises it. Deciding it means changing the key shape, which must not happen after §9 migrates.
+- **Accessor names on `JmhResult`, `Metric` and `JCStressResult`** are the expected shape and must be checked against the real records. Tasks 3 and 4 open with a read step for exactly this reason.
+- **LocalStack 0.12.16** may predate usable DynamoDB support. Task 9 says to verify and bump rather than work around.
