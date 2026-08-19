@@ -137,3 +137,42 @@ None block verify.
 `Run /opsx:verify`. Then either run plan Task 8 (live deploy, human-gated) or plan §5–§12, which
 have no plan yet. Note the `export-before-teardown` change now exists and changes what §7's
 teardown and setup behaviour should be.
+
+---
+
+## Deploy verification (plan.md Task 8) — executed 2026-08-19
+
+Human-gated deploy, run after the deployer policy was re-rendered and re-attached.
+
+| Check | Result |
+|---|---|
+| Stack | `UPDATE_COMPLETE` in ~90s, no rollback, so no orphaned table |
+| Preflight | Passed — confirms the re-attached policy carries the DynamoDB actions |
+| Table | `ACTIVE`, `PAY_PER_REQUEST`, **0 items**, `pk` HASH / `sk` RANGE |
+| Index | `requestId-index` `ACTIVE`, `gsi1pk`/`gsi1sk`, projection `ALL` |
+| TTL | `null` — none |
+| Gateway endpoint | DynamoDB, type `Gateway` (not interface), `available`, on `rtb-021189b027d003d9a` — the same route table as the S3 endpoint |
+| Stack output | `ResultsTableName` = `baas-3q7i7s65-results` |
+| **27017 egress** | **Present** on the live security group (80, 443, 27017) — deliberately, since 4.3 is deferred |
+| **Atlas end to end** | Live run `jmh-20260819_082707` on a real `c5.2xlarge` completed, self-terminated, and stored its measurement in Atlas with all nine tags including the custom `phase=2-postdeploy` |
+| Table after the run | Still **0 items** — correct; nothing writes to DynamoDB until §5 |
+
+`baas admin setup` warned "No MongoDB connection string provided" because it was invoked without
+`--mongo-uri`. It did **not** overwrite the existing value — verified immediately via `config show`,
+because an emptied connection string selects `NoOpDatabaseService` and would make runs report
+success while discarding measurements.
+
+### No §12 item is ticked by this, and 12.1 in particular cannot be
+
+- **12.1** requires "*the absence of a 27017 egress rule*". This phase deliberately keeps that rule,
+  so 12.1 describes the **post-cutover** state and is not satisfiable until 4.3 lands. It also
+  specifies a *clean prefix*; this was an update to an existing stack.
+- **12.2–12.7** all require measurements in the DynamoDB table. Nothing writes to it yet.
+- **12.8** — not claimed. The post-deploy run scored **9,071,763 ops/s ±12,462,803**, against
+  **14,075,511 ops/s ±10,632,927** pre-change. The task's own note gives a CI band of 10.0M–29.6M,
+  and 9.07M falls just below it — but each run's error bar exceeds its own score, so at `-wi 1 -i 3`
+  the configuration cannot support a comparability claim in either direction. Nothing in this phase
+  touched the measurement environment: same AMI (`ami-0aa25ec7fbf1c80f5`), same `imageVersion`
+  1.2.0, same instance type, JDK and CPU model, and the only changes were a table nobody writes to,
+  a gateway endpoint and IAM grants. A real regression is implausible; a meaningful comparison needs
+  more iterations.
