@@ -150,23 +150,18 @@
 - [x] 4.1 Add the results table to `cf-template-core.yaml`: `pk`/`sk` String keys, on-demand billing, one
   `requestId` GSI, no TTL, `DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`
 - [x] 4.2 Add a DynamoDB gateway endpoint associated with the runner's route table
-- [ ] 4.3 Remove TCP 27017 egress from `RunnerSecurityGroup`
-  DEFERRED to the cutover phase, not an oversight: the runner still writes to Atlas until
-  §5 lands, and `CLAUDE.md` states omitting 27017 makes every run fail at the database
-  write. design.md's migration plan step 2 governs — "Atlas is untouched".
+- Mongo removal (formerly 4.3 and 4.8) moved to §13, at the end: those steps must not land
+  until §12 confirms DynamoDB works. §4 therefore runs 4.1, 4.2, 4.4-4.7, 4.9, 4.10.
 - [x] 4.4 Add a table-name stack output
 - [x] 4.5 Scope `RunnerRole` to `dynamodb:PutItem` and `BatchWriteItem` on the table only
 - [x] 4.6 Grant `BaasCliOperatorRole` `dynamodb:Query` and `GetItem` on the table and its index only
 - [x] 4.7 Add the table lifecycle actions to `deployer-policy.json`, prefix-scoped with no `Resource: "*"`
-- [ ] 4.8 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
-  `cf-template-ci.yaml`, and `RunnerRole`
-  DEFERRED to the cutover phase, not an oversight: the runner still writes to Atlas until
-  §5 lands, and `CLAUDE.md` states omitting 27017 makes every run fail at the database
-  write. design.md's migration plan step 2 governs — "Atlas is untouched".
-- [x] 4.9 Add template tests: no interface endpoint for DynamoDB, no port 27017 rule, runner cannot `Scan`
-  or `DeleteItem`, operator cannot `PutItem`
-- [x] 4.10 Extend `DeployerPolicyTest` for the new DynamoDB statements and the removed Mongo statements,
-  and confirm the rendered policy still fits the inline-policy budget
+- [x] 4.9 Add template tests: no interface endpoint for DynamoDB, runner cannot `Scan` or single-item
+  `DeleteItem`, operator cannot `PutItem`. The "no port 27017 rule" assertion moved to 13.3 — while
+  the runner still writes to Atlas the test must pin 27017's PRESENCE, which it does.
+- [x] 4.10 Extend `DeployerPolicyTest` for the new DynamoDB statements and confirm the rendered policy
+  still fits the inline-policy budget (raised 4096 -> 4608; inline on an IAM group, 5120 shared,
+  nothing else attached). Asserting the REMOVED Mongo statements moved to 13.3.
 
 ## 5. Runner store port and adapters
 
@@ -289,3 +284,16 @@
   stating the observed spread — run-to-run variance is large (CI history spans 10.0M–29.6M ops/s on one
   benchmark), so investigate only a difference outside that band
 - [ ] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt
+
+## 13. MongoDB removal (only after §12 confirms DynamoDB works)
+
+Held to the end deliberately. Until §5 cuts the runner over and §12 verifies it end to end, the
+runner still writes to Atlas — and `CLAUDE.md` states that omitting TCP 27017 makes every run fail
+at the database write. Landing either item early breaks every benchmark run.
+
+- [ ] 13.1 Remove TCP 27017 egress from `RunnerSecurityGroup` (was 4.3)
+- [ ] 13.2 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
+  `cf-template-ci.yaml`, and `RunnerRole` (was 4.8)
+- [ ] 13.3 Update the §4 template tests that currently pin the presence of 27017 egress and the Mongo
+  SSM grants, so they assert absence instead — `runnerCanReachMongoAtlasOnItsStandardPort` is the
+  guard that must be inverted, not deleted
