@@ -103,7 +103,20 @@ class NoOpResultsStoreTest {
 Run: `mvn -pl baas-model install -DskipTests && mvn -pl benchmark-runner test -Dtest=NoOpResultsStoreTest`
 Expected: FAIL to compile — `ResultsStore` and `NoOpResultsStore` do not exist.
 
-- [ ] **Step 3: Create the port and its exception**
+- [ ] **Step 3: Add the `baas-model` dependency**
+
+`benchmark-runner/pom.xml` does not depend on `baas-model` yet, and the port below imports
+`StoredMeasurement`. Add it first or nothing compiles:
+
+```xml
+        <dependency>
+            <groupId>pl.wsztajerowski</groupId>
+            <artifactId>baas-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+```
+
+- [ ] **Step 4: Create the port and its exception**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -392,7 +405,13 @@ public class MongoResultsStore implements ResultsStore {
 
 Note `datastore.save` rather than `insert` — `save` upserts on `@Id`, which is what makes the idempotency test pass. The old `DocumentDbService` used `insert`, which would throw a duplicate-key error on a repeat.
 
-Then delete `DocumentDbService.java`.
+Then delete `DocumentDbService.java` **and** `benchmark-runner/src/test/java/pl/wsztajerowski/infra/DatabaseServiceIT.java`.
+
+That IT covers the deleted adapter — `test_isMongoRunning` and `read_data_saved_by_morphia_service`
+— and both are superseded here: this task's `MongoResultsStoreIT` proves the same round trip through
+the new port, and Task 9's contract suite proves it again against both adapters. Deleting it is
+replacing coverage, not dropping it. It will not compile after Task 1 regardless, since it
+references the removed `DatabaseService`.
 
 - [ ] **Step 6: Run and confirm green**
 
@@ -730,17 +749,14 @@ In `benchmark-runner/pom.xml`, inside `<dependencies>`:
 
 ```xml
         <dependency>
-            <groupId>pl.wsztajerowski</groupId>
-            <artifactId>baas-model</artifactId>
-            <version>${project.version}</version>
-        </dependency>
-        <dependency>
             <groupId>software.amazon.awssdk</groupId>
             <artifactId>dynamodb</artifactId>
         </dependency>
 ```
 
-No `<version>` on the SDK — the root pom imports the AWS SDK BOM. **Keep `mongodb-driver-sync` and `morphia-core` exactly as they are**; the retained adapter needs both.
+No `<version>` — the root pom imports the AWS SDK BOM. **Keep `mongodb-driver-sync` and `morphia-core` exactly as they are**; the retained adapter needs both.
+
+`baas-model` is already a dependency — Task 1 added it, because the port imports `StoredMeasurement`. Do not add it twice.
 
 - [ ] **Step 2: Write the fake client**
 
