@@ -189,6 +189,7 @@ public class SetupCommand implements Callable<Integer> {
             config.getAws().setSecurityGroupId(outputs.getOrDefault("SecurityGroupId", ""));
             config.getAws().setVpcId(outputs.getOrDefault("VpcId", ""));
             config.getAws().setRunnerInstanceProfileName(outputs.getOrDefault("RunnerInstanceProfileName", ""));
+            config.getAws().setResultsTable(outputs.getOrDefault("ResultsTableName", ""));
             operatorRoleArn = outputs.getOrDefault("OperatorRoleArn", "");
         }
 
@@ -276,11 +277,31 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
-    static void validateMongoUri(String uri) {
-        var cs = new com.mongodb.ConnectionString(uri);
-        if (cs.getDatabase() == null || cs.getDatabase().isEmpty()) {
+    /**
+     * Parsed by hand because {@code baas-cli} no longer ships the MongoDB driver — the CLI reads
+     * DynamoDB and never speaks Mongo. This survives only until §13 removes {@code --mongo-uri}
+     * altogether; {@code ConfigSetSubcommand} delegates here so that is one deletion, not two.
+     */
+    public static void validateMongoUri(String uri) {
+        if (mongoDatabaseName(uri).isEmpty()) {
             throw new IllegalArgumentException(
                 "MongoDB URI must include a database name (e.g. mongodb+srv://user:pass@host/mydb)");
         }
+    }
+
+    /**
+     * The path segment after the host list. A {@code /} inside credentials would confuse this, but
+     * MongoDB requires those percent-encoded, so it cannot legally appear.
+     */
+    private static String mongoDatabaseName(String uri) {
+        if (uri == null) return "";
+        int schemeEnd = uri.indexOf("://");
+        if (schemeEnd < 0) return "";
+        String afterScheme = uri.substring(schemeEnd + 3);
+        int slash = afterScheme.indexOf('/');
+        if (slash < 0) return "";
+        String afterHost = afterScheme.substring(slash + 1);
+        int query = afterHost.indexOf('?');
+        return query >= 0 ? afterHost.substring(0, query) : afterHost;
     }
 }

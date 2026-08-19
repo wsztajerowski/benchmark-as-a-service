@@ -60,6 +60,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             applyIfPresent(outputs, "SecurityGroupId", aws::setSecurityGroupId, missing);
             applyIfPresent(outputs, "VpcId", aws::setVpcId, missing);
             applyIfPresent(outputs, "RunnerInstanceProfileName", aws::setRunnerInstanceProfileName, missing);
+            applyIfPresent(outputs, "ResultsTableName", aws::setResultsTable, missing);
 
             if (!missing.isEmpty()) {
                 logger.warn("Stack '{}' did not report {} — existing local values were left unchanged.",

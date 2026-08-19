@@ -340,21 +340,26 @@ public class RunCommand implements Callable<Integer> {
         return OptionalInt.empty();
     }
 
+    /**
+     * Reads the same path {@code baas results} does, so the post-run summary can never disagree
+     * with what a later query reports.
+     *
+     * <p>Until the runner cutover, runs still write to Atlas and this table is empty, so an empty
+     * summary here is expected rather than a failure — hence a warning and a return, not an error.
+     */
     private void showResults(AwsClientFactory factory, BaasConfig config, String requestId) {
-        try (var ssm = factory.ssm()) {
-            Optional<String> mongoUri = new SsmService(ssm)
-                .getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");
-            if (mongoUri.isEmpty()) {
-                logger.warn("No MongoDB URI configured — skipping results display.");
-                return;
-            }
-            try (var results = new ResultsQueryService(mongoUri.get())) {
-                var rows = results.queryByRequestId(requestId);
-                logger.info("Results for request: {}", requestId);
-                results.printTable(rows);
-            }
+        String tableName = config.getAws().getResultsTable();
+        if (tableName == null || tableName.isBlank()) {
+            logger.warn("No results table configured — skipping results display. "
+                + "Run: baas config sync --core-stack-name {}", config.getAws().getCoreStackName());
+            return;
+        }
+        try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
+            var rows = results.queryByRequestId(requestId);
+            logger.info("Results for request: {}", requestId);
+            results.printTable(rows);
         } catch (Exception e) {
-            logger.warn("Could not fetch results from MongoDB: {}", e.getMessage());
+            logger.warn("Could not fetch results from the results table: {}", e.getMessage());
         }
     }
 
@@ -380,14 +385,9 @@ public class RunCommand implements Callable<Integer> {
         }
     }
 
-    /** Split out from the git call so the parsing is unit-testable without a repository. */
+    /** Shared with {@code baas results}, which must resolve the same partition. */
     static String projectFromToplevel(String toplevel) {
-        if (toplevel == null || toplevel.isBlank()) return null;
-        String trimmed = toplevel.strip();
-        while (trimmed.endsWith("/")) trimmed = trimmed.substring(0, trimmed.length() - 1);
-        int slash = trimmed.lastIndexOf('/');
-        String name = slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
-        return name.isEmpty() ? null : name;
+        return GitProject.fromToplevel(toplevel);
     }
 
     private String gitOutput(String... args) {
@@ -402,14 +402,7 @@ public class RunCommand implements Callable<Integer> {
      * repo at test time).
      */
     String gitOutput(Path workingDir, String... args) {
-        try {
-            var pb = new ProcessBuilder(args).redirectErrorStream(true).directory(workingDir.toFile());
-            var proc = pb.start();
-            String out = new String(proc.getInputStream().readAllBytes()).trim();
-            return proc.waitFor() == 0 ? out : null;
-        } catch (Exception e) {
-            return null;
-        }
+        return GitProject.gitOutput(workingDir, args);
     }
 
     private String resolveProject() {

@@ -9,19 +9,22 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
-import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.results.ResultRow;
+import pl.wsztajerowski.baas.results.ResultsFilters;
+import pl.wsztajerowski.baas.results.ResultsGrouping;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 @Command(
     name = "results",
     mixinStandardHelpOptions = true,
-    description = "Query benchmark results from MongoDB."
+    description = "Query benchmark results from the results table."
 )
 public class ResultsCommand implements Callable<Integer> {
 
@@ -29,17 +32,30 @@ public class ResultsCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Option(names = "--request-id", description = "Filter by request ID.")
+    @Option(names = "--project", description = "Project partition to read. Defaults to the git repository name.")
+    String project;
+
+    @Option(names = "--request-id", description = "Return every measurement of one run. Cannot be combined with other filters.")
     String requestId;
 
     @Option(names = "--benchmark-name", description = "Filter by benchmark name (regex).")
     String benchmarkName;
 
+    @Option(names = "--tag", description = "Filter by tag, repeatable. Repeated tags must all match.")
+    Map<String, String> tags;
+
     @Option(names = "--living-branches", description = "Filter by branches present in current git repo.")
     boolean livingBranches;
 
-    @Option(names = "--all", description = "Return all results (no filter).")
+    @Option(names = "--group-by", description = "Tag to group by when keeping the best score. Default: branch.",
+        defaultValue = ResultsFilters.BRANCH)
+    String groupBy;
+
+    @Option(names = "--all", description = "Report every measurement instead of the best per group.")
     boolean all;
+
+    @Option(names = "--limit", description = "Maximum rows to report.")
+    Integer limit;
 
     @Option(names = "--format", description = "Output format: table (default), json, csv.", defaultValue = "table")
     String format;
@@ -50,32 +66,46 @@ public class ResultsCommand implements Callable<Integer> {
     public Integer call() {
         BaasConfig config = configService.load();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
+
+        String conflict = requestIdConflict();
+        if (conflict != null) {
+            logger.error("--request-id names one run, so it cannot be combined with {}.", conflict);
+            return 2;
+        }
+
+        String tableName = config.getAws().getResultsTable();
+        if (tableName == null || tableName.isBlank()) {
+            logger.error("No results table in config. Run: baas config sync --core-stack-name <stack>");
+            return 1;
+        }
+
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
-        String mongoUri;
-        try (var ssm = factory.ssm()) {
-            var opt = new SsmService(ssm).getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");
-            if (opt.isEmpty()) {
-                logger.error("No MongoDB URI found in SSM. Run: baas config set --mongo-uri <uri>");
-                return 1;
-            }
-            mongoUri = opt.get();
-        }
+        try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
+            List<ResultRow> rows = requestId != null
+                ? results.queryByRequestId(requestId)
+                : results.queryProject(resolveProject());
 
-        try (var results = new ResultsQueryService(mongoUri)) {
-            List<ResultRow> rows;
-            if (requestId != null) {
-                rows = results.queryByRequestId(requestId);
-            } else if (benchmarkName != null) {
-                rows = results.queryByBenchmarkName(benchmarkName);
-            } else if (livingBranches) {
-                rows = queryLivingBranches(results);
-            } else {
-                rows = results.queryAll();
+            if (requestId == null) {
+                rows = ResultsFilters.byBenchmarkName(rows, benchmarkName);
+                rows = ResultsFilters.byTags(rows, tags);
+                if (livingBranches) {
+                    rows = ResultsFilters.byLivingBranches(rows, gitRemoteBranches());
+                }
+                ResultsFilters.unknownTagWarning(rows, tags).ifPresent(logger::warn);
+                if (!all) {
+                    rows = ResultsGrouping.bestPerGroup(rows, groupBy);
+                }
             }
 
-            switch (format.toLowerCase()) {
+            rows = ResultsGrouping.sortedForDisplay(rows);
+            if (limit != null && limit >= 0 && rows.size() > limit) {
+                logger.info("Reporting {} of {} rows (--limit).", limit, rows.size());
+                rows = rows.subList(0, limit);
+            }
+
+            switch (format.toLowerCase(Locale.ROOT)) {
                 case "json" -> printJson(rows);
                 case "csv" -> printCsv(rows);
                 default -> results.printTable(rows);
@@ -84,12 +114,31 @@ public class ResultsCommand implements Callable<Integer> {
         return 0;
     }
 
-    private List<ResultRow> queryLivingBranches(ResultsQueryService results) {
-        List<String> branches = gitRemoteBranches();
-        if (branches.isEmpty()) return results.queryAll();
-        return branches.stream()
-            .flatMap(b -> results.queryByBranch(b).stream())
-            .toList();
+    /**
+     * {@code --request-id} reads a different index and returns one run whole; combining it with a
+     * filter would silently ignore the filter, which reads as the filter being broken.
+     */
+    private String requestIdConflict() {
+        if (requestId == null) {
+            return null;
+        }
+        if (benchmarkName != null) return "--benchmark-name";
+        if (tags != null && !tags.isEmpty()) return "--tag";
+        if (livingBranches) return "--living-branches";
+        return null;
+    }
+
+    /** Same derivation as {@code baas run}: the partition follows the project you are sitting in. */
+    private String resolveProject() {
+        if (project != null && !project.isBlank()) {
+            return project;
+        }
+        String derived = GitProject.repositoryName(Path.of(".").toAbsolutePath().normalize());
+        if (derived == null) {
+            throw new IllegalStateException(
+                "Cannot determine the project name: not inside a git repository. Pass --project <name>.");
+        }
+        return derived;
     }
 
     private List<String> gitRemoteBranches() {

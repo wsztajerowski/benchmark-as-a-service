@@ -9,8 +9,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EnvironmentWarningTest {
 
     private static ResultRow row(String requestId, String imageVersion, String instanceType) {
+        var tags = new java.util.HashMap<String, String>();
+        if (imageVersion != null) tags.put("imageVersion", imageVersion);
+        if (instanceType != null) tags.put("instanceType", instanceType);
         return new ResultRow(requestId, "com.example.MyBenchmark", "jmh", "thrpt",
-            1000.0, 5.0, "ops/s", "2026-08-11T00:00:00Z", imageVersion, instanceType);
+            1000.0, 5.0, "ops/s", "2026-08-11T00:00:00Z", tags);
     }
 
     @Test

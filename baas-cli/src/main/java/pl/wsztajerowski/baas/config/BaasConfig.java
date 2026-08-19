@@ -32,6 +32,7 @@ public class BaasConfig {
         private String securityGroupId;
         private String vpcId;
         private String runnerInstanceProfileName;
+        private String resultsTable;
         private String coreStackName = "baas-main";
 
         public String getProfile() { return profile; }
@@ -67,6 +68,14 @@ public class BaasConfig {
 
         public String getRunnerInstanceProfileName() { return runnerInstanceProfileName; }
         public void setRunnerInstanceProfileName(String name) { this.runnerInstanceProfileName = name; }
+
+        /**
+         * DynamoDB table holding benchmark measurements, from the core stack's
+         * {@code ResultsTableName} output. Not user-selectable: the table is stack-created and
+         * named from the caller-derived prefix, same as the bucket.
+         */
+        public String getResultsTable() { return resultsTable; }
+        public void setResultsTable(String resultsTable) { this.resultsTable = resultsTable; }
 
         public String getCoreStackName() { return coreStackName; }
         public void setCoreStackName(String coreStackName) { this.coreStackName = coreStackName; }

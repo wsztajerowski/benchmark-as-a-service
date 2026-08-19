@@ -1,87 +1,92 @@
 package pl.wsztajerowski.baas.results;
 
-import com.mongodb.client.MongoClient;
-import com.mongodb.client.MongoClients;
-import com.mongodb.client.MongoCollection;
-import com.mongodb.client.MongoDatabase;
-import com.mongodb.client.model.Filters;
-import org.bson.Document;
+import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.ResultKeys;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
+/**
+ * Reads measurements from the results table. Two access paths and no more: one {@code Query} on the
+ * project partition, and one on the request-ID index. Every other filter is applied to the rows
+ * those return.
+ *
+ * <p>Never issues a {@code Scan}. The operator role is not granted one, so an accidental scan fails
+ * with an access error rather than quietly billing a full-table read.
+ */
 public class ResultsQueryService implements AutoCloseable {
 
-    private static final String COLLECTION = "jmh_benchmarks";
+    /**
+     * Excluded rows are dropped server-side so they never enter the result set or count against the
+     * page budget. A row whose {@code tags} map is absent entirely — every measurement carrying no
+     * tags at all — must still come back, hence the {@code attribute_not_exists} arm.
+     */
+    private static final String EXCLUDE_FILTER =
+        "attribute_not_exists(#tags) OR attribute_not_exists(#tags.#excluded) OR #tags.#excluded <> :excluded";
 
-    private final MongoClient client;
-    private final MongoDatabase db;
+    private static final String TAGS_ATTRIBUTE = "tags";
+    static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
 
-    public ResultsQueryService(String connectionString) {
-        var cs = new com.mongodb.ConnectionString(connectionString);
-        String dbName = cs.getDatabase();
-        if (dbName == null || dbName.isEmpty()) {
-            throw new IllegalArgumentException("Connection string must include a database name");
-        }
-        this.client = MongoClients.create(connectionString);
-        this.db = client.getDatabase(dbName);
+    private final DynamoDbClient client;
+    private final String tableName;
+
+    public ResultsQueryService(DynamoDbClient client, String tableName) {
+        this.client = client;
+        this.tableName = tableName;
     }
 
+    /** The single access path for everything except {@code --request-id}. */
+    public List<ResultRow> queryProject(String project) {
+        return runQuery(QueryRequest.builder()
+            .tableName(tableName)
+            .keyConditionExpression("#pk = :pk")
+            .expressionAttributeNames(Map.of(
+                "#pk", MeasurementItemMapper.PK,
+                "#tags", TAGS_ATTRIBUTE,
+                "#excluded", EXCLUDE_FROM_RESULTS))
+            .expressionAttributeValues(Map.of(
+                ":pk", AttributeValue.fromS(ResultKeys.partitionKey(project)),
+                ":excluded", AttributeValue.fromS("true")))
+            .filterExpression(EXCLUDE_FILTER)
+            .build());
+    }
+
+    /**
+     * {@code requestId} sits at the tail of the base sort key, so it is the one pattern the table's
+     * own key cannot reach — hence the index.
+     */
     public List<ResultRow> queryByRequestId(String requestId) {
-        MongoCollection<Document> col = db.getCollection(COLLECTION);
-        var filter = Filters.eq("_id.requestId", requestId);
-        return toRows(col.find(filter));
+        return runQuery(QueryRequest.builder()
+            .tableName(tableName)
+            .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
+            .keyConditionExpression("#pk = :pk")
+            .expressionAttributeNames(Map.of(
+                "#pk", MeasurementItemMapper.GSI1PK,
+                "#tags", TAGS_ATTRIBUTE,
+                "#excluded", EXCLUDE_FROM_RESULTS))
+            .expressionAttributeValues(Map.of(
+                ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(requestId)),
+                ":excluded", AttributeValue.fromS("true")))
+            .filterExpression(EXCLUDE_FILTER)
+            .build());
     }
 
-    public List<ResultRow> queryByBenchmarkName(String nameRegex) {
-        MongoCollection<Document> col = db.getCollection(COLLECTION);
-        var filter = Filters.regex("_id.benchmarkName", Pattern.compile(nameRegex));
-        return toRows(col.find(filter));
-    }
-
-    public List<ResultRow> queryByBranch(String branch) {
-        MongoCollection<Document> col = db.getCollection(COLLECTION);
-        var filter = Filters.eq("benchmarkMetadata.tags.branch", branch);
-        return toRows(col.find(filter));
-    }
-
-    public List<ResultRow> queryAll() {
-        MongoCollection<Document> col = db.getCollection(COLLECTION);
-        return toRows(col.find());
-    }
-
-    private List<ResultRow> toRows(Iterable<Document> docs) {
+    /**
+     * Paginates to exhaustion. A Query returns at most 1 MB per page regardless of matches, and a
+     * filter expression is applied after that budget is spent — so a single page can come back
+     * empty with more results behind it, and stopping at the first page would silently truncate.
+     */
+    private List<ResultRow> runQuery(QueryRequest request) {
         List<ResultRow> rows = new ArrayList<>();
-        for (Document doc : docs) {
-            Document id = doc.get("_id", Document.class);
-            Document jmhResult = doc.get("jmhResult", Document.class);
-            Document metadata = doc.get("benchmarkMetadata", Document.class);
-            if (id == null || jmhResult == null) continue;
-
-            Document primaryMetric = jmhResult.get("primaryMetric", Document.class);
-            double score = primaryMetric != null ? primaryMetric.getDouble("score") : 0;
-            double scoreError = primaryMetric != null ? primaryMetric.getDouble("scoreError") : 0;
-            String scoreUnit = primaryMetric != null ? primaryMetric.getString("scoreUnit") : "";
-
-            String createdAt = metadata != null && metadata.get("createdAt") != null
-                ? metadata.get("createdAt").toString() : "";
-
-            Document tags = metadata != null ? metadata.get("tags", Document.class) : null;
-
-            rows.add(new ResultRow(
-                id.getString("requestId"),
-                id.getString("benchmarkName"),
-                id.getString("benchmarkType"),
-                jmhResult.getString("mode"),
-                score,
-                scoreError,
-                scoreUnit,
-                createdAt,
-                tag(tags, "imageVersion"),
-                tag(tags, "instanceType")
-            ));
+        for (var page : client.queryPaginator(request)) {
+            for (Map<String, AttributeValue> item : page.items()) {
+                rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+            }
         }
         return rows;
     }
@@ -145,11 +150,6 @@ public class ResultsQueryService implements AutoCloseable {
             .map(tag)
             .filter(value -> value != null && !value.isEmpty())
             .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
-    }
-
-    /** Tags are a free-form map, so a missing one is normal rather than an error. */
-    private static String tag(Document tags, String key) {
-        return tags != null ? tags.getString(key) : null;
     }
 
     private static String truncate(String s, int max) {

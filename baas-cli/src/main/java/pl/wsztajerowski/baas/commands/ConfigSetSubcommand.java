@@ -88,11 +88,8 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         return 0;
     }
 
+    /** One definition, so §13 deletes it once. */
     private void validateMongoUri(String uri) {
-        var cs = new com.mongodb.ConnectionString(uri);
-        if (cs.getDatabase() == null || cs.getDatabase().isEmpty()) {
-            throw new IllegalArgumentException(
-                "MongoDB URI must include a database name (e.g. mongodb+srv://user:pass@host/mydb)");
-        }
+        pl.wsztajerowski.baas.commands.admin.SetupCommand.validateMongoUri(uri);
     }
 }

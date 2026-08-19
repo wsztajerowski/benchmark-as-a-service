@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.infra;
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.iam.IamClient;
 import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
@@ -34,6 +35,12 @@ public class AwsClientFactory {
 
     public S3Client s3() {
         var b = S3Client.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public DynamoDbClient dynamoDb() {
+        var b = DynamoDbClient.builder().region(region);
         if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
         return b.build();
     }

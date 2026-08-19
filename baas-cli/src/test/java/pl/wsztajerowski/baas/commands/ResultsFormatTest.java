@@ -11,6 +11,7 @@ import java.io.PrintStream;
 import java.lang.reflect.Method;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -40,7 +41,8 @@ class ResultsFormatTest {
 
     private static ResultRow row(double score, double error) {
         return new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
-            score, error, "ops/s", "2026-08-12T21:36:13Z", "1.0.0", "c5.2xlarge");
+            score, error, "ops/s", "2026-08-12T21:36:13Z",
+            Map.of("imageVersion", "1.0.0", "instanceType", "c5.2xlarge"));
     }
 
     private String render(String format, List<ResultRow> rows) throws Exception {
@@ -100,7 +102,7 @@ class ResultsFormatTest {
     @Test
     void untaggedHistoricalRowsRenderAsJsonNullRatherThanTheStringNull() throws Exception {
         var untagged = new ResultRow("jmh-old", "com.example.Old.run", "jmh", "thrpt",
-            1.0, 0.1, "ops/s", "2026-01-01T00:00:00Z", null, null);
+            1.0, 0.1, "ops/s", "2026-01-01T00:00:00Z", Map.of());
 
         var parsed = new ObjectMapper().readTree(render("json", List.of(untagged)));
 
