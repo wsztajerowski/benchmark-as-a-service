@@ -234,17 +234,19 @@ Atlas being retained as rollback until §14.
 
 ## 8. Test infrastructure
 
-- [ ] 8.1 Add `dynamodb` to the LocalStack test container and create the table in setup
-- [ ] 8.2 Keep the Mongo Testcontainers base class and `MongoDbTestHelpers` for the retained adapter
-- [ ] 8.3 Write one store contract test suite and run it against both adapters
-- [ ] 8.4 Add an integration test asserting a stored run produces one item per measurement and no others
-- [ ] 8.5 Add an integration test asserting a repeated write is idempotent
-- [ ] 8.6 Add integration tests for the partition query and the request-ID index query
-- [ ] 8.7 Add an integration test asserting a store failure exits non-zero while leaving S3 artifacts intact
-- [ ] 8.8 Add an integration test for the run-artifact download
-- [ ] 8.9 Update `docker-compose.yaml`: drop `mongo-express`, add `dynamodb` to LocalStack, keep `mongo`
-- [ ] 8.10 Update `jmh-with-profiler.sh` and `jmh-with-async.sh` to pass a table name or `--no-database`
-- [ ] 8.11 Run the full reactor `mvn clean verify` with `ASYNC_PATH` exported
+- [x] 8.1 Add `dynamodb` to the LocalStack test container and create the table in setup
+- [x] 8.2 Keep the Mongo Testcontainers base class and `MongoDbTestHelpers` for the retained adapter
+- [x] 8.3 Write one store contract test suite and run it against both adapters
+- [x] 8.4 Add an integration test asserting a stored run produces one item per measurement and no others
+- [x] 8.5 Add an integration test asserting a repeated write is idempotent
+- [ ] 8.6 Add integration tests for the partition query and the request-ID index query — **deferred to
+  §6**, which builds the query layer; there is no read path to test until then
+- [x] 8.7 Add an integration test asserting a store failure exits non-zero while leaving S3 artifacts intact
+- [ ] 8.8 Add an integration test for the run-artifact download — **deferred to 7.7**, which
+  implements the command being tested
+- [x] 8.9 Update `docker-compose.yaml`: drop `mongo-express`, add `dynamodb` to LocalStack, keep `mongo`
+- [x] 8.10 Update `jmh-with-profiler.sh` and `jmh-with-async.sh` to pass a table name or `--no-database`
+- [x] 8.11 Run the full reactor `mvn clean verify` with `ASYNC_PATH` exported
 
 ## 9. Data migration
 

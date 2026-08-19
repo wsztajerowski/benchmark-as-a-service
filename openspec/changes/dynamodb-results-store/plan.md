@@ -1328,7 +1328,7 @@ Covers 8.1, 8.2 and 8.3.
 
 **Note on LocalStack.** `TestcontainersWithS3BaseIT` pins `localstack/localstack:0.12.16` and enables only `Service.S3`. Add `Service.DYNAMODB`. **Verify that version actually serves DynamoDB** — if it does not, bump the image and say so in your report rather than working around it. Create the table in `@BeforeEach` with `pk`/`sk` String keys and the `requestId-index` GSI on `gsi1pk`/`gsi1sk`, matching `infra/cf-template-core.yaml`.
 
-- [ ] **Step 1: Write the contract suite**
+- [x] **Step 1: Write the contract suite**
 
 ```java
 package pl.wsztajerowski.infra;
@@ -1380,21 +1380,21 @@ abstract class ResultsStoreContractTest {
 }
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `mvn -pl benchmark-runner test -Dtest='*ContractIT'`
 Expected: FAIL — the concrete subclasses do not exist.
 
-- [ ] **Step 3: Add the LocalStack base class and both subclasses**
+- [x] **Step 3: Add the LocalStack base class and both subclasses**
 
 Mirror `TestcontainersWithS3BaseIT`'s structure for `TestcontainersWithDynamoDbBaseIT`, adding `Service.DYNAMODB` and creating the table. Then write the two subclasses, each supplying `store()` and `storedCount()`.
 
-- [ ] **Step 4: Run and confirm green**
+- [x] **Step 4: Run and confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest='*ContractIT'`
 Expected: PASS, 6 tests (3 × 2 adapters). Requires Docker.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add benchmark-runner/src/test/java/pl/wsztajerowski/
@@ -1410,7 +1410,7 @@ Covers 8.4, 8.5 and 8.7.
 **Files:**
 - Create: `benchmark-runner/src/test/java/pl/wsztajerowski/services/JmhStoreIntegrationIT.java`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```java
     @Test
@@ -1439,11 +1439,11 @@ Covers 8.4, 8.5 and 8.7.
 
 `scanTable()` is a test helper using `DynamoDbClient.scan` — acceptable in a test even though production code never scans. Fill in the harness following the existing service ITs.
 
-- [ ] **Step 2: Run, confirm failure, implement, confirm green**
+- [x] **Step 2: Run, confirm failure, implement, confirm green**
 
 Run: `mvn -pl benchmark-runner test -Dtest=JmhStoreIntegrationIT`
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add benchmark-runner/src/test/java/pl/wsztajerowski/services/
@@ -1459,15 +1459,15 @@ Covers 8.9, 8.10 and 8.11.
 **Files:**
 - Modify: `docker-compose.yaml`, `jmh-with-profiler.sh`, `jmh-with-async.sh`, `openspec/changes/dynamodb-results-store/tasks.md`
 
-- [ ] **Step 1: Update `docker-compose.yaml`**
+- [x] **Step 1: Update `docker-compose.yaml`**
 
 Drop `mongo-express`, add `dynamodb` to LocalStack's `SERVICES`, keep `mongo`. There is **no init container** — the bucket and any SSM parameters are created by hand, and the table now needs the same. Put the `awslocal dynamodb create-table` invocation in a comment beside the service, matching the key schema in `infra/cf-template-core.yaml`.
 
-- [ ] **Step 2: Update the two scripts**
+- [x] **Step 2: Update the two scripts**
 
 Both currently pass a Mongo connection string. Give each a table name or `--no-database` — the silent fallback no longer exists, so an unchanged script would now fail with the builder's error.
 
-- [ ] **Step 3: Run the full reactor synchronously**
+- [x] **Step 3: Run the full reactor synchronously**
 
 ```bash
 ASYNC_PATH=/Users/wiktor/workspace/async-profiler/lib/libasyncProfiler.dylib mvn clean verify
@@ -1475,7 +1475,7 @@ ASYNC_PATH=/Users/wiktor/workspace/async-profiler/lib/libasyncProfiler.dylib mvn
 
 Expected: BUILD SUCCESS across all 6 modules, with `JmhWithAsyncProfilerSubcommandServiceIT` **running, not skipped**. **Wait for it in the same turn — do not background it.** Three agents on this change have lost work that way.
 
-- [ ] **Step 4: Tick the completed tasks**
+- [x] **Step 4: Tick the completed tasks**
 
 Tick 5.1–5.12 and 8.1–8.5, 8.7, 8.9, 8.10, 8.11 in `tasks.md`. **Leave 8.6 and 8.8 open** — they need §6 and 7.7 — and annotate each with why, following the style already used for 4.3 and 4.8.
 

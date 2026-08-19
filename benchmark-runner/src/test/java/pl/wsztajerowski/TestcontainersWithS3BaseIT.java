@@ -30,7 +30,11 @@ public class TestcontainersWithS3BaseIT {
     protected final static LocalStackContainer LOCAL_STACK_CONTAINER =
         new LocalStackContainer(DockerImageName.parse("localstack/localstack:" + LOCAL_STACK_VERSION))
             .withLabel("java.wonderland.testcontainer", "localstack")
-            .withServices(LocalStackContainer.Service.S3)
+            // DynamoDB rides along on the same container so the whole IT suite shares one
+            // LocalStack: this field is static, so every subclass in the JVM reuses this instance.
+            // A separate container for the results store would double the startup cost of the
+            // suite to serve tests that already need S3 alongside it.
+            .withServices(LocalStackContainer.Service.S3, LocalStackContainer.Service.DYNAMODB)
             .withEnv("DEFAULT_REGION", "eu-central-1");
     protected S3Client awsS3Client;
 
