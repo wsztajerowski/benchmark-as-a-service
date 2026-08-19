@@ -256,6 +256,21 @@ verification against row counts.
 8. Decommission the Atlas cluster and delete the SSM parameter by hand.
 9. Delete the migration script.
 
+**Sequencing rulings (2026-08-19).** `tasks.md` was resequenced to match this plan, because its
+section order contradicted it. Three decisions:
+
+- **Migration precedes cutover.** §9 is unblocked as soon as §3 and the table exist — it needs
+  neither the runner adapters nor the query layer. Runs made between migration and cutover live
+  only in Atlas, which 9.6's idempotency requirement covers: the same script is re-run after the
+  cutover to sweep them (task 13.5).
+- **No dual-write.** A composite adapter would contradict the single-adapter port above, and it
+  carries an ambiguous failure rule when one store succeeds and the other does not. Assurance comes
+  instead from §8's integration tests against LocalStack, §9.8's verification across all historical
+  rows, §12's live checks after cutover, and Atlas being retained as rollback until §14.
+- **Mongo removal is last.** 4.3 and 4.8 moved to §14 along with the SSM-parameter deletion and the
+  Atlas decommission, because all four destroy the rollback path below. The cutover itself (former
+  7.3-7.6) moved to §13, after §9.
+
 **Rollback:** until step 7 the Mongo path is still selectable and Atlas still holds the data, so reverting
 the runner and CLI restores previous behaviour. After step 7, rollback means restoring those commits; the
 DynamoDB table is retained regardless, so no measurement is lost either way.
@@ -280,8 +295,13 @@ DynamoDB table is retained regardless, so no measurement is lost either way.
 
 - **How large is the Atlas dataset?** Blocking; see tasks §1. Determines whether the single-partition
   sweep holds or the year-shard escape hatch is needed immediately.
-- **What `project` do migrated rows get?** Historical rows carry `project=lynx-journal` from the GHA path
-  and can key off it directly, but rows lacking the tag need a default decided during migration.
+- **What `project` do migrated rows get?** **Resolved: `unknown-migrated`.** 41 of 121 rows carry no
+  `project` tag, and 36 of those are `gha-e2e-test*` CI fixtures rather than real project
+  measurements, so folding them into `lynx-journal` would pollute its history. The value is
+  deliberately *not* the bare `unknown`, because `currentGitCommit()` already falls back to
+  `unknown` for a missing commit — two different meanings sharing one string would read identically
+  in a results table. The `source` tag on those 36 rows is dropped: it is CI provenance with no
+  query value.
 - **Does the CLI need a memory bound on the sweep?** `--limit` bounds output, not rows read. Probably
   unnecessary at current scale; revisit once the row count is known.
 - **What is the S3 fetch command's surface?** Whether it is a subcommand of `baas results`, a sibling of

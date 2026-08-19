@@ -1,3 +1,24 @@
+# Tasks
+
+**Section numbers are labels, not execution order.** The real order is below; §13 and §14 are
+numbered last because they are the last things that should happen, and §7's cutover items were
+moved out of it for the same reason.
+
+| Order | Sections | Why here |
+|---|---|---|
+| 1 | §1, §2, §3, §4 | ✅ done and deployed. Purely additive; nothing writes to the table yet |
+| 2 | §5, §8 | Build the write path and its tests. Config still selects Mongo |
+| 3 | §6, 7.1, 7.2, 7.7-7.10 | Read path and config plumbing. Table still empty |
+| 4 | **§9** | Migrate history. Unblocked since §3 — needs only `baas-model` and the table |
+| 5 | **§13** | The cutover. New runs go to DynamoDB; re-run the migration to sweep the window |
+| 6 | §12 | Live verification |
+| 7 | **§14**, then §10, §11 | Remove Mongo, clean up, document |
+
+Migration precedes cutover per `design.md`'s migration plan, and the window between them is
+covered by 9.6's idempotency requirement. There is deliberately **no dual-write**: assurance comes
+from §8's integration tests, §9.8's verification over all historical rows, §12's live checks, and
+Atlas being retained as rollback until §14.
+
 ## 1. Verify blocking assumptions
 
 - [x] 1.1 Count the JMH and JCStress documents in Atlas and record the totals; confirm the working set is
@@ -203,16 +224,13 @@
 
 - [ ] 7.1 Add the results table name to `BaasConfig`, populated from the stack output
 - [ ] 7.2 Populate it in `baas admin setup` and `baas config sync`
-- [ ] 7.3 Remove `--mongo-uri` from `SetupCommand` and `ConfigSetSubcommand`, and delete the SecureString
-  write
-- [ ] 7.4 Delete `validateMongoUri` from all three classes that carry a copy
-- [ ] 7.5 Pass the table name through `UserDataScriptBuilder` and remove the SSM connection-string fetch
-- [ ] 7.6 Add the `--no-database` pass-through to `baas run` and fail before provisioning when the table is
-  unresolvable
+- 7.3-7.6 moved to §13 (Runner cutover). They switch the runner off Atlas, so they must land
+  after §9 has migrated history — not alongside the config plumbing above.
 - [ ] 7.7 Implement the run-artifact download command over the run's S3 prefix
 - [ ] 7.8 Extend `SetupCommand`'s retained-resource pre-check to cover the results table
 - [ ] 7.9 Update `TeardownCommand`'s confirmation text to name both retained resources
-- [ ] 7.10 Update `ConfigShowSubcommand` output for the new key and the removed one
+- [ ] 7.10 Update `ConfigShowSubcommand` output for the new results-table key. Removing the
+  `mongo.connectionString` line waits for §13, since the key still exists until then
 
 ## 8. Test infrastructure
 
@@ -232,18 +250,24 @@
 
 - [ ] 9.1 Write `scripts/migrate-atlas-to-dynamodb` reading Atlas and writing measurement items
 - [ ] 9.2 Handle both `_id` forms: the composite JMH key and the bare JCStress `requestId`
-- [ ] 9.3 Normalise existing `createdAt` values to the fixed-width UTC format used by sort keys
-- [ ] 9.4 Map historical tags onto the vocabulary, applying the §1.6 default for rows lacking `project`
+- [ ] 9.3 Normalise existing `createdAt` values to the fixed-width UTC format used by sort keys,
+  truncating to milliseconds so they match what `StoredMeasurement` produces
+- [ ] 9.3b Populate `mode` from Mongo's `_id.benchmarkType` — the sort key now carries it, and a
+  defaulted or empty mode would collide multi-mode historical rows onto one key
+- [ ] 9.4 Map historical tags onto the vocabulary. Rows lacking `project` get `unknown-migrated`
+  (NOT bare `unknown` — `currentGitCommit()` already uses that for a missing commit, and two
+  meanings sharing one string read identically in a results table). Drop the `source` tag on the
+  36 `gha-e2e-test*` rows: CI provenance with no query value
 - [ ] 9.5 Implement `--dry-run` reporting counts per collection and per derived project partition
 - [ ] 9.6 Make the script idempotent so a partial run can be repeated safely
 - [ ] 9.7 Dry-run, review counts, then migrate for real
 - [ ] 9.8 Verify: row counts match, spot-checked scores are identical, and `baas results` agrees with
   historical output allowing for the documented `tags.project` filter difference
 
-## 10. Cutover and cleanup
+## 10. Cleanup (the cutover itself moved to §13)
 
-- [ ] 10.1 Delete the `/<prefix>/mongo/connection-string` parameter by hand
-- [ ] 10.2 Decommission the Atlas cluster
+- 10.1 and 10.2 moved to §14. Deleting the SSM parameter and decommissioning Atlas destroy the
+  rollback path, so they must follow §12's verification — §10 runs before §11 and §12.
 - [ ] 10.3 Delete `scripts/migrate-atlas-to-dynamodb`
 - [ ] 10.4 Remove the obsolete `openspec/changes/atlas-service-account-credentials` change
 
@@ -285,15 +309,35 @@
   benchmark), so investigate only a difference outside that band
 - [ ] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt
 
-## 13. MongoDB removal (only after §12 confirms DynamoDB works)
+## 13. Runner cutover (after §9 has migrated history)
 
-Held to the end deliberately. Until §5 cuts the runner over and §12 verifies it end to end, the
-runner still writes to Atlas — and `CLAUDE.md` states that omitting TCP 27017 makes every run fail
-at the database write. Landing either item early breaks every benchmark run.
+The point of no easy return for the runner: after this, new measurements go to DynamoDB and stop
+going to Atlas. Atlas is still readable, so rollback is reverting these commits — until §14.
 
-- [ ] 13.1 Remove TCP 27017 egress from `RunnerSecurityGroup` (was 4.3)
-- [ ] 13.2 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
+- [ ] 13.1 Remove `--mongo-uri` from `SetupCommand` and `ConfigSetSubcommand`, and delete the
+  SecureString write (was 7.3)
+- [ ] 13.2 Delete `validateMongoUri` from all three classes that carry a copy (was 7.4)
+- [ ] 13.3 Pass the table name through `UserDataScriptBuilder` and remove the SSM connection-string
+  fetch (was 7.5) — this is the cutover itself
+- [ ] 13.4 Add the `--no-database` pass-through to `baas run` and fail before provisioning when the
+  table is unresolvable (was 7.6). Note this makes absent configuration a hard failure, replacing
+  today's silent `NoOpDatabaseService` — a breaking change for standalone `benchmark-runner` users
+- [ ] 13.5 Re-run the idempotent migration (9.6) to sweep any runs made between §9 and the cutover
+- [ ] 13.6 Remove the `mongo.connectionString` line from `ConfigShowSubcommand` output (rest of 7.10)
+
+## 14. MongoDB removal (only after §12 confirms DynamoDB works)
+
+Held to the very end deliberately. Everything here destroys the rollback path described in
+`design.md`: *"until step 7 the Mongo path is still selectable and Atlas still holds the data, so
+reverting the runner and CLI restores previous behaviour."* Landing 14.1 early breaks every
+benchmark run outright, since `CLAUDE.md` records that omitting TCP 27017 makes every run fail at
+the database write.
+
+- [ ] 14.1 Remove TCP 27017 egress from `RunnerSecurityGroup` (was 4.3)
+- [ ] 14.2 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
   `cf-template-ci.yaml`, and `RunnerRole` (was 4.8)
-- [ ] 13.3 Update the §4 template tests that currently pin the presence of 27017 egress and the Mongo
+- [ ] 14.3 Update the §4 template tests that currently pin the presence of 27017 egress and the Mongo
   SSM grants, so they assert absence instead — `runnerCanReachMongoAtlasOnItsStandardPort` is the
   guard that must be inverted, not deleted
+- [ ] 14.4 Delete the `/<prefix>/mongo/connection-string` parameter by hand (was 10.1)
+- [ ] 14.5 Decommission the Atlas cluster (was 10.2)
