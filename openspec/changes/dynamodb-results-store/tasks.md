@@ -7,17 +7,25 @@ moved out of it for the same reason.
 | Order | Sections | Why here |
 |---|---|---|
 | 1 | §1, §2, §3, §4 | ✅ done and deployed. Purely additive; nothing writes to the table yet |
-| 2 | §5, §8 | Build the write path and its tests. Config still selects Mongo |
-| 3 | §6, 7.1, 7.2, 7.7-7.10 | Read path and config plumbing. Table still empty |
-| 4 | **§9** | Migrate history. Unblocked since §3 — needs only `baas-model` and the table |
-| 5 | **§13** | The cutover. New runs go to DynamoDB; re-run the migration to sweep the window |
-| 6 | §12 | Live verification |
-| 7 | **§14**, then §10, §11 | Remove Mongo, clean up, document |
+| 2 | §5, §8 | ✅ done. The write path and its tests. Config still selects Mongo |
+| 3 | §6, 7.1, 7.2, 7.7-7.10 | ✅ done. Read path and config plumbing. Table still empty |
+| 4 | **§13** | The cutover. New runs go to DynamoDB; Atlas keeps history and stays readable |
+| 5 | §12 | Live verification of the new write and read paths |
+| 6 | **§9** | Migrate history, into a schema live runs have now exercised |
+| 7 | §12b | The two manual checks that need migrated data |
+| 8 | **§14**, then §10, §11 | Remove Mongo, clean up, document |
 
-Migration precedes cutover per `design.md`'s migration plan, and the window between them is
-covered by 9.6's idempotency requirement. There is deliberately **no dual-write**: assurance comes
-from §8's integration tests, §9.8's verification over all historical rows, §12's live checks, and
-Atlas being retained as rollback until §14.
+**Cutover precedes migration (revised 2026-08-19; originally the reverse).** Migrating first would
+write 121 historical documents into a schema no live run had yet exercised, so a schema defect
+would cost a re-migration. Cutting over first costs only a re-run of an idempotent script. It also
+removes the sweep step: with §9 after the cutover, no run is ever written to Atlas after §13, so
+there is no window of Atlas-only runs to catch up (former task 13.5). The cost is that
+`baas results` reports only post-cutover runs until §9 lands — Atlas stays readable throughout, so
+nothing is lost, and the two manual checks that genuinely need history are held back to §12b.
+
+There is deliberately **no dual-write**: assurance comes from §8's integration tests, §12's live
+checks after cutover, §9.8's verification over all historical rows, and Atlas being retained as
+rollback until §14.
 
 ## 1. Verify blocking assumptions
 
@@ -225,7 +233,8 @@ Atlas being retained as rollback until §14.
 - [x] 7.1 Add the results table name to `BaasConfig`, populated from the stack output
 - [x] 7.2 Populate it in `baas admin setup` and `baas config sync`
 - 7.3-7.6 moved to §13 (Runner cutover). They switch the runner off Atlas, so they must land
-  after §9 has migrated history — not alongside the config plumbing above.
+  once the read path is in place — not alongside the config plumbing above. §9 then migrates
+  history into the schema those live runs have exercised.
 - [x] 7.7 Implement the run-artifact download command over the run's S3 prefix
 - [x] 7.8 Extend `SetupCommand`'s retained-resource pre-check to cover the results table
 - [x] 7.9 Update `TeardownCommand`'s confirmation text to name both retained resources
@@ -248,7 +257,7 @@ Atlas being retained as rollback until §14.
 - [x] 8.10 Update `jmh-with-profiler.sh` and `jmh-with-async.sh` to pass a table name or `--no-database`
 - [x] 8.11 Run the full reactor `mvn clean verify` with `ASYNC_PATH` exported
 
-## 9. Data migration
+## 9. Data migration (runs after §13's cutover and §12's live verification)
 
 - [ ] 9.1 Write `scripts/migrate-atlas-to-dynamodb` reading Atlas and writing measurement items
 - [ ] 9.2 Handle both `_id` forms: the composite JMH key and the bare JCStress `requestId`
@@ -258,8 +267,11 @@ Atlas being retained as rollback until §14.
   defaulted or empty mode would collide multi-mode historical rows onto one key
 - [ ] 9.4 Map historical tags onto the vocabulary. Rows lacking `project` get `unknown-migrated`
   (NOT bare `unknown` — `currentGitCommit()` already uses that for a missing commit, and two
-  meanings sharing one string read identically in a results table). Drop the `source` tag on the
-  36 `gha-e2e-test*` rows: CI provenance with no query value
+  meanings sharing one string read identically in a results table). **Keep** the `source` tag on
+  the 36 `gha-e2e-test*` rows, carried through as a custom tag: unknown keys are permitted by
+  design and warned about only when no row carries them, 36 rows cost nothing at this scale, and
+  discarding provenance is irreversible once Atlas is decommissioned (decided 2026-08-19,
+  resolving the question 1.3 deferred here)
 - [ ] 9.5 Implement `--dry-run` reporting counts per collection and per derived project partition
 - [ ] 9.6 Make the script idempotent so a partial run can be repeated safely
 - [ ] 9.7 Dry-run, review counts, then migrate for real
@@ -269,7 +281,8 @@ Atlas being retained as rollback until §14.
 ## 10. Cleanup (the cutover itself moved to §13)
 
 - 10.1 and 10.2 moved to §14. Deleting the SSM parameter and decommissioning Atlas destroy the
-  rollback path, so they must follow §12's verification — §10 runs before §11 and §12.
+  rollback path, so they must follow both §12's verification and §9's migration. §10 and §11 now
+  run last, alongside §14.
 - [ ] 10.3 Delete `scripts/migrate-atlas-to-dynamodb`
 - [ ] 10.4 Remove the obsolete `openspec/changes/atlas-service-account-credentials` change
 
@@ -303,18 +316,32 @@ Atlas being retained as rollback until §14.
 - [ ] 12.3 **Manual**: confirm the stored tags agree with the same run's `environment.json`
 - [ ] 12.4 **Manual**: run a live JCStress benchmark; confirm its single item and its test maps
 - [ ] 12.5 **Manual**: exercise `baas results` unfiltered, by tag, by benchmark-name regex, by request ID
-  and with `--living-branches`, against real migrated data
+  and with `--living-branches`, against the post-cutover runs above. The same sweep over migrated
+  history is 12b.1 — at this point the table holds only what §13 has written
 - [ ] 12.6 **Manual**: download a run's artifacts and confirm `rawData` is recoverable from the result JSON
 - [ ] 12.7 **Manual**: confirm a run with `--no-database` succeeds and writes nothing
-- [ ] 12.8 **Manual**: confirm a benchmark score is consistent with a pre-change run of the same benchmark,
-  stating the observed spread — run-to-run variance is large (CI history spans 10.0M–29.6M ops/s on one
-  benchmark), so investigate only a difference outside that band
 - [ ] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt
 
-## 13. Runner cutover (after §9 has migrated history)
+## 12b. Verification that needs migrated history (after §9)
+
+Split out of §12 when migration moved after the cutover: these two are the only manual checks that
+read data §9 puts there, and running them before it would verify against an empty partition.
+
+- [ ] 12b.1 **Manual**: repeat 12.5's `baas results` sweep against migrated history, confirming
+  pre-cutover rows appear and that `--tag source=gha-e2e-test` finds the 36 carried-through CI rows
+- [ ] 12b.2 **Manual**: confirm a benchmark score is consistent with a pre-change run of the same
+  benchmark, stating the observed spread — run-to-run variance is large (CI history spans
+  10.0M–29.6M ops/s on one benchmark), so investigate only a difference outside that band
+  (was 12.8, which could not run before the history existed in the table)
+
+## 13. Runner cutover (first step after the read path; §9 migrates history afterwards)
 
 The point of no easy return for the runner: after this, new measurements go to DynamoDB and stop
 going to Atlas. Atlas is still readable, so rollback is reverting these commits — until §14.
+
+Landing this before §9 is deliberate: it puts live runs through the schema before 121 historical
+documents are written into it, and it guarantees no run is ever written to Atlas afterwards, so
+there is no window for migration to miss.
 
 - [ ] 13.1 Remove `--mongo-uri` from `SetupCommand` and `ConfigSetSubcommand`, and delete the
   SecureString write (was 7.3)
@@ -324,14 +351,16 @@ going to Atlas. Atlas is still readable, so rollback is reverting these commits 
 - [ ] 13.4 Add the `--no-database` pass-through to `baas run` and fail before provisioning when the
   table is unresolvable (was 7.6). Note this makes absent configuration a hard failure, replacing
   today's silent `NoOpDatabaseService` — a breaking change for standalone `benchmark-runner` users
-- [ ] 13.5 Re-run the idempotent migration (9.6) to sweep any runs made between §9 and the cutover
+- 13.5 removed (2026-08-19). It re-ran the migration to sweep runs made between §9 and the
+  cutover; with §9 now *after* the cutover there is no such window. 9.6's idempotency requirement
+  stays — it still covers a partial or interrupted migration run
 - [ ] 13.6 Remove the `mongo.connectionString` line from `ConfigShowSubcommand` output (rest of 7.10)
 
-## 14. MongoDB removal (only after §12 confirms DynamoDB works)
+## 14. MongoDB removal (only after §12 confirms DynamoDB works and §9 has migrated history)
 
 Held to the very end deliberately. Everything here destroys the rollback path described in
-`design.md`: *"until step 7 the Mongo path is still selectable and Atlas still holds the data, so
-reverting the runner and CLI restores previous behaviour."* Landing 14.1 early breaks every
+`design.md`: *"between steps 4 and 8, Atlas still holds every pre-cutover measurement and the code
+change is revertible."* Landing 14.1 early breaks every
 benchmark run outright, since `CLAUDE.md` records that omitting TCP 27017 makes every run fail at
 the database write.
 

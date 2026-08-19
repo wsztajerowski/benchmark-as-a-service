@@ -248,32 +248,42 @@ verification against row counts.
 2. Ship the table, gateway endpoint and IAM changes; deploy with `baas admin setup`. Atlas is untouched.
 3. Land `baas-model`, the `ResultsStore` port, the DynamoDB adapter and the query rewrite, verified
    against LocalStack. The Mongo adapter is refactored onto the port in the same step.
-4. Run `scripts/migrate-atlas-to-dynamodb --dry-run`, review the reported counts, then run it for real.
-5. Verify: row counts match, `baas results` agrees with historical output modulo the documented
-   `tags.project` filter difference, and spot-checked scores are identical.
-6. Cut the runner over to DynamoDB and confirm a live run writes its items.
-7. Remove `--mongo-uri`, the SSM parameter, and Mongo from `baas-cli` only.
-8. Decommission the Atlas cluster and delete the SSM parameter by hand.
+4. Cut the runner over to DynamoDB, removing `--mongo-uri` and the SSM connection-string fetch, and
+   confirm a live run writes its items.
+5. Verify the live path: stored tags agree with the run's `environment.json`, `baas results` serves the
+   new rows through every filter, and a whole-run download recovers what the item drops.
+6. Run `scripts/migrate-atlas-to-dynamodb --dry-run`, review the reported counts, then run it for real.
+7. Verify the migration: row counts match, `baas results` agrees with historical output modulo the
+   documented `tags.project` filter difference, and spot-checked scores are identical.
+8. Decommission the Atlas cluster, delete the SSM parameter by hand, and drop the 27017 egress rule.
 9. Delete the migration script.
 
 **Sequencing rulings (2026-08-19).** `tasks.md` was resequenced to match this plan, because its
 section order contradicted it. Three decisions:
 
-- **Migration precedes cutover.** §9 is unblocked as soon as §3 and the table exist — it needs
-  neither the runner adapters nor the query layer. Runs made between migration and cutover live
-  only in Atlas, which 9.6's idempotency requirement covers: the same script is re-run after the
-  cutover to sweep them (task 13.5).
+- **Cutover precedes migration (revised 2026-08-19; this ruling originally said the reverse).**
+  Migration is unblocked as soon as §3 and the table exist, which is what first put it early — but
+  being *able* to run first is not a reason to. Migrating first writes 121 historical documents
+  into a schema no live run has exercised, so a schema defect costs a re-migration; cutting over
+  first costs only a re-run of an idempotent script. It also removes the sweep entirely: with §9
+  after the cutover, no run is ever written to Atlas afterwards, so there is no window of
+  Atlas-only runs to catch up, and task 13.5 is dropped. The cost is that `baas results` reports
+  only post-cutover runs until §9 lands — Atlas stays readable throughout, so nothing is lost, and
+  the two manual checks that genuinely need history are held back to §12b. 9.6's idempotency
+  requirement stays, now covering a partial or interrupted run rather than a sweep.
 - **No dual-write.** A composite adapter would contradict the single-adapter port above, and it
   carries an ambiguous failure rule when one store succeeds and the other does not. Assurance comes
   instead from §8's integration tests against LocalStack, §9.8's verification across all historical
   rows, §12's live checks after cutover, and Atlas being retained as rollback until §14.
 - **Mongo removal is last.** 4.3 and 4.8 moved to §14 along with the SSM-parameter deletion and the
   Atlas decommission, because all four destroy the rollback path below. The cutover itself (former
-  7.3-7.6) moved to §13, after §9.
+  7.3-7.6) moved to §13, which the ruling above then placed *before* §9.
 
-**Rollback:** until step 7 the Mongo path is still selectable and Atlas still holds the data, so reverting
-the runner and CLI restores previous behaviour. After step 7, rollback means restoring those commits; the
-DynamoDB table is retained regardless, so no measurement is lost either way.
+**Rollback:** until step 4 the Mongo path is still selected and Atlas is still being written, so reverting
+is a no-op. Between steps 4 and 8, Atlas still holds every pre-cutover measurement and the code change is
+revertible, so rollback means restoring the step-4 commits and accepting that runs made after the cutover
+live only in DynamoDB — which is retained regardless, so no measurement is lost. After step 8 Atlas is
+gone and there is nothing to roll back to; that is why it is last.
 
 ## Resolved Questions
 
@@ -300,8 +310,11 @@ DynamoDB table is retained regardless, so no measurement is lost either way.
   measurements, so folding them into `lynx-journal` would pollute its history. The value is
   deliberately *not* the bare `unknown`, because `currentGitCommit()` already falls back to
   `unknown` for a missing commit — two different meanings sharing one string would read identically
-  in a results table. The `source` tag on those 36 rows is dropped: it is CI provenance with no
-  query value.
+  in a results table. The `source` tag on those 36 rows is **kept**, carried through as a custom
+  tag (decided 2026-08-19; an earlier draft dropped it). Unknown keys are permitted by design and
+  warned about only when no row carries them, 36 rows cost nothing at this scale, and discarding
+  provenance is irreversible once Atlas is decommissioned — whereas an unhelpful tag can be
+  ignored or removed later.
 - **Does the CLI need a memory bound on the sweep?** `--limit` bounds output, not rows read. Probably
   unnecessary at current scale; revisit once the row count is known.
 - **What is the S3 fetch command's surface?** Whether it is a subcommand of `baas results`, a sibling of
