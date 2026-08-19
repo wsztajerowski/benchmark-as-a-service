@@ -7,8 +7,6 @@ import picocli.CommandLine.Mixin;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
-import pl.wsztajerowski.baas.infra.AwsClientFactory;
-import pl.wsztajerowski.baas.infra.SsmService;
 
 import java.util.concurrent.Callable;
 
@@ -59,30 +57,12 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("  wallClockHardKillSeconds: ").append(config.getEc2().getWallClockHardKillSeconds()).append('\n')
             .append("benchmark:\n")
             .append("  asyncProfilerVersion:     ").append(config.getBenchmark().getAsyncProfilerVersion()).append('\n')
-            .append("  jarPath:                  ").append(config.getBenchmark().getJarPath()).append('\n')
-            .append("mongo:\n")
-            .append("  connectionString: ");
+            .append("  jarPath:                  ").append(config.getBenchmark().getJarPath()).append('\n');
 
-        // Show masked mongo URI from SSM
-        try {
-            RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
-            var factory = new AwsClientFactory(
-                config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
-            try (var ssm = factory.ssm()) {
-                var ssmService = new SsmService(ssm);
-                var uri = ssmService.getParameterOptional("/" + config.getPrefix() + "/mongo/connection-string");
-                dump.append(uri.map(u -> maskMongoUri(u)).orElse("(not set)"));
-            }
-        } catch (Exception e) {
-            dump.append("(unable to retrieve: ").append(e.getMessage()).append(')');
-        }
-
+        // Every value above is local. `config show` makes no AWS call at all now that the masked
+        // Mongo connection string — the one field that had to be read from SSM — is gone, so it
+        // also has nothing to say about which credentials it would have used.
         logger.info("Current configuration:\n{}", dump);
         return 0;
-    }
-
-    private String maskMongoUri(String uri) {
-        // Replace password between : and @ with ***
-        return uri.replaceAll("(mongodb(?:\\+srv)?://[^:]+:)[^@]+(@)", "$1***$2");
     }
 }

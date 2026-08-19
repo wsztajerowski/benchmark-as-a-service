@@ -33,4 +33,20 @@ class DeployerPreflightTest {
             "cloudformation:CreateStack", "s3:CreateBucket", "ssm:PutParameter",
             "iam:GetRole", "iam:CreateRole");
     }
+
+    /**
+     * Since the cutover no command writes {@code /<prefix>/mongo/connection-string}, so probing
+     * it proved nothing about a policy the deployer actually needs. The runner AMI pointer is the
+     * SSM write that remains — and §14 removes the Mongo grant from the deployer policy, which
+     * would have turned the old probe into a preflight failure for a permission nothing uses.
+     */
+    @Test
+    void simulatesTheSsmWriteTheDeployerStillPerforms() {
+        var actions = DeployerPreflight.criticalActionsToResources(
+            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
+
+        assertThat(actions).containsEntry("ssm:PutParameter",
+            "arn:aws:ssm:%s:%s:parameter/%s/runner/ami-id"
+                .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
+    }
 }

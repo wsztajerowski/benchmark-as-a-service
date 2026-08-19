@@ -2,6 +2,7 @@ package pl.wsztajerowski.baas.commands;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import pl.wsztajerowski.baas.config.BaasConfig;
 
 import java.nio.file.Path;
 
@@ -25,6 +26,52 @@ class RunCommandTest {
     @Test
     void rejectsAnEmptyToplevel() {
         assertThat(RunCommand.projectFromToplevel("")).isNull();
+    }
+
+    /**
+     * Before the cutover, absent store configuration selected a no-op adapter: the run booted an
+     * instance, measured, reported success and discarded every number. Failing here — before the
+     * Maven build, the upload and the launch — is what replaced that, so the cost of a
+     * misconfigured CLI is an error message rather than a paid instance and no data.
+     */
+    @Test
+    void refusesToRunWhenTheResultsTableIsUnresolvable() {
+        var config = configWithResultsTable(null);
+
+        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("baas config sync --core-stack-name baas-a1b2c3d4")
+            .hasMessageContaining("--no-database");
+    }
+
+    @Test
+    void treatsABlankResultsTableAsUnresolvable() {
+        var config = configWithResultsTable("   ");
+
+        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void resolvesTheConfiguredResultsTable() {
+        var config = configWithResultsTable("baas-a1b2c3d4-results");
+
+        assertThat(RunCommand.resolveResultsTable(config, false))
+            .contains("baas-a1b2c3d4-results");
+    }
+
+    /** Discarding results is legitimate, but it has to be asked for by name. */
+    @Test
+    void noDatabaseResolvesToNoTableWithoutConsultingTheConfig() {
+        assertThat(RunCommand.resolveResultsTable(configWithResultsTable(null), true))
+            .isEmpty();
+    }
+
+    private static BaasConfig configWithResultsTable(String table) {
+        var config = new BaasConfig();
+        config.getAws().setCoreStackName("baas-a1b2c3d4");
+        config.getAws().setResultsTable(table);
+        return config;
     }
 
     @Test

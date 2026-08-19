@@ -46,9 +46,10 @@ import java.util.concurrent.Callable;
         "  baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3",
         "  baas run --instance-type c6i.4xlarge jmh -- MyBenchmark -f 1",
         "",
-        "Measurements go to MongoDB. S3 receives process output, logs, profiler",
-        "artifacts and the run-status sentinel. With no MongoDB URI the runner",
-        "uses a no-op database and the measurements are discarded."
+        "Measurements go to the DynamoDB results table. S3 receives process output,",
+        "logs, profiler artifacts, the verbatim result JSON and the run-status",
+        "sentinel. Discarding measurements needs an explicit --no-database; an",
+        "unresolvable table fails before anything is launched."
     },
     separator = " "
 )
@@ -99,6 +100,10 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--project", description = "Project name for the results partition (defaults to the git repository name).")
     String project;
 
+    @Option(names = "--no-database", description = "Discard measurements instead of storing them. "
+        + "Explicit opt-in: without it, an unresolvable results table fails before provisioning.")
+    boolean noDatabase;
+
     // No --image-version: exactly one image is maintained, so there is nothing to select between.
     @Option(names = "--ami-id", description = "Launch from this AMI instead of the published runner image.")
     String amiIdOverride;
@@ -147,6 +152,9 @@ public class RunCommand implements Callable<Integer> {
         String resolvedProject = resolveProject();
 
         BaasConfig config = configService.load();
+        // Same reasoning as resolveProject() above, and deliberately before the build and the
+        // upload: a run that cannot say where its measurements go is going to fail anyway.
+        String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
         int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
@@ -224,10 +232,10 @@ public class RunCommand implements Callable<Integer> {
         // 6. Build user-data
         Map<String, String> runnerTags = buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit());
         String userData = new UserDataScriptBuilder().build(
-            config.getAws().getRegion(), config.getAws().getBucket(), config.getPrefix(),
+            config.getAws().getRegion(), config.getAws().getBucket(),
             benchmarkType, requestId, resultPath, resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            benchmarkParams, runnerTags);
+            resolvedTable, noDatabase, benchmarkParams, runnerTags);
         // The script is what actually decides whether a run works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
@@ -344,16 +352,16 @@ public class RunCommand implements Callable<Integer> {
      * Reads the same path {@code baas results} does, so the post-run summary can never disagree
      * with what a later query reports.
      *
-     * <p>Until the runner cutover, runs still write to Atlas and this table is empty, so an empty
-     * summary here is expected rather than a failure — hence a warning and a return, not an error.
+     * <p>A missing table name cannot normally get this far — {@link #resolveResultsTable} rejects
+     * it before provisioning — but {@code --no-database} reaches here with nothing to show, and a
+     * benchmark that has already run and terminated must not be reported as failed over a summary.
      */
     private void showResults(AwsClientFactory factory, BaasConfig config, String requestId) {
-        String tableName = config.getAws().getResultsTable();
-        if (tableName == null || tableName.isBlank()) {
-            logger.warn("No results table configured — skipping results display. "
-                + "Run: baas config sync --core-stack-name {}", config.getAws().getCoreStackName());
+        if (noDatabase) {
+            logger.info("--no-database: the runner stored nothing, so there is no result to show.");
             return;
         }
+        String tableName = config.getAws().getResultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
             var rows = results.queryByRequestId(requestId);
             logger.info("Results for request: {}", requestId);
@@ -438,6 +446,31 @@ public class RunCommand implements Callable<Integer> {
      * <p>Defined once in baas-model so the CLI and the runner cannot drift apart.
      */
     static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
+
+    /**
+     * The results table this run will write to, or empty when {@code --no-database} was passed.
+     *
+     * <p>Resolved before the Maven build and before anything is uploaded or launched, for the same
+     * reason the runner image is: discovering it later costs a paid instance. There is no silent
+     * fallback. Before the cutover, an unset store selected a no-op adapter and the run reported
+     * success while the measurements were discarded; that behaviour still exists, but it now has
+     * to be asked for by name.
+     */
+    static Optional<String> resolveResultsTable(BaasConfig config, boolean noDatabase) {
+        if (noDatabase) {
+            return Optional.empty();
+        }
+        String table = config.getAws().getResultsTable();
+        if (table == null || table.isBlank()) {
+            throw new IllegalStateException("""
+                No results table configured, so this run has nowhere to store its measurements.
+                  Sync it from the stack:  baas config sync --core-stack-name %s
+                  Or discard the results:  baas run --no-database ...
+                Nothing was built or launched."""
+                .formatted(config.getAws().getCoreStackName()));
+        }
+        return Optional.of(table);
+    }
 
     /**
      * Extracted from call() so it can be tested without AWS. Caller tags come first so a

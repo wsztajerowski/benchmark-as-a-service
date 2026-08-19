@@ -27,11 +27,15 @@ class UserDataScriptBuilderTest {
     }
 
     private String script(Map<String, String> runnerTags) {
+        return script(runnerTags, "baas-a1b2c3d4-results", false);
+    }
+
+    private String script(Map<String, String> runnerTags, String resultsTable, boolean noDatabase) {
         String encoded = new UserDataScriptBuilder().build(
-            "eu-central-1", "baas-a1b2c3d4", "a1b2c3d4", "jmh",
+            "eu-central-1", "baas-a1b2c3d4", "jmh",
             "jmh-20260724_120000", "main/jmh/20260724_120000", 7200, 7500,
-            "1.0.0", "ami-0123456789abcdef0", null, List.of("MyBenchmark", "-f", "1"),
-            runnerTags);
+            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, noDatabase,
+            List.of("MyBenchmark", "-f", "1"), runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
 
@@ -158,6 +162,82 @@ class UserDataScriptBuilderTest {
             .doesNotContain("yum")
             .doesNotContain("dnf install")
             .doesNotContain("async-profiler/releases/download");
+    }
+
+    // ─── Results store ───────────────────────────────────────────────────────────
+
+    /**
+     * The cutover. The table name is not a secret — no credentials, access granted by RunnerRole
+     * — so unlike the Mongo connection string it replaced it travels in user-data instead of
+     * costing an SSM round trip on every boot.
+     */
+    @Test
+    void passesTheResultsTableToTheRunner() {
+        String script = script();
+
+        assertThat(script).contains("export RESULTS_TABLE='baas-a1b2c3d4-results'");
+        assertThat(script).contains("STORE_ARGS=(--results-table \"${RESULTS_TABLE}\")");
+        assertThat(script).contains("\"${STORE_ARGS[@]}\"");
+    }
+
+    /**
+     * Not cosmetic: while this fetch existed the runner picked up MONGO_CONNECTION_STRING from
+     * the environment and wrote to Atlas, so a leftover line here would send measurements to a
+     * store the CLI can no longer read — and the run would still report success.
+     */
+    @Test
+    void fetchesNoMongoConnectionStringFromSsm() {
+        String script = script();
+
+        assertThat(script)
+            .doesNotContain("MONGO_CONNECTION_STRING")
+            .doesNotContain("mongo/connection-string")
+            .doesNotContain("ssm get-parameter")
+            .doesNotContain("SSM_PREFIX");
+    }
+
+    /**
+     * Both branches are always present in the script text — which one runs is decided at boot by
+     * these two exports, so they are what the CLI's choice actually reduces to. That the right
+     * branch is taken is asserted by executing it, below.
+     */
+    @Test
+    void selectsTheNoOpStoreOnlyWhenNoDatabaseIsAskedFor() {
+        assertThat(script()).contains("export NO_DATABASE='false'");
+
+        String discarding = script(Map.of(), null, true);
+        assertThat(discarding).contains("export NO_DATABASE='true'");
+        assertThat(discarding).contains("export RESULTS_TABLE=''");
+    }
+
+    /**
+     * The runner selects its adapter from exactly one of these, and rejects both-or-neither. The
+     * script decides at boot which single argument it passes, so the two can never arrive
+     * together however the CLI is invoked.
+     */
+    @Test
+    void passesExactlyOneStoreSelectionArgument() throws Exception {
+        for (boolean noDatabase : new boolean[]{false, true}) {
+            String script = script(Map.of(), noDatabase ? null : "baas-a1b2c3d4-results", noDatabase);
+            String harness = script.lines()
+                .filter(l -> l.startsWith("export RESULTS_TABLE=") || l.startsWith("export NO_DATABASE="))
+                .collect(java.util.stream.Collectors.joining("\n"))
+                + "\n"
+                + script.substring(script.indexOf("if [[ \"${NO_DATABASE}\""),
+                    script.indexOf("# Layer 2"))
+                + "for element in \"${STORE_ARGS[@]}\"; do printf '%s\\n' \"$element\"; done\n";
+
+            Process process = new ProcessBuilder("bash", "-c", harness).start();
+            String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(process.exitValue()).isZero();
+
+            assertThat(stdout.lines().toList())
+                .as("--no-database=" + noDatabase)
+                .isEqualTo(noDatabase
+                    ? List.of("--no-database")
+                    : List.of("--results-table", "baas-a1b2c3d4-results"));
+        }
     }
 
     // ─── Environment manifest ────────────────────────────────────────────────────

@@ -68,7 +68,8 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             }
         }
 
-        // The SSM mongo path is keyed by the prefix, which is the stack name minus its "baas-" namespace.
+        // SSM paths (the runner AMI pointer) are keyed by the prefix, which is the stack name
+        // minus its "baas-" namespace.
         config.setPrefix(coreStackName.startsWith("baas-") ? coreStackName.substring(5) : coreStackName);
 
         configService.save(config);

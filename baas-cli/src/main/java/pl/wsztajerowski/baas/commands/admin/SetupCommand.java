@@ -15,7 +15,6 @@ import pl.wsztajerowski.baas.infra.DeployerPreflight;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
 import pl.wsztajerowski.baas.infra.ResultsTableService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
-import pl.wsztajerowski.baas.infra.SsmService;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -54,18 +53,10 @@ public class SetupCommand implements Callable<Integer> {
     @Option(names = "--sg-id", description = "Existing security group ID (required with --use-existing-vpc).")
     String existingSecurityGroupId;
 
-    @Option(names = "--mongo-uri", description = "MongoDB connection string (stored in SSM SecureString).")
-    String mongoUri;
-
     private final ConfigService configService = new ConfigService();
 
     @Override
     public Integer call() throws Exception {
-        // Fail before provisioning anything — a bad URI should not cost a stack deploy.
-        if (mongoUri != null) {
-            validateMongoUri(mongoUri);
-        }
-
         BaasConfig config = configService.load();
         if (region != null) config.getAws().setRegion(region);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
@@ -234,22 +225,6 @@ public class SetupCommand implements Callable<Integer> {
                     `baas run` fails until it exists — there is no boot-time install path.""",
             resolvedPrefix);
 
-        if (mongoUri != null) {
-            try (var ssm = factory.ssm()) {
-                new SsmService(ssm).putSecureParameter(
-                    "/" + resolvedPrefix + "/mongo/connection-string", mongoUri);
-                logger.info("MongoDB URI stored in SSM.");
-            }
-        } else {
-            // warn, not info: with no URI the runner falls back to NoOpDatabaseService and every
-            // measurement is silently discarded while the run still reports success.
-            logger.warn("""
-                No MongoDB connection string provided.
-                Create a free Atlas cluster: https://www.mongodb.com/cloud/atlas/register
-                Then run: baas config set --mongo-uri "mongodb+srv://<user>:<pass>@<host>/<db>"
-                Remember to add the runner's egress IP and your laptop's IP to the Atlas IP Access List.""");
-        }
-
         return 0;
     }
 
@@ -291,33 +266,5 @@ public class SetupCommand implements Callable<Integer> {
             if (is == null) throw new IllegalStateException("CF template not found in classpath");
             return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
-    }
-
-    /**
-     * Parsed by hand because {@code baas-cli} no longer ships the MongoDB driver — the CLI reads
-     * DynamoDB and never speaks Mongo. This survives only until §13 removes {@code --mongo-uri}
-     * altogether; {@code ConfigSetSubcommand} delegates here so that is one deletion, not two.
-     */
-    public static void validateMongoUri(String uri) {
-        if (mongoDatabaseName(uri).isEmpty()) {
-            throw new IllegalArgumentException(
-                "MongoDB URI must include a database name (e.g. mongodb+srv://user:pass@host/mydb)");
-        }
-    }
-
-    /**
-     * The path segment after the host list. A {@code /} inside credentials would confuse this, but
-     * MongoDB requires those percent-encoded, so it cannot legally appear.
-     */
-    private static String mongoDatabaseName(String uri) {
-        if (uri == null) return "";
-        int schemeEnd = uri.indexOf("://");
-        if (schemeEnd < 0) return "";
-        String afterScheme = uri.substring(schemeEnd + 3);
-        int slash = afterScheme.indexOf('/');
-        if (slash < 0) return "";
-        String afterHost = afterScheme.substring(slash + 1);
-        int query = afterHost.indexOf('?');
-        return query >= 0 ? afterHost.substring(0, query) : afterHost;
     }
 }

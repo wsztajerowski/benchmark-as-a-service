@@ -9,7 +9,7 @@ moved out of it for the same reason.
 | 1 | §1, §2, §3, §4 | ✅ done and deployed. Purely additive; nothing writes to the table yet |
 | 2 | §5, §8 | ✅ done. The write path and its tests. Config still selects Mongo |
 | 3 | §6, 7.1, 7.2, 7.7-7.10 | ✅ done. Read path and config plumbing. Table still empty |
-| 4 | **§13** | The cutover. New runs go to DynamoDB; Atlas keeps history and stays readable |
+| 4 | **§13** | ✅ code done, not yet deployed. The cutover: new runs go to DynamoDB; Atlas keeps history and stays readable |
 | 5 | §12 | Live verification of the new write and read paths |
 | 6 | **§9** | Migrate history, into a schema live runs have now exercised |
 | 7 | §12b | The two manual checks that need migrated data |
@@ -248,11 +248,11 @@ rollback until §14.
 - [x] 8.3 Write one store contract test suite and run it against both adapters
 - [x] 8.4 Add an integration test asserting a stored run produces one item per measurement and no others
 - [x] 8.5 Add an integration test asserting a repeated write is idempotent
-- [ ] 8.6 Add integration tests for the partition query and the request-ID index query — **deferred to
-  §6**, which builds the query layer; there is no read path to test until then
+- [x] 8.6 Add integration tests for the partition query and the request-ID index query — deferred to
+  §6 and landed with it: `ResultsQueryServiceIT` covers both query paths against LocalStack
 - [x] 8.7 Add an integration test asserting a store failure exits non-zero while leaving S3 artifacts intact
-- [ ] 8.8 Add an integration test for the run-artifact download — **deferred to 7.7**, which
-  implements the command being tested
+- [x] 8.8 Add an integration test for the run-artifact download — deferred to 7.7 and landed with
+  it: `S3DownloadIT`, including that `rawData` is recoverable from the downloaded result JSON
 - [x] 8.9 Update `docker-compose.yaml`: drop `mongo-express`, add `dynamodb` to LocalStack, keep `mongo`
 - [x] 8.10 Update `jmh-with-profiler.sh` and `jmh-with-async.sh` to pass a table name or `--no-database`
 - [x] 8.11 Run the full reactor `mvn clean verify` with `ASYNC_PATH` exported
@@ -343,18 +343,36 @@ Landing this before §9 is deliberate: it puts live runs through the schema befo
 documents are written into it, and it guarantees no run is ever written to Atlas afterwards, so
 there is no window for migration to miss.
 
-- [ ] 13.1 Remove `--mongo-uri` from `SetupCommand` and `ConfigSetSubcommand`, and delete the
-  SecureString write (was 7.3)
-- [ ] 13.2 Delete `validateMongoUri` from all three classes that carry a copy (was 7.4)
-- [ ] 13.3 Pass the table name through `UserDataScriptBuilder` and remove the SSM connection-string
-  fetch (was 7.5) — this is the cutover itself
-- [ ] 13.4 Add the `--no-database` pass-through to `baas run` and fail before provisioning when the
+- [x] 13.1 Remove `--mongo-uri` from `SetupCommand` and `ConfigSetSubcommand`, and delete the
+  SecureString write (was 7.3). The "no MongoDB connection string provided" warning goes with it —
+  it named a fallback that no longer exists
+- [x] 13.2 Delete `validateMongoUri` from all three classes that carry a copy (was 7.4). Only two
+  copies were left — `ConfigSetSubcommand` had already been reduced to a delegating one-liner —
+  and `mongoDatabaseName`, its only caller, went with it
+- [x] 13.3 Pass the table name through `UserDataScriptBuilder` and remove the SSM connection-string
+  fetch (was 7.5) — this is the cutover itself. The table name travels in user-data rather than
+  being fetched at boot: unlike the connection string it carries no credentials, and access is
+  granted by `RunnerRole`, not by knowing the name. `SSM_PREFIX` went with the fetch — that was
+  its only use
+- [x] 13.4 Add the `--no-database` pass-through to `baas run` and fail before provisioning when the
   table is unresolvable (was 7.6). Note this makes absent configuration a hard failure, replacing
-  today's silent `NoOpDatabaseService` — a breaking change for standalone `benchmark-runner` users
+  today's silent `NoOpDatabaseService` — a breaking change for standalone `benchmark-runner` users.
+  Resolution sits beside `resolveProject()`, before the Maven build and the S3 upload, so a
+  misconfigured CLI costs an error message rather than a paid instance
 - 13.5 removed (2026-08-19). It re-ran the migration to sweep runs made between §9 and the
   cutover; with §9 now *after* the cutover there is no such window. 9.6's idempotency requirement
   stays — it still covers a partial or interrupted migration run
-- [ ] 13.6 Remove the `mongo.connectionString` line from `ConfigShowSubcommand` output (rest of 7.10)
+- [x] 13.6 Remove the `mongo.connectionString` line from `ConfigShowSubcommand` output (rest of 7.10).
+  That line was the only value `config show` read from AWS, so the command now makes no AWS call
+  at all and its operator-credentials warning went too
+
+- [x] 13.7 Repoint `DeployerPreflight`'s `ssm:PutParameter` probe from the Mongo connection string
+  to `/<prefix>/runner/ami-id` (gap found by task 1.5, which proposed it as 7.11). Setup writes no
+  Mongo parameter after 13.1, so the old probe proved nothing; the AMI pointer is the SSM write the
+  deployer still performs. Not deleted, because §14.2 removes the Mongo grant from the deployer
+  policy and the old probe would then have failed preflight for a permission nothing uses.
+  `TeardownCommand`'s Mongo SSM delete (proposed 7.12) is deliberately left for §14 — it is what
+  performs 14.4
 
 ## 14. MongoDB removal (only after §12 confirms DynamoDB works and §9 has migrated history)
 

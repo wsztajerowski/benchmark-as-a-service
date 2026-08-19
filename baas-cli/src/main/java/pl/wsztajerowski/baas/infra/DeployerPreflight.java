@@ -93,8 +93,12 @@ public class DeployerPreflight {
         actionToResource.put("cloudformation:CreateStack",
             "arn:aws:cloudformation:%s:%s:stack/baas-%s/*".formatted(region, accountId, prefix));
         actionToResource.put("s3:CreateBucket", "arn:aws:s3:::baas-" + prefix);
+        // The runner AMI pointer, not the Mongo connection string this used to probe: since the
+        // cutover, setup writes no Mongo parameter and the table name travels in user-data. The
+        // AMI pointer is the one SSM write the deployer still performs (from `admin build-image`),
+        // so probing it here still catches a stale attached policy before the long operation.
         actionToResource.put("ssm:PutParameter",
-            "arn:aws:ssm:%s:%s:parameter/%s/mongo/connection-string".formatted(region, accountId, prefix));
+            "arn:aws:ssm:%s:%s:parameter/%s/runner/ami-id".formatted(region, accountId, prefix));
         actionToResource.put("iam:GetRole",
             "arn:aws:iam::%s:role/%s-runner-role".formatted(accountId, prefix));
         actionToResource.put("iam:CreateRole",

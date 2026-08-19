@@ -127,10 +127,18 @@ public class UserDataScriptBuilder {
 
         aws s3 cp "s3://${S3_BUCKET}/runs/${REQUEST_ID}/benchmark.jar" /app/benchmark-under-test.jar
 
-        # Fetch MongoDB URI from SSM (never stored in user-data)
-        export MONGO_CONNECTION_STRING=$(aws ssm get-parameter \\
-          --name "/${SSM_PREFIX}/mongo/connection-string" \\
-          --with-decryption --query Parameter.Value --output text --region "${AWS_REGION}")
+        # Results store. The table name is not a secret — unlike the Mongo connection string
+        # this replaced, it carries no credentials, so it travels in user-data instead of being
+        # fetched from SSM at boot. Access is granted by RunnerRole, not by knowing the name.
+        # Exactly one of the two is configured: `baas run` resolves the table from the stack
+        # output and fails before provisioning when it cannot, so an empty table here means the
+        # operator asked for --no-database. The runner treats absent store configuration as a
+        # hard failure rather than a silent no-op, so never leave both unset.
+        if [[ "${NO_DATABASE}" == "true" ]]; then
+          STORE_ARGS=(--no-database)
+        else
+          STORE_ARGS=(--results-table "${RESULTS_TABLE}")
+        fi
 
         # Layer 2: benchmark process with its own timeout
         # eval expands BENCHMARK_PARAMETERS (a double-quoted shell string) into an array
@@ -157,6 +165,7 @@ public class UserDataScriptBuilder {
           --result-path    "${RESULT_PATH}" \\
           --s3-bucket      "${S3_BUCKET}" \\
           --benchmark-path /app/benchmark-under-test.jar \\
+          "${STORE_ARGS[@]}" \\
           "${RUNNER_TAGS_ARRAY[@]}" \\
           --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
           --tag "instanceType=${INSTANCE_TYPE}" \\
@@ -180,11 +189,11 @@ public class UserDataScriptBuilder {
         aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
         """;
 
-    public String build(String region, String bucket, String ssmPrefix, String benchmarkType,
+    public String build(String region, String bucket, String benchmarkType,
                         String requestId, String resultPath, int benchmarkTimeoutSeconds,
                         int wallClockHardKillSeconds, String imageVersion, String amiId,
-                        String runnerJarS3Key, List<String> benchmarkParams,
-                        Map<String, String> runnerTags) {
+                        String runnerJarS3Key, String resultsTableName, boolean noDatabase,
+                        List<String> benchmarkParams, Map<String, String> runnerTags) {
         String params = String.join(" ", benchmarkParams.stream()
             .map(p -> p.contains(" ") ? "\"" + p + "\"" : p)
             .toList());
@@ -207,7 +216,6 @@ public class UserDataScriptBuilder {
             "# No set -e — errors handled explicitly so watchdog always starts\n" +
             "export AWS_REGION='" + region + "'\n" +
             "export S3_BUCKET='" + bucket + "'\n" +
-            "export SSM_PREFIX='" + ssmPrefix + "'\n" +
             "export BENCHMARK_TYPE='" + benchmarkType + "'\n" +
             "export REQUEST_ID='" + requestId + "'\n" +
             "export RESULT_PATH='" + resultPath + "'\n" +
@@ -219,6 +227,8 @@ public class UserDataScriptBuilder {
             "export IMAGE_VERSION='" + nullToEmpty(imageVersion) + "'\n" +
             "export AMI_ID='" + nullToEmpty(amiId) + "'\n" +
             "export RUNNER_JAR_S3_KEY='" + nullToEmpty(runnerJarS3Key) + "'\n" +
+            "export RESULTS_TABLE='" + nullToEmpty(resultsTableName) + "'\n" +
+            "export NO_DATABASE='" + noDatabase + "'\n" +
             "export BENCHMARK_PARAMETERS='" + params.replace("'", "'\\''") + "'\n" +
             "export RUNNER_TAGS='" + tagArgs.replace("'", "'\\''") + "'\n" +
             "\n" +

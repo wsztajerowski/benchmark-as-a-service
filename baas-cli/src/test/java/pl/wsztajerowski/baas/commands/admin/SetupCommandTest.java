@@ -43,15 +43,17 @@ class SetupCommandTest {
         assertThat(prefixA).isNotEqualTo(prefixB);
     }
 
+    /**
+     * The runner reads DynamoDB since the cutover, and the table name arrives from a stack output
+     * — nothing writes {@code /<prefix>/mongo/connection-string} any more. A scripted
+     * {@code baas admin setup --mongo-uri ...} must fail loudly rather than have the URI silently
+     * ignored while runs quietly write somewhere else.
+     */
     @Test
-    void rejectsMongoUriWithoutDatabaseName() {
-        assertThatThrownBy(() -> SetupCommand.validateMongoUri("mongodb+srv://user:pass@host"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("database name");
-    }
+    void rejectsTheRemovedMongoUriOption() {
+        CommandLine cmd = new CommandLine(new SetupCommand());
 
-    @Test
-    void acceptsMongoUriWithDatabaseName() {
-        SetupCommand.validateMongoUri("mongodb+srv://user:pass@host/benchmarks");
+        assertThatThrownBy(() -> cmd.parseArgs("--mongo-uri", "mongodb+srv://user:pass@host/db"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 }

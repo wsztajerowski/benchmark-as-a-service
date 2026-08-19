@@ -45,6 +45,23 @@ class BaasAppTest {
     }
 
     /**
+     * Both commands wrote the same SSM SecureString, and nothing reads it since the cutover.
+     * Asserted through the real command tree because that is how a user's script reaches them:
+     * an option that parsed but did nothing would leave the operator believing they had
+     * configured where measurements go.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"admin,setup", "config,set"})
+    void mongoUriIsGoneFromEveryCommandThatOfferedIt(String command) {
+        CommandLine root = new CommandLine(new BaasApp());
+        String[] path = command.split(",");
+
+        assertThatThrownBy(() -> root.parseArgs(
+            path[0], path[1], "--mongo-uri", "mongodb+srv://user:pass@host/db"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
+    }
+
+    /**
      * Without the separator picocli reads JMH flags as baas options and fails with
      * "Unknown options: '-f', '-wi', '-i'", which does not hint at the cause. The help
      * text is the only place a user finds out, so it has to say so.
