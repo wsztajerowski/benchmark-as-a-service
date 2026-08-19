@@ -204,32 +204,32 @@ Atlas being retained as rollback until §14.
 
 ## 6. CLI query layer
 
-- [ ] 6.1 Remove `mongodb-driver-sync` from `baas-cli` and add the DynamoDB SDK
-- [ ] 6.2 Rewrite `ResultsQueryService` against the table using `baas-model`
-- [ ] 6.3 Implement the project-partition query as the single access path
-- [ ] 6.4 Implement query by request ID against the GSI
-- [ ] 6.5 Apply the `exclude_from_results` filter expression server-side
-- [ ] 6.6 Implement client-side tag filtering, including repeated `--tag` combining conjunctively
-- [ ] 6.7 Implement client-side regex matching for `--benchmark-name`
-- [ ] 6.8 Reimplement `--living-branches` as a client-side filter over one query, tolerating absent tags
-- [ ] 6.9 Implement grouping by `(benchmark, <group-tag>)` keeping the highest score, defaulting the group
+- [x] 6.1 Remove `mongodb-driver-sync` from `baas-cli` and add the DynamoDB SDK
+- [x] 6.2 Rewrite `ResultsQueryService` against the table using `baas-model`
+- [x] 6.3 Implement the project-partition query as the single access path
+- [x] 6.4 Implement query by request ID against the GSI
+- [x] 6.5 Apply the `exclude_from_results` filter expression server-side
+- [x] 6.6 Implement client-side tag filtering, including repeated `--tag` combining conjunctively
+- [x] 6.7 Implement client-side regex matching for `--benchmark-name`
+- [x] 6.8 Reimplement `--living-branches` as a client-side filter over one query, tolerating absent tags
+- [x] 6.9 Implement grouping by `(benchmark, <group-tag>)` keeping the highest score, defaulting the group
   tag to `branch` and bucketing untagged rows rather than dropping them
-- [ ] 6.10 Warn when a `--tag` key is outside the known-key vocabulary and no row carries it
-- [ ] 6.11 Add `--limit` and enforce `--request-id` mutual exclusion
-- [ ] 6.12 Keep table, JSON and CSV payloads on `System.out` and diagnostics on the logger
-- [ ] 6.13 Unit-test grouping and best-score selection, including the same benchmark under two group
+- [x] 6.10 Warn when a `--tag` key is outside the known-key vocabulary and no row carries it
+- [x] 6.11 Add `--limit` and enforce `--request-id` mutual exclusion
+- [x] 6.12 Keep table, JSON and CSV payloads on `System.out` and diagnostics on the logger
+- [x] 6.13 Unit-test grouping and best-score selection, including the same benchmark under two group
   values and rows with no group tag
 
 ## 7. CLI configuration and commands
 
-- [ ] 7.1 Add the results table name to `BaasConfig`, populated from the stack output
-- [ ] 7.2 Populate it in `baas admin setup` and `baas config sync`
+- [x] 7.1 Add the results table name to `BaasConfig`, populated from the stack output
+- [x] 7.2 Populate it in `baas admin setup` and `baas config sync`
 - 7.3-7.6 moved to §13 (Runner cutover). They switch the runner off Atlas, so they must land
   after §9 has migrated history — not alongside the config plumbing above.
-- [ ] 7.7 Implement the run-artifact download command over the run's S3 prefix
-- [ ] 7.8 Extend `SetupCommand`'s retained-resource pre-check to cover the results table
-- [ ] 7.9 Update `TeardownCommand`'s confirmation text to name both retained resources
-- [ ] 7.10 Update `ConfigShowSubcommand` output for the new results-table key. Removing the
+- [x] 7.7 Implement the run-artifact download command over the run's S3 prefix
+- [x] 7.8 Extend `SetupCommand`'s retained-resource pre-check to cover the results table
+- [x] 7.9 Update `TeardownCommand`'s confirmation text to name both retained resources
+- [x] 7.10 Update `ConfigShowSubcommand` output for the new results-table key. Removing the
   `mongo.connectionString` line waits for §13, since the key still exists until then
 
 ## 8. Test infrastructure

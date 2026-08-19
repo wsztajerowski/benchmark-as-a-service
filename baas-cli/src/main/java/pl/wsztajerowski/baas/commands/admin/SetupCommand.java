@@ -13,6 +13,7 @@ import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.DeployerPolicyRenderer;
 import pl.wsztajerowski.baas.infra.DeployerPreflight;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
+import pl.wsztajerowski.baas.infra.ResultsTableService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 
@@ -157,14 +158,18 @@ public class SetupCommand implements Callable<Integer> {
         // direction nobody would think to look.
         params.putAll(new RunnerImageRenderer().stackParameters());
 
-        // The bucket is declared DeletionPolicy: Retain, so deleting the stack leaves it
-        // behind — and the prefix is a hash of the caller ARN, so the next setup asks for
-        // that exact name again and CloudFormation refuses with an opaque "Validation failed
-        // with 1 error(s)" that never mentions S3. Say what actually happened instead.
-        try (var cf = factory.cloudFormation(); var s3 = factory.s3()) {
+        // The bucket and the results table are both declared DeletionPolicy: Retain, so deleting
+        // the stack leaves them behind — and the prefix is a hash of the caller ARN, so the next
+        // setup asks for those exact names again and CloudFormation refuses with an opaque
+        // "Validation failed with 1 error(s)" that never mentions which resource. Say what
+        // actually happened instead. Both are checked, because fixing only the bucket then fails
+        // again on the table with the same unhelpful message.
+        try (var cf = factory.cloudFormation(); var s3 = factory.s3(); var ddb = factory.dynamoDb()) {
             String bucketName = "baas-" + resolvedPrefix;
-            if (!new CloudFormationService(cf).stackExists(resolvedStack)
-                && new S3UploadService(s3).bucketExists(bucketName)) {
+            String tableName = "baas-" + resolvedPrefix + "-results";
+            boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedStack);
+
+            if (stackMissing && new S3UploadService(s3).bucketExists(bucketName)) {
                 logger.error("""
                         Bucket {} already exists, but stack {} does not.
                           A previous teardown retained it — the stack cannot recreate a bucket
@@ -172,6 +177,17 @@ public class SetupCommand implements Callable<Integer> {
                           Keep the old results:  aws s3 sync s3://{} ./backup
                           Then remove it:        aws s3 rb s3://{} --force""",
                     bucketName, resolvedStack, bucketName, bucketName);
+                return 1;
+            }
+
+            if (stackMissing && new ResultsTableService(ddb).tableExists(tableName)) {
+                logger.error("""
+                        Results table {} already exists, but stack {} does not.
+                          A previous teardown retained it, for the same reason the bucket is
+                          retained: benchmark history outlives any single stack.
+                          Keep the old results:  aws dynamodb scan --table-name {} > backup.json
+                          Then remove it:        aws dynamodb delete-table --table-name {}""",
+                    tableName, resolvedStack, tableName, tableName);
                 return 1;
             }
         }

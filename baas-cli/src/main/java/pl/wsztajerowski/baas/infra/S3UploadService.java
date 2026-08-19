@@ -3,12 +3,15 @@ package pl.wsztajerowski.baas.infra;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
 import software.amazon.awssdk.services.s3.model.NoSuchBucketException;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -38,6 +41,29 @@ public class S3UploadService {
         } catch (NoSuchKeyException e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Every key under a prefix, paginated. Used to enumerate a run's artifacts before downloading
+     * them, so an empty list is how "no such run" is detected — S3 has no directories to miss.
+     */
+    public List<String> listKeys(String bucket, String prefix) {
+        List<String> keys = new ArrayList<>();
+        var request = ListObjectsV2Request.builder().bucket(bucket).prefix(prefix).build();
+        for (var page : s3.listObjectsV2Paginator(request)) {
+            page.contents().forEach(object -> keys.add(object.key()));
+        }
+        return keys;
+    }
+
+    /** Creates parent directories as needed; overwrites an existing file. */
+    public void download(String bucket, String key, Path destination) {
+        try {
+            Files.createDirectories(destination.getParent());
+        } catch (IOException e) {
+            throw new IllegalStateException("Could not create " + destination.getParent(), e);
+        }
+        s3.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build(), destination);
     }
 
     /**

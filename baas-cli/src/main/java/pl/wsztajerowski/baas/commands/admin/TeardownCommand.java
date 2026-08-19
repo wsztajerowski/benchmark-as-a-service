@@ -103,6 +103,8 @@ public class TeardownCommand implements Callable<Integer> {
             logger.info("Deleted SSM parameter: {}", paramName);
         }
 
+        // Both retained resources are named, because a setup that trips over one and then the
+        // other is two rounds of the same opaque CloudFormation error.
         if (!bucketDeleted && config.getAws().getBucket() != null) {
             logger.warn("""
                     S3 results bucket retained: {}
@@ -111,6 +113,15 @@ public class TeardownCommand implements Callable<Integer> {
                       tries to create this same name. Delete it manually, or re-run teardown
                       with --delete-bucket.""",
                 config.getAws().getBucket());
+        }
+        if (config.getAws().getResultsTable() != null && !config.getAws().getResultsTable().isBlank()) {
+            logger.warn("""
+                    DynamoDB results table retained: {}
+                      Benchmark history outlives the stack, so teardown never deletes it and
+                      there is no flag to. `baas admin setup` as this identity will fail while
+                      it exists; remove it with:
+                        aws dynamodb delete-table --table-name {}""",
+                config.getAws().getResultsTable(), config.getAws().getResultsTable());
         }
         logger.info("MongoDB cluster NOT touched (connect-only; delete it manually in Atlas if desired).");
         return 0;

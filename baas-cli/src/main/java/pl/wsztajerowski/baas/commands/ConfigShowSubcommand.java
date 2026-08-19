@@ -46,6 +46,9 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("  region:                   ").append(config.getAws().getRegion()).append('\n')
             .append("  coreStackName:            ").append(config.getAws().getCoreStackName()).append('\n')
             .append("  bucket:                   ").append(config.getAws().getBucket()).append('\n')
+            .append("  resultsTable:             ").append(config.getAws().getResultsTable() != null
+                ? config.getAws().getResultsTable()
+                : "<not set> — run: baas config sync --core-stack-name " + config.getAws().getCoreStackName()).append('\n')
             .append("  subnetId:                 ").append(config.getAws().getSubnetId()).append('\n')
             .append("  securityGroupId:          ").append(config.getAws().getSecurityGroupId()).append('\n')
             .append("  vpcId:                    ").append(config.getAws().getVpcId()).append('\n')

@@ -5,6 +5,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.ParseResult;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
+import pl.wsztajerowski.baas.commands.DownloadCommand;
 import pl.wsztajerowski.baas.commands.EnvCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
@@ -19,6 +20,7 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
         ConfigCommand.class,
         RunCommand.class,
         ResultsCommand.class,
+        DownloadCommand.class,
         EnvCommand.class
     },
     // picocli lists direct children only, so `baas admin deployer-policy` is invisible here —
