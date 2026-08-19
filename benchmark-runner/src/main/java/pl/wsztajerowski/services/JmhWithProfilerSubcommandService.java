@@ -75,24 +75,30 @@ public class JmhWithProfilerSubcommandService {
         uploadProfilerArtifacts();
 
         List<StoredMeasurement> measurements = JmhRunResults.uploadJsonAndMap(
-            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput());
+            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
+            this::profilerOutputPathFor);
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
         resultsStore.write(measurements);
     }
 
     /**
-     * The artifacts themselves are the record — {@code StoredMeasurement} carries no profiler-output
-     * map, because the files live under the run's result path in S3 and are found by listing it.
+     * The S3 prefix holding one result's profiling artifacts. Recorded on the measurement so a
+     * reader can list it, rather than re-deriving JMH's mode-dependent directory suffix elsewhere.
      */
+    private String profilerOutputPathFor(JmhResult jmhResult) {
+        return outputPath
+            .resolve(jmhResult.benchmark() + getProfilerOutputDirSuffix(jmhResult.mode()))
+            .toString();
+    }
+
     private void uploadProfilerArtifacts() {
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
-            String benchmarkFullname = jmhResult.benchmark() + getProfilerOutputDirSuffix(jmhResult.mode());
-            Path profilerOutputDir = outputPath.resolve(benchmarkFullname);
-            try (Stream<Path> paths = list(profilerOutputDir)) {
+            Path storageDir = Path.of(profilerOutputPathFor(jmhResult));
+            try (Stream<Path> paths = list(storageDir)) {
                 paths
                     .forEach(path -> {
-                        Path storagePath = outputPath.resolve(benchmarkFullname).resolve(path.getFileName());
+                        Path storagePath = storageDir.resolve(path.getFileName());
                         logger.info("Saving profiler output: {}", storagePath);
                         storageService
                             .saveFile(storagePath, path);

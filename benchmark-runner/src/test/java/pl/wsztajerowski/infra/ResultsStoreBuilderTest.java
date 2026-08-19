@@ -1,6 +1,5 @@
 package pl.wsztajerowski.infra;
 
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import java.net.URI;
@@ -10,24 +9,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ResultsStoreBuilderTest {
 
-    private static final String REGION_PROPERTY = "aws.region";
-
-    /**
-     * Building the DynamoDB adapter constructs a real client, and the SDK resolves its region from
-     * the ambient environment — IMDS on the runner, {@code AWS_REGION} in CI. A developer machine
-     * has neither, so the region is supplied here rather than defaulted in the builder, where it
-     * would mask a genuine misconfiguration in production.
-     */
-    @AfterEach
-    void clearRegion() {
-        System.clearProperty(REGION_PROPERTY);
-    }
-
     @Test
     void aTableNameSelectsDynamoDb() {
-        System.setProperty(REGION_PROPERTY, "eu-central-1");
-
-        assertThat(ResultsStoreBuilder.builder().withTableName("results").build())
+        assertThat(ResultsStoreBuilder.builder()
+            .withTableName("results")
+            .withDynamoDbClient(new RecordingDynamoDbClient())
+            .build())
             .isInstanceOf(DynamoDbResultsStore.class);
     }
 

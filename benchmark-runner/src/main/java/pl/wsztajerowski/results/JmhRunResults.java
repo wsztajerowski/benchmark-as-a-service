@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Function;
 
 import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 
@@ -30,8 +31,12 @@ public final class JmhRunResults {
 
     private JmhRunResults() {}
 
+    /** For runs with no profiler: every measurement gets a null profiler-output prefix. */
+    public static final Function<JmhResult, String> NO_PROFILER_OUTPUT = result -> null;
+
     public static List<StoredMeasurement> uploadJsonAndMap(
-        StorageService storageService, CommonSharedOptions commonOptions, Path machineReadableOutput) {
+        StorageService storageService, CommonSharedOptions commonOptions, Path machineReadableOutput,
+        Function<JmhResult, String> profilerOutputPath) {
 
         Path outputPath = commonOptions.resultPath();
         Path resultJsonKey = outputPath.resolve("jmh-result.json");
@@ -55,7 +60,8 @@ public final class JmhRunResults {
                 commonOptions.tags(),
                 outputPath.toString(),
                 resultJsonKey.toString(),
-                environmentJsonKey));
+                environmentJsonKey,
+                profilerOutputPath.apply(jmhResult)));
         }
         return measurements;
     }

@@ -86,6 +86,7 @@ class JmhMeasurementMapperTest {
     private static StoredMeasurement map(JmhResult result) {
         return JmhMeasurementMapper.toMeasurement(
             result, "p", "r", Instant.parse("2026-08-19T09:00:00.000Z"), Map.of(),
-            "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json");
+            "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json",
+            "main/jmh/ts/com.example.Bench.method-Throughput");
     }
 }

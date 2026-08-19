@@ -26,7 +26,15 @@ public record StoredMeasurement(
     Map<String, String> tags,
     String resultPath,
     String resultJsonKey,
-    String environmentJsonKey
+    String environmentJsonKey,
+    /**
+     * S3 prefix holding this measurement's profiling artifacts, or null when the run produced
+     * none. A prefix rather than the previous name-to-key map: listing it yields every artifact,
+     * the field stays one bounded string however many the profiler emits, and callers do not have
+     * to re-derive JMH's {@code -Throughput}-style directory suffix, which is exactly the kind of
+     * hand-encoded key that returns nothing instead of failing to compile.
+     */
+    String profilerOutputPath
 ) {
     public StoredMeasurement {
         require(project, "project");
@@ -54,12 +62,12 @@ public record StoredMeasurement(
     public StoredMeasurement withTags(Map<String, String> newTags) {
         return new StoredMeasurement(project, requestId, createdAt, kind, benchmarkClass,
             benchmarkMethod, mode, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
-            newTags, resultPath, resultJsonKey, environmentJsonKey);
+            newTags, resultPath, resultJsonKey, environmentJsonKey, profilerOutputPath);
     }
 
     public StoredMeasurement withBenchmarkClass(String newBenchmarkClass) {
         return new StoredMeasurement(project, requestId, createdAt, kind, newBenchmarkClass,
             benchmarkMethod, mode, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
-            tags, resultPath, resultJsonKey, environmentJsonKey);
+            tags, resultPath, resultJsonKey, environmentJsonKey, profilerOutputPath);
     }
 }

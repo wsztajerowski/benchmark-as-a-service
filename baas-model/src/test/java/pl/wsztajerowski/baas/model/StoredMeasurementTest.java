@@ -71,7 +71,8 @@ class StoredMeasurementTest {
             Map.of(),
             "main/jmh/20260817_220706",
             "main/jmh/20260817_220706/jmh-result.json",
-            "main/jmh/20260817_220706/environment.json");
+            "main/jmh/20260817_220706/environment.json",
+            "main/jmh/20260817_220706/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput");
 
         assertThat(m.createdAt()).isEqualTo(Instant.parse("2026-08-17T22:07:06.123Z"));
     }

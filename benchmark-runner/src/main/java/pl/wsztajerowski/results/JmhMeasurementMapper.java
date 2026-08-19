@@ -20,7 +20,8 @@ public final class JmhMeasurementMapper {
 
     public static StoredMeasurement toMeasurement(
         JmhResult result, String project, String requestId, Instant createdAt,
-        Map<String, String> tags, String resultPath, String resultJsonKey, String environmentJsonKey) {
+        Map<String, String> tags, String resultPath, String resultJsonKey, String environmentJsonKey,
+        String profilerOutputPath) {
 
         String fullyQualified = result.benchmark();
         int lastDot = fullyQualified.lastIndexOf('.');
@@ -46,7 +47,8 @@ public final class JmhMeasurementMapper {
             tags,
             resultPath,
             resultJsonKey,
-            environmentJsonKey);
+            environmentJsonKey,
+            profilerOutputPath);
     }
 
     /**

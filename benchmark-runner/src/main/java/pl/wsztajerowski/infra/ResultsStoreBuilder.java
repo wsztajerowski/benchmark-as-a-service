@@ -28,6 +28,7 @@ public class ResultsStoreBuilder {
     private URI connectionString;
     private boolean noDatabase;
     private URI dynamoDbEndpoint;
+    private DynamoDbClient dynamoDbClient;
 
     private ResultsStoreBuilder() {
     }
@@ -53,6 +54,18 @@ public class ResultsStoreBuilder {
 
     public ResultsStoreBuilder withDynamoDbEndpoint(URI dynamoDbEndpoint) {
         this.dynamoDbEndpoint = dynamoDbEndpoint;
+        return this;
+    }
+
+    /**
+     * Supplies a ready-made client instead of constructing one. Without this, {@code build()}
+     * resolves the region from the ambient environment — IMDS on the runner, {@code AWS_REGION} in
+     * CI — which a test machine has neither of. Tests and LocalStack callers pass a configured
+     * client here rather than the builder defaulting a region, which would mask a genuine
+     * misconfiguration in production.
+     */
+    public ResultsStoreBuilder withDynamoDbClient(DynamoDbClient dynamoDbClient) {
+        this.dynamoDbClient = dynamoDbClient;
         return this;
     }
 
@@ -83,11 +96,14 @@ public class ResultsStoreBuilder {
     }
 
     private ResultsStore dynamoDbStore() {
+        logger.info("Using DynamoDB results store - table: {}", tableName);
+        if (dynamoDbClient != null) {
+            return new DynamoDbResultsStore(dynamoDbClient, tableName);
+        }
         var clientBuilder = DynamoDbClient.builder();
         if (dynamoDbEndpoint != null) {
             clientBuilder.endpointOverride(dynamoDbEndpoint);
         }
-        logger.info("Using DynamoDB results store - table: {}", tableName);
         return new DynamoDbResultsStore(clientBuilder.build(), tableName);
     }
 

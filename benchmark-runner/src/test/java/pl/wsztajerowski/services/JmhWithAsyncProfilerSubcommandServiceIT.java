@@ -84,14 +84,14 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         // then
         String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
         helper.assertFindResult(collectionName, all(), documents ->
-            // Profiler outputs are no longer mirrored into the stored item — they live under the
-            // run's result path in S3, which the bucket assertion below covers. The item records
-            // where to look.
+            // The item points at the prefix rather than listing each artifact; the bucket
+            // assertion below confirms the files actually landed under it.
             assertThat(documents.first())
                 .isNotNull()
                 .extracting("measurement", as(MAP))
-                .containsEntry("resultPath", "test-1")
                 .containsEntry("benchmarkMethod", "incrementUsingSynchronized")
+                .containsEntry("profilerOutputPath",
+                    "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput")
         );
 
         // and

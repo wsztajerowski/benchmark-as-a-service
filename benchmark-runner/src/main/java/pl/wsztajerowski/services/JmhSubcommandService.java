@@ -68,7 +68,8 @@ public class JmhSubcommandService {
 
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
         List<StoredMeasurement> measurements = JmhRunResults.uploadJsonAndMap(
-            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput());
+            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
+            JmhRunResults.NO_PROFILER_OUTPUT);
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
         resultsStore.write(measurements);

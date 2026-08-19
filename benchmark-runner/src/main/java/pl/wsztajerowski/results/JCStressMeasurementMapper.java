@@ -32,7 +32,8 @@ public final class JCStressMeasurementMapper {
             tags,
             resultPath,
             null,
-            environmentJsonKey);
+            environmentJsonKey,
+            null);
     }
 
     /**
