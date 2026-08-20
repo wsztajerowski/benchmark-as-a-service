@@ -4,9 +4,21 @@ The infrastructure is split into two stacks. Run commands from this directory.
 
 ## Stack 1: `baas-core` — shared infrastructure
 
-Deploys networking (VPC, subnet, IGW, S3 gateway endpoint, security group), the S3 working
-bucket, the EC2 runner IAM role, and the EC2 Image Builder resources that bake the runner AMI.
-This is the same stack that `baas admin setup` deploys on a user's account.
+Deploys networking (VPC, subnet, IGW, S3 and DynamoDB gateway endpoints, security group), the S3
+working bucket, the DynamoDB results table, the EC2 runner IAM role, and the EC2 Image Builder
+resources that bake the runner AMI. This is the same stack that `baas admin setup` deploys on a
+user's account.
+
+**The results table** (`baas-<prefix>-results`, output as `ResultsTableName`) is on-demand billed,
+keyed `pk`/`sk`, with one GSI `requestId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
+it is `DeletionPolicy: Retain` / `UpdateReplacePolicy: Retain` — benchmark history outlives any
+single stack — which means a teardown leaves it behind and the next `setup` for the same caller
+fails on the name. `baas admin setup` pre-checks for exactly that and says how to recover.
+
+Runners reach it through a **gateway** endpoint, associated with the runner subnet's route table.
+Gateway, not interface: gateway endpoints are free, interface endpoints carry an hourly charge, and
+this project's standing cost is a thing to defend. A template test asserts no interface endpoint for
+DynamoDB is ever added.
 
 **The Image Builder half** — `Component`, `ImageRecipe`, `InfrastructureConfiguration`,
 `DistributionConfiguration`, `ImagePipeline`, plus an `ImageBuildRole` + instance profile — holds
@@ -109,10 +121,15 @@ standing policy for routine benchmark runs.
 
 **It is rendered per identity, not shared.** Every resource it names derives from the caller's
 account, region and ARN-hash prefix — `baas-<prefix>` for the bucket, `<prefix>-runner-role` for
-the role, `/<prefix>/mongo/…` for the parameter. [`deployer-policy.json`](./deployer-policy.json)
+the role, `baas-<prefix>-results` for the table. [`deployer-policy.json`](./deployer-policy.json)
 is therefore a *template* carrying `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders, and
 must never be attached in that form. Two callers get two different policies, and neither can reach
-the other's stack, bucket or parameter.
+the other's stack, bucket, table or parameter.
+
+It covers the table's **lifecycle only** — `CreateTable`, `DeleteTable`, `UpdateTable`,
+`Describe*`, tagging — and deliberately not its data. A deployer cannot read or write measurements
+with it; that is the operator role's job, and migrating data needs a principal holding
+`BatchWriteItem`, which neither identity has by default.
 
 This one **cannot** be created by the core stack itself — you need deployer permissions
 *before* the stack exists in order to create it, so CloudFormation can never be the thing
@@ -184,7 +201,9 @@ one has no bootstrap problem — by the time the core stack is being deployed, t
 already holds deployer privileges, so it's safe (and more precise) for the stack to create
 this identity itself, as the `OperatorRole` resource (`AWS::IAM::Role`) in
 `cf-template-core.yaml`, scoped exactly to that stack's own `S3MainBucket`, `RunnerRole`,
-and mongo SSM parameter path — no wildcards needed, since CloudFormation knows those ARNs.
+results table and SSM parameter paths — no wildcards needed, since CloudFormation knows those ARNs.
+On the table it holds `Query` and `GetItem`, on the table **and** its index, and no write action at
+all: a command that reads results has no business putting them.
 
 It's a **role**, not a policy attached directly to a user: whoever runs `baas run` assumes
 it via `sts:AssumeRole` for a time-boxed session (1–12h) rather than holding permanent
@@ -261,18 +280,23 @@ carrying that condition would evaluate false for the other five and deny the who
 the instance-type constraint lives on an instance-scoped statement and the supporting
 resources get their own.
 
-## MongoDB Atlas connectivity
+## MongoDB Atlas connectivity — historical
 
-The runner reaches Atlas over the public internet on **TCP 27017** (Atlas does not serve
-clients on 443). `RunnerSecurityGroup` allows that egress.
+**Nothing connects to Atlas any more.** Measurements go to the DynamoDB results table over the
+gateway endpoint, and no Atlas credential reaches an instance.
 
-Runner instances get an **ephemeral public IP per run** — there is no NAT gateway and no
-Elastic IP — so there is no stable address to add to the Atlas IP Access List. In practice
-this means the Access List entry has to be `0.0.0.0/0`, with access controlled by the
-connection string's credentials rather than by network. If that is unacceptable for your
-deployment, the private-networking profile (private subnet + NAT gateway + Atlas
-PrivateLink, which needs a paid M10+ tier) is the alternative; it is out of scope for v1
-and costs roughly $32/month standing.
+`RunnerSecurityGroup` still allows egress on **TCP 27017**, and that is deliberate rather than
+leftover: until the Atlas cluster is decommissioned, reverting the cutover has to stay possible, and
+a reverted runner without that rule fails at the database write with no hint as to why. The rule and
+the cluster go together (`openspec/changes/dynamodb-results-store` §14).
+
+For the record, while it was live: Atlas does not serve clients on 443, and runner instances get an
+**ephemeral public IP per run** — no NAT gateway, no Elastic IP — so there was no stable address to
+add to the IP Access List. The entry was `0.0.0.0/0`, with access controlled by the connection
+string's credentials rather than by network. That was the standing argument for the
+private-networking profile (private subnet + NAT gateway + PrivateLink, needing a paid M10+ tier,
+roughly $32/month); with DynamoDB reached over a gateway endpoint, a private subnet no longer needs
+egress at all for the store.
 
 ## Debugging a failed run
 

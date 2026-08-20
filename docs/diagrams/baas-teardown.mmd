@@ -6,7 +6,7 @@ sequenceDiagram
     participant CF as AWS CloudFormation
     participant SSM as AWS SSM
 
-    Note over User,SSM: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack only. The CI stack and the MongoDB cluster are untouched.
+    Note over User,SSM: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack only. The CI stack, the results table and the<br/>MongoDB cluster are untouched.
     User->>TD: baas admin teardown [--stack-name] [--yes] [--delete-bucket]
     Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else aws.coreStackName from config
 
@@ -55,4 +55,5 @@ sequenceDiagram
     opt bucket was retained
         TD-->>User: warn: `baas admin setup` as this identity will FAIL while the bucket<br/>exists -- its name is a hash of your caller ARN, so the next setup asks<br/>for the same name. Delete it by hand or re-run with --delete-bucket.
     end
-    TD-->>User: "MongoDB cluster NOT touched (connect-only)" and exit 0
+    Note over TD: name BOTH retained resources -- a setup that trips over one<br/>and then the other is two rounds of the same opaque error
+    TD-->>User: "S3 bucket retained" (unless --delete-bucket),<br/>"DynamoDB results table retained -- there is no flag to delete it;<br/>benchmark history outlives the stack",<br/>"MongoDB cluster NOT touched (connect-only)" and exit 0

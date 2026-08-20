@@ -2,7 +2,8 @@
 
 - **Status:** Accepted — implemented and verified end-to-end against AWS
 - **Date accepted:** 2026-05 (design), implemented through 2026-07
-- **Amended by:** `openspec/changes/baas-cli-core-ci-split/`, `openspec/changes/baas-infra-hardening/`
+- **Amended by:** `openspec/changes/baas-cli-core-ci-split/`, `openspec/changes/baas-infra-hardening/`,
+  `openspec/changes/dynamodb-results-store/` (measurements moved off MongoDB — see *Superseded*)
 - **Supersedes:** `docs/redesign.md` (removed; this ADR is its distillation)
 
 ## Context
@@ -59,13 +60,20 @@ does not explain itself — change them only deliberately.
 | async-profiler is downloaded from GitHub on the instance | Public egress already exists; pre-staging it in S3 or adding a NAT gateway buys nothing. |
 | The benchmark runs from `/app`, never from `/` | The runner scans below its working directory for `.log` files to upload. cloud-init starts user-data in `/`, so that walk covers the whole root filesystem and aborts on `/proc` entries that vanish mid-walk. |
 | Three independent termination layers | Process `timeout`; a background shell watchdog that fires even if the JVM deadlocks; a CLI shutdown hook for Ctrl+C. Any one of them alone leaves a way to orphan an instance. |
-| The Mongo URI is never placed in user-data | It is fetched from SSM at runtime so it stays out of instance metadata and CI logs. |
-| An empty or unset Mongo URI selects `NoOpDatabaseService` | Benchmarks still run; measurements are discarded rather than failing the run. Useful for infrastructure testing, dangerous to hit unintentionally. |
-| `benchmark-runner.jar` needs no code changes | It already reads `MONGO_CONNECTION_STRING`. The migration changed only where that value comes from. |
+| The Mongo URI is never placed in user-data | It is fetched from SSM at runtime so it stays out of instance metadata and CI logs. **Superseded** — there is no Mongo URI on the `baas run` path at all; the results table name travels in user-data, carrying no credentials. |
+| An empty or unset Mongo URI selects `NoOpDatabaseService` | Benchmarks still run; measurements are discarded rather than failing the run. Useful for infrastructure testing, dangerous to hit unintentionally. **Superseded** — it was hit unintentionally, so absent store configuration is now a hard failure and discarding takes an explicit `--no-database`. |
+| `benchmark-runner.jar` needs no code changes | It already reads `MONGO_CONNECTION_STRING`. The migration changed only where that value comes from. **Superseded** — the runner gained a storage-neutral `ResultsStore` port with DynamoDB, MongoDB and no-op adapters. |
 | The CloudFormation template ships as a classpath resource | `baas admin setup` has no external file dependency. Only the core template ships; CI templates and policy JSONs are test fixtures. |
 | `baas run` builds in the current working directory | That is the user's benchmark project, not this repo. |
 
 ## Risks
+
+**Superseded since acceptance:** measurements no longer go to MongoDB. `openspec/changes/dynamodb-results-store/`
+replaced it with a DynamoDB table reached over a gateway endpoint, one item per measurement, queried
+by `baas results` without a driver on the CLI side. That closes the two database rows in the table
+above and retires most of what this ADR assumed about an external database — a store selection is now
+mandatory, and MongoDB survives only as a runner-local adapter for standalone use. Atlas is retained,
+readable and unwritten until that change's §14 decommissions it.
 
 **Closed since acceptance:**
 
@@ -95,7 +103,8 @@ code disagree, **the code wins**.
   identity never needs `iam:CreateOIDCProvider`. Commands moved under `baas admin`.
   (`openspec/changes/baas-cli-core-ci-split/`)
 - **Atlas is reached on TCP 27017, not 443.** The original security group allowed only 443/80,
-  which meant every run failed at the database write.
+  which meant every run failed at the database write. Now moot: nothing connects to Atlas, and the
+  rule survives only to keep the cutover revertible until the cluster is decommissioned.
 - **Bucket naming and retention.** The bucket is `baas-<prefix>`, declared
   `DeletionPolicy: Retain`. Because the prefix is a hash of the caller's ARN, a retained bucket
   blocks any later `setup` — so `baas admin teardown --delete-bucket` empties and deletes it

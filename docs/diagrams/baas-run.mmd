@@ -5,12 +5,15 @@ sequenceDiagram
     participant S3 as AWS S3
     participant SSM as AWS SSM
     participant EC2 as AWS EC2
-    participant DB as MongoDB
+    participant DDB as DynamoDB results table
 
-    User->>RC: baas run <type> [params] [--instance-type] [--timeout] [--skip-build] [--ami-id]
+    User->>RC: baas run <type> [params] [--instance-type] [--timeout] [--skip-build] [--ami-id]<br/>[--project] [--tag k=v] [--no-database]
     Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() from ~/.baas/config.yaml
-    RC->>Sub: git rev-parse --abbrev-ref HEAD
-    Sub-->>RC: current branch name
+    RC->>Sub: git rev-parse --show-toplevel
+    Sub-->>RC: repo root -> project name, or "not a git repository"
+    Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project outside a repo -> exit 1.<br/>No table in config and no --no-database -> exit 1 naming<br/>`baas config sync`. Absent config is never a silent no-op:<br/>discarding measurements takes --no-database by name.
+    RC->>Sub: git rev-parse --abbrev-ref HEAD, git rev-parse HEAD
+    Sub-->>RC: branch name, commit sha
     RC->>SSM: ssm.getParameter(/<prefix>/runner/ami-id)
     SSM-->>RC: amiId, or ParameterNotFound
     RC->>EC2: ec2.describeImages(amiId)
@@ -23,7 +26,8 @@ sequenceDiagram
     Note over RC: generate requestId = type-yyyyMMdd_HHmmss<br/>resultPath = branch/type/yyyyMMdd_HHmmss
     RC->>S3: s3.putObject(bucket, runs/requestId/benchmark.jar)
     S3-->>RC: PutObjectResponse
-    Note over RC: UserDataScriptBuilder.build() -- installs NOTHING;<br/>the toolchain is baked into the AMI.<br/>Script captures environment.json + packages.txt and uploads<br/>them BEFORE the benchmark, so a crash still leaves a record,<br/>downloads benchmark-runner.jar from S3 or GitHub Releases,<br/>fetches MONGO_CONNECTION_STRING from SSM,<br/>runs: timeout N java -jar benchmark-runner.jar type<br/>--tag imageVersion=... --tag instanceType=... ...<br/>writes run-status sentinel to S3<br/>self-terminates the EC2 instance
+    Note over RC: buildRunnerTags(): project, commit, type + every --tag.<br/>A --tag naming a machine-observed key (imageVersion,<br/>instanceType, jdk, cpuModel, cpuArch, type) is REJECTED --<br/>those come from the instance, so a result's tags can never<br/>disagree with its own environment.json.
+    Note over RC: UserDataScriptBuilder.build() -- installs NOTHING;<br/>the toolchain is baked into the AMI.<br/>Script captures environment.json + packages.txt and uploads<br/>them BEFORE the benchmark, so a crash still leaves a record,<br/>downloads benchmark-runner.jar from S3 or GitHub Releases,<br/>carries the results table name in user-data (no credential,<br/>so no SSM round trip -- RunnerRole grants the access),<br/>runs: timeout N java -jar benchmark-runner.jar type<br/>--results-table T (or --no-database) --tag ... <br/>writes run-status sentinel to S3<br/>self-terminates the EC2 instance
     RC->>EC2: ec2.runInstances(amiId, instanceType, subnetId, sgId, instanceProfile, userData, tags)
     Note over EC2: min=1 max=1<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: baas-role=benchmark-runner
     EC2-->>RC: instanceId
@@ -32,8 +36,7 @@ sequenceDiagram
         RC->>S3: s3.getObjectAsBytes(resultPath/run-status)
         S3-->>RC: completed or failed:N or absent -- sleep 15s and retry
     end
-    RC->>SSM: ssm.getParameter(/<prefix>/mongo/connection-string, withDecryption=true)
-    SSM-->>RC: mongoUri
-    RC->>DB: find({_id.requestId: requestId}) on jmh_benchmarks
-    DB-->>RC: BENCHMARK | MODE | SCORE | ERROR | UNIT
-    RC-->>User: print results table and exit 0
+    Note over RC: --no-database: nothing was stored, so nothing to show.<br/>A benchmark that already ran is never reported as failed<br/>because the summary could not be fetched.
+    RC->>DDB: Query on requestId-index (gsi1pk = requestId)
+    DDB-->>RC: one item per measurement
+    RC-->>User: print BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ERROR | UNIT and exit 0

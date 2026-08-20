@@ -20,8 +20,8 @@ in particular runner-JAR checksum verification and the shared `RunnerRole`.
 
 ## Status
 
-**Nothing in this file has been fixed yet.** The walkthrough started with baas-cli at the user's
-request; S4 there is the only item addressed so far.
+The walkthrough started with baas-cli at the user's request. Nothing here has been fixed *by the
+walkthrough*; A4 was partly addressed as a side effect of `dynamodb-results-store`.
 
 | # | ID | Finding | Sev | Status |
 |---|-----|---------|-----|--------|
@@ -30,7 +30,7 @@ request; S4 there is the only item addressed so far.
 | 3 | S3 | `WorkflowRole` `RunInstances` on `*`, no type or region conditions | High | Open |
 | 4 | A1 | Four copy-pasted services diverged — only jmh uploads `logs/*.log` | Med | Open |
 | 5 | A2 | Unbounded log walk; no `visitFileFailed`; filename collisions | Med | Open |
-| 6 | A4 | S3 upload before Mongo persist — transient error discards paid results | Med | Open |
+| 6 | A4 | S3 upload before store write — transient error discards paid results | Med | **Partly addressed** |
 | 7 | A10 | CI hardcodes `baas-lynx-main`, unreachable by the prefix scheme | Low | Open |
 | 8 | D3 | `ASYNC_PATH` unset in PR CI → async test silently skipped | Low | Open |
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | Open |
@@ -115,7 +115,7 @@ against that walking all of `/` lives in a shell script in a *different Maven mo
 `visitFileFailed`. The CLI-side invariant then becomes a convenience rather than load-bearing.
 Fix together with A1 — same code path.
 
-## 6. A4 — the expensive artifact is persisted last · Med
+## 6. A4 — the expensive artifact is persisted last · Med · **Partly addressed**
 
 `JmhSubcommandService.executeCommand()` uploads process output and logs to S3 *before* writing
 measurements to Mongo, so a transient S3 error throws away the result of a benchmark that just cost
@@ -127,6 +127,26 @@ logs and continues.
 Related, smaller: `DocumentDbService.save` uses `insert`, so re-running with the same `requestId`
 fails on duplicate key rather than upserting; and results are saved one at a time with no batching
 or transaction, so a mid-loop failure leaves a partial set.
+
+**Partly addressed** by `dynamodb-results-store` — the two "related, smaller" points are closed,
+the main ordering point is not, and was deliberately decided the other way:
+
+- **Idempotent, not duplicate-key-failing.** `insert` is gone. Every write is a `PutItem` keyed on
+  `(pk, sk)` derived from the measurement, so re-running the same `requestId` overwrites. Covered
+  by an integration test asserting a repeated write leaves the item count unchanged.
+- **Batched, not one at a time.** The DynamoDB adapter writes a run's measurements in batches and
+  retries unprocessed items with backoff. A write that ultimately fails exits non-zero rather than
+  leaving a silent partial set.
+- **S3 still goes first, on purpose.** All four subcommand services now order S3-then-store
+  explicitly. The reasoning inverted once the verbatim result JSON existed: the stored item points
+  at `resultJsonKey`, so writing the item first could publish a row referencing an object that was
+  never uploaded. S3 artifacts surviving a failed store write is recoverable — the same run's data
+  is still in the bucket, and the migration path can re-derive from it; a dangling key is not. An
+  integration test asserts exactly that: a store failure exits non-zero **and** leaves the S3
+  artifacts intact.
+
+So the paid-result-discarded risk is reduced rather than removed: a store failure still loses the
+measurement row, but no longer loses the artifacts, and no longer half-writes a run.
 
 ## 7. A10 — CI and CLI disagree on naming · Low
 

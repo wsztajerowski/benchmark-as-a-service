@@ -30,16 +30,16 @@ the `baas run` project-layout assumption, and distribution mechanism.
 | 1 | S4 | Deployer policy is an escalation primitive | High | **Partly fixed / partly accepted** |
 | 2 | S5 | User-data built by concatenation, one value of eleven escaped | Med | Open |
 | 3 | S6 | `eval` on benchmark parameters | Med | Open |
-| 4 | S7 | `RunnerRole` can delete the entire results history | Med | Open |
+| 4 | S7 | `RunnerRole` can delete the entire results history | Med | **Partly fixed** |
 | 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Open |
 | 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Open |
-| 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | Open |
+| 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | **Fixed** |
 | 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | **Fixed** |
 | 9 | A7 | Runner-JAR discovery hardcodes the upstream repo | Med | Open |
 | 10 | A6 | Config: silent unknown keys, no schema version, stale default | Low | Open |
 | 11 | A9 | `requestId` collides at second granularity | Low | Open |
-| 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | Open |
-| 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | Open |
+| 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | **Fixed** |
+| 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
 
 **Next up: S5.**
@@ -122,6 +122,11 @@ arbitrary user JAR, which inherits the instance profile.
 **Proposed fix:** drop `s3:DeleteObject` — `S3StorageService` only ever calls `putObject`.
 Optionally scope `PutObject` to `${RESULT_PATH}/*`.
 
+**Partly fixed** by `dynamodb-results-store`. `RunnerRole`'s grant on the results table is
+`dynamodb:PutItem` + `BatchWriteItem` and nothing else — no `Scan`, no single-item `DeleteItem` —
+asserted by a template test, so the runner can no longer sweep the measurement history it writes
+to. Its S3 access to the bucket is unchanged, so the finding does not close.
+
 ## 5. S8 — self-termination can terminate everyone else's runs · Med
 
 `${ResourceNamePrefix}-runner-ec2-terminate-policy` (~line 222-231) and the operator equivalent
@@ -150,6 +155,15 @@ filtering, grouping or max-selection.
 
 **Decide:** implement it (it was `benchmark_overview.sh`'s behaviour, now retired) or correct the
 doc. Actively misleading either way. `queryAll()` is also unpaginated.
+
+**Fixed** by `dynamodb-results-store`. `ResultsQueryService` was rewritten against the results
+table and now does all three: `exclude_from_results` is a server-side filter expression, grouping
+by `(benchmark, <group-tag>)` keeps the highest score per group, and the group tag defaults to
+`branch`. Rows carrying no group tag are bucketed rather than dropped — dropping them was how the
+retired script lost early runs. `--all` opts out of grouping, `--limit` bounds the output, and
+`--tag`/`--benchmark-name`/`--living-branches`/`--request-id`/`--project` cover the rest of what
+the doc claimed. Unit tests cover grouping and best-score selection, including the same benchmark
+under two group values.
 
 ## 8. A8 — `yum update -y` on every boot · Med · **Fixed**
 
@@ -218,6 +232,15 @@ second still do. A short random suffix closes it.
 with a different message inside `ResultsQueryService`. Both belong on `BaasConfig` or a small
 `MongoUri` value type.
 
+**Fixed** by `dynamodb-results-store`, by deletion rather than by extraction: `baas-cli` no longer
+speaks MongoDB at all, so all three copies of `validateMongoUri` are gone along with `--mongo-uri`
+itself. The duplicate-logic half of this finding is closed outright.
+
+`RunCommand.operatorCredentialsWarning` **remains** a public static called from sibling commands,
+now from two callers rather than four — `ConfigShowSubcommand` and `ConfigSetSubcommand` both
+dropped it when their AWS calls went away. Still worth moving to `BaasConfig`; no longer worth its
+own change.
+
 ## 13. A3 — Mongo schema read by raw string paths · Low
 
 `ResultsQueryService` reaches into documents by string (`"_id.requestId"`,
@@ -225,6 +248,14 @@ with a different message inside `ResultsQueryService`. Both belong on `BaasConfi
 Rename a field there and `baas results` reports `0.000` rather than failing. Spans both modules —
 the fix may belong in the runner (shared entity module) or here (one integration test that writes
 with the runner's mapper and reads with this query service).
+
+**Fixed** by `dynamodb-results-store`, via the shared-module route. `baas-model` now owns the
+stored shape (`StoredMeasurement`), the key encoding (`ResultKeys`) and the item layout
+(`MeasurementItemMapper`), and both the CLI and the runner depend on it. Neither side names an
+attribute by a locally-declared literal, so a rename breaks compilation instead of returning
+`0.000` — the exact failure mode this finding described. The key names are also asserted from
+`baas-model`'s constants by `CoreTemplateTest` against the CloudFormation table definition, so a
+rename cannot silently desync the schema from the infrastructure either.
 
 ## 14. S11 — smaller hardening · Low
 

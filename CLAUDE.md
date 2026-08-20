@@ -9,13 +9,14 @@ and anything `--help` or a template file will tell you are omitted on purpose. D
 
 ## What this is
 
-Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to MongoDB; process
-output and profiling artifacts go to S3.
+Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to a DynamoDB table,
+one item per measurement; process output, the verbatim result JSON and profiling artifacts go to S3.
 
 | Module | Runs where |
 |---|---|
 | `baas-cli` | **Your laptop.** Provisions infrastructure, launches runners, polls for results. `pl.wsztajerowski.baas.BaasApp` |
-| `benchmark-runner` | **The EC2 instance.** Executes benchmarks, uploads to S3, writes to MongoDB. `pl.wsztajerowski.commands.TestWrapper` |
+| `benchmark-runner` | **The EC2 instance.** Executes benchmarks, uploads to S3, writes measurements to the results table. `pl.wsztajerowski.commands.TestWrapper` |
+| `baas-model` | The stored measurement shape, the key encoding and the tag vocabulary — shared by the CLI and the runner so the two cannot drift. No MongoDB dependency, enforced by the build |
 | `fake-jmh-benchmarks`, `fake-stress-tests` | Test fixtures |
 
 Two trigger paths: `baas run` (supported, no GitHub Actions anywhere in it) and
@@ -60,8 +61,16 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
 - **The benchmark runs from `/app`, never `/`.** The runner scans below its working directory for
   `.log` files to upload; cloud-init starts user-data in `/`, so that walk covers the whole root
   filesystem and aborts on `/proc` entries that vanish mid-walk.
-- **The mongo URI never goes into user-data.** Fetched from SSM at runtime so it stays out of
-  instance metadata and CI logs.
+- **The results table name *does* go into user-data, and that is deliberate.** It replaced an SSM
+  fetch of the mongo connection string, which had to stay out of instance metadata because it
+  carried credentials. A table name carries none — access comes from `RunnerRole`, not from knowing
+  the name — so fetching it at boot would buy nothing and cost a round trip on every run. Don't
+  "restore" the SSM indirection.
+- **`baas run` forwards `project`, `commit` and every `--tag` to the *runner*, not just to the
+  instance.** They reach `benchmarkMetadata.tags`, which is the only query surface `baas results`
+  has. A caller `--tag` for a machine-observed key (`imageVersion`, `instanceType`, `jdk`,
+  `cpuModel`, `cpuArch`, `type`) is rejected outright rather than dropped or allowed to win — the
+  same rule that keeps a result's tags from disagreeing with its own `environment.json`.
 
 **Three termination layers, all required.** Any one alone leaves a way to orphan a paid instance.
 The watchdog is the only one that survives a deadlocked JVM.
@@ -116,8 +125,12 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 - **S3 upload paths are request-ID-scoped** (`runs/<requestId>/…`). Without it, two developers on
   the same branch overwrite each other's JARs mid-run.
-- **`RunnerSecurityGroup` needs egress on TCP 27017.** Atlas is *not* reachable over 443; omitting
-  27017 makes every run fail at the database write.
+- **`RunnerSecurityGroup`'s TCP 27017 egress is now vestigial, and still present on purpose.**
+  Nothing uses it since the DynamoDB cutover — the runner reaches the table over the gateway
+  endpoint. It survives only until Atlas is decommissioned, because until then reverting the
+  cutover has to remain possible, and a reverted runner that cannot reach 27017 fails at the
+  database write. Remove it with the Atlas cluster, not before
+  (`openspec/changes/dynamodb-results-store` §14).
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.
@@ -133,15 +146,26 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 - **`baas run` has no local mode.** It always provisions EC2. The only no-cost way to exercise the
   runner is `./jmh-with-profiler.sh` / `./jmh-with-async.sh` against LocalStack.
-- **Measurements live only in MongoDB.** There is no `result.json`. An empty or unset mongo URI
-  selects `NoOpDatabaseService`, so the run reports success and the numbers are discarded.
+- **Measurements live in DynamoDB, and a verbatim `jmh-result.json` now exists in S3.** The item
+  carries what a table view needs; `rawData` and `scorePercentiles` are dropped from it and are
+  recoverable only from that JSON, via `baas download <result-path>`.
+- **Absent store configuration is a hard failure, not a silent no-op.** `baas run` resolves the
+  table before the Maven build and before any upload, and `benchmark-runner` rejects a missing
+  selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
+  behaviour — unset URI selects a no-op store, run reports success, numbers vanish — is gone, and
+  reintroducing any fallback brings it back.
+- **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
+  `benchmark-runner` keeps one, selectable by `--mongo-connection-string`, purely so the JAR still
+  works standalone against a user's own MongoDB. BaaS itself never selects it.
 - **`ASYNC_PATH` gates async coverage.** `JmhWithAsyncProfilerSubcommandServiceIT` is annotated
   `@EnabledIfEnvironmentVariable(named = "ASYNC_PATH", ...)`, so a plain `mvn verify` **silently
   skips** the only test exercising async-profiler end to end. Export it before trusting a green
   build on profiler changes. Same variable `jmh-with-async.sh` needs, since `--async-path`
   otherwise defaults to the on-instance path.
-- **`MONGO_CONNECTION_STRING` is not a GHA secret.** `exec-single-benchmark.yml` reads it from SSM
-  at `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and exits 1 if absent or empty.
+- **The GitHub Actions path still writes to MongoDB.** `exec-single-benchmark.yml` reads
+  `MONGO_CONNECTION_STRING` from SSM at `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` (not a
+  GHA secret) and exits 1 if absent or empty. The DynamoDB cutover covered `baas run` only, so
+  `e2e-cloud-test.yml` results still land in Atlas and `baas results` will not show them.
 - **`baas -v` needs the argv pre-scan, not just the execution-strategy hook.**
   `LoggingMixin.applyEarlyVerbosity` in `BaasApp.main` looks redundant next to the
   `TestWrapper`-style hook, but SimpleLogger pins a logger's level when the logger is constructed,
@@ -164,8 +188,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   and `RunCommand.call()` is executed by no test at all. Verification of the baked image is manual
   (`openspec/changes/archive/2026-08-14-prebaked-runner-ami/tasks.md` §11).
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
-  `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`. The local act
-  E2E additionally needs `/baas/mongo/connection-string` as a SecureString.
+  `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
+  table if you want one. The local act E2E additionally needs `/baas/mongo/connection-string` as a
+  SecureString, since the GHA path it exercises still writes to Mongo.
 - **Nothing in CI invokes `scripts/`.** `release.yml` builds its semantic-release config inline and
   shells out only to `mvn`, so CI does not protect those three utilities.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
@@ -186,11 +211,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   `fake-stress-tests` shaded JARs already in the local repo (`classifier=shaded`). Run the full
   reactor first.
 - **JUnit 6** (`6.0.2`) and **Testcontainers 2.x** — both differ from the versions you'd assume.
-  Integration tests pin `mongo:7.0.5`.
+  Integration tests pin `mongo:7.0.5`; DynamoDB runs on LocalStack. One store contract suite runs
+  against both adapters — a behavioural difference between them is a test failure, not a discovery.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
 - **The mongo connection string must include a database name** (`mongodb://host:port/dbname`),
-  enforced in `DatabaseServiceBuilder`.
+  enforced in `ResultsStoreBuilder` — which is runner-side only; the CLI no longer validates or
+  even accepts one.
 - **Morphia auto-maps everything under `pl.wsztajerowski.entities`** — new entity classes must live
   there.
 - **`pom.xml` version stays `0.0.0-semantically-released`.** Never bump it by hand; `release.yml`
@@ -265,6 +292,7 @@ profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The non-ob
 | `run-status` | Sentinel written by user-data: `completed` or `failed:<exitCode>`. This is what the CLI polls. |
 | `cloud-init-output.log` | Runner boot log, uploaded before self-termination — start here when a run fails before producing output |
 | `environment.json` | The environment the run measured on: `schemaVersion`, image version + AMI, instance type, CPU model/topology, memory, OS + kernel, JVM and tool versions, kernel tunables. Written **before** the benchmark, so it survives a failed run. Read by `baas env diff`. |
+| `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/*.log` | Any `.log` found *below the working directory* (hence the `/app` invariant) |
 | `runs/<requestId>/` | Separate top-level prefix holding uploaded inputs, not results |
@@ -275,24 +303,63 @@ observation is strictly richer — it carries what the image cannot control (ins
 model, resolved patch levels) and is the one that answers whether two results are comparable.
 Never infer the environment of a past run from the declaration in the working tree.
 
+## Results table
+
+`baas-<prefix>-results`, DynamoDB, on-demand, `DeletionPolicy: Retain` — benchmark history outlives
+any single stack, which is also why `baas admin setup` pre-checks for a retained table exactly as it
+does for the retained bucket, and why teardown names both.
+
+One item per measurement — per JMH benchmark method, per JCStress *run* (JCStress names only
+non-passing tests, so per-test items would cover failures alone). No derived index items.
+
+| | |
+|---|---|
+| `pk` | `RESULT#<project>` — `project` is the git repo name unless `--project` overrides it |
+| `sk` | `<class>#<method>#<mode>#<timestamp>#<requestId>`, or `JCSTRESS#<timestamp>#<requestId>` |
+| GSI `requestId-index` | `gsi1pk` = request ID; the one access path that is not a project sweep |
+
+`mode` is in the sort key because a `-bm thrpt,avgt` run produces two results whose class and method
+are identical; without it they differ only by a millisecond and one silently overwrites the other.
+Timestamps are fixed-width UTC with exactly three fractional digits — `Instant.toString()` omits
+trailing zeros, which makes keys of differing length that misorder as strings, and that surfaces as
+missing rows rather than as an error.
+
+**Keys are constructed only in `ResultKeys`, items only in `MeasurementItemMapper`**, both in
+`baas-model`. Hand-encoding either elsewhere is how a query returns zero rows instead of failing to
+compile. Non-finite scores are stored as absent: DynamoDB's `N` rejects `NaN`, and JMH reports one
+for any single-iteration run.
+
 ## Result tagging
 
-Runs are tagged `branch`, `type`, `project`, `options=<params>`; non-standard hardware gets
-`exclude_from_results=true`. `baas results` filters that out, groups by `(benchmark, branch)`, and
-keeps the highest-scoring run per group. Tags are a free-form `Map<String,String>` on
-`BenchmarkMetadata` — `exclude_from_results` is a convention, not a field.
+**Tags are the entire query surface.** There is no field-per-dimension: `baas results` filters,
+groups and excludes on tags alone, so anything you want to slice by has to be one.
+
+The vocabulary is defined once, in `baas-model`'s `TagKeys`:
+
+| Group | Keys | Set by |
+|---|---|---|
+| Machine-observed | `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
+| Derived | `type`, `project`, `commit` | `baas run`. `type` is reserved like the observed keys; `project` and `commit` are caller-overridable by design |
+| Convention | `branch`, `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side; it is a convention, not a field |
+
+Unknown keys pass through — `baas results` warns only when a `--tag` names a key no row carries.
+Grouping keeps the highest score per `(benchmark, <group-tag>)`, group tag defaulting to `branch`,
+and rows carrying no group tag are bucketed rather than dropped.
 
 The retired `benchmark_overview.sh` also hard-coded `tags.project: 'lynx-journal'`. `baas results`
-has no such filter, which explains row-count differences against historical output.
+has no such filter, which explains row-count differences against historical output — and migrated
+rows that carried no `project` tag at all are in `unknown-migrated`, deliberately not folded into
+`lynx-journal`, since 36 of them are CI fixture runs against `fake-jmh-benchmarks`.
 
 ## Adding a benchmark type
 
 A subcommand class in `commands/`, a service + builder in `services/`, an options record in
 `services/options/`, and registration in `TestWrapper`'s `subcommands` list.
 
-Storage and database are both optional at runtime: no `--s3-bucket` → `LocalStorageService`; no
-mongo URI → `NoOpDatabaseService`; `AWS_ENDPOINT_URL_S3` or `--s3-service-endpoint` redirects S3 to
-LocalStack.
+Storage is optional at runtime (no `--s3-bucket` → `LocalStorageService`); the results store is
+not. Exactly one of `--results-table`, `--mongo-connection-string` or `--no-database` must be
+named, and both-or-neither is an error. `AWS_ENDPOINT_URL_S3` / `--s3-service-endpoint` and
+`AWS_ENDPOINT_URL_DYNAMODB` / `--dynamodb-endpoint` redirect to LocalStack.
 
 ## Accepted risks
 
@@ -301,12 +368,11 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Area | Position |
 |---|---|
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
-| Atlas IP allowlist | Runners get a fresh public IP per run, so there is no stable address to pin. The access list is `0.0.0.0/0`, gated by connection-string credentials. A private subnet + NAT + PrivateLink needs a paid tier and ~$32/month standing cost. |
+| Atlas IP allowlist | Moot for BaaS since the DynamoDB cutover — no runner connects to Atlas. The `0.0.0.0/0` access list stands until the cluster is decommissioned, and applied while it was live because runners get a fresh public IP per run, so there was no stable address to pin. |
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + 300 s`. Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
 | Runner JAR integrity | Downloaded from GitHub Releases **without checksum verification**. Known open risk. |
-| Shared `RunnerRole` | One SSM path for the mongo URI, so any operator's runner can read it. Fine single-tenant. |
-| MongoDB | Connect-only. `baas` never provisions a cluster. |
+| MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions or selects it. |
 | `baas run` project layout | Assumes a Maven project producing one JAR; `--benchmark-jar` + `--skip-build` covers the rest. |
 | Distribution | Shaded JAR only. Install script, Homebrew tap, jpackage, native image, Docker image were specified but never built — backlog, not decisions. |

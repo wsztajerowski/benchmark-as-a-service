@@ -1,7 +1,8 @@
 # Benchmark as a Service (BaaS)
 
 Run JMH and JCStress benchmarks on throwaway EC2 instances, from one command, on hardware that
-isn't your laptop. Results land in MongoDB; process output and profiling artifacts land in S3.
+isn't your laptop. Measurements land in DynamoDB; process output, the verbatim result JSON and
+profiling artifacts land in S3.
 
 The `baas` CLI provisions its own AWS infrastructure, launches the runner, polls for completion,
 and prints the numbers. It does not need GitHub Actions.
@@ -14,8 +15,8 @@ baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
 
 - **Java 25** and Maven (the build targets 25; fat JARs via `maven-shade-plugin`)
 - **AWS account** and credentials — see [Permissions](#permissions) for the two roles involved
-- **MongoDB** connection string. BaaS is *connect-only*: it never provisions a cluster. A free
-  Atlas tier is fine.
+- No database to bring. The results table is created by `baas admin setup` alongside the rest of
+  the stack.
 - Docker, for integration tests and local development
 
 ## Getting started
@@ -39,23 +40,19 @@ One-time, and it needs the elevated deployer credentials described under
 [Permissions](#permissions).
 
 ```bash
-baas admin setup --mongo-uri "mongodb+srv://<user>:<pass>@<host>/<database>"
+baas admin setup
 ```
 
-This deploys the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 gateway
-endpoint, security group, the results bucket, and the runner/operator IAM roles — then writes the
-non-sensitive outputs to `~/.baas/config.yaml`. The Mongo URI goes to SSM as a SecureString and is
-never written to the config file, to user-data, or to CI logs.
+This deploys the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 and
+DynamoDB gateway endpoints, security group, the results bucket, the results table, and the
+runner/operator IAM roles — then writes the outputs, including the table name, to
+`~/.baas/config.yaml`. Nothing sensitive goes in that file.
 
-The connection string **must include a database name**, and it is validated before anything is
-provisioned, so a typo costs you a second rather than a stack deploy. Omit `--mongo-uri` and
-you'll get the Atlas signup link plus instructions to supply it later via
-`baas config set --mongo-uri`.
-
-Two things to know about naming: the stack and bucket are both `baas-<prefix>`, where `prefix` is
-a hash of your caller ARN. You don't choose it, and it's stable for a given identity. The bucket
-is declared `DeletionPolicy: Retain`, so a previous teardown can leave one behind and block the
-next setup — `baas admin setup` detects that case and tells you how to recover.
+Two things to know about naming: the stack, bucket and table are all derived from `baas-<prefix>`,
+where `prefix` is a hash of your caller ARN. You don't choose it, and it's stable for a given
+identity. The bucket and the table are both declared `DeletionPolicy: Retain` — benchmark history
+outlives any single stack — so a previous teardown can leave either behind and block the next
+setup. `baas admin setup` checks for both and tells you how to recover.
 
 Setup finishes by printing follow-up steps for the operator role. **Do them** — until you do,
 `baas run` uses your default credential chain rather than the narrow role.
@@ -92,14 +89,7 @@ Exactly one image exists at a time. A successful build publishes the new AMI to
 a build never resolves a deleted AMI. `baas admin image` reports what is currently published, and
 flags when your working tree declares a version you haven't built yet.
 
-### 4. Allow the runner to reach MongoDB
-
-If you're on Atlas, add an IP Access List entry. Runners get a **fresh public IP per run**, so
-there is no stable address to allowlist; covering them means `0.0.0.0/0`, gated by the connection
-string's credentials rather than by network. That trade-off is deliberate for v1 — see
-[`infra/README.md`](infra/README.md#mongodb-atlas-connectivity).
-
-### 5. Run a benchmark
+### 4. Run a benchmark
 
 From **your benchmark project's** directory, not this repo — `baas run` builds in the current
 working directory.
@@ -120,24 +110,60 @@ profilers), `jcstress`.
 > ```
 
 Useful options: `--skip-build`, `--benchmark-jar`, `--runner-jar`, `--instance-type`, `--timeout`,
-`--max-wall-clock`, `--tag key=value`, `--branch`, `--project`.
+`--max-wall-clock`, `--tag key=value`, `--branch`, `--project`, `--no-database`.
 
-> **`--project` defaults to the current git repository's directory name** and is recorded as a tag
-> on the stored result. Outside a git repository, `baas run` hard-fails before any build or upload
-> unless `--project <name>` is passed explicitly.
+> **`--project` defaults to the current git repository's directory name** and composes the results
+> partition key, as well as being recorded as a tag. Outside a git repository, `baas run`
+> hard-fails before any build or upload unless `--project <name>` is passed explicitly.
+
+> **Tags are how you find a result later.** `--tag key=value` is repeatable and reaches the stored
+> measurement, not just the EC2 instance. `project`, `commit` and `type` are added for you, and the
+> instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch`.
+> Passing `--tag` for one of those observed keys is rejected — they come from the same values the
+> run's own `environment.json` records, so the two can never disagree.
+
+> **A run with nowhere to store its measurements fails before it costs anything.** If the table
+> name is missing from your config, `baas run` stops before the Maven build and before any upload,
+> and tells you to run `baas config sync`. To deliberately throw the numbers away, pass
+> `--no-database`.
 
 `-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved run
 parameters, the AMI, the CloudFormation parameters, and the full generated user-data script. It
 must come before the `--` separator, or it is passed to the benchmark instead.
 
-### 6. Read results
+### 5. Read results
 
 ```bash
 baas results
 ```
 
-Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`, reading the Mongo URI from
-SSM. No `mongosh` needed.
+Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`, reading the table directly.
+
+By default it reads the partition for the current git repository, drops rows tagged
+`exclude_from_results=true`, groups by `(benchmark, branch)` and keeps the best score in each
+group. Filters:
+
+| | |
+|---|---|
+| `--project <name>` | Read a different project's partition |
+| `--tag key=value` | Repeatable; repeated tags must **all** match |
+| `--benchmark-name <regex>` | Match on the benchmark name |
+| `--living-branches` | Only branches that still exist in the local repo |
+| `--request-id <id>` | Every measurement of one run. Cannot be combined with the others |
+| `--group-by <tag>` | Group by something other than `branch` |
+| `--all` | Every measurement, not just the best per group |
+| `--limit <n>`, `--format json\|csv` | Bound and reshape the output |
+
+### 6. Fetch everything a run produced
+
+```bash
+baas download main/jmh/20260819_090000
+```
+
+Takes a result path as `baas results` reports it, and pulls down the whole run: the verbatim
+`jmh-result.json`, `environment.json`, process output, logs and profiling artifacts. The stored
+measurement deliberately drops JMH's `rawData` and `scorePercentiles` — per-iteration numbers
+dominate a result's size — so this is where you go when you need them.
 
 ### 7. Check that two results are comparable
 
@@ -188,7 +214,8 @@ baas admin teardown --delete-bucket  # also empties and deletes the bucket
 ```
 
 Two safety gates: it aborts if any benchmark runner is still running, and without `--yes` it makes
-you type the stack name. The MongoDB cluster is never touched.
+you type the stack name. The results bucket and the results table both survive it — benchmark
+history outlives the stack — and teardown names both so the next setup doesn't fail on them.
 
 ## How it works
 
@@ -203,24 +230,28 @@ baas run
        │    BEFORE the benchmark starts, so a crashed run still says what it
        │    crashed on  (nothing is installed — the toolchain is already baked)
        ├─ download benchmark-runner.jar (GitHub Releases, or S3 if overridden)
-       ├─ read MONGO_CONNECTION_STRING from SSM
-       ├─ run benchmark-runner.jar from /app
+       ├─ run benchmark-runner.jar from /app, pointed at the results table
        │    └─ launch the benchmark JAR as a subprocess, parse results,
-       │       upload output to S3, write documents to MongoDB
-       │       (tagged imageVersion + instanceType)
+       │       upload output and the verbatim result JSON to S3, then write
+       │       one item per measurement, tagged with what it observed
        ├─ write the run-status sentinel to S3
        └─ self-terminate
   ├─ poll run-status every 15s
-  └─ print results from MongoDB
+  └─ print this run's measurements from the table
 ```
 
 Instances self-terminate through **three** independent mechanisms — a process `timeout`, a
 background shell watchdog that fires even if the JVM deadlocks, and a CLI shutdown hook for
 Ctrl+C. Any one alone leaves a way to orphan a paid instance.
 
-**Measurements live only in MongoDB.** S3 holds process output and profiling artifacts; there is no
-`result.json`. An empty or unset Mongo URI selects a no-op database implementation — the run still
-succeeds and the numbers are silently discarded.
+**S3 first, then the table.** The verbatim result JSON is uploaded before the measurement is
+stored, so a stored row always has its full-fidelity counterpart to point at. The item carries what
+a table view needs; `rawData` and `scorePercentiles` live only in S3, reachable with
+`baas download`.
+
+**Nothing is silently discarded.** A run with no store configured fails before the build, and a
+store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. Discarding
+measurements requires `--no-database`.
 
 Design rationale, the invariants the runner depends on, and the open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
@@ -244,7 +275,8 @@ intentional: the fallback would silently hand everyday commands deploy-level rig
 | Module | Purpose |
 |---|---|
 | `baas-cli` | The `baas` CLI. Main class `pl.wsztajerowski.baas.BaasApp` |
-| `benchmark-runner` | Runs on the EC2 instance — executes benchmarks, writes to S3 and MongoDB |
+| `benchmark-runner` | Runs on the EC2 instance — executes benchmarks, writes to S3 and the results table |
+| `baas-model` | The stored measurement shape, key encoding and tag vocabulary, shared by CLI and runner |
 | `fake-jmh-benchmarks` | Minimal JMH JAR, test fixture |
 | `fake-stress-tests` | Minimal JCStress JAR, test fixture |
 
@@ -262,7 +294,9 @@ mvn -pl benchmark-runner test -Dtest=MyTest    # single test
 mvn -pl benchmark-runner verify -Dit.test=MyIT # single integration test
 ```
 
-Integration tests (`*IT.java`) spin up LocalStack and MongoDB via Testcontainers. `mvn clean
+Integration tests (`*IT.java`) spin up LocalStack (S3 + DynamoDB) and MongoDB via Testcontainers —
+MongoDB because the runner keeps that adapter for standalone use, and one store contract suite runs
+against both. `mvn clean
 verify` copies `fake-jmh-benchmarks.jar` and `fake-stress-tests.jar` into
 `benchmark-runner/target/` during `pre-integration-test`.
 
@@ -278,10 +312,14 @@ used to.
 docker-compose up
 ```
 
-Starts LocalStack (`SERVICES=s3,ssm`), MongoDB on 27017, and mongo-express on 8081. Credentials for
-LocalStack come from `.env` — test values only, never real credentials.
+Starts LocalStack (`SERVICES=s3,ssm,dynamodb`) and MongoDB on 27017. Mongo is there for the
+runner's retained standalone adapter, not for BaaS. Credentials for LocalStack come from `.env` —
+test values only, never real credentials.
 
-There is **no** init container, so create what you need yourself:
+There is **no** init container, so create what you need yourself — the bucket, and the results
+table if you want the scripts below to store anything. `docker-compose.yaml` carries the exact
+`create-table` command in a comment, with the key schema that must match `ResultsTable` in
+`infra/cf-template-core.yaml`:
 
 ```bash
 aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas
@@ -302,13 +340,16 @@ defaults to the on-instance location and is validated for existence:
 export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib   # .so on Linux
 ```
 
-Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and both write to the
-local MongoDB (`local_test` database) as well as to LocalStack S3.
+Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and both write to
+LocalStack S3 and the LocalStack table. Swap `--results-table`/`--dynamodb-endpoint` for
+`--no-database` if you'd rather not create the table — one of the two must be named, since the
+runner treats absent store configuration as an error rather than quietly discarding results.
 
 Setting `ASYNC_PATH` also enables `JmhWithAsyncProfilerSubcommandServiceIT`, which is skipped
 without it — so `mvn verify` covers async profiling only when that variable is set.
 
-Endpoints: S3 browser `http://localhost:4566/baas/` · mongo-express `http://localhost:8081/`
+Endpoints: S3 browser `http://localhost:4566/baas/` · DynamoDB at the same LocalStack endpoint
+(`aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name baas-results`)
 (the SDK/CLI endpoint is `https://s3.localhost.localstack.cloud:4566`).
 
 ## GitHub Actions
@@ -329,8 +370,11 @@ Secrets: `WORKFLOW_ROLE_ARN`, `RUNNER_ROLE_NAME` (both from the CI stack / core 
 Variables: `SUBNET_ID`, `SECURITY_GROUP_ID`, `AWS_REGION`, `ASYNC_PROFILER_VERSION`,
 `RESOURCE_NAME_PREFIX`.
 
-> `MONGO_CONNECTION_STRING` is **not** a secret. `exec-single-benchmark.yml` reads it from SSM at
-> `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and fails the job if it's absent or empty.
+> **The GitHub Actions path still writes to MongoDB.** The DynamoDB cutover covered `baas run`
+> only, so results from `benchmark-runner.yml` / `e2e-cloud-test.yml` land in Atlas and do not
+> appear in `baas results`. `MONGO_CONNECTION_STRING` is **not** a secret:
+> `exec-single-benchmark.yml` reads it from SSM at `/<RESOURCE_NAME_PREFIX>/mongo/connection-string`
+> and fails the job if it's absent or empty.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
 real version is set at release time.

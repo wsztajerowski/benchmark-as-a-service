@@ -9,11 +9,12 @@ moved out of it for the same reason.
 | 1 | §1, §2, §3, §4 | ✅ done and deployed. Purely additive; nothing writes to the table yet |
 | 2 | §5, §8 | ✅ done. The write path and its tests. Config still selects Mongo |
 | 3 | §6, 7.1, 7.2, 7.7-7.10 | ✅ done. Read path and config plumbing. Table still empty |
-| 4 | **§13** | ✅ code done, not yet deployed. The cutover: new runs go to DynamoDB; Atlas keeps history and stays readable |
-| 5 | §12 | Live verification of the new write and read paths |
-| 6 | **§9** | Migrate history, into a schema live runs have now exercised |
+| 4 | **§13** | ✅ done. The cutover: new runs go to DynamoDB; Atlas keeps history and stays readable |
+| 5 | §12 | ✅ done except 12.1 and 12.9, both of which describe the post-§14 state. Three live runs verified the write and read paths |
+| 6 | **§9** | 9.1-9.6 ✅ (the script). **9.7/9.8 blocked**: writing needs `BatchWriteItem`, which neither the operator role nor the deployer policy grants |
 | 7 | §12b | The two manual checks that need migrated data |
-| 8 | **§14**, then §10, §11 | Remove Mongo, clean up, document |
+| 8 | **§14**, then §10 | Remove Mongo, delete the script |
+| — | §11 | ✅ done early. Docs described the pre-cutover world *while the code no longer matched it*, which is worse than describing it slightly ahead. Entries that §14 will change say so inline |
 
 **Cutover precedes migration (revised 2026-08-19; originally the reverse).** Migrating first would
 write 121 historical documents into a schema no live run had yet exercised, so a schema defect
@@ -259,24 +260,52 @@ rollback until §14.
 
 ## 9. Data migration (runs after §13's cutover and §12's live verification)
 
-- [ ] 9.1 Write `scripts/migrate-atlas-to-dynamodb` reading Atlas and writing measurement items
-- [ ] 9.2 Handle both `_id` forms: the composite JMH key and the bare JCStress `requestId`
-- [ ] 9.3 Normalise existing `createdAt` values to the fixed-width UTC format used by sort keys,
-  truncating to milliseconds so they match what `StoredMeasurement` produces
-- [ ] 9.3b Populate `mode` from Mongo's `_id.benchmarkType` — the sort key now carries it, and a
-  defaulted or empty mode would collide multi-mode historical rows onto one key
-- [ ] 9.4 Map historical tags onto the vocabulary. Rows lacking `project` get `unknown-migrated`
+- [x] 9.1 Write `scripts/migrate-atlas-to-dynamodb` reading Atlas and writing measurement items.
+  A bash wrapper resolving the connection string from SSM, plus `scripts/MigrateAtlasToDynamoDb.java`
+  run as a single-file source program against the shaded runner JAR — which already carries the
+  Mongo driver, the DynamoDB SDK and `baas-model`, so keys and items come from the same
+  `ResultKeys`/`MeasurementItemMapper` the runner writes with rather than a second copy
+- [x] 9.2 Handle both `_id` forms: the composite JMH key and the bare JCStress `requestId`
+- [x] 9.3 Normalise existing `createdAt` values to the fixed-width UTC format used by sort keys,
+  truncating to milliseconds so they match what `StoredMeasurement` produces. BSON date, epoch
+  millis and both string forms are accepted — the collection predates more than one writer
+- [x] 9.3b Populate `mode` from Mongo's `_id.benchmarkType` — the sort key now carries it, and a
+  defaulted or empty mode would collide multi-mode historical rows onto one key. Confirmed from
+  the pre-cutover writer: it passed `jmhResult.mode()` into that field, falling back to
+  `jmhResult.mode` for any document where it is absent
+- [x] 9.4 Map historical tags onto the vocabulary. Rows lacking `project` get `unknown-migrated`
   (NOT bare `unknown` — `currentGitCommit()` already uses that for a missing commit, and two
   meanings sharing one string read identically in a results table). **Keep** the `source` tag on
   the 36 `gha-e2e-test*` rows, carried through as a custom tag: unknown keys are permitted by
   design and warned about only when no row carries them, 36 rows cost nothing at this scale, and
   discarding provenance is irreversible once Atlas is decommissioned (decided 2026-08-19,
   resolving the question 1.3 deferred here)
-- [ ] 9.5 Implement `--dry-run` reporting counts per collection and per derived project partition
-- [ ] 9.6 Make the script idempotent so a partial run can be repeated safely
-- [ ] 9.7 Dry-run, review counts, then migrate for real
+- [x] 9.5 Implement `--dry-run` reporting counts per collection and per derived project partition,
+  plus how many rows have a recoverable `resultPath` and any document that cannot be mapped.
+  Mapping happens during collection, not at write time, so an unmappable document surfaces in the
+  dry run where it costs nothing rather than halfway through a real migration
+- [x] 9.6 Make the script idempotent so a partial run can be repeated safely — by construction:
+  every write is a `PutItem` on a key derived from the source document, so a repeat overwrites
+- [ ] 9.7 Dry-run, review counts, then migrate for real. **Blocked on credentials, by design:**
+  writing needs `dynamodb:BatchWriteItem` on the table, which neither `BaasCliOperatorRole` (Query
+  and GetItem only) nor the deployer policy (table lifecycle only) grants — the read/write/lifecycle
+  split is deliberate. Run it as an identity that has it:
+
+  ```bash
+  scripts/migrate-atlas-to-dynamodb --dry-run --profile <profile-with-batchwriteitem>
+  scripts/migrate-atlas-to-dynamodb          --profile <profile-with-batchwriteitem>
+  ```
+
+  Expect 121 JMH documents and 0 JCStress (task 1.1), landing in `RESULT#lynx-journal` (80) and
+  `RESULT#unknown-migrated` (41).
 - [ ] 9.8 Verify: row counts match, spot-checked scores are identical, and `baas results` agrees with
-  historical output allowing for the documented `tags.project` filter difference
+  historical output allowing for the documented `tags.project` filter difference. `--verify` reads
+  every source row back by its own key and compares score and tags, exiting non-zero on any
+  mismatch; it needs only `GetItem`, so it runs under the operator profile:
+
+  ```bash
+  scripts/migrate-atlas-to-dynamodb --verify --profile baas-operator
+  ```
 
 ## 10. Cleanup (the cutover itself moved to §13)
 
@@ -284,43 +313,132 @@ rollback until §14.
   rollback path, so they must follow both §12's verification and §9's migration. §10 and §11 now
   run last, alongside §14.
 - [ ] 10.3 Delete `scripts/migrate-atlas-to-dynamodb`
-- [ ] 10.4 Remove the obsolete `openspec/changes/atlas-service-account-credentials` change
+- [x] 10.4 Remove the obsolete `openspec/changes/atlas-service-account-credentials` change — already
+  absent from `openspec/changes/` and from `archive/`, and `git log` has no record of it under that
+  path, so it was removed before this change began. The two surviving references are prose:
+  `proposal.md`'s Impact list and `docs/superpowers/specs/2026-08-10-...-design.md`, both correctly
+  describing it as stale. Nothing to delete.
 
 ## 11. Documentation
 
-- [ ] 11.1 Update `CLAUDE.md` invariants: retire "the mongo URI never goes into user-data" (the table name
+- [x] 11.1 Update `CLAUDE.md` invariants: retire "the mongo URI never goes into user-data" (the table name
   is not a secret), remove "`RunnerSecurityGroup` needs egress on TCP 27017", and record that `baas run`
-  now forwards user tags, `project` and `commit` to the runner
-- [ ] 11.2 Update `CLAUDE.md` *What isn't there*: measurements are no longer MongoDB-only and a verbatim
+  now forwards user tags, `project` and `commit` to the runner. The 27017 invariant is **rewritten,
+  not removed**: the rule is still on the live security group and must stay until §14, so the entry
+  now says it is vestigial, why it survives, and what removes it. Deleting the entry outright would
+  have read as "this is gone" while the rule was still there.
+- [x] 11.2 Update `CLAUDE.md` *What isn't there*: measurements are no longer MongoDB-only and a verbatim
   result JSON now exists in S3; note that `baas-cli` has no MongoDB path while `benchmark-runner` retains
-  one for standalone use
-- [ ] 11.3 Update `CLAUDE.md` *Accepted risks*: remove the Atlas IP allowlist and the shared `RunnerRole`
-  SSM Mongo path rows, and reduce "MongoDB connect-only" to the standalone-runner case
-- [ ] 11.4 Document the new `baas-model` module and the tag vocabulary in `CLAUDE.md`
-- [ ] 11.5 Document the retained-table setup trap alongside the existing retained-bucket one
-- [ ] 11.6 Update `README.md`: first-run flow without `--mongo-uri`, `--project`, the run-artifact
-  download, and the results filters
-- [ ] 11.7 Update `infra/README.md` for the table, the gateway endpoint and the IAM changes
-- [ ] 11.8 Update `docs/diagrams/` for the affected command sequences
-- [ ] 11.9 Update `docs/adr/0001-self-contained-baas-cli.md` where it assumes an external database
-- [ ] 11.10 Mark findings A3, A5 and D1 fixed and A4 partially addressed in `docs/review/`, updating both
-  status tables
+  one for standalone use. Added a third entry the task did not ask for and the section needed: absent
+  store configuration is now a hard failure, since the old silent-no-op is precisely the kind of thing
+  this section exists to warn about — and the GHA path, which still writes to Atlas, is now called out.
+- [x] 11.3 Update `CLAUDE.md` *Accepted risks*: remove the Atlas IP allowlist and the shared `RunnerRole`
+  SSM Mongo path rows, and reduce "MongoDB connect-only" to the standalone-runner case. The shared
+  `RunnerRole` row is deleted; the Atlas allowlist row is kept and rewritten as moot-until-§14, for
+  the same reason as 11.1 — the `0.0.0.0/0` access list still exists.
+- [x] 11.4 Document the new `baas-model` module and the tag vocabulary in `CLAUDE.md` — the module in
+  the *What this is* table, and a rewritten *Result tagging* section carrying the vocabulary as a
+  table split by who sets each key and which are rejected from the command line. A new *Results
+  table* section covers the key schema and the two rules whose violation is silent (mode in the sort
+  key, fixed-width timestamps).
+- [x] 11.5 Document the retained-table setup trap alongside the existing retained-bucket one — in
+  `CLAUDE.md`'s *Results table* section, `README.md`'s setup step, `infra/README.md`'s core-stack
+  section and the `baas-setup`/`baas-teardown` diagrams.
+- [x] 11.6 Update `README.md`: first-run flow without `--mongo-uri`, `--project`, the run-artifact
+  download, and the results filters. MongoDB is gone from the requirements list, the Atlas
+  connectivity step is deleted outright (renumbering the steps after it), `baas download` gets its
+  own step, and the results filters are a table. Also flags that the GHA path still writes to Atlas,
+  so its results do not appear in `baas results`.
+- [x] 11.7 Update `infra/README.md` for the table, the gateway endpoint and the IAM changes —
+  including why the endpoint is a gateway and not an interface (standing cost), and that the
+  deployer holds the table's lifecycle but not its data, which is what makes 9.7 need a third
+  principal. The Atlas section is retitled *historical* rather than deleted, since the security
+  group rule it describes is still live.
+- [x] 11.8 Update `docs/diagrams/` for the affected command sequences: `baas-run` (fail-fast project
+  and table resolution, the tag-rejection rule, the table name in user-data instead of an SSM fetch,
+  the GSI query at the end), `baas-setup` (no `--mongo-uri`, the table in the collision pre-check and
+  the outputs) and `baas-teardown` (both retained resources named).
+- [x] 11.9 Update `docs/adr/0001-self-contained-baas-cli.md` where it assumes an external database.
+  Marked *Amended by* this change and added a *Superseded since acceptance* note; the three
+  database rows in its invariants table are annotated in place rather than rewritten, since an ADR
+  records what was decided at the time.
+- [x] 11.10 Mark findings A3, A5 and D1 fixed and A4 partially addressed in `docs/review/`, updating both
+  status tables. A5 is fixed by deletion, not extraction — the `validateMongoUri` triplicate is gone
+  with `--mongo-uri`, while `operatorCredentialsWarning` remains a sibling static (now two callers,
+  not four), so the entry says which half closed. A4's two "related, smaller" points closed and its
+  main ordering point was decided the other way — S3 still goes first, deliberately, because the
+  stored item points at `resultJsonKey` and a dangling key is worse than recoverable artifacts.
+  Also marked **S7 partly fixed**, not in the task list: the runner's table grant is `PutItem` +
+  `BatchWriteItem` with no `Scan` or `DeleteItem`, so it can no longer sweep the history it writes.
 
 ## 12. End-to-end verification (manual — no automated test covers `baas run`)
 
+**Executed 2026-08-19, post-cutover, against the live stack `baas-3q7i7s65`.** Three paid runs on
+`c5.2xlarge` from `ami-0aa25ec7fbf1c80f5` (image version 1.2.0), all self-terminated.
+
+| Run | Request ID | Outcome |
+|---|---|---|
+| JMH | `jmh-20260819_232659` | completed in ~80 s, 1 item stored |
+| JCStress | `jcstress-20260819_232955` | completed in ~570 s, 1 item stored |
+| JMH `--no-database` | `jmh-20260819_233551` | completed in ~60 s, **0 items stored** |
+
 - [ ] 12.1 **Manual**: `baas admin setup` on a clean prefix; confirm the table, the gateway endpoint and
-  the absence of a 27017 egress rule
-- [ ] 12.2 **Manual**: run a live JMH benchmark via `baas run` with a custom `--tag`; confirm one item per
+  the absence of a 27017 egress rule. **Not satisfiable yet, and not an oversight**: the rule is
+  deliberately still present until §14.1, so this describes the post-§14 state. It also asks for a
+  clean prefix, which the live stack is not. Re-run after §14.
+- [x] 12.2 **Manual**: run a live JMH benchmark via `baas run` with a custom `--tag`; confirm one item per
   benchmark method, no derived items, and that `project`, `commit`, `jdk`, `cpuModel`, `cpuArch` and the
   custom tag are all present
-- [ ] 12.3 **Manual**: confirm the stored tags agree with the same run's `environment.json`
-- [ ] 12.4 **Manual**: run a live JCStress benchmark; confirm its single item and its test maps
-- [ ] 12.5 **Manual**: exercise `baas results` unfiltered, by tag, by benchmark-name regex, by request ID
+
+  Exactly **one** item for the one benchmark method, no derived items. All nine tags present:
+  `phase=3-cutover` (the custom one), `project=dynamodb-results-store`, `commit=364a3049…`,
+  `type=jmh`, `imageVersion=1.2.0`, `instanceType=c5.2xlarge`, `jdk=25.0.4`,
+  `cpuModel=Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz` (spaces and parentheses intact as one
+  token), `cpuArch=x86_64`. Keys as designed:
+  `sk = pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#thrpt#2026-08-19T21:28:18.370Z#jmh-20260819_232659`.
+
+- [x] 12.3 **Manual**: confirm the stored tags agree with the same run's `environment.json`
+
+  Every observed tag matches the run's own manifest exactly: `imageVersion` 1.2.0,
+  `instanceType` c5.2xlarge, `cpuArch` x86_64, `cpuModel` identical, and `jdk=25.0.4` is precisely
+  the quoted substring of `jvmVersion="openjdk version \"25.0.4\" 2026-07-21 LTS"` — the
+  one-observation split holding, not two independent captures.
+
+- [x] 12.4 **Manual**: run a live JCStress benchmark; confirm its single item and its test maps
+
+  One item, `kind=JCSTRESS`, `sk = JCSTRESS#<timestamp>#<requestId>`. Counts `totalTests=2`,
+  `passedTests=1`, `failedTests=1`, `errorTests=0` — derived from the named sets, and consistent.
+  Both maps carry their S3 HTML keys: `failed` names `TestWithForbiddenResults`, `interesting`
+  names `TestWithInterestingResults`. Both are what the `fake-stress-tests` fixture is built to
+  produce, so this is the expected result, not a failure.
+
+- [x] 12.5 **Manual**: exercise `baas results` unfiltered, by tag, by benchmark-name regex, by request ID
   and with `--living-branches`, against the post-cutover runs above. The same sweep over migrated
   history is 12b.1 — at this point the table holds only what §13 has written
-- [ ] 12.6 **Manual**: download a run's artifacts and confirm `rawData` is recoverable from the result JSON
-- [ ] 12.7 **Manual**: confirm a run with `--no-database` succeeds and writes nothing
-- [ ] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt
+
+  All five return the run. `--request-id` combined with `--tag` exits **2** naming the conflict.
+  `--format json` and `--format csv` both emit `10013067.817977` with a decimal point under a
+  comma-decimal locale (`pl-PL` is this machine's), so the `Locale.ROOT` rule is holding on the
+  new read path.
+
+- [x] 12.6 **Manual**: download a run's artifacts and confirm `rawData` is recoverable from the result JSON
+
+  `baas download impl/ddb-phase3/jmh/20260819_232659` fetched 6 artifacts. `jmh-result.json`
+  carries `rawData` as 1 fork x 3 iterations
+  (`9338503.82`, `10414056.23`, `10286643.40`) and the full `scorePercentiles` — both dropped from
+  the stored item, both recovered from S3.
+
+- [x] 12.7 **Manual**: confirm a run with `--no-database` succeeds and writes nothing
+
+  Exit 0, `Run status: completed`, and the CLI printed
+  "`--no-database: the runner stored nothing, so there is no result to show.`" rather than an error.
+  The GSI query for that request ID returns **0** items, while all six S3 artifacts are present —
+  which is the point: `--no-database` discards measurements, not evidence.
+
+- [ ] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt.
+  **Not run**: it deletes the live core stack. The retained-table branch is covered by
+  `SetupCommandTest`/`TeardownCommand`'s output and by 7.8/7.9, but the live confirmation is the
+  user's to trigger, and is best paired with §14 rather than run against a stack still in use.
 
 ## 12b. Verification that needs migrated history (after §9)
 

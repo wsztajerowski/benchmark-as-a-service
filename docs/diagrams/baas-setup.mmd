@@ -6,21 +6,18 @@ sequenceDiagram
     participant S3 as AWS S3
     participant CFSvc as CloudFormationService
     participant CF as AWS CloudFormation
-    participant SSM as AWS SSM
+    participant DDB as AWS DynamoDB
     participant FS as Local Filesystem
 
     Note over User,FS: baas admin setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas admin setup [--region] [--aws-profile] [--mongo-uri]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    User->>picocli: baas admin setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
     picocli->>SC: parse and bind options into fields
-    opt --mongo-uri provided
-        Note over SC: validate the URI contains a database name<br/>fail here -- a bad URI should not cost a stack deploy
-    end
     SC->>FS: ConfigService.load()
     FS-->>SC: BaasConfig from ~/.baas/config.yaml
     Note over SC: apply --region / --aws-profile over config defaults
     SC->>STS: sts.getCallerIdentity()
     STS-->>SC: caller ARN
-    Note over SC: prefix = lowercase(base32(sha256(arn)))[0:8]<br/>stackName = bucketName = "baas-" + prefix<br/>both are FIXED by the caller identity, not user-selectable
+    Note over SC: prefix = lowercase(base32(sha256(arn)))[0:8]<br/>stackName = bucketName = "baas-" + prefix<br/>tableName = "baas-" + prefix + "-results"<br/>all FIXED by the caller identity, not user-selectable
     opt --use-existing-vpc set
         Note over SC: require --vpc-id + --subnet-id + --sg-id, else exit 1
     end
@@ -28,11 +25,14 @@ sequenceDiagram
     FS-->>SC: template body
 
     rect rgb(255, 244, 230)
-        Note over SC,S3: Collision pre-check. The bucket is DeletionPolicy Retain, so a previous<br/>teardown can leave it behind, and CloudFormation would then fail with an<br/>opaque error that never mentions S3.
+        Note over SC,DDB: Collision pre-check. The bucket AND the results table are both<br/>DeletionPolicy Retain, so a previous teardown can leave either behind,<br/>and CloudFormation would then fail with an opaque error naming neither.<br/>Both are checked: fixing only the bucket then fails again on the table.
         SC->>CF: describeStacks(stackName) -- stackExists?
         SC->>S3: headBucket(bucketName) -- bucketExists?
+        SC->>DDB: describeTable(tableName) -- tableExists?
         alt stack absent BUT bucket present
             SC-->>User: explain the retained bucket, print recovery commands, exit 1
+        else stack absent BUT table present
+            SC-->>User: explain the retained table, print recovery commands, exit 1
         end
     end
 
@@ -63,17 +63,10 @@ sequenceDiagram
     end
 
     SC->>CF: describeStacks() -- read stack outputs
-    CF-->>SC: BucketName, SubnetId, SecurityGroupId, VpcId,<br/>RunnerInstanceProfileName, OperatorRoleArn,<br/>RunnerRoleName, RunnerRoleArn, S3BucketArn
+    CF-->>SC: BucketName, ResultsTableName, SubnetId, SecurityGroupId, VpcId,<br/>RunnerInstanceProfileName, OperatorRoleArn,<br/>RunnerRoleName, RunnerRoleArn, S3BucketArn
     SC->>FS: ConfigService.save() to ~/.baas/config.yaml
     Note over SC,FS: only non-sensitive values are written to the config file
 
     SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>until then `baas run` uses the default credential chain
 
-    alt --mongo-uri provided
-        SC->>SSM: putParameter(/PREFIX/mongo/connection-string, SECURE_STRING)
-        SSM-->>SC: PutParameterResponse
-        SC-->>User: MongoDB URI stored in SSM
-    else omitted
-        SC-->>User: print the Atlas free-tier signup link, tell the user to run<br/>`baas config set --mongo-uri` and to update the Atlas IP Access List
-    end
     SC-->>User: exit 0
