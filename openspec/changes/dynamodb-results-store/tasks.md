@@ -13,7 +13,7 @@ moved out of it for the same reason.
 | 5 | §12 | ✅ done except 12.1 and 12.9, both of which describe the post-§14 state. Three live runs verified the write and read paths |
 | 6 | **§9** | ✅ done. 123 documents migrated and 123/123 verified. The dry run caught 6 rows that would have been silently dropped |
 | 7 | §12b | ✅ done. History queryable to Dec 2024; the post-cutover score is in-band |
-| 8 | **§14**, then §10 | **All that remains.** Remove Mongo, delete the script. Everything here destroys the rollback path, so it is the user's call to trigger |
+| 8 | **§14**, then §10 | ✅ done except 14.5. Mongo is gone from AWS: no egress rule, no SSM parameter, no IAM grant. A live run after the removal proves it. The Atlas cluster itself needs an Atlas credential this machine does not have |
 | — | §11 | ✅ done early. Docs described the pre-cutover world *while the code no longer matched it*, which is worse than describing it slightly ahead. Entries that §14 will change say so inline |
 
 **Cutover precedes migration (revised 2026-08-19; originally the reverse).** Migrating first would
@@ -342,7 +342,9 @@ rollback until §14.
 - 10.1 and 10.2 moved to §14. Deleting the SSM parameter and decommissioning Atlas destroy the
   rollback path, so they must follow both §12's verification and §9's migration. §10 and §11 now
   run last, alongside §14.
-- [ ] 10.3 Delete `scripts/migrate-atlas-to-dynamodb`
+- [x] 10.3 Delete `scripts/migrate-atlas-to-dynamodb` — both the wrapper and
+  `MigrateAtlasToDynamoDb.java`. Recoverable from git if a re-migration is ever needed, which is
+  the point of it being throwaway rather than maintained.
 - [x] 10.4 Remove the obsolete `openspec/changes/atlas-service-account-credentials` change — already
   absent from `openspec/changes/` and from `archive/`, and `git log` has no record of it under that
   path, so it was removed before this change began. The two surviving references are prose:
@@ -413,9 +415,15 @@ rollback until §14.
 | JMH `--no-database` | `jmh-20260819_233551` | completed in ~60 s, **0 items stored** |
 
 - [ ] 12.1 **Manual**: `baas admin setup` on a clean prefix; confirm the table, the gateway endpoint and
-  the absence of a 27017 egress rule. **Not satisfiable yet, and not an oversight**: the rule is
-  deliberately still present until §14.1, so this describes the post-§14 state. It also asks for a
-  clean prefix, which the live stack is not. Re-run after §14.
+  the absence of a 27017 egress rule.
+
+  **Substantively verified after §14, on an existing prefix rather than a clean one.** The three
+  things it checks all hold on the live stack: the results table is `ACTIVE` with its
+  `requestId-index`, both VPC endpoints are `Gateway` type and `available`, and the security group
+  now allows 443 and 80 only. What is *not* covered is first-deploy behaviour — a clean prefix
+  exercises `CreateStack` rather than `UpdateStack`, and the retained-bucket/retained-table
+  pre-checks against a genuinely absent stack. Left open honestly rather than ticked on a partial
+  match; it needs a second AWS identity to produce a different ARN hash.
 - [x] 12.2 **Manual**: run a live JMH benchmark via `baas run` with a custom `--tag`; confirm one item per
   benchmark method, no derived items, and that `project`, `commit`, `jdk`, `cpuModel`, `cpuArch` and the
   custom tag are all present
@@ -557,11 +565,62 @@ change is revertible."* Landing 14.1 early breaks every
 benchmark run outright, since `CLAUDE.md` records that omitting TCP 27017 makes every run fail at
 the database write.
 
-- [ ] 14.1 Remove TCP 27017 egress from `RunnerSecurityGroup` (was 4.3)
-- [ ] 14.2 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
-  `cf-template-ci.yaml`, and `RunnerRole` (was 4.8)
-- [ ] 14.3 Update the §4 template tests that currently pin the presence of 27017 egress and the Mongo
+- [x] 14.1 Remove TCP 27017 egress from `RunnerSecurityGroup` (was 4.3). Deployed and confirmed on
+  the live group: egress is 443 and 80 only.
+
+  **The security group was REPLACED, not modified**, because the edit also touched
+  `GroupDescription` — an immutable property. The group id moved
+  `sg-073e203a38824bea1` → `sg-0cdb8ebd87d4bbd57`; `baas admin setup` rewrote the config, so
+  nothing was left pointing at the old one, but a run in flight would have been. Recorded as a
+  `CLAUDE.md` invariant: change the rules without touching the description unless replacement is
+  intended.
+
+- [x] 14.2 Remove every Mongo SSM grant from `deployer-policy.json`, `operator-policy.json`,
+  `cf-template-ci.yaml`, and `RunnerRole` (was 4.8). Confirmed live after deploy: the runner role's
+  inline policies are dynamodb / ec2-terminate / s3 with **no** `-runner-ssm-mongo-policy`, and the
+  operator's SSM policy is down to a single `GetParameter` on `/<prefix>/runner/ami-id`.
+
+  The CI template's whole `-gha-workflow-ssm-policy` block went, the mongo parameter being its only
+  statement. That is what breaks the GHA path — see the note under 14.5.
+
+- [x] 14.3 Update the §4 template tests that currently pin the presence of 27017 egress and the Mongo
   SSM grants, so they assert absence instead — `runnerCanReachMongoAtlasOnItsStandardPort` is the
   guard that must be inverted, not deleted
-- [ ] 14.4 Delete the `/<prefix>/mongo/connection-string` parameter by hand (was 10.1)
-- [ ] 14.5 Decommission the Atlas cluster (was 10.2)
+
+  Inverted to `runnerHasNoEgressToMongoAtlasAnyMore`, which also pins the egress list at exactly
+  two rules so a third cannot reappear unnoticed. `DeployerPolicyRendererTest` gained
+  `noLongerNamesTheMongoConnectionString`; its `namesTheCallersOwnResources` now asserts the table
+  and the AMI pointer instead. `DeployerPolicyTest`'s `ssm:PutParameter` expectation survives but
+  for a different resource, and `OperatorPolicyDriftTest`'s rationale was corrected — the operator
+  now writes no SSM parameter at all.
+
+- [x] 14.4 Delete the `/<prefix>/mongo/connection-string` parameter by hand (was 10.1). Deleted; the
+  AMI pointer still resolves, so the deletion was correctly scoped.
+
+  `TeardownCommand` also deleted this parameter unconditionally on every teardown, and logged
+  "MongoDB cluster NOT touched" — the gap task 1.5 found and 13.7 deferred here. Both removed:
+  nothing recreates the parameter, since setup no longer writes one.
+
+- [ ] 14.5 Decommission the Atlas cluster (was 10.2). **Not done — outside this machine's reach.**
+  It is a MongoDB Atlas console/API action, not an AWS one, and no Atlas credential is configured
+  here. Everything on the AWS side is complete, so the cluster is now unreachable from BaaS:
+  no parameter, no IAM grant, no egress rule.
+
+  Two things to settle before deleting it, neither blocking:
+  1. **The GHA benchmark path breaks with it** — in fact it is already broken by 14.2 and 14.4.
+     `exec-single-benchmark.yml` exits 1 without the connection string. Cutting that path over to
+     DynamoDB or retiring it is unclaimed work; it belongs to its own change, not this one.
+  2. **Atlas is the last copy of the pre-migration source data.** DynamoDB holds all 123 rows,
+     verified 123/123 by 9.8, and S3 holds the artifacts — so deleting it loses no measurement.
+     But it is the only thing that could re-run a migration if a schema defect surfaced later.
+
+## Post-§14 verification
+
+A live JMH run (`jmh-20260820_152643`, `c5.2xlarge`, self-terminated) completed **after** the
+27017 rule, the SSM parameter and every Mongo IAM grant were removed, on the replaced security
+group. It stored one item scoring 9,450,241 ops/s with all nine tags including
+`phase=14-post-mongo-removal`.
+
+This is the check that matters: `CLAUDE.md` recorded that omitting 27017 makes every run fail at
+the database write, and that is now provably no longer true. Both VPC gateway endpoints remain
+`available`, neither an interface.

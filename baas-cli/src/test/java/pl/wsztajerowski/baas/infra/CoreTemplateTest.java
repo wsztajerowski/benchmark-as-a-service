@@ -20,19 +20,26 @@ class CoreTemplateTest {
         assertThat(bucket.get("BucketName")).isEqualTo("baas-${ResourceNamePrefix}");
     }
 
+/**
+     * Inverted, not deleted. This assertion previously pinned 27017's PRESENCE, because Atlas does
+     * not serve clients on 443 and omitting the rule made every run fail at the database write.
+     * Measurements go to DynamoDB over a gateway endpoint now, so the rule grants egress nothing
+     * uses — and a security group rule nobody can explain is one somebody restores. Keeping the
+     * test as a negative is what makes its removal deliberate rather than reversible by accident.
+     */
     @Test
     @SuppressWarnings("unchecked")
-    void runnerCanReachMongoAtlasOnItsStandardPort() {
+    void runnerHasNoEgressToMongoAtlasAnyMore() {
         var egress = (List<Map<String, Object>>)
             InfraFixtures.properties(template, "RunnerSecurityGroup").get("SecurityGroupEgress");
 
         assertThat(egress)
-            .as("MongoDB Atlas listens on 27017 — without it every run fails at the database write")
-            .anySatisfy(rule -> {
-                assertThat(rule.get("IpProtocol")).isEqualTo("tcp");
-                assertThat(rule.get("FromPort")).isEqualTo(27017);
-                assertThat(rule.get("ToPort")).isEqualTo(27017);
-            });
+            .as("nothing connects to Atlas since the DynamoDB cutover; the runner reaches the "
+                + "table over the gateway endpoint, so 27017 grants egress nothing uses")
+            .noneSatisfy(rule -> assertThat(rule.get("FromPort")).isEqualTo(27017));
+        assertThat(egress)
+            .as("443 and 80 are still needed: GitHub Releases, S3, the AWS APIs")
+            .hasSize(2);
     }
 
     @Test

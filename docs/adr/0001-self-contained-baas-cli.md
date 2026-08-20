@@ -103,8 +103,8 @@ code disagree, **the code wins**.
   identity never needs `iam:CreateOIDCProvider`. Commands moved under `baas admin`.
   (`openspec/changes/baas-cli-core-ci-split/`)
 - **Atlas is reached on TCP 27017, not 443.** The original security group allowed only 443/80,
-  which meant every run failed at the database write. Now moot: nothing connects to Atlas, and the
-  rule survives only to keep the cutover revertible until the cluster is decommissioned.
+  which meant every run failed at the database write. Now reverted along with everything else
+  Mongo: the rule is gone, and a test pins its absence.
 - **Bucket naming and retention.** The bucket is `baas-<prefix>`, declared
   `DeletionPolicy: Retain`. Because the prefix is a hash of the caller's ARN, a retained bucket
   blocks any later `setup` — so `baas admin teardown --delete-bucket` empties and deletes it

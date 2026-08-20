@@ -72,8 +72,9 @@ class OperatorPolicyDriftTest {
             .toList();
 
         assertThat(pointerWrites)
-            .as("publishing the image is a deployer action; the mongo path is the only "
-                + "ssm:PutParameter an operator gets")
+            .as("publishing the image is a deployer action. The operator's only ssm:PutParameter "
+                + "was the mongo connection string, so after its removal the operator writes no "
+                + "SSM parameter at all")
             .isEmpty();
     }
 

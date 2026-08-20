@@ -121,13 +121,6 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}'
-        - PolicyName: !Sub ${ResourceNamePrefix}-gha-workflow-ssm-policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: ssm:GetParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}

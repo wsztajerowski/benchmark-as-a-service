@@ -24,7 +24,8 @@ class DeployerPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-        // baas admin setup --mongo-uri writes the SecureString parameter
+        // baas admin build-image publishes the runner AMI pointer. The mongo SecureString
+        // this used to cover is gone; the action survives for a different resource.
         "ssm:PutParameter",
         // baas admin teardown --delete-bucket empties the bucket, then CloudFormation removes it
         "s3:ListBucket",

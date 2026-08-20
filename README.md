@@ -370,11 +370,11 @@ Secrets: `WORKFLOW_ROLE_ARN`, `RUNNER_ROLE_NAME` (both from the CI stack / core 
 Variables: `SUBNET_ID`, `SECURITY_GROUP_ID`, `AWS_REGION`, `ASYNC_PROFILER_VERSION`,
 `RESOURCE_NAME_PREFIX`.
 
-> **The GitHub Actions path still writes to MongoDB.** The DynamoDB cutover covered `baas run`
-> only, so results from `benchmark-runner.yml` / `e2e-cloud-test.yml` land in Atlas and do not
-> appear in `baas results`. `MONGO_CONNECTION_STRING` is **not** a secret:
-> `exec-single-benchmark.yml` reads it from SSM at `/<RESOURCE_NAME_PREFIX>/mongo/connection-string`
-> and fails the job if it's absent or empty.
+> **The GitHub Actions benchmark path does not currently work.** It writes to MongoDB, which BaaS
+> no longer runs: `exec-single-benchmark.yml` reads `MONGO_CONNECTION_STRING` from SSM at
+> `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and fails the job if it's absent — and that
+> parameter, its IAM grant and the runner's 27017 egress were all removed with the DynamoDB
+> cutover, which covered `baas run` only. Cutting this path over or retiring it is open work.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
 real version is set at release time.

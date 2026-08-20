@@ -151,7 +151,7 @@ Resources:
     Type: AWS::EC2::SecurityGroup
     Condition: CreateNetworking
     Properties:
-      GroupDescription: Benchmark runner security group. No inbound; outbound 443/80/27017 only.
+      GroupDescription: Benchmark runner security group. No inbound; outbound 443/80 only.
       VpcId: !Ref BaasVpc
       SecurityGroupEgress:
         - IpProtocol: tcp
@@ -164,11 +164,6 @@ Resources:
           ToPort: 80
           CidrIp: 0.0.0.0/0
           Description: HTTP for package downloads (yum)
-        - IpProtocol: tcp
-          FromPort: 27017
-          ToPort: 27017
-          CidrIp: 0.0.0.0/0
-          Description: MongoDB Atlas (Atlas serves clients on 27017, not 443)
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -298,13 +293,6 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:ResourceTag/baas-role: benchmark-runner
-        - PolicyName: !Sub ${ResourceNamePrefix}-runner-ssm-mongo-policy
-          PolicyDocument:
-            Version: "2012-10-17"
-            Statement:
-              - Effect: Allow
-                Action: ssm:GetParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
         - PolicyName: !Sub ${ResourceNamePrefix}-runner-dynamodb-policy
           PolicyDocument:
             Version: "2012-10-17"
@@ -467,7 +455,7 @@ Resources:
 
   # BaasCliOperatorRole — assumed (via sts:AssumeRole) by whoever runs
   # `baas run`/`baas results`/`baas config` locally. Scoped exactly to this
-  # stack's own resources (bucket, RunnerRole, mongo SSM path, results table),
+  # stack's own resources (bucket, RunnerRole, the runner AMI pointer, results table),
   # which only CloudFormation can do precisely since it knows those ARNs at
   # deploy time.
   # Trust is scoped to the account root — this keeps `baas admin setup`
@@ -549,11 +537,6 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
-                Action:
-                  - ssm:GetParameter
-                  - ssm:PutParameter
-                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/mongo/connection-string"
               # The runner boots from a purpose-built image now, so the public AL2023 lookup
               # path is gone and this pointer replaces it. Read-only: publishing it is
               # `baas admin build-image`, which runs under the deployer.

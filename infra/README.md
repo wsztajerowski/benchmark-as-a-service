@@ -280,23 +280,23 @@ carrying that condition would evaluate false for the other five and deny the who
 the instance-type constraint lives on an instance-scoped statement and the supporting
 resources get their own.
 
-## MongoDB Atlas connectivity — historical
+## MongoDB Atlas connectivity — removed
 
-**Nothing connects to Atlas any more.** Measurements go to the DynamoDB results table over the
-gateway endpoint, and no Atlas credential reaches an instance.
-
-`RunnerSecurityGroup` still allows egress on **TCP 27017**, and that is deliberate rather than
-leftover: until the Atlas cluster is decommissioned, reverting the cutover has to stay possible, and
-a reverted runner without that rule fails at the database write with no hint as to why. The rule and
-the cluster go together (`openspec/changes/dynamodb-results-store` §14).
+**Nothing connects to Atlas.** Measurements go to the DynamoDB results table over the gateway
+endpoint. The runner's TCP 27017 egress, the `/<prefix>/mongo/connection-string` parameter, and
+every IAM grant that named it — on the runner, the operator, the deployer and the GHA
+`WorkflowRole` — are all gone.
 
 For the record, while it was live: Atlas does not serve clients on 443, and runner instances get an
 **ephemeral public IP per run** — no NAT gateway, no Elastic IP — so there was no stable address to
 add to the IP Access List. The entry was `0.0.0.0/0`, with access controlled by the connection
 string's credentials rather than by network. That was the standing argument for the
 private-networking profile (private subnet + NAT gateway + PrivateLink, needing a paid M10+ tier,
-roughly $32/month); with DynamoDB reached over a gateway endpoint, a private subnet no longer needs
-egress at all for the store.
+roughly $32/month). With DynamoDB reached over a gateway endpoint, a private subnet no longer needs
+egress for the store at all — which is what the `private-runner-network` change builds on.
+
+`benchmark-runner` still carries a MongoDB adapter for standalone use against a user's own cluster,
+selected by `--mongo-connection-string` on that JAR. No BaaS infrastructure supports it.
 
 ## Debugging a failed run
 

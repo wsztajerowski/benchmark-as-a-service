@@ -26,7 +26,20 @@ class DeployerPolicyRendererTest {
         assertThat(rendered)
             .contains("arn:aws:iam::123456789012:role/a1b2c3d4-runner-role")
             .contains("arn:aws:s3:::baas-a1b2c3d4")
-            .contains("arn:aws:ssm:eu-central-1:123456789012:parameter/a1b2c3d4/mongo/connection-string");
+            .contains("arn:aws:dynamodb:eu-central-1:123456789012:table/baas-a1b2c3d4-results")
+            .contains("arn:aws:ssm:eu-central-1:123456789012:parameter/a1b2c3d4/runner/ami-id");
+    }
+
+    /**
+     * The deployer held PutParameter/DeleteParameter on the mongo connection string so
+     * {@code baas admin setup --mongo-uri} could write it. Both the option and the parameter are
+     * gone; a grant on a parameter nothing writes is standing reach for no reason.
+     */
+    @Test
+    void noLongerNamesTheMongoConnectionString() {
+        String rendered = renderer.render("123456789012", "eu-central-1", "a1b2c3d4");
+
+        assertThat(rendered).doesNotContain("mongo");
     }
 
     @Test

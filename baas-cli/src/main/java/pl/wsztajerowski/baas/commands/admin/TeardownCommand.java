@@ -12,7 +12,6 @@ import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
-import pl.wsztajerowski.baas.infra.SsmService;
 
 import java.util.List;
 import java.util.Scanner;
@@ -96,13 +95,6 @@ public class TeardownCommand implements Callable<Integer> {
             new CloudFormationService(cf).deleteStack(resolvedStack);
         }
 
-        // Delete Mongo SSM SecureString
-        try (var ssm = factory.ssm()) {
-            String paramName = "/" + config.getPrefix() + "/mongo/connection-string";
-            new SsmService(ssm).deleteParameter(paramName);
-            logger.info("Deleted SSM parameter: {}", paramName);
-        }
-
         // Both retained resources are named, because a setup that trips over one and then the
         // other is two rounds of the same opaque CloudFormation error.
         if (!bucketDeleted && config.getAws().getBucket() != null) {
@@ -123,7 +115,6 @@ public class TeardownCommand implements Callable<Integer> {
                         aws dynamodb delete-table --table-name {}""",
                 config.getAws().getResultsTable(), config.getAws().getResultsTable());
         }
-        logger.info("MongoDB cluster NOT touched (connect-only; delete it manually in Atlas if desired).");
         return 0;
     }
 }

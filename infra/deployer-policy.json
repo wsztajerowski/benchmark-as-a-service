@@ -63,15 +63,6 @@
       }
     },
     {
-      "Sid": "SsmMongoParameter",
-      "Effect": "Allow",
-      "Action": [
-        "ssm:PutParameter",
-        "ssm:DeleteParameter"
-      ],
-      "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/${PREFIX}/mongo/connection-string"
-    },
-    {
       "Sid": "SsmRunnerAmiPointer",
       "Effect": "Allow",
       "Action": [

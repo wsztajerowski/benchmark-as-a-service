@@ -125,12 +125,17 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 - **S3 upload paths are request-ID-scoped** (`runs/<requestId>/…`). Without it, two developers on
   the same branch overwrite each other's JARs mid-run.
-- **`RunnerSecurityGroup`'s TCP 27017 egress is now vestigial, and still present on purpose.**
-  Nothing uses it since the DynamoDB cutover — the runner reaches the table over the gateway
-  endpoint. It survives only until Atlas is decommissioned, because until then reverting the
-  cutover has to remain possible, and a reverted runner that cannot reach 27017 fails at the
-  database write. Remove it with the Atlas cluster, not before
-  (`openspec/changes/dynamodb-results-store` §14).
+- **`RunnerSecurityGroup` allows egress on 443 and 80 only — no 27017, and adding it back is a
+  regression.** The rule existed because Atlas does not serve clients on 443. Nothing connects to
+  Atlas now, and `CoreTemplateTest.runnerHasNoEgressToMongoAtlasAnyMore` pins its absence rather
+  than merely not testing for it — a security group rule nobody can explain is one somebody
+  restores.
+- **Editing `RunnerSecurityGroup`'s `GroupDescription` replaces the security group.** It is an
+  immutable property, so CloudFormation deletes and recreates the resource and the group *id
+  changes*. Anything holding the old id is then pointing at a group that no longer exists —
+  `~/.baas/config.yaml` most obviously, which `baas admin setup` rewrites, but not a run already in
+  flight. Observed: removing the 27017 rule also touched the description, and the id moved. Change
+  the rules without touching the description unless you intend the replacement.
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.
@@ -162,10 +167,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   skips** the only test exercising async-profiler end to end. Export it before trusting a green
   build on profiler changes. Same variable `jmh-with-async.sh` needs, since `--async-path`
   otherwise defaults to the on-instance path.
-- **The GitHub Actions path still writes to MongoDB.** `exec-single-benchmark.yml` reads
-  `MONGO_CONNECTION_STRING` from SSM at `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` (not a
-  GHA secret) and exits 1 if absent or empty. The DynamoDB cutover covered `baas run` only, so
-  `e2e-cloud-test.yml` results still land in Atlas and `baas results` will not show them.
+- **The GitHub Actions benchmark path is BROKEN, deliberately and knowingly.**
+  `exec-single-benchmark.yml` reads `MONGO_CONNECTION_STRING` from SSM at
+  `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and exits 1 if absent or empty. That parameter
+  is deleted, the `WorkflowRole` grant to read it is gone, and the runner has no 27017 egress. The
+  DynamoDB cutover covered `baas run` only, so `benchmark-runner.yml` and `e2e-cloud-test.yml` now
+  fail at the connection-string check. Cutting that path over to DynamoDB, or retiring it, is
+  unclaimed work — not an oversight to "fix" by restoring the parameter.
 - **`baas -v` needs the argv pre-scan, not just the execution-strategy hook.**
   `LoggingMixin.applyEarlyVerbosity` in `BaasApp.main` looks redundant next to the
   `TestWrapper`-style hook, but SimpleLogger pins a logger's level when the logger is constructed,
@@ -368,11 +376,11 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Area | Position |
 |---|---|
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
-| Atlas IP allowlist | Moot for BaaS since the DynamoDB cutover — no runner connects to Atlas. The `0.0.0.0/0` access list stands until the cluster is decommissioned, and applied while it was live because runners get a fresh public IP per run, so there was no stable address to pin. |
+
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + 300 s`. Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
 | Runner JAR integrity | Downloaded from GitHub Releases **without checksum verification**. Known open risk. |
-| MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions or selects it. |
+| MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
 | `baas run` project layout | Assumes a Maven project producing one JAR; `--benchmark-jar` + `--skip-build` covers the rest. |
 | Distribution | Shaded JAR only. Install script, Homebrew tap, jpackage, native image, Docker image were specified but never built — backlog, not decisions. |
