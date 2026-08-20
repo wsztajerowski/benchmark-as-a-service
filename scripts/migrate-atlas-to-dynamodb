@@ -19,21 +19,37 @@
 #   --limit <n>           stop after n documents per collection (smoke test)
 #   --table <name>        results table (default: the core stack's baas-<prefix>-results)
 #   --prefix <prefix>     resource prefix (default: from ~/.baas/config.yaml)
-#   --profile <name>      AWS profile (default: AWS_PROFILE, else the default chain)
+#   --profile <name>      AWS profile used to WRITE the table (default: AWS_PROFILE, else the chain)
+#   --ssm-profile <name>  AWS profile used to READ the connection string (default: --profile)
 #   --region <region>     AWS region (default: AWS_REGION, else eu-central-1)
 #
 # The connection string is read from SSM at /<prefix>/mongo/connection-string and passed to the
 # JVM in the environment, never in argv — argv is visible to every process on the machine.
-# Writing items needs dynamodb:BatchWriteItem on the table, which neither the operator role nor
-# the deployer policy grants: run this with a principal that has it.
+#
+# This usually needs TWO principals, because BaaS splits reading from provisioning on purpose:
+#   - reading  /<prefix>/mongo/connection-string  is an OPERATOR grant (ssm:GetParameter)
+#   - writing  the results table                  needs dynamodb:BatchWriteItem, which neither
+#     the operator role nor the deployer policy grants
+# So point --ssm-profile at the operator and --profile at whoever holds the write:
+#
+#   scripts/migrate-atlas-to-dynamodb --dry-run --profile admin --ssm-profile baas-operator
+#
+# Setting MONGO_CONNECTION_STRING in the environment skips the SSM read entirely.
 set -euo pipefail
 
 repo_root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
 runner_jar="$repo_root/benchmark-runner/target/benchmark-runner.jar"
+# The CLI JAR joins the classpath purely for the STS module. A role-assuming profile
+# (role_arn + source_profile) cannot resolve without it, and --ssm-profile/--profile pointing at
+# the operator role is the documented way to run --verify. The runner never assumes a role, so
+# its shaded JAR does not carry STS; the CLI does, for sts:GetCallerIdentity. Runner first, so
+# it wins every duplicate and the migration still runs against the classes the runner writes with.
+cli_jar="$repo_root/baas-cli/target/baas-cli.jar"
 program="$repo_root/scripts/MigrateAtlasToDynamoDb.java"
 
 prefix=""
 profile="${AWS_PROFILE:-}"
+ssm_profile=""
 region="${AWS_REGION:-eu-central-1}"
 table="${BAAS_RESULTS_TABLE:-}"
 forwarded=()
@@ -43,6 +59,7 @@ while [[ $# -gt 0 ]]; do
     --help|-h) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
     --prefix)  prefix="$2"; shift 2 ;;
     --profile) profile="$2"; shift 2 ;;
+    --ssm-profile) ssm_profile="$2"; shift 2 ;;
     --region)  region="$2"; shift 2 ;;
     --table)   table="$2"; shift 2 ;;
     *)         forwarded+=("$1"); shift ;;
@@ -56,7 +73,11 @@ if [[ ! -f "$runner_jar" ]]; then
 fi
 
 if [[ -z "$prefix" ]]; then
-  prefix="$(awk '/^prefix:/ {print $2; exit}' "${BAAS_CONFIG:-$HOME/.baas/config.yaml}" 2>/dev/null || true)"
+  # Strip surrounding quotes: the CLI writes the prefix as a quoted YAML scalar, and a quoted
+  # prefix silently builds a parameter name that matches nothing — surfacing as an IAM denial on
+  # a resource ARN that looks nothing like what was asked for.
+  prefix="$(awk '/^prefix:/ {gsub(/^["'"'"']|["'"'"']$/, "", $2); print $2; exit}' \
+    "${BAAS_CONFIG:-$HOME/.baas/config.yaml}" 2>/dev/null || true)"
 fi
 if [[ -z "$prefix" ]]; then
   echo "Cannot determine the resource prefix. Pass --prefix <prefix>." >&2
@@ -67,15 +88,19 @@ if [[ -z "$table" ]]; then
   table="baas-${prefix}-results"
 fi
 
-aws_args=(--region "$region")
+export AWS_REGION="$region"
 if [[ -n "$profile" ]]; then
-  aws_args+=(--profile "$profile")
+  # Exported, not passed as a flag: this one is for the JVM's DynamoDB client, which reads the
+  # environment. The SSM read below uses its own profile and must not inherit this one.
   export AWS_PROFILE="$profile"
 fi
-export AWS_REGION="$region"
 
 if [[ -z "${MONGO_CONNECTION_STRING:-}" ]]; then
-  MONGO_CONNECTION_STRING="$(aws "${aws_args[@]}" ssm get-parameter \
+  ssm_args=(--region "$region")
+  if [[ -n "${ssm_profile:-$profile}" ]]; then
+    ssm_args+=(--profile "${ssm_profile:-$profile}")
+  fi
+  MONGO_CONNECTION_STRING="$(aws "${ssm_args[@]}" ssm get-parameter \
     --name "/${prefix}/mongo/connection-string" \
     --with-decryption --query Parameter.Value --output text)"
   export MONGO_CONNECTION_STRING
@@ -83,4 +108,9 @@ fi
 
 export BAAS_RESULTS_TABLE="$table"
 
-exec java -cp "$runner_jar" "$program" ${forwarded[@]+"${forwarded[@]}"}
+classpath="$runner_jar"
+if [[ -f "$cli_jar" ]]; then
+  classpath="$runner_jar:$cli_jar"
+fi
+
+exec java -cp "$classpath" "$program" ${forwarded[@]+"${forwarded[@]}"}

@@ -11,9 +11,9 @@ moved out of it for the same reason.
 | 3 | §6, 7.1, 7.2, 7.7-7.10 | ✅ done. Read path and config plumbing. Table still empty |
 | 4 | **§13** | ✅ done. The cutover: new runs go to DynamoDB; Atlas keeps history and stays readable |
 | 5 | §12 | ✅ done except 12.1 and 12.9, both of which describe the post-§14 state. Three live runs verified the write and read paths |
-| 6 | **§9** | 9.1-9.6 ✅ (the script). **9.7/9.8 blocked**: writing needs `BatchWriteItem`, which neither the operator role nor the deployer policy grants |
-| 7 | §12b | The two manual checks that need migrated data |
-| 8 | **§14**, then §10 | Remove Mongo, delete the script |
+| 6 | **§9** | ✅ done. 123 documents migrated and 123/123 verified. The dry run caught 6 rows that would have been silently dropped |
+| 7 | §12b | ✅ done. History queryable to Dec 2024; the post-cutover score is in-band |
+| 8 | **§14**, then §10 | **All that remains.** Remove Mongo, delete the script. Everything here destroys the rollback path, so it is the user's call to trigger |
 | — | §11 | ✅ done early. Docs described the pre-cutover world *while the code no longer matched it*, which is worse than describing it slightly ahead. Entries that §14 will change say so inline |
 
 **Cutover precedes migration (revised 2026-08-19; originally the reverse).** Migrating first would
@@ -286,26 +286,56 @@ rollback until §14.
   dry run where it costs nothing rather than halfway through a real migration
 - [x] 9.6 Make the script idempotent so a partial run can be repeated safely — by construction:
   every write is a `PutItem` on a key derived from the source document, so a repeat overwrites
-- [ ] 9.7 Dry-run, review counts, then migrate for real. **Blocked on credentials, by design:**
-  writing needs `dynamodb:BatchWriteItem` on the table, which neither `BaasCliOperatorRole` (Query
-  and GetItem only) nor the deployer policy (table lifecycle only) grants — the read/write/lifecycle
-  split is deliberate. Run it as an identity that has it:
+- [x] 9.7 Dry-run, review counts, then migrate for real — **done 2026-08-20**, after the user
+  temporarily granted `dynamodb:BatchWriteItem` to the admin group.
 
-  ```bash
-  scripts/migrate-atlas-to-dynamodb --dry-run --profile <profile-with-batchwriteitem>
-  scripts/migrate-atlas-to-dynamodb          --profile <profile-with-batchwriteitem>
+  **The migration needs two principals**, which the dry run surfaced rather than the plan: reading
+  `/<prefix>/mongo/connection-string` is an operator grant, and the deployer policy has
+  `PutParameter`/`DeleteParameter` on it but *not* `GetParameter`. The wrapper gained
+  `--ssm-profile` so the read and the write can use different identities, rather than widening
+  either policy for a throwaway script:
+
+  ```
+  scripts/migrate-atlas-to-dynamodb --dry-run --profile baas-admin --ssm-profile baas-operator
+  scripts/migrate-atlas-to-dynamodb          --profile baas-admin --ssm-profile baas-operator
   ```
 
-  Expect 121 JMH documents and 0 JCStress (task 1.1), landing in `RESULT#lynx-journal` (80) and
-  `RESULT#unknown-migrated` (41).
-- [ ] 9.8 Verify: row counts match, spot-checked scores are identical, and `baas results` agrees with
-  historical output allowing for the documented `tags.project` filter difference. `--verify` reads
-  every source row back by its own key and compares score and tags, exiting non-zero on any
-  mismatch; it needs only `GetItem`, so it runs under the operator profile:
+  **Reviewing the counts was not a formality — the first dry run skipped 6 documents.** They
+  reported `no createdAt`, and all six were real `lynx-journal` measurements of
+  `ReadLastRecordJournalPerformanceBenchmark.journal_mpmc` from `feat/writing-queue-jmh-*` and
+  `feat/mpmc-jmh-1`. Inspecting them showed `createdAt` at the **document root**, not inside
+  `benchmarkMetadata` — an earlier schema this collection still carries. 9.3 now reads both
+  locations. Migrating with the original code would have silently dropped six measurements, and
+  dropping a row is irreversible once Atlas is decommissioned. This is exactly what the dry run
+  exists for.
 
-  ```bash
-  scripts/migrate-atlas-to-dynamodb --verify --profile baas-operator
-  ```
+  **Counts also moved since task 1.1 recorded 121, legitimately:** 123 now, the two extra being
+  this change's own verification runs, which went to Atlas because they predate the cutover.
+  Final dry run: **123 read, 123 mappable, 0 skipped** →
+  `RESULT#lynx-journal` 80, `RESULT#unknown-migrated` 41, `RESULT#dynamodb-results-store` 1,
+  `RESULT#benchmark-as-a-service` 1. The 80/41 split matches task 1.6's recorded numbers exactly.
+  Wrote 123 items in 5 batches.
+
+- [x] 9.8 Verify: row counts match, spot-checked scores are identical, and `baas results` agrees with
+  historical output allowing for the documented `tags.project` filter difference — **done
+  2026-08-20**.
+
+  `--verify` reads every source row back by its own key and compares score and tags:
+  **123/123 verified, zero mismatches.** It runs under the operator profile, needing only
+  `GetItem` — so the check is not restricted to whoever held the write grant.
+
+  One wrinkle worth recording: the operator profile assumes a role, and the shaded **runner** JAR
+  carries no STS module (the runner never assumes one). The wrapper now puts the CLI JAR on the
+  classpath after it, purely for STS. Runner first, so it still wins every duplicate and the
+  migration runs against the classes the runner writes with.
+
+  Row counts per partition, queried directly: `lynx-journal` **80**, `unknown-migrated` **41**,
+  `dynamodb-results-store` **3**, `benchmark-as-a-service` **1** — 125 total, i.e. 123 migrated
+  plus the 2 live post-cutover runs from §12. `dynamodb-results-store` holding 3 is right: one
+  migrated pre-cutover row plus the JMH and JCStress runs written after it.
+
+  `dynamodb:Scan` is denied to the operator, so counting had to go partition by partition. That
+  denial is task 4.9's guarantee holding in production, not an obstacle.
 
 ## 10. Cleanup (the cutover itself moved to §13)
 
@@ -445,12 +475,39 @@ rollback until §14.
 Split out of §12 when migration moved after the cutover: these two are the only manual checks that
 read data §9 puts there, and running them before it would verify against an empty partition.
 
-- [ ] 12b.1 **Manual**: repeat 12.5's `baas results` sweep against migrated history, confirming
+- [x] 12b.1 **Manual**: repeat 12.5's `baas results` sweep against migrated history, confirming
   pre-cutover rows appear and that `--tag source=gha-e2e-test` finds the 36 carried-through CI rows
-- [ ] 12b.2 **Manual**: confirm a benchmark score is consistent with a pre-change run of the same
+
+  Pre-cutover history is queryable back to **December 2024** (`jmh-20241223_163…`), across `jmh`
+  and `jmh-with-async` types, grouped and best-score-selected as designed.
+
+  The 36 `source`-tagged rows are all present, but they are **not** all `source=gha-e2e-test`: that
+  exact value is **14**, with `gha-e2e-test-async` **11** and `gha-e2e-test-profilers` **11**.
+  14 + 11 + 11 = 36, matching task 1.3's total — which counted rows carrying a `source` tag of any
+  of the three values. The task's wording conflated the total with one value; the data is right.
+  They live in `RESULT#unknown-migrated`, since none carried a `project` tag — 9.4's decision
+  working as intended.
+
+  Also confirmed live: an unknown tag key that no row carries warns and names the known
+  vocabulary (`No result carries the tag key(s) nosuchkey, and they are not known keys …`), which
+  is 6.10 on real data rather than a fixture.
+
+- [x] 12b.2 **Manual**: confirm a benchmark score is consistent with a pre-change run of the same
   benchmark, stating the observed spread — run-to-run variance is large (CI history spans
   10.0M–29.6M ops/s on one benchmark), so investigate only a difference outside that band
   (was 12.8, which could not run before the history existed in the table)
+
+  **Consistent — no investigation warranted.** Migrated history holds 41 rows for
+  `incrementUsingSynchronized`, spanning **6,738,540 – 29,560,304 ops/s**, median **17,392,776**.
+  The post-cutover run scored **10,013,068 ops/s**, comfortably inside that band. The observed
+  spread is even wider than the task's stated 10.0M–29.6M, so the bar for suspicion is lower than
+  assumed, not higher.
+
+  Two caveats on how much this proves, neither of which changes the verdict: the migrated rows are
+  GitHub Actions e2e runs on different hardware, and the post-cutover run's own error bar
+  (±10,720,977) exceeds its score at `-wi 1 -i 3`. A configuration that cannot separate 10M from
+  20M cannot support a regression claim in either direction — which is why the task asks only
+  whether the number is in-band.
 
 ## 13. Runner cutover (first step after the read path; §9 migrates history afterwards)
 

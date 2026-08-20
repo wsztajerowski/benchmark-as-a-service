@@ -236,7 +236,7 @@ public class MigrateAtlasToDynamoDb {
         return new StoredMeasurement(
             projectOf(tags),
             required(id, "requestId", String.class),
-            createdAt(metadata),
+            createdAt(document, metadata),
             MeasurementKind.JMH,
             benchmark.substring(0, lastDot),
             benchmark.substring(lastDot + 1),
@@ -268,7 +268,7 @@ public class MigrateAtlasToDynamoDb {
         return new StoredMeasurement(
             projectOf(tags),
             required(document, "_id", String.class),
-            createdAt(metadata),
+            createdAt(document, metadata),
             MeasurementKind.JCSTRESS,
             null, null, null, null, null, null,
             Map.of(),
@@ -315,11 +315,20 @@ public class MigrateAtlasToDynamoDb {
      * one writer, so a string form is accepted too. Normalised to UTC and truncated to
      * milliseconds, matching what {@code StoredMeasurement} does to a live measurement — the sort
      * key carries exactly three fractional digits, and a wider value would key differently.
+     *
+     * <p>Looked up in the metadata sub-document <em>and</em> at the document root. An earlier
+     * schema put {@code createdAt} on the root, and 6 of the 123 historical JMH documents still
+     * carry it there — all of them real `lynx-journal` measurements. Reading only one location
+     * silently skipped them, which the dry run caught: the whole point of migrating before Atlas
+     * is decommissioned is that dropping a row is irreversible.
      */
-    private static Instant createdAt(Document metadata) {
+    private static Instant createdAt(Document document, Document metadata) {
         Object value = metadata == null ? null : metadata.get("createdAt");
         if (value == null) {
-            throw new IllegalArgumentException("no createdAt");
+            value = document.get("createdAt");
+        }
+        if (value == null) {
+            throw new IllegalArgumentException("no createdAt in benchmarkMetadata or at the root");
         }
         if (value instanceof Date date) {
             return date.toInstant();
