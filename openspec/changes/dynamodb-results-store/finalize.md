@@ -6,119 +6,92 @@
 > from "keep as-is" to PR later).
 
 **Change**: `dynamodb-results-store`
-**Finalized at**: `2026-08-19 00:05`
+**Finalized at**: `2026-08-20 16:25`
 **Outcome**: `merge-locally`
 
 ---
 
 ## Branch state
 
-- **Branch**: `impl/ddb-phase2` (worktree branch, phase 2)
+- **Branch**: `impl/ddb-phase3` (worktree branch, phase 3)
 - **Base branch**: `feat/baas-cli-openspec-test` (feature branch, NOT the integration branch)
-- **Final state**: `merged` (fast-forward, 16 commits)
+- **Commits**: `16` ahead of base, fast-forward possible with no conflicts
+- **Final state**: `merge pending — one command, see below`
 - **PR URL**: `N/A`
 
-**Push deliberately skipped**, matching the choice made at iteration 1's finalize. Nothing has left
-the machine. `origin/feat/baas-cli-openspec-test` is untouched.
+**Push deliberately skipped**, matching iterations 1 and 2. Nothing has left this machine and
+`origin/feat/baas-cli-openspec-test` is untouched.
+
+### Why the merge is handed off rather than executed
+
+`feat/baas-cli-openspec-test` is checked out in the **main worktree**
+(`/Users/wiktor/workspace/way-to-neo/benchmark-as-a-service`). Git refuses to update a branch that
+another worktree has checked out, and overriding that would leave the main checkout's index and
+working tree disagreeing with its own `HEAD` — every file showing as modified for no reason. This
+session is also scoped to its worktree and must not operate in the main checkout.
+
+So the merge is one command, run from the main checkout:
+
+```bash
+cd /Users/wiktor/workspace/way-to-neo/benchmark-as-a-service
+git merge --ff-only impl/ddb-phase3
+```
+
+`--ff-only` is deliberate: the fast-forward was confirmed, so anything that would create a merge
+commit means the base moved and deserves a look rather than an automatic merge.
+
+Afterwards the worktree can be removed:
+
+```bash
+git worktree remove .claude/worktrees/ddb-phase3
+git branch -d impl/ddb-phase3
+```
 
 **Deviation from the canonical flow**: the schema expects `.worktrees/<change-name>/` on a branch
-named `<change-name>`. This iteration used `.claude/worktrees/ddb-phase2` on `impl/ddb-phase2`,
+named `<change-name>`. This arc used `.claude/worktrees/ddb-phase<n>` on `impl/ddb-phase<n>`,
 because the native worktree tool branches from `origin/main` by default and `origin/main` contains
 no `openspec/` directory at all.
 
 ---
 
-## Workspace
+## Commits in this iteration
 
-- **Worktree**: `/Users/wiktor/workspace/way-to-neo/benchmark-as-a-service/.claude/worktrees/ddb-phase2`
-- **Cleanup**: `removed`
+Phase 3, `980c6db..515876b` — 16 commits.
 
-The SDD ledger and all eleven review-package diffs lived in the worktree's gitignored
-`.superpowers/` directory and did not survive removal. Everything load-bearing was promoted into
-`apply.md` and `verify.md` first; the working copies were also archived outside the repo.
-
----
-
-## PR comment
-
-- **Comment status**: `skipped (no PR)`
-
-`gh` is unauthenticated in this environment and no PR exists for the feature branch.
-
----
-
-## Tests
-
-- **Baseline status at finish**: `passing`
-
-Full reactor `mvn clean verify` at `d1e5953` with a real `ASYNC_PATH`: **BUILD SUCCESS** across all
-6 modules — `baas-model` 33/33, `baas-cli` 202/202, `S3UploadServiceIT` 5/5 against LocalStack, and
-the async-profiler IT confirmed running rather than silently skipping. The four commits after
-`d1e5953` are documentation only.
+| SHA | What |
+|---|---|
+| `cb94a41` `d32137c` `95d74cf` | Storage-neutral `ResultsStore` port; `upsert` surface deleted |
+| `6694df7` `5662846` `8afd8fb` | The runner write path (§5) and its test harness (§8) |
+| `99df1b7` `aed9e6f` | Read path from DynamoDB (§6, 7.1-7.2); run-artifact download (§7.7-7.10) |
+| `930c89b` | Migration resequenced after the cutover; `source` tag kept |
+| `364a304` | **The cutover** (§13) — new runs go to DynamoDB, `--no-database`, `--mongo-uri` gone |
+| `1467146` `3269137` | Migration script (§9.1-9.6), then 123 rows migrated and verified (§9.7-9.8, §12b) |
+| `0d86d8c` | Docs brought to the post-cutover state (§11) and §12 recorded |
+| `164d8a0` | **Mongo removed from the infrastructure** (§14, §10.3) |
+| `f0ff286` `515876b` | Successor change scaffolded; verification report |
 
 ---
 
-## What was merged
+## State at closeout
 
-**Phase 2 of a multi-phase change: `tasks.md` §3 and the additive part of §4.** The change stands
-at **29 of 108 tasks**.
+- **112/113 tasks.** 14.5 (decommission Atlas) is a recorded deferral, not unfinished work.
+- **Full reactor `mvn clean verify` green** with `ASYNC_PATH` exported — 320 tests, 6 modules.
+- **Live**: four paid runs, the last one *after* Mongo removal, proving runs no longer need 27017.
+- **Data**: 123 historical measurements migrated, 123/123 verified by key.
 
-A new Mongo-free `baas-model` module holding the stored measurement shape, DynamoDB key encoding,
-the tag vocabulary and an explicit item mapper — plus the results table, its `requestId` index, a
-DynamoDB gateway endpoint, a stack output, and scoped IAM for the runner, operator and deployer.
+## Carried forward, deliberately
 
-**Nothing is deployed, and nothing writes to or reads from the table.** The runner and CLI still
-use MongoDB Atlas. That is the point of this phase: it is purely additive, and every existing
-benchmark run continues to work exactly as before — verified across the whole diff, not per file.
-
-### Defects found by review that would have reached production
-
-1. **`NaN` would have lost entire runs.** DynamoDB's `N` type rejects `NaN`, and JMH reports it for
-   *any* single-iteration run, so `baas run jmh -- X -i 1` would have failed with an opaque
-   `ValidationException`. Found twice — once on the primary metric, once on secondary metrics.
-2. **Multi-mode runs would have silently overwritten each other.** The sort key omitted `mode`,
-   which the Mongo `_id` carried as `benchmarkType`, so `-bm thrpt,avgt` produced two rows
-   differentiated only by a millisecond timestamp. Caught before any migration wrote history onto
-   the key shape — after that it would have meant redoing the migration.
-
-Also fixed: a `Map.copyOf(null)` NPE; `createdAt` not round-tripping below millisecond precision;
-an enforcer rule whose Morphia pattern matched nothing in this repo; the table's key names existing
-in three unlinked copies; and a deploy preflight that simulated no DynamoDB action.
-
-Six of these originated in the plan itself rather than in implementation. Five separate implementers
-surfaced them by following their brief exactly and reporting what looked wrong instead of silently
-correcting it.
-
----
-
-## Carried forward — not resolved by this finalize
-
-- **`verify.md` returns ❌ FAIL on scope.** 27 of 39 requirements remain, `benchmark-results-query`
-  at 0 of 9. Archiving would sync specs describing a store nothing uses. **Do not run
-  `/opsx:archive`.**
-- **Two spec drift warnings, both spec edits rather than code.** The gateway endpoint does not
-  exist on the `UseExistingVpc=true` path (mirroring `S3GatewayEndpoint`, but the spec does not say
-  so); and `core-stack-provisioning:24` forbids the runner "any delete action" while
-  `dynamodb:BatchWriteItem` grants batch deletes with no separate IAM check.
-- **`tasks.md` 4.3 and 4.8 stay open by design**, annotated inline so they are not read as
-  oversights.
-- **Before Task 8's deploy:** re-render and re-attach the deployer policy — the attached policy
-  holds no DynamoDB actions. `infra/README.md` documents the wrong attachment mechanism (a
-  customer-managed flow; it is inline on an IAM group) and cites the superseded 4096 figure.
-- **`BENCHMARK_PARAMETERS` still carries the `eval` injection weakness** fixed for tags in phase 1.
-  Outside all 108 task items; wants its own change.
-- **§9 blockers**: the `unknown` sentinel for untagged migrated rows (which collides with
-  `currentGitCommit()`'s existing `unknown` fallback) and the `source` tag mapping.
-- **`export-before-teardown` now exists** as a separate change and alters what §7's setup and
-  teardown behaviour should be. Plan §7 against it, not against the current `tasks.md` text.
+1. **The GHA benchmark path is broken** by §14 — it reads the deleted SSM parameter. Documented in
+   `CLAUDE.md` and `README.md`; successor change `gha-workflow-migration-to-dynamodb` is scaffolded
+   with the research captured in its `assumptions.md`.
+2. **The Atlas cluster still exists.** Unreachable from BaaS, free tier, and the last copy of the
+   pre-migration source data. Delete it once confidence in the migrated history is high.
+3. **The temporary `dynamodb:BatchWriteItem` grant** added to the admin group for the migration can
+   be revoked — the migration is done and the script is deleted.
+4. **`private-runner-network`** is unblocked by this change and is the natural next piece of work.
 
 ---
 
 ## Next step
 
-Task 8 (live deploy) is the remaining gate for this phase and is human-triggered: it mutates the
-live CloudFormation stack and creates a `DeletionPolicy: Retain` table that outlives a teardown.
-Re-attach the deployer policy first.
-
-Otherwise, the next work is either planning §5–§12, or the `export-before-teardown` change, whose
-`brainstorm` artifact is ready.
+Run the merge command above, then `/opsx:archive`.
