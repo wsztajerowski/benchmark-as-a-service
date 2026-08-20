@@ -34,13 +34,6 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **WHEN** an EC2 instance launched with `RunnerRole` attempts `s3:PutObject` against the stack's `S3MainBucket`
 - **THEN** the request succeeds (the policy's resource ARN matches the bucket's actual name)
 
-### Requirement: Runner egress reaches MongoDB Atlas
-`RunnerSecurityGroup` SHALL permit outbound TCP on port 27017 in addition to 443 and 80, so the benchmark runner can reach a MongoDB Atlas cluster.
-
-#### Scenario: Atlas port is open
-- **WHEN** the core stack is deployed with `UseExistingVpc=false`
-- **THEN** `RunnerSecurityGroup`'s egress rules include a TCP rule covering port 27017
-
 ### Requirement: Working bucket survives stack deletion by default
 `S3MainBucket` SHALL declare `DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`, and SHALL declare lifecycle rules expiring noncurrent versions and aborting incomplete multipart uploads.
 
@@ -49,11 +42,11 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** the stack reaches `DELETE_COMPLETE` and the bucket still exists
 
 ### Requirement: baas admin setup is self-sufficient
-`baas admin setup` SHALL accept `--region`, `--aws-profile`, and `--mongo-uri` directly as command-line options, derive the resource prefix from the caller's AWS identity, apply defaults for any omitted option, deploy or update the core stack, and write the result to `~/.baas/config.yaml`. It SHALL NOT require `~/.baas/config.yaml` to pre-exist, and it SHALL NOT expose a `--prefix` option.
+`baas admin setup` SHALL accept `--region` and `--aws-profile` directly as command-line options, derive the resource prefix from the caller's AWS identity, apply defaults for any omitted option, deploy or update the core stack, and write the result to `~/.baas/config.yaml`. It SHALL NOT require `~/.baas/config.yaml` to pre-exist, and it SHALL NOT expose a `--prefix` option.
 
 #### Scenario: First run with no prior config
-- **WHEN** `baas admin setup --mongo-uri "mongodb+srv://..."` runs and `~/.baas/config.yaml` does not exist
-- **THEN** the core stack is deployed using the default region and the ARN-derived prefix, the Mongo URI is stored in SSM SecureString, and `~/.baas/config.yaml` is created with the stack's outputs
+- **WHEN** `baas admin setup` runs and `~/.baas/config.yaml` does not exist
+- **THEN** the core stack is deployed using the default region and the ARN-derived prefix, and `~/.baas/config.yaml` is created with the stack's outputs, including the results table name
 
 ### Requirement: Resource prefix is derived from the caller's AWS identity
 `baas admin setup` SHALL derive the resource name prefix deterministically from the caller's AWS identity ARN (`lowercase(base32(sha256(arn)))[0:8]`) and name the core stack `baas-<prefix>`. It SHALL NOT accept a user-supplied prefix.
@@ -73,13 +66,6 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **WHEN** `baas admin setup --github-org foo` is invoked
 - **THEN** picocli reports an unknown option error, since no such option is registered
 
-### Requirement: Mongo URI is validated before provisioning
-`baas admin setup` SHALL validate `--mongo-uri` before making any AWS API call.
-
-#### Scenario: Bad URI costs no deploy
-- **WHEN** `baas admin setup --mongo-uri "mongodb+srv://host"` (no database) is invoked
-- **THEN** the command fails with a validation error and no CloudFormation stack operation is started
-
 ### Requirement: config.yaml core stack field is unambiguously scoped
 `~/.baas/config.yaml`'s `aws.coreStackName` field SHALL refer only to the core stack; `baas admin setup` sets it to `baas-<prefix>` (the ARN-derived prefix). No config field SHALL exist for the CI stack.
 
@@ -88,7 +74,7 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** `~/.baas/config.yaml` is written with `aws.coreStackName: baas-<prefix>` (e.g. `baas-a1b2c3d4`) and no CI-stack-related field
 
 ### Requirement: Teardown safety gates
-`baas admin teardown` SHALL abort if any EC2 instance tagged `baas-role=benchmark-runner` is in the `running` state, SHALL require explicit confirmation (retyping the stack name, or `--yes`), SHALL retain the S3 bucket by default (deleting it only with `--delete-bucket`), and SHALL NOT delete or modify anything in MongoDB/Atlas.
+`baas admin teardown` SHALL abort if any EC2 instance tagged `baas-role=benchmark-runner` is in the `running` state, SHALL require explicit confirmation (retyping the stack name, or `--yes`), and SHALL retain both the S3 bucket and the DynamoDB results table by default — the bucket is deletable with `--delete-bucket`, the table by no flag at all. It SHALL name both retained resources on exit.
 
 #### Scenario: Abort when a run is in flight
 - **WHEN** `baas admin teardown` runs while a `baas-role=benchmark-runner` instance is `running`
@@ -106,18 +92,18 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** a subsequent `listObjectVersions` returns no versions and no delete markers
 
 ### Requirement: Deployer policy is created out-of-band, before the core stack exists
-`BaasCliDeployerPolicy` (matching `infra/deployer-policy.json`) SHALL cover: CloudFormation stack lifecycle (create, update, delete, describe, change-set operations), VPC/EC2 networking create/delete/describe — including `ec2:DescribeInstances`, needed by `baas admin teardown`'s active-run safety gate — IAM role/instance-profile create (covers both `RunnerRole` and `OperatorRole`, since both are the same resource type), S3 bucket create, and `ssm:DeleteParameter` scoped to the mongo connection-string path, needed by `baas admin teardown`'s cleanup step. `baas admin setup`/`baas admin teardown` SHALL require `BaasCliDeployerPolicy`. This policy SHALL be created manually, before the first `baas admin setup` run — the core stack SHALL NOT create it, since CloudFormation cannot grant permission to create CloudFormation stacks.
+`BaasCliDeployerPolicy` (matching `infra/deployer-policy.json`) SHALL cover: CloudFormation stack lifecycle (create, update, delete, describe, change-set operations), VPC/EC2 networking create/delete/describe — including `ec2:DescribeInstances`, needed by `baas admin teardown`'s active-run safety gate — IAM role/instance-profile create (covers both `RunnerRole` and `OperatorRole`, since both are the same resource type), S3 bucket create, and the DynamoDB table lifecycle actions. `baas admin setup`/`baas admin teardown` SHALL require `BaasCliDeployerPolicy`. This policy SHALL be created manually, before the first `baas admin setup` run — the core stack SHALL NOT create it, since CloudFormation cannot grant permission to create CloudFormation stacks.
 
 #### Scenario: Deployer policy permits the full setup/teardown lifecycle
 - **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin setup` followed later by `baas admin teardown`
-- **THEN** every AWS API call made by both commands succeeds, including teardown's active-run check and SSM parameter cleanup
+- **THEN** every AWS API call made by both commands succeeds, including teardown's active-run check
 
 ### Requirement: Deployer policy covers the full setup path
-`BaasCliDeployerPolicy` SHALL include `ssm:PutParameter` on the mongo connection-string path, the S3 actions needed to empty and delete the working bucket (`s3:ListBucket`, `s3:ListBucketVersions`, `s3:DeleteObject`, `s3:DeleteObjectVersion`, `s3:DeleteBucket`), and the IAM read-back actions CloudFormation invokes after role creation (`iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies`).
+`BaasCliDeployerPolicy` SHALL include `ssm:PutParameter` on the runner AMI pointer path, the S3 actions needed to empty and delete the working bucket (`s3:ListBucket`, `s3:ListBucketVersions`, `s3:DeleteObject`, `s3:DeleteObjectVersion`, `s3:DeleteBucket`), and the IAM read-back actions CloudFormation invokes after role creation (`iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies`).
 
-#### Scenario: Setup with a Mongo URI succeeds end to end
-- **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin setup --mongo-uri "mongodb+srv://user:pass@host/db"`
-- **THEN** the stack deploys, the SecureString parameter is written, and the command exits 0
+#### Scenario: Setup succeeds end to end
+- **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin setup`
+- **THEN** the stack deploys, including the results table, and the command exits 0
 
 ### Requirement: Deployer policy holds no CI-stack permissions
 `BaasCliDeployerPolicy` SHALL NOT grant any OIDC-provider action or `iam:UpdateAssumeRolePolicy`.
@@ -134,7 +120,7 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** the request is not permitted
 
 ### Requirement: Operator identity is an assumable role created by the core stack
-The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resource (not a policy attached to any user), scoped to that stack's own `S3MainBucket`, `RunnerRole`, and mongo SSM parameter path. Its trust policy SHALL allow the AWS account root, so `baas admin setup` requires no additional parameter to identify who the operator is. The role's ARN SHALL be a stack output (`OperatorRoleArn`) and SHALL be printed by `baas admin setup`. The stack SHALL NOT grant `sts:AssumeRole` on this role to any specific IAM identity — that remains a manual, per-identity step performed outside the stack.
+The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resource (not a policy attached to any user), scoped to that stack's own `S3MainBucket`, `RunnerRole`, results table, and the runner AMI pointer path. Its trust policy SHALL allow the AWS account root, so `baas admin setup` requires no additional parameter to identify who the operator is. The role's ARN SHALL be a stack output (`OperatorRoleArn`) and SHALL be printed by `baas admin setup`. The stack SHALL NOT grant `sts:AssumeRole` on this role to any specific IAM identity — that remains a manual, per-identity step performed outside the stack.
 
 #### Scenario: Operator role is created unattached
 - **WHEN** `baas admin setup` deploys the core stack
@@ -145,7 +131,7 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
 - **THEN** it prints the `OperatorRoleArn` stack output together with instructions for granting `sts:AssumeRole` to a specific IAM identity
 
 ### Requirement: Operator role permissions
-`BaasCliOperatorRole` SHALL cover: `ec2:RunInstances`/`Describe*` to launch and observe benchmark runner instances, tag-scoped `ec2:TerminateInstances` (condition `aws:ResourceTag/baas-role=benchmark-runner`), `ec2:CreateTags` scoped to the `RunInstances` create action, `ssm:GetParameter`/`PutParameter` on the mongo connection-string path, `ssm:GetParameter` on the runner AMI pointer path (`/<prefix>/runner/ami-id`), `ec2:DescribeImages` to validate the resolved AMI, S3 object access scoped to the core stack's bucket, and `iam:PassRole` scoped to `RunnerRole` only. It SHALL NOT cover the public AL2023 AMI lookup path (`/aws/service/ami-amazon-linux-latest/*`), which is no longer used now that the runner boots from a purpose-built image. `baas run`/`baas results`/`baas config`/`baas env` SHALL succeed when invoked by an identity that has assumed `BaasCliOperatorRole`.
+`BaasCliOperatorRole` SHALL cover: `ec2:RunInstances`/`Describe*` to launch and observe benchmark runner instances, tag-scoped `ec2:TerminateInstances` (condition `aws:ResourceTag/baas-role=benchmark-runner`), `ec2:CreateTags` scoped to the `RunInstances` create action, `ssm:GetParameter` on the runner AMI pointer path (`/<prefix>/runner/ami-id`) and no SSM write of any kind, `dynamodb:Query`/`GetItem` on the results table and its index with no write action, `ec2:DescribeImages` to validate the resolved AMI, S3 object access scoped to the core stack's bucket, and `iam:PassRole` scoped to `RunnerRole` only. It SHALL NOT cover the public AL2023 AMI lookup path (`/aws/service/ami-amazon-linux-latest/*`), which is no longer used now that the runner boots from a purpose-built image. `baas run`/`baas results`/`baas config`/`baas env` SHALL succeed when invoked by an identity that has assumed `BaasCliOperatorRole`.
 
 #### Scenario: Operator role suffices for daily use
 - **WHEN** an identity that has assumed `BaasCliOperatorRole` runs `baas run jmh -- ...`, `baas results`, or `baas env diff`
@@ -286,3 +272,96 @@ EC2 image-mutating action, or `ssm:PutParameter` on the pointer path.
 #### Scenario: Operator cannot build or retire an image
 - **WHEN** `infra/operator-policy.json` is inspected
 - **THEN** it contains no `imagebuilder` action and no `ec2:DeregisterImage` or `ec2:CreateImage` action
+
+### Requirement: Database traffic never leaves the VPC
+The core stack SHALL create a DynamoDB gateway endpoint associated with the runner's route table, so
+runner-to-table traffic is routed privately. A gateway endpoint SHALL be used rather than an interface
+endpoint, because it carries no hourly charge.
+
+#### Scenario: Gateway endpoint is present
+- **WHEN** the core stack is deployed
+- **THEN** an `AWS::EC2::VPCEndpoint` of type Gateway exists for `com.amazonaws.<region>.dynamodb`,
+  associated with the runner's route table
+
+#### Scenario: No hourly endpoint charge is introduced
+- **WHEN** the template's endpoints are inspected
+- **THEN** no interface endpoint is declared for DynamoDB
+
+### Requirement: Runner egress no longer includes the database port
+`RunnerSecurityGroup` SHALL NOT permit outbound TCP on port 27017.
+
+#### Scenario: Database port is closed
+- **WHEN** the deployed security group's egress rules are inspected
+- **THEN** no rule covers port 27017
+
+### Requirement: The runner can write results but not read them
+`RunnerRole` SHALL be granted `dynamodb:PutItem` and `dynamodb:BatchWriteItem` on the results table ARN
+and nothing else on that table. It SHALL NOT be granted `Query`, `Scan`, `GetItem`, or any delete action.
+
+#### Scenario: Runner can store a result
+- **WHEN** an instance using the runner instance profile writes a measurement
+- **THEN** the write succeeds
+
+#### Scenario: Runner cannot read the results history
+- **WHEN** that instance attempts `dynamodb:Scan` on the results table
+- **THEN** the request is denied
+
+#### Scenario: Runner cannot delete results
+- **WHEN** that instance attempts `dynamodb:DeleteItem` on the results table
+- **THEN** the request is denied
+
+### Requirement: The operator can read results but not write them
+`BaasCliOperatorRole` SHALL be granted `dynamodb:Query` and `dynamodb:GetItem` on the results table ARN
+and its index ARN, and SHALL NOT be granted write or delete actions on either.
+
+#### Scenario: Operator can query results
+- **WHEN** an identity that has assumed the operator role runs `baas results`
+- **THEN** the query succeeds
+
+#### Scenario: Operator can query the request-ID index
+- **WHEN** that identity runs `baas results --request-id <id>`
+- **THEN** the index query succeeds
+
+#### Scenario: Operator cannot mutate results
+- **WHEN** that identity attempts `dynamodb:PutItem` on the results table
+- **THEN** the request is denied
+
+### Requirement: Deployer policy covers the table lifecycle
+`BaasCliDeployerPolicy` SHALL grant `dynamodb:CreateTable`, `DescribeTable`, `UpdateTable`,
+`TagResource`, `ListTagsOfResource`, `DescribeTimeToLive`, and `DeleteTable`, scoped to the
+prefix-derived table ARN rather than `Resource: "*"`. The rendered policy SHALL remain within the inline
+policy budget already asserted by the existing renderer test.
+
+#### Scenario: Setup creates the table under the deployer policy alone
+- **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin setup`
+- **THEN** the stack deploys with the results table created and the command exits 0
+
+#### Scenario: Table actions are prefix-scoped
+- **WHEN** `infra/deployer-policy.json` is inspected
+- **THEN** every `dynamodb` statement names the prefix-derived table ARN and none uses `Resource: "*"`
+
+#### Scenario: Policy still fits the budget
+- **WHEN** the deployer policy is rendered
+- **THEN** its non-whitespace length remains under the asserted inline-policy limit
+
+### Requirement: Setup detects a retained table from a previous stack
+`baas admin setup` SHALL check for an existing results table left behind by a previous stack before
+deploying, and SHALL fail with a message naming the table and the remedy, rather than surfacing a
+CloudFormation error that does not identify the cause.
+
+#### Scenario: Retained table blocks setup with a clear message
+- **WHEN** a results table from a prior stack exists and `baas admin setup` is run
+- **THEN** the command exits non-zero naming the table, mirroring the existing pre-check for a retained
+  bucket
+
+#### Scenario: Clean account proceeds
+- **WHEN** no results table exists
+- **THEN** setup proceeds without the pre-check interfering
+
+### Requirement: The table name is a stack output
+The core stack SHALL expose the results table name as a stack output, so the CLI can resolve it without
+a parameter-store lookup.
+
+#### Scenario: Output is present
+- **WHEN** the core stack is deployed
+- **THEN** its outputs include the results table name

@@ -228,6 +228,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   even accepts one.
 - **Morphia auto-maps everything under `pl.wsztajerowski.entities`** — new entity classes must live
   there.
+- **A delta spec's `## REMOVED Requirements` heading must repeat the main spec's requirement name
+  *verbatim*.** `openspec archive` matches on the name; a paraphrase warns
+  ("not in the current spec; treating it as already removed") and then archives anyway, leaving the
+  real requirement in `openspec/specs/` describing behaviour the code no longer has. Both of
+  `dynamodb-results-store`'s REMOVED blocks missed this way, and the main spec kept documenting
+  `--mongo-uri` after the option was deleted. Grep the main spec for the exact heading before
+  writing the REMOVED block, and read the archive warnings rather than skimming them.
 - **`pom.xml` version stays `0.0.0-semantically-released`.** Never bump it by hand; `release.yml`
   sets the real version at release time. Shaded artifacts are named `${project.artifactId}` with no
   version suffix, so `target/baas-cli.jar` and `target/benchmark-runner.jar` are stable paths.
