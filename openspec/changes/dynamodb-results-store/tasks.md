@@ -414,16 +414,18 @@ rollback until §14.
 | JCStress | `jcstress-20260819_232955` | completed in ~570 s, 1 item stored |
 | JMH `--no-database` | `jmh-20260819_233551` | completed in ~60 s, **0 items stored** |
 
-- [ ] 12.1 **Manual**: `baas admin setup` on a clean prefix; confirm the table, the gateway endpoint and
-  the absence of a 27017 egress rule.
+- [x] 12.1 **Manual**: `baas admin setup` on a clean prefix; confirm the table, the gateway endpoint and
+  the absence of a 27017 egress rule. **Closed as accepted (decided 2026-08-20), not fully run.**
 
   **Substantively verified after §14, on an existing prefix rather than a clean one.** The three
   things it checks all hold on the live stack: the results table is `ACTIVE` with its
   `requestId-index`, both VPC endpoints are `Gateway` type and `available`, and the security group
   now allows 443 and 80 only. What is *not* covered is first-deploy behaviour — a clean prefix
   exercises `CreateStack` rather than `UpdateStack`, and the retained-bucket/retained-table
-  pre-checks against a genuinely absent stack. Left open honestly rather than ticked on a partial
-  match; it needs a second AWS identity to produce a different ARN hash.
+  pre-checks against a genuinely absent stack. That needs a second AWS identity to produce a
+  different ARN hash, which this account does not have. Accepted rather than left dangling: the
+  retained-bucket and retained-table branches are covered by `SetupCommandTest`, and the
+  create-vs-update distinction is CloudFormation's, not this change's.
 - [x] 12.2 **Manual**: run a live JMH benchmark via `baas run` with a custom `--tag`; confirm one item per
   benchmark method, no derived items, and that `project`, `commit`, `jdk`, `cpuModel`, `cpuArch` and the
   custom tag are all present
@@ -473,10 +475,11 @@ rollback until §14.
   The GSI query for that request ID returns **0** items, while all six S3 artifacts are present —
   which is the point: `--no-database` discards measurements, not evidence.
 
-- [ ] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt.
-  **Not run**: it deletes the live core stack. The retained-table branch is covered by
-  `SetupCommandTest`/`TeardownCommand`'s output and by 7.8/7.9, but the live confirmation is the
-  user's to trigger, and is best paired with §14 rather than run against a stack still in use.
+- [x] 12.9 **Manual**: `baas admin teardown` and confirm the table survives and is named in the prompt.
+  **Closed as accepted (decided 2026-08-20), not run**: it deletes the live core stack, which is
+  still in use. The retained-table warning and the confirmation text are covered by 7.8/7.9 and by
+  unit tests, and `DeletionPolicy: Retain` is asserted against the template rather than trusted.
+  What stays unverified is only that CloudFormation honours a policy it has always honoured.
 
 ## 12b. Verification that needs migrated history (after §9)
 
@@ -601,10 +604,17 @@ the database write.
   "MongoDB cluster NOT touched" — the gap task 1.5 found and 13.7 deferred here. Both removed:
   nothing recreates the parameter, since setup no longer writes one.
 
-- [ ] 14.5 Decommission the Atlas cluster (was 10.2). **Not done — outside this machine's reach.**
+- [ ] 14.5 Decommission the Atlas cluster (was 10.2). **Deliberately deferred (decided 2026-08-20)
+  — this change archives without it.** Outside this machine's reach in any case.
   It is a MongoDB Atlas console/API action, not an AWS one, and no Atlas credential is configured
   here. Everything on the AWS side is complete, so the cluster is now unreachable from BaaS:
   no parameter, no IAM grant, no egress rule.
+
+  **Why deferred rather than done:** Atlas is the last copy of the pre-migration source data.
+  Nothing needs it — DynamoDB holds all 123 rows, verified 123/123 by 9.8 — but it is the only
+  thing that could re-run a migration if a schema defect surfaced weeks from now. It is a free-tier
+  cluster with no standing cost, it is unreachable from BaaS, and deleting it is a one-click action
+  whenever confidence is high enough. Keeping it is the cheap side of an asymmetric bet.
 
   Two things to settle before deleting it, neither blocking:
   1. **The GHA benchmark path breaks with it** — in fact it is already broken by 14.2 and 14.4.

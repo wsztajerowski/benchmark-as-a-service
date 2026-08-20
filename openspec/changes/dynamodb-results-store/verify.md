@@ -5,151 +5,184 @@
 > Failed checks must be fixed in the corresponding artifact, then re-run verify.
 
 **Change**: `dynamodb-results-store`
-**Verified at**: `2026-08-19 00:05`
-**Iteration**: `2`
-**Verifier**: `Claude Opus 5, controller session (subagent-driven-development)`
+**Verified at**: `2026-08-20 16:20`
+**Iteration**: `3`
+**Verifier**: `Claude Opus 5, controller session`
+
+---
+
+## Summary
+
+| Dimension | Status |
+|---|---|
+| Completeness | **112/113 tasks**, 1 deliberate deferral. 33 requirements across 4 delta specs |
+| Correctness | 33/33 requirements implemented; both REMOVED requirements confirmed absent |
+| Coherence | Design followed. Three documented deviations, each with a recorded reason |
+
+**No critical issues. Ready for archive**, with the single open task carrying an explicit decision
+rather than being unfinished work.
+
+Iterations 1 and 2 verified 12/108 and 29/108 tasks against a change that had not yet been cut over.
+This iteration verifies the completed change, including live AWS verification and a data migration.
 
 ---
 
 ## 1. Structural Validation (`openspec validate --all --json`)
 
-- [x] All items `"valid": true`
+- [x] `dynamodb-results-store` — **valid**, no issues
+- [x] All four delta specs valid: `results-store-schema` (15 requirements),
+      `benchmark-results-query` (9), `core-stack-provisioning` (9), `cli-command-structure` (8)
 
-```text
-items: 5, passed: 5, failed: 0
-```
+Four `INFO` notes on `core-stack-provisioning` for requirements over 500 characters. Not raised as
+issues: those requirements carry the key-schema and IAM-scoping detail whose whole value is being
+exact, and splitting them would separate a rule from the reason it exists.
 
----
-
-## 2. Task Completion (`tasks.md`)
-
-- [ ] All `- [ ]` have been changed to `- [x]`
-
-**29 of 108 complete** (was 12 at iteration 1). §1, §2 and §3 are closed; §4 is closed except two
-items held back deliberately.
-
-| Task | Reason incomplete | Blocks archive? |
-|---|---|---|
-| 4.3 — remove TCP 27017 egress | **Deliberate.** The runner still writes to Atlas until §5 lands; `CLAUDE.md` states omitting 27017 makes every run fail at the database write. Annotated inline in tasks.md. | Yes, until the cutover |
-| 4.8 — remove Mongo SSM grants | **Deliberate.** Same reason; user-data still fetches the connection string from SSM. | Yes, until the cutover |
-| §5 (5.1–5.12) | Runner store adapters. No plan. | Yes |
-| §6 (6.1–6.13) | CLI query layer. No plan. | Yes |
-| §7 (7.1–7.10) | Config and command wiring. No plan. **Now interacts with the new `export-before-teardown` change.** | Yes |
-| §8 (8.1–8.11) | Test infrastructure. No plan. | Yes |
-| §9 (9.1–9.8) | Atlas → DynamoDB migration. No plan; blocked on two decisions. | Yes |
-| §10–§12 | Decommission, docs, manual verification. No plan. | Yes |
-
-`plan.md` Task 8 (live deploy) also has not run — it is a human gate, not an omission.
+One unrelated failure in the repo — `export-before-teardown`, an empty scaffold with no deltas.
+Pre-existing, not this change's.
 
 ---
 
-## 3. Delta Spec Sync State
+## 2. Completeness
 
-| Capability | Sync status | Notes |
-|---|---|---|
-| `results-store-schema` | ✗ pending sync | New capability. 5 of 13 requirements now met (was 2). |
-| `core-stack-provisioning` | ✗ pending sync | Exists in `openspec/specs/`. 5 of 9 met (was 0). |
-| `cli-command-structure` | ✗ pending sync | Exists. 2 of 9 met — unchanged this phase. |
-| `benchmark-results-query` | ✗ pending sync | New capability. **0 of 9** — entirely §6. |
+### Tasks: 112/113
 
----
+Every section closed except one item:
 
-## 4. Design / Specs Coherence Spot Check
-
-| Sample item | design description | specs counterpart | Gap |
-|---|---|---|---|
-| Key shape | design.md:53, now `<fqcn>#<method>#<mode>#<createdAt>#<requestId>` | `results-store-schema:31` | **Closed this iteration.** `mode` was missing from both; the review caught it and design.md was updated with the code. |
-| Gateway not interface endpoint | design.md (free vs hourly) | `core-stack-provisioning:3` | None — both scenarios pinned by template tests |
-| Runner write-only | design.md | `core-stack-provisioning:24` | See WARNING-2 |
-| Deployer table lifecycle | design.md | `core-stack-provisioning:56` | None. The spec names `DescribeTimeToLive` explicitly; `dynamodb:Describe*` covers it, and the budget scenario is asserted |
-| Shape defined once, shared | design.md:161-171 | `results-store-schema:153` | None — `baas-model` is on both consumers' reactor path; the runner does not yet *use* it (§5) |
-
-**Drift warnings:**
-
-- **WARNING-1 — the gateway endpoint does not exist on the existing-VPC path.**
-  `core-stack-provisioning:3` requires an endpoint "associated with the runner's route table".
-  `DynamoDbGatewayEndpoint` carries `Condition: CreateNetworking`, mirroring `S3GatewayEndpoint`,
-  so under `UseExistingVpc=true` no endpoint is created and DynamoDB traffic takes the operator's
-  existing route. This is a deliberate match to how S3 already behaves, but the spec does not say
-  so. Either the spec should record the exception or the requirement should be scoped to the
-  stack-managed-networking case.
-- **WARNING-2 — `core-stack-provisioning:24` says the runner "SHALL NOT be granted … any delete
-  action", but `dynamodb:BatchWriteItem` carries `DeleteRequest` and gets no separate IAM check.**
-  The grant is intentional and consistent with the runner's existing `s3:DeleteObject`, and the
-  test was renamed to state what it actually proves — but as written the spec and the
-  implementation disagree. The spec should be amended to permit batch deletes explicitly, or the
-  grant reduced to `PutItem` alone.
-
----
-
-## 5. Implementation Signal
-
-- [x] No unstaged files in the worktree
-- [ ] All related commits have been pushed
-
-**Commit range**: `c920bac..7fb9f90` (15 commits)
-
-`impl/ddb-phase2` is local only, not merged into `feat/baas-cli-openspec-test`, never pushed. That
-is finalize's job.
-
----
-
-## Test evidence
-
-| Suite | Result |
+| Task | Disposition |
 |---|---|
-| `mvn -pl baas-model test` | **33/33** |
-| `mvn -pl baas-cli test` | **202/202** |
-| Full reactor `mvn clean verify` | **BUILD SUCCESS**, 6 modules, async-profiler IT ran (not skipped) |
+| 14.5 Decommission the Atlas cluster | **Deliberately deferred** (decided 2026-08-20). Outside this machine's reach — Atlas is not an AWS resource and no Atlas credential is configured. Every AWS-side removal is done, so the cluster is unreachable from BaaS. Kept because it is the last copy of the pre-migration source data: nothing needs it, but nothing else could re-run a migration if a schema defect surfaced later. Free tier, no standing cost. |
 
-## Requirement coverage
+Two tasks were closed as **accepted rather than run**, both recorded with reasons:
 
-**12 of 39 requirements fully satisfied at code level** (was 4), plus 2 partial.
+- **12.1** (setup on a clean prefix) — its three substantive checks all hold on the live stack
+  (table `ACTIVE` with its GSI, both endpoints `Gateway` and `available`, egress 443/80 only). What
+  is uncovered is first-deploy behaviour, which needs a second AWS identity to produce a different
+  ARN hash. The retained-bucket/retained-table branches are unit-covered.
+- **12.9** (teardown) — destroys the live core stack, which is in use. The retained-table warning
+  and confirmation text are covered by 7.8/7.9 and by tests; `DeletionPolicy: Retain` is asserted
+  against the template. What stays unverified is only that CloudFormation honours a policy it has
+  always honoured.
 
-Closed this iteration: `results-store-schema` item key encoding, chronological string timestamps,
-and shape-defined-once; `core-stack-provisioning` gateway endpoint, runner write-only, operator
-read-only, deployer lifecycle, and table-name output.
+### Spec coverage: 33/33 requirements implemented
 
-Partial: `results-store-schema:3` (table exists; CLI config wiring is 7.1) and
-`results-store-schema:87` (vocabulary defined once and used by the CLI; the runner does not consume
-`baas-model` until §5).
+Spot-checked by locating the implementation for each, not by keyword presence alone:
 
-**Deliberately unsatisfied:** `core-stack-provisioning:17` (runner egress no longer includes 27017)
-and `:74` (setup detects a retained table). The first is 4.3; the second is 7.8.
+| Spec | Requirements | Evidence |
+|---|---|---|
+| `results-store-schema` | 15 | `baas-model/` — `StoredMeasurement`, `ResultKeys`, `MeasurementItemMapper`, `TagKeys`, `JcstressSummary`, `SecondaryMetric`; runner adapters in `benchmark-runner/src/main/java/pl/wsztajerowski/infra/` |
+| `benchmark-results-query` | 9 | `ResultsQueryService.queryProject`/`queryByRequestId`; `ResultsFilters.byTags`/`byBenchmarkName`/`byLivingBranches`/`unknownTagWarning`; `ResultsCommand` |
+| `core-stack-provisioning` | 9 | `infra/cf-template-core.yaml` — `ResultsTable`, `DynamoDbGatewayEndpoint`, scoped `RunnerRole`/`OperatorRole` policies, `ResultsTableName` output |
+| `cli-command-structure` | 8 | `RunCommand` (`--project`, `--no-database`, `resolveResultsTable`), `DownloadCommand`, `SetupCommand`, `ConfigShow`/`ConfigSync` |
 
-**Unverifiable without a deploy:** every scenario phrased "WHEN the core stack is deployed" —
-the gateway endpoint's existence, the table's presence, and "setup creates the table under the
-deployer policy alone". CloudFormation proves itself only at deploy time, and `plan.md` Task 8 is
-where that happens.
+**Both REMOVED requirements confirmed absent, not merely untested:**
+
+- *Runner egress reaches MongoDB Atlas* — removed from the template and from the live security
+  group; `CoreTemplateTest.runnerHasNoEgressToMongoAtlasAnyMore` pins the absence and holds the
+  egress list at exactly two rules.
+- *Mongo URI is supplied and validated by the CLI* — `--mongo-uri` and all copies of
+  `validateMongoUri` deleted; `BaasAppTest.mongoUriIsGoneFromEveryCommandThatOfferedIt` asserts the
+  option no longer parses on either command.
 
 ---
 
-## Overall Decision
+## 3. Correctness
 
-- [ ] ✅ PASS
-- [ ] ⚠️ PASS WITH WARNINGS
-- [x] ❌ FAIL — not archivable
+### Automated
 
-**Phase 2's own scope is complete and clean.** Every check that applies to it passed: validation
-5/5, worktree clean, 235 tests green across both modules, full reactor success, 12 of 39
-requirements met, two documented drift warnings, and six defects found by review — two of which
-(`NaN` losing whole runs, multi-mode results overwriting each other) would have reached production.
+Full reactor `mvn clean verify` — **BUILD SUCCESS**, all 6 modules, with `ASYNC_PATH` exported so
+`JmhWithAsyncProfilerSubcommandServiceIT` ran rather than silently skipping. 320 tests
+(33 `baas-model`, 29 runner unit, 14 runner IT, 229 CLI unit, 15 CLI IT).
 
-The change fails verification for the same structural reason as iteration 1: **29 of 108 tasks and
-27 of 39 requirements remain**, including `benchmark-results-query` at 0 of 9. Archiving would sync
-delta specs describing a DynamoDB results store that nothing writes to and nothing reads from.
+One store contract suite runs against **both** adapters, so a behavioural divergence between
+DynamoDB and MongoDB is a test failure rather than a discovery.
 
-**Next step:**
+### Live
 
-1. **Finalize** — merge `impl/ddb-phase2` into `feat/baas-cli-openspec-test`. The branch is
-   reviewed clean and additive; leaving it unmerged risks it rotting against `main`.
-2. **Then, before Task 8's deploy:** re-render and re-attach the deployer policy. The attached
-   policy holds no DynamoDB actions; `DeployerPreflight` now detects that rather than failing
-   mid-update, but detection is not the fix. `infra/README.md` describes the wrong attachment
-   mechanism for doing it.
-3. **Resolve the two drift warnings above** — both are spec edits, not code.
-4. **Plan §5–§12**, noting the new `export-before-teardown` change alters what §7's setup and
-   teardown behaviour should be.
+No automated test drives `baas run`, so §12 is manual by necessity. Four paid runs on the live
+stack:
 
-> FAIL here is a scope verdict, not a code verdict. There is nothing in the applied work to send
-> back to the executor.
+| Run | Verified |
+|---|---|
+| `jmh-20260819_232659` | 1 item per method, no derived items, all 9 tags, tags agree with the run's own `environment.json` |
+| `jcstress-20260819_232955` | 1 item, `JCSTRESS#` key form, both test maps with S3 keys, counts consistent |
+| `jmh-20260819_233551` (`--no-database`) | **0 items**, all 6 S3 artifacts present |
+| `jmh-20260820_152643` (post-§14) | Completed with no 27017 egress and no Mongo parameter |
+
+That last run is the one that matters: `CLAUDE.md` recorded that omitting 27017 makes every run
+fail at the database write, and it is now provably no longer true.
+
+### Migration
+
+123 documents migrated, **123/123 verified** by reading each row back by its own key and comparing
+score and tags. Per-partition counts reconcile exactly: 80 + 41 + 3 + 1 = 125 = 123 migrated + 2
+live post-cutover runs.
+
+The dry run earned its place — it skipped 6 documents carrying `createdAt` at the document root
+rather than in `benchmarkMetadata`, an older schema. Migrating without that fix would have dropped
+six real measurements irreversibly.
+
+### Scenario coverage
+
+Scenarios are covered by tests except where they describe live AWS behaviour, which §12/§12b cover
+manually. Two spec scenarios rest on live evidence alone: *the runner writes to the table over the
+gateway endpoint*, and *setup pre-checks a retained table*. Both were observed; neither can be
+unit-tested without mocking the thing under test.
+
+---
+
+## 4. Coherence
+
+### Design adherence — followed
+
+- **One item per measurement, no derived index items** — held. No inverted index was built.
+- **Cutover precedes migration** — held, and vindicated: live runs exercised the schema before 121
+  historical documents were written into it, and the schema defect that surfaced (root-level
+  `createdAt`) cost a re-run of a dry run rather than a re-migration.
+- **No dual-write** — held. Assurance came from the sources design.md named.
+- **MongoDB survives as a runner-local adapter, invisible to the CLI** — held, and now mechanically
+  enforced: the build bans the Mongo groupIds from `baas-model`, and `baas-cli` ships no driver.
+- **Mongo removal is last** — held. §14 landed after §9's verification, and Atlas remained a live
+  rollback target throughout.
+
+### Documented deviations
+
+| Deviation | Reason |
+|---|---|
+| §11 (docs) landed early, ahead of §14 | Docs described a pre-cutover world the code no longer matched. Entries §14 would change said so inline; both were corrected when §14 landed. |
+| `tasks.md` gained 13.7 and §14 gained a `TeardownCommand` cleanup | Gaps task 1.5 found (`DeployerPreflight`, `TeardownCommand`) that no numbered task covered. |
+| The migration script gained `--ssm-profile` and `--verify` | The migration needs two principals — reading the connection string is an operator grant, writing the table needs `BatchWriteItem`. Discovered by running it, not predicted. |
+
+### Pattern consistency
+
+New code matches surrounding conventions: `Locale.ROOT` formatting on the new read path (verified
+live under a comma-decimal locale), payloads on `System.out` with diagnostics on the logger, and
+keys constructed only in `ResultKeys`.
+
+---
+
+## 5. Issues
+
+**CRITICAL** — none.
+
+**WARNING** — one, and it is outside this change's scope rather than a defect in it:
+
+- **The GitHub Actions benchmark path is broken by §14.** `exec-single-benchmark.yml` reads the
+  deleted SSM parameter and exits 1. Known, accepted and documented in `CLAUDE.md` and `README.md`
+  rather than silently left. A successor change, `gha-workflow-migration-to-dynamodb`, is scaffolded
+  with the research captured. Recorded here so archiving this change does not bury it.
+
+**SUGGESTION**
+
+- `RunCommand.operatorCredentialsWarning` remains a public static called from a sibling command —
+  the half of finding A5 that deletion did not close. Two callers now, down from four.
+- `BENCHMARK_PARAMETERS` still carries the `eval` injection weakness that the tag path had fixed
+  (finding S6). Pre-existing, outside all task items, wants its own change.
+
+---
+
+## Final Assessment
+
+**All checks passed. Ready for archive.**
+
+The one incomplete task is a recorded decision with a stated rationale, not unfinished work. The one
+warning is a known consequence already carried forward into a successor change.
