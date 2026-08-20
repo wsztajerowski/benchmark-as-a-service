@@ -1,0 +1,86 @@
+#!/usr/bin/env bash
+# Migrates historical MongoDB Atlas measurements into the DynamoDB results table.
+#
+# Throwaway, by design (openspec/changes/dynamodb-results-store/design.md): it exists so
+# mongodb-driver-sync never has to reach baas-cli, and task 10.3 deletes it once §9.8's
+# verification passes. Nothing in CI runs it — its only protection is --dry-run and the row-count
+# check afterwards.
+#
+# The real work is scripts/MigrateAtlasToDynamoDb.java, run as a single-file source program
+# against the shaded runner JAR: that JAR already carries the Mongo driver, the DynamoDB SDK and
+# baas-model, so the migration writes keys through the same ResultKeys/MeasurementItemMapper the
+# runner uses rather than a second hand-rolled copy.
+#
+#   scripts/migrate-atlas-to-dynamodb --dry-run
+#   scripts/migrate-atlas-to-dynamodb
+#
+# Options:
+#   --dry-run             report counts per collection and per project partition; write nothing
+#   --limit <n>           stop after n documents per collection (smoke test)
+#   --table <name>        results table (default: the core stack's baas-<prefix>-results)
+#   --prefix <prefix>     resource prefix (default: from ~/.baas/config.yaml)
+#   --profile <name>      AWS profile (default: AWS_PROFILE, else the default chain)
+#   --region <region>     AWS region (default: AWS_REGION, else eu-central-1)
+#
+# The connection string is read from SSM at /<prefix>/mongo/connection-string and passed to the
+# JVM in the environment, never in argv — argv is visible to every process on the machine.
+# Writing items needs dynamodb:BatchWriteItem on the table, which neither the operator role nor
+# the deployer policy grants: run this with a principal that has it.
+set -euo pipefail
+
+repo_root="$(git -C "$(dirname "${BASH_SOURCE[0]}")" rev-parse --show-toplevel)"
+runner_jar="$repo_root/benchmark-runner/target/benchmark-runner.jar"
+program="$repo_root/scripts/MigrateAtlasToDynamoDb.java"
+
+prefix=""
+profile="${AWS_PROFILE:-}"
+region="${AWS_REGION:-eu-central-1}"
+table="${BAAS_RESULTS_TABLE:-}"
+forwarded=()
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --help|-h) sed -n '2,32p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --prefix)  prefix="$2"; shift 2 ;;
+    --profile) profile="$2"; shift 2 ;;
+    --region)  region="$2"; shift 2 ;;
+    --table)   table="$2"; shift 2 ;;
+    *)         forwarded+=("$1"); shift ;;
+  esac
+done
+
+if [[ ! -f "$runner_jar" ]]; then
+  echo "Runner JAR not found: $runner_jar" >&2
+  echo "Build it first:  mvn -pl benchmark-runner -am package -DskipTests" >&2
+  exit 1
+fi
+
+if [[ -z "$prefix" ]]; then
+  prefix="$(awk '/^prefix:/ {print $2; exit}' "${BAAS_CONFIG:-$HOME/.baas/config.yaml}" 2>/dev/null || true)"
+fi
+if [[ -z "$prefix" ]]; then
+  echo "Cannot determine the resource prefix. Pass --prefix <prefix>." >&2
+  exit 1
+fi
+
+if [[ -z "$table" ]]; then
+  table="baas-${prefix}-results"
+fi
+
+aws_args=(--region "$region")
+if [[ -n "$profile" ]]; then
+  aws_args+=(--profile "$profile")
+  export AWS_PROFILE="$profile"
+fi
+export AWS_REGION="$region"
+
+if [[ -z "${MONGO_CONNECTION_STRING:-}" ]]; then
+  MONGO_CONNECTION_STRING="$(aws "${aws_args[@]}" ssm get-parameter \
+    --name "/${prefix}/mongo/connection-string" \
+    --with-decryption --query Parameter.Value --output text)"
+  export MONGO_CONNECTION_STRING
+fi
+
+export BAAS_RESULTS_TABLE="$table"
+
+exec java -cp "$runner_jar" "$program" ${forwarded[@]+"${forwarded[@]}"}
