@@ -150,7 +150,7 @@
 
 ## 12. End-to-end verification (MANUAL — no automated test drives `baas run`)
 
-- [ ] 12.1 `mvn -B clean verify` with `ASYNC_PATH` exported, since a plain `verify` silently skips the
+- [x] 12.1 `mvn -B clean verify` with `ASYNC_PATH` exported, since a plain `verify` silently skips the
       only async-profiler test.
 - [ ] 12.2 `baas admin setup` against a real account; confirm the bucket shows suspended versioning and
       no `runs/` expiry rule.
