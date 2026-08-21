@@ -85,7 +85,7 @@ public class JCStressSubcommandService {
             jcStressResult,
             commonOptions.project(),
             commonOptions.requestId(),
-            Instant.now(),
+            commonOptions.createdAt(),
             commonOptions.tags(),
             outputPath.toString(),
             outputPath.resolve("environment.json").toString()));

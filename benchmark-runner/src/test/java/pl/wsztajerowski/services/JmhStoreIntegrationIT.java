@@ -12,6 +12,7 @@ import pl.wsztajerowski.services.options.JmhOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -63,7 +64,7 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
 
         serviceBuilder()
             .withResultsStore(resultsStore)
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", "test-project", Collections.emptyMap()))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
             .withJmhOptions(new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)

@@ -49,12 +49,12 @@
 
 ## 4. Runner
 
-- [ ] 4.1 Add `--created-at` to `ApiCommonSharedOptions`, defaulting to `Instant.now()`, and thread it
+- [x] 4.1 Add `--created-at` to `ApiCommonSharedOptions`, defaulting to `Instant.now()`, and thread it
       to the stored `createdAt` so one run's measurements share one instant.
-- [ ] 4.2 Replace the `--request-id` default `Instant.now().toString()` with `RunId.generate()`.
-- [ ] 4.3 Replace the result-path default `Path.of(requestId)` with `RunLayout.of(project, runId)`.
+- [x] 4.2 Replace the `--request-id` default `Instant.now().toString()` with `RunId.generate()`.
+- [x] 4.3 Replace the result-path default `Path.of(requestId)` with `RunLayout.of(project, runId)`.
       `--result-path` stays an override.
-- [ ] 4.4 Make `getProject()` fail hard instead of returning `"unknown"`, with a message naming
+- [x] 4.4 Make `getProject()` fail hard instead of returning `"unknown"`, with a message naming
       `--project`. Update the tests that assert the fallback.
 
 ## 5. CLI — the run path

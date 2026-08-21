@@ -46,8 +46,9 @@ public final class JmhRunResults {
         String environmentJsonKey = outputPath.resolve("environment.json").toString();
         // One timestamp per run, not one per result: the sort key already separates measurements
         // by class, method and mode, and a per-result clock read would make two results from the
-        // same run differ by a stray millisecond.
-        Instant createdAt = Instant.now();
+        // same run differ by a stray millisecond. The instant comes from whoever named the run, so
+        // the run identifier's timestamp and this one are the same value, not two nearby ones.
+        Instant createdAt = commonOptions.createdAt();
 
         List<StoredMeasurement> measurements = new ArrayList<>();
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(machineReadableOutput)) {

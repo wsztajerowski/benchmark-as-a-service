@@ -16,6 +16,7 @@ import pl.wsztajerowski.services.options.JCStressOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -49,7 +50,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         JCStressSubcommandService sut = serviceBuilder()
             .withResultsStore(new MongoResultsStore(datastore()))
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", "test-project", Collections.emptyMap()))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
             .withJCStressOptions(jcStressOptions)
             .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())
             .build();

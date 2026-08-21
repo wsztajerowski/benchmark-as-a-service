@@ -16,6 +16,7 @@ import pl.wsztajerowski.services.options.JmhOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Map;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -48,7 +49,7 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
         JmhWithProfilerSubcommandService sut = JmhWithProfilerSubcommandServiceBuilder.serviceBuilder()
             .withResultsStore(new MongoResultsStore(datastore()))
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(profileResults, "req-1", "test-project", Map.of()))
+            .withCommonOptions(new CommonSharedOptions(profileResults, "req-1", Instant.now(), "test-project", Map.of()))
             .withProfilerOptions(Map.of(
                 "gc", "churn=false;alloc=false",
                 "comp", "",
