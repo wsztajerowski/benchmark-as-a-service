@@ -16,13 +16,14 @@ import pl.wsztajerowski.baas.infra.RunnerImage;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
+import pl.wsztajerowski.baas.model.RunId;
+import pl.wsztajerowski.baas.model.RunLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.io.IOException;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -58,7 +59,6 @@ public class RunCommand implements Callable<Integer> {
     private static final Logger logger = LoggerFactory.getLogger(RunCommand.class);
 
     private static final List<String> VALID_TYPES = List.of("jmh", "jmh-with-async", "jmh-with-prof", "jcstress");
-    private static final DateTimeFormatter TS = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -207,15 +207,20 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
-        // 4. Generate IDs
-        String timestamp = TS.format(LocalDateTime.now());
-        String requestId = benchmarkType + "-" + timestamp;
-        String resultPath = resolvedBranch + "/" + benchmarkType + "/" + timestamp;
-        logger.debug("Results will land under s3://{}/{}", config.getAws().getBucket(), resultPath);
+        // 4. Name the run. One clock read: the instant travels into the identifier, into the S3
+        //    prefix and on to the runner as --created-at, so the prefix name and the stored
+        //    timestamp are the same value rather than two values that happen to be close.
+        Instant runInstant = Instant.now();
+        String runId = RunId.generate(runInstant);
+        String createdAt = runInstant.toString();
+        String resultPath = RunLayout.runPrefix(resolvedProject, runId);
+        String inputPrefix = RunLayout.inputPrefix(resolvedProject, runId);
+        logger.info("Run {} — results will land under s3://{}/{}",
+            runId, config.getAws().getBucket(), resultPath);
 
-        // 5. Upload JARs
+        // 5. Upload JARs into the run's own prefix, so one prefix holds the whole run.
         logger.info("Uploading benchmark JAR to S3...");
-        String benchmarkJarKey = "runs/" + requestId + "/benchmark.jar";
+        String benchmarkJarKey = inputPrefix + "/benchmark.jar";
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).upload(jarPath, config.getAws().getBucket(), benchmarkJarKey);
         }
@@ -223,17 +228,19 @@ public class RunCommand implements Callable<Integer> {
         String runnerJarS3Key = null;
         if (runnerJar != null) {
             logger.info("Uploading runner JAR to S3...");
-            runnerJarS3Key = "runs/" + requestId + "/runner.jar";
+            runnerJarS3Key = inputPrefix + "/runner.jar";
             try (var s3 = factory.s3()) {
                 new S3UploadService(s3).upload(runnerJar, config.getAws().getBucket(), runnerJarS3Key);
             }
         }
 
         // 6. Build user-data
-        Map<String, String> runnerTags = buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit());
+        Map<String, String> runnerTags =
+            buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit(), resolvedBranch);
         String userData = new UserDataScriptBuilder().build(
             config.getAws().getRegion(), config.getAws().getBucket(),
-            benchmarkType, requestId, resultPath, resolvedTimeout, resolvedWallClock,
+            benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
+            resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
             resolvedTable, noDatabase, benchmarkParams, runnerTags);
         // The script is what actually decides whether a run works; when a runner dies before it
@@ -262,10 +269,10 @@ public class RunCommand implements Callable<Integer> {
                 runnerImage.amiId(), resolvedInstanceType,
                 config.getAws().getSubnetId(), config.getAws().getSecurityGroupId(),
                 config.getAws().getRunnerInstanceProfileName(),
-                userData, requestId, tags);
+                userData, runId, tags);
         }
         logger.info("Instance launched: {}", instanceId);
-        logger.info("Request ID: {}", requestId);
+        logger.info("Run ID: {}", runId);
 
         // 8. Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
@@ -276,11 +283,11 @@ public class RunCommand implements Callable<Integer> {
         }));
 
         // 9. Poll
-        return poll(factory, config, instanceId, requestId, resultPath, resolvedWallClock);
+        return poll(factory, config, instanceId, runId, resultPath, resolvedWallClock);
     }
 
     private int poll(AwsClientFactory factory, BaasConfig config, String instanceId,
-                     String requestId, String resultPath, int wallClockSeconds) throws InterruptedException {
+                     String runId, String resultPath, int wallClockSeconds) throws InterruptedException {
         long startMs = System.currentTimeMillis();
         long timeoutMs = (long) wallClockSeconds * 1000;
         String bucket = config.getAws().getBucket();
@@ -303,7 +310,7 @@ public class RunCommand implements Callable<Integer> {
 
                 Optional<String> status = storage.getObjectIfExists(bucket, statusKey);
                 if (status.isPresent()) {
-                    var exitCode = exitCodeFor(status.get().trim(), factory, config, requestId, logPath);
+                    var exitCode = exitCodeFor(status.get().trim(), factory, config, runId, logPath);
                     if (exitCode.isPresent()) {
                         return exitCode.getAsInt();
                     }
@@ -315,7 +322,7 @@ public class RunCommand implements Callable<Integer> {
                         // Re-read once before reporting a successful run as a failure.
                         var lateStatus = storage.getObjectIfExists(bucket, statusKey);
                         if (lateStatus.isPresent()) {
-                            var exitCode = exitCodeFor(lateStatus.get().trim(), factory, config, requestId, logPath);
+                            var exitCode = exitCodeFor(lateStatus.get().trim(), factory, config, runId, logPath);
                             if (exitCode.isPresent()) {
                                 return exitCode.getAsInt();
                             }
@@ -335,10 +342,10 @@ public class RunCommand implements Callable<Integer> {
 
     /** Maps a run-status sentinel to an exit code, or empty while the run is still in flight. */
     private OptionalInt exitCodeFor(String body, AwsClientFactory factory, BaasConfig config,
-                                    String requestId, String logPath) {
+                                    String runId, String logPath) {
         logger.info("Run status: {}", body);
         if ("completed".equals(body)) {
-            showResults(factory, config, requestId);
+            showResults(factory, config, runId);
             return OptionalInt.of(0);
         }
         if (body.startsWith("failed:")) {
@@ -356,15 +363,16 @@ public class RunCommand implements Callable<Integer> {
      * it before provisioning — but {@code --no-database} reaches here with nothing to show, and a
      * benchmark that has already run and terminated must not be reported as failed over a summary.
      */
-    private void showResults(AwsClientFactory factory, BaasConfig config, String requestId) {
+    private void showResults(AwsClientFactory factory, BaasConfig config, String runId) {
         if (noDatabase) {
             logger.info("--no-database: the runner stored nothing, so there is no result to show.");
             return;
         }
         String tableName = config.getAws().getResultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
-            var rows = results.queryByRequestId(requestId);
-            logger.info("Results for request: {}", requestId);
+            var rows = results.queryByRequestId(runId);
+            // Named, not just shown: this is the value `baas download <runId>` takes.
+            logger.info("Results for run {} (baas download {}):", runId, runId);
             results.printTable(rows);
         } catch (Exception e) {
             logger.warn("Could not fetch results from the results table: {}", e.getMessage());
@@ -420,7 +428,7 @@ public class RunCommand implements Callable<Integer> {
     /** Package-private overload for the same testability reason as {@link #gitOutput(Path, String...)}. */
     String resolveProject(Path workingDir) {
         if (project != null && !project.isBlank()) return project;
-        String derived = projectFromToplevel(gitOutput(workingDir, "git", "rev-parse", "--show-toplevel"));
+        String derived = GitProject.repositoryName(workingDir);
         if (derived == null) {
             throw new IllegalStateException(
                 "Cannot determine the project name: not inside a git repository. Pass --project <name>.");
@@ -478,7 +486,7 @@ public class RunCommand implements Callable<Integer> {
      * a {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or
      * allowed to override — a silently discarded tag is its own surprise.
      */
-    Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit) {
+    Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit, String branch) {
         List<String> collided = RESERVED_TAG_KEYS.stream().filter(extraTags::containsKey).toList();
         if (!collided.isEmpty()) {
             throw new IllegalArgumentException(
@@ -492,6 +500,7 @@ public class RunCommand implements Callable<Integer> {
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put(TagKeys.PROJECT, project);
         tags.put(TagKeys.COMMIT, commit);
+        tags.put(TagKeys.BRANCH, branch);
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.putAll(extraTags);
         return tags;

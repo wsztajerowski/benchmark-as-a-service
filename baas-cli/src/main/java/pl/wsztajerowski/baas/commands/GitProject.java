@@ -23,9 +23,41 @@ final class GitProject {
         return name.isEmpty() ? null : name;
     }
 
-    /** Null when {@code workingDir} is not inside a git repository. */
+    /**
+     * {@code --git-common-dir} resolves to the main repository's {@code .git} in a linked worktree
+     * and is a no-op for an ordinary clone. {@code --show-toplevel} returns the worktree directory,
+     * which attributed a run launched from {@code .claude/worktrees/ddb-phase3} to project
+     * {@code ddb-phase3} — a partition {@code baas results} would never look in.
+     */
+    static String fromCommonDir(String commonDir) {
+        if (commonDir == null || commonDir.isBlank()) return null;
+        String trimmed = stripTrailingSlashes(commonDir.strip());
+        if (trimmed.endsWith("/.git")) {
+            trimmed = trimmed.substring(0, trimmed.length() - "/.git".length());
+        } else if (trimmed.endsWith(".git")) {
+            trimmed = stripTrailingSlashes(trimmed.substring(0, trimmed.length() - ".git".length()));
+        }
+        return fromToplevel(trimmed);
+    }
+
+    private static String stripTrailingSlashes(String value) {
+        String trimmed = value;
+        while (trimmed.endsWith("/")) trimmed = trimmed.substring(0, trimmed.length() - 1);
+        return trimmed;
+    }
+
+    /**
+     * Null when {@code workingDir} is not inside a git repository.
+     *
+     * <p>{@code --path-format=absolute} matters: without it {@code --git-common-dir} can return the
+     * relative {@code .git}, which carries no repository name. The {@code --show-toplevel} fallback
+     * covers git versions that reject {@code --path-format}.
+     */
     static String repositoryName(Path workingDir) {
-        return fromToplevel(gitOutput(workingDir, "git", "rev-parse", "--show-toplevel"));
+        String common = gitOutput(workingDir, "git", "rev-parse", "--path-format=absolute", "--git-common-dir");
+        return common != null
+            ? fromCommonDir(common)
+            : fromToplevel(gitOutput(workingDir, "git", "rev-parse", "--show-toplevel"));
     }
 
     static String gitOutput(Path workingDir, String... args) {

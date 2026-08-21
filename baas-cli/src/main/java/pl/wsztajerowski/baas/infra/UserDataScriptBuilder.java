@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.infra;
 
+import pl.wsztajerowski.baas.model.TagKeys;
+
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
@@ -8,7 +10,7 @@ import java.util.Map;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 2;
+    public static final int MANIFEST_SCHEMA_VERSION = 3;
 
     // Static script body — variables are prepended by build()
     private static final String SCRIPT_BODY = """
@@ -79,6 +81,11 @@ public class UserDataScriptBuilder {
         PERF_EVENT_PARANOID=$(sysctl -n kernel.perf_event_paranoid 2>/dev/null)
         KPTR_RESTRICT=$(sysctl -n kernel.kptr_restrict 2>/dev/null)
         TRANSPARENT_HUGEPAGES=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null)
+        # The run's own identity. The run id is opaque by design, so what it stopped carrying the
+        # manifest has to carry — and the manifest is written before the benchmark, so this is what
+        # a run that dies early leaves behind. A project or branch name can contain " or \\.
+        PROJECT=$(json_escape "${PROJECT_NAME}")
+        BRANCH=$(json_escape "${BRANCH_NAME}")
 
         cat > /app/environment.json <<MANIFEST
         {
@@ -103,7 +110,11 @@ public class UserDataScriptBuilder {
           "perfEventParanoid": "${PERF_EVENT_PARANOID}",
           "kptrRestrict": "${KPTR_RESTRICT}",
           "transparentHugepages": "${TRANSPARENT_HUGEPAGES}",
-          "benchmarkType": "${BENCHMARK_TYPE}"
+          "benchmarkType": "${BENCHMARK_TYPE}",
+          "project": "${PROJECT}",
+          "branch": "${BRANCH}",
+          "requestId": "${REQUEST_ID}",
+          "createdAt": "${CREATED_AT}"
         }
         MANIFEST
 
@@ -125,7 +136,7 @@ public class UserDataScriptBuilder {
           wget -nv "${RELEASE_URL}" -O /app/benchmark-runner.jar
         fi
 
-        aws s3 cp "s3://${S3_BUCKET}/runs/${REQUEST_ID}/benchmark.jar" /app/benchmark-under-test.jar
+        aws s3 cp "s3://${S3_BUCKET}/${BENCHMARK_JAR_S3_KEY}" /app/benchmark-under-test.jar
 
         # Results store. The table name is not a secret — unlike the Mongo connection string
         # this replaced, it carries no credentials, so it travels in user-data instead of being
@@ -162,6 +173,7 @@ public class UserDataScriptBuilder {
         # CLI-side guard above.
         timeout "${BENCHMARK_TIMEOUT}" java -jar /app/benchmark-runner.jar "${BENCHMARK_TYPE}" \\
           --request-id     "${REQUEST_ID}" \\
+          --created-at     "${CREATED_AT}" \\
           --result-path    "${RESULT_PATH}" \\
           --s3-bucket      "${S3_BUCKET}" \\
           --benchmark-path /app/benchmark-under-test.jar \\
@@ -190,7 +202,8 @@ public class UserDataScriptBuilder {
         """;
 
     public String build(String region, String bucket, String benchmarkType,
-                        String requestId, String resultPath, int benchmarkTimeoutSeconds,
+                        String requestId, String resultPath, String createdAt,
+                        String benchmarkJarS3Key, int benchmarkTimeoutSeconds,
                         int wallClockHardKillSeconds, String imageVersion, String amiId,
                         String runnerJarS3Key, String resultsTableName, boolean noDatabase,
                         List<String> benchmarkParams, Map<String, String> runnerTags) {
@@ -219,6 +232,15 @@ public class UserDataScriptBuilder {
             "export BENCHMARK_TYPE='" + benchmarkType + "'\n" +
             "export REQUEST_ID='" + requestId + "'\n" +
             "export RESULT_PATH='" + resultPath + "'\n" +
+            // One clock read per run: this instant named the run's prefix and is what the runner
+            // stores as createdAt, so the two cannot disagree. The instance's own clock is not
+            // consulted.
+            "export CREATED_AT='" + createdAt + "'\n" +
+            "export BENCHMARK_JAR_S3_KEY='" + nullToEmpty(benchmarkJarS3Key) + "'\n" +
+            // Only the manifest reads these two; the runner receives them as --tag instead, since
+            // benchmarkMetadata.tags is the query surface baas results has.
+            "export PROJECT_NAME='" + shellSingleQuote(nullToEmpty(project(runnerTags))) + "'\n" +
+            "export BRANCH_NAME='" + shellSingleQuote(nullToEmpty(branch(runnerTags))) + "'\n" +
             "export BENCHMARK_TIMEOUT='" + benchmarkTimeoutSeconds + "'\n" +
             "export WALL_CLOCK_HARD_KILL='" + wallClockHardKillSeconds + "'\n" +
             "export MANIFEST_SCHEMA_VERSION='" + MANIFEST_SCHEMA_VERSION + "'\n" +
@@ -239,6 +261,22 @@ public class UserDataScriptBuilder {
 
     private static String nullToEmpty(String value) {
         return value != null ? value : "";
+    }
+
+    private static String project(Map<String, String> runnerTags) {
+        return runnerTags.get(TagKeys.PROJECT);
+    }
+
+    private static String branch(Map<String, String> runnerTags) {
+        return runnerTags.get(TagKeys.BRANCH);
+    }
+
+    /**
+     * Closes a single-quoted shell string, emits a literal quote and reopens it — the only way a
+     * {@code '} survives inside {@code export X='…'}, and a branch name may well contain one.
+     */
+    private static String shellSingleQuote(String value) {
+        return value.replace("'", "'\\''");
     }
 
     /**

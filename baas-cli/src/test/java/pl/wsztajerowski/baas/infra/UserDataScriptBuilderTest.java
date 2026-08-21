@@ -33,7 +33,11 @@ class UserDataScriptBuilderTest {
     private String script(Map<String, String> runnerTags, String resultsTable, boolean noDatabase) {
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-a1b2c3d4", "jmh",
-            "jmh-20260724_120000", "main/jmh/20260724_120000", 7200, 7500,
+            "20260724T120000000Z-a3f9c21b",
+            "runs/lynx-journal/20260724T120000000Z-a3f9c21b",
+            "2026-07-24T12:00:00Z",
+            "runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
+            7200, 7500,
             "1.0.0", "ami-0123456789abcdef0", null, resultsTable, noDatabase,
             List.of("MyBenchmark", "-f", "1"), runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
@@ -407,7 +411,7 @@ class UserDataScriptBuilderTest {
 
     @Test
     void manifestSchemaVersionIsBumpedForTheNewField() {
-        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION).isEqualTo(2);
+        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION).isEqualTo(3);
     }
 
     @Test
@@ -593,5 +597,58 @@ class UserDataScriptBuilderTest {
                 + "--tag lines, so picocli's last-wins Map parsing keeps the observed value even "
                 + "if a reserved key ever slips past RunCommand.buildRunnerTags's own guard")
             .containsEntry("jdk", "OBSERVED_ON_INSTANCE");
+    }
+
+    /**
+     * environment.json is written before the benchmark, so it is what a run that died early
+     * leaves behind — and it is what buys back the self-description the opaque run id gave up.
+     */
+    @Test
+    void theManifestIdentifiesARunThatStoredNothing() {
+        String script = script(Map.of("project", "lynx-journal", "branch", "main"));
+
+        assertThat(script).contains("\"project\": \"${PROJECT}\"")
+            .contains("\"branch\": \"${BRANCH}\"")
+            .contains("\"requestId\": \"${REQUEST_ID}\"")
+            .contains("\"createdAt\": \"${CREATED_AT}\"");
+        assertThat(script).contains("PROJECT=$(json_escape")
+            .contains("BRANCH=$(json_escape");
+    }
+
+    @Test
+    void theRunnerReceivesTheLaunchersInstant() {
+        String script = script();
+
+        assertThat(script).contains("export CREATED_AT='2026-07-24T12:00:00Z'");
+        assertThat(script).contains("--created-at     \"${CREATED_AT}\"");
+    }
+
+    @Test
+    void theBenchmarkJarComesFromTheRunsOwnInputPrefix() {
+        String script = script();
+
+        assertThat(script).contains(
+            "export BENCHMARK_JAR_S3_KEY='runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar'");
+        assertThat(script).contains(
+            "aws s3 cp \"s3://${S3_BUCKET}/${BENCHMARK_JAR_S3_KEY}\" /app/benchmark-under-test.jar");
+        assertThat(script).doesNotContain("/runs/${REQUEST_ID}/benchmark.jar");
+    }
+
+    /**
+     * The script is heredoc-heavy and nothing else parses it before cloud-init does, on a paid
+     * instance, after the watchdog has already started. A syntax error there costs a run and shows
+     * up only in cloud-init-output.log.
+     */
+    @Test
+    void theRenderedScriptIsSyntacticallyValidBash() throws Exception {
+        Path scriptFile = tempDir.resolve("user-data.sh");
+        Files.writeString(scriptFile, script(Map.of("project", "lynx-journal", "branch", "main")));
+
+        Process process = new ProcessBuilder("bash", "-n", scriptFile.toString())
+            .redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("bash -n must not hang").isTrue();
+
+        assertThat(process.exitValue()).as("bash -n said: " + output).isZero();
     }
 }

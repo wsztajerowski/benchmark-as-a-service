@@ -29,6 +29,33 @@ class RunCommandTest {
     }
 
     /**
+     * {@code --show-toplevel} returns the worktree directory, so a run launched from
+     * {@code .claude/worktrees/ddb-phase3} was attributed to project {@code ddb-phase3} — a
+     * partition {@code baas results} would never look in.
+     */
+    @Test
+    void aLinkedWorktreeResolvesToItsRepository() {
+        assertThat(GitProject.fromCommonDir("/home/dev/lynx-journal/.git")).isEqualTo("lynx-journal");
+        assertThat(GitProject.fromCommonDir("/home/dev/lynx-journal/.git/")).isEqualTo("lynx-journal");
+    }
+
+    @Test
+    void aBareRepositoryStillYieldsAName() {
+        assertThat(GitProject.fromCommonDir("/srv/git/lynx-journal.git")).isEqualTo("lynx-journal");
+    }
+
+    @Test
+    void anAbsentCommonDirYieldsNothingToDeriveFrom() {
+        assertThat(GitProject.fromCommonDir(null)).isNull();
+        assertThat(GitProject.fromCommonDir("  ")).isNull();
+    }
+
+    @Test
+    void aBranchTagIsCallerOverridableRatherThanReserved() {
+        assertThat(RunCommand.RESERVED_TAG_KEYS).doesNotContain("branch");
+    }
+
+    /**
      * Before the cutover, absent store configuration selected a no-op adapter: the run booted an
      * instance, measured, reported success and discarded every number. Failing here — before the
      * Maven build, the upload and the launch — is what replaced that, so the cost of a
@@ -79,11 +106,12 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("experiment", "gc-tuning");
 
-        var tags = command.buildRunnerTags("jmh", "lynx-journal", "abc123");
+        var tags = command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main");
 
         assertThat(tags)
             .containsEntry("project", "lynx-journal")
             .containsEntry("commit", "abc123")
+            .containsEntry("branch", "main")
             .containsEntry("type", "jmh")
             .containsEntry("experiment", "gc-tuning");
     }
@@ -93,17 +121,30 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("project", "explicit");
 
-        assertThat(command.buildRunnerTags("jmh", "derived", "abc123"))
+        assertThat(command.buildRunnerTags("jmh", "derived", "abc123", "main"))
             .containsEntry("project", "explicit");
     }
 
+    /**
+     * Branch used to survive only as a path segment of the result path and was stored nowhere. The
+     * unified prefix drops that segment, so what the path stopped carrying the tags must carry —
+     * tags being the entire query surface `baas results` has.
+     */
     @Test
-    void doesNotTagBranchAutomatically() {
+    void tagsTheBranchNowThatThePathNoLongerCarriesIt() {
         var command = new RunCommand();
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123"))
-            .as("branch is a custom user tag per design.md — do not wire --branch into it")
-            .doesNotContainKey("branch");
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+            .containsEntry("branch", "main");
+    }
+
+    @Test
+    void stillAllowsBranchToBeOverriddenByTheCaller() {
+        var command = new RunCommand();
+        command.extraTags.put("branch", "explicit");
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+            .containsEntry("branch", "explicit");
     }
 
     /**
@@ -117,7 +158,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("jdk", "8");
 
-        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123"))
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("jdk")
             .as("the error must list every reserved key, not just the one that collided")
@@ -138,7 +179,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("type", "jcstress");
 
-        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123"))
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("type");
     }
@@ -149,7 +190,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("commit", "deadbeef");
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123"))
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
             .containsEntry("commit", "deadbeef");
     }
 

@@ -59,19 +59,19 @@
 
 ## 5. CLI — the run path
 
-- [ ] 5.1 Replace the two identifiers in `RunCommand` with one `RunId`, minted from a single
+- [x] 5.1 Replace the two identifiers in `RunCommand` with one `RunId`, minted from a single
       `Instant.now()`, and derive the result path from `RunLayout`.
-- [ ] 5.2 Upload the benchmark JAR to the run prefix's `input/`, and an overridden runner JAR to the
+- [x] 5.2 Upload the benchmark JAR to the run prefix's `input/`, and an overridden runner JAR to the
       same place.
-- [ ] 5.3 Pass `--created-at` through `UserDataScriptBuilder` to the runner, capturing it into a shell
+- [x] 5.3 Pass `--created-at` through `UserDataScriptBuilder` to the runner, capturing it into a shell
       variable first like every other manifest value.
-- [ ] 5.4 Add `branch` to `buildRunnerTags`, keeping it caller-overridable rather than reserved.
-- [ ] 5.5 Switch project derivation from `git rev-parse --show-toplevel` to `--git-common-dir`, with a
+- [x] 5.4 Add `branch` to `buildRunnerTags`, keeping it caller-overridable rather than reserved.
+- [x] 5.5 Switch project derivation from `git rev-parse --show-toplevel` to `--git-common-dir`, with a
       test covering a linked worktree.
-- [ ] 5.6 Add `project`, `branch`, `requestId` and `createdAt` to the `environment.json` heredoc in
+- [x] 5.6 Add `project`, `branch`, `requestId` and `createdAt` to the `environment.json` heredoc in
       `UserDataScriptBuilder` — the manifest is written by user-data, not by the runner — bumping
       `MANIFEST_SCHEMA_VERSION`. Values that can contain `"` or `\` go through `json_escape`.
-- [ ] 5.7 Print the `runId` on launch, and name it in the poll output, so the value a user copies is
+- [x] 5.7 Print the `runId` on launch, and name it in the poll output, so the value a user copies is
       the one the download command takes.
 
 ## 6. CLI — runner JAR distribution
