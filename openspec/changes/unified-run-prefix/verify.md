@@ -5,7 +5,7 @@
 > Failed checks must be fixed in the corresponding artifact, then re-run verify.
 
 **Change**: `unified-run-prefix`
-**Verified at**: `2026-08-21 10:12`
+**Verified at**: `2026-08-21 10:12`, warnings resolved `2026-08-21 10:41`
 **Iteration**: `1`
 **Verifier**: `Claude Opus 5 (same session as apply)`
 
@@ -117,29 +117,37 @@ change and pre-dates this session.
    must not be archived until 2.5 → 12.2–12.7 → 11.4–11.7 have run, because no automated test
    drives `baas run` end to end and the migration is the change's only one-way door.
 
-### WARNING
+### WARNING — all three fixed in `94d5af3`
 
 1. **`DownloadCommand` has no results-table guard.** `baas-cli/.../commands/DownloadCommand.java:77-79`
    passes `config.getAws().getResultsTable()` straight into `ResultsQueryService` on the run-id
    branch. The bucket has an explicit guard eight lines above (`:67-70`); the table does not, so an
    unsynced config turns `baas download <runId>` into a raw SDK validation error instead of the
    actionable "run `baas config sync`" message.
-   **Fix**: mirror the bucket guard before constructing the service.
+   **Fixed** in `94d5af3`: `tableUnresolvable(...)` guards the branch and reports the
+   `baas config sync` command, matching the bucket check. Split out as a package-private method so
+   the guard is reachable in a unit test without AWS credentials.
 
 2. **`baas run` never reports the pinned runner version at default verbosity.**
    `runner-jar-distribution` requires "The CLI reports the version it pinned" (scenario: *the CLI
    reports which runner version the run will execute*). `RunnerJarResolver.java:52` logs the reuse
    path — the common case, every run after the first for a version — at `debug`. Only the seeding
    path logs at `info` (`:55`).
-   **Fix**: log the resolved key at `info` in `RunCommand`'s `else` branch, or promote `:52`.
+   **Fixed** in `94d5af3`: both branches now report at `info` — the pinned key with the CLI
+   version it came from, and a `--runner-jar` override as an explicit local override.
 
 3. **No test pins that the stored `createdAt` is the caller-supplied instant.** The only assertion
    is at the options boundary (`ApiCommonSharedOptionsTest:95`). Nothing covers
    `JmhRunResults.java:51` or `JCStressSubcommandService.java:88` actually using
    `commonOptions.createdAt()` — reverting either to `Instant.now()` would compile and pass every
    test, silently defeating the change's central property.
-   **Fix**: assert `createdAt` on the stored item in `JmhStoreIntegrationIT`, which already writes
-   real items to LocalStack and asserts on `pk`.
+   **Fixed** in `94d5af3`: `JmhStoreIntegrationIT.theStoredTimestampIsTheCallersInstantNotOneReadHere`
+   runs the service with a fixed past instant and asserts the stored `createdAt` equals it.
+   **Verified by reverting** `JmhRunResults.java:51` to `Instant.now()`: the new test failed
+   (`expected: 2026-08-20T17:44:32.812Z but was: 2026-08-21T09:32:22.494Z`) while the 13-test unit
+   suite still passed — exactly the gap this warning named. Covers `JmhRunResults`, shared by the
+   three JMH-flavoured services. `JCStressSubcommandService.java:88` remains unpinned; its IT
+   asserts through Mongo's nested document, where the equivalent assertion is disproportionate.
 
 ### SUGGESTION
 
@@ -171,8 +179,9 @@ that was skipped.
 
 **Next step**:
 
-1. Apply the three warnings — all small, all in code, and W3 in particular protects the property
-   this whole change exists to establish.
+1. ~~Apply the three warnings.~~ **Done** — `94d5af3`. Full reactor `mvn -B clean verify` with a
+   real `ASYNC_PATH` is green afterwards: 269 unit + 16 CLI ITs, `JmhStoreIntegrationIT` 3/3, and
+   `JmhWithAsyncProfilerSubcommandServiceIT` 1/1 with `Skipped: 0`.
 2. **Cut a release** (tasks.md 2.5). Nothing below is exercisable without one.
 3. `baas admin setup`, then the manual run checks (12.2–12.7).
 4. Migration last: dry-run, read it against 1.6's counts, then the real pass and delete the script
