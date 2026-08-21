@@ -146,8 +146,15 @@ change and pre-dates this session.
    **Verified by reverting** `JmhRunResults.java:51` to `Instant.now()`: the new test failed
    (`expected: 2026-08-20T17:44:32.812Z but was: 2026-08-21T09:32:22.494Z`) while the 13-test unit
    suite still passed — exactly the gap this warning named. Covers `JmhRunResults`, shared by the
-   three JMH-flavoured services. `JCStressSubcommandService.java:88` remains unpinned; its IT
-   asserts through Mongo's nested document, where the equivalent assertion is disproportionate.
+   three JMH-flavoured services.
+
+   `JCStressSubcommandService.java:88` — the fourth service, and the only one `JmhRunResults` does
+   not serve — is pinned in `b9122a6`, inside the existing `JCStressSubcommandServiceIT` scenario
+   rather than a second test, because a JCStress run costs ~58s. Asserted through the stored
+   document id: `MongoResultsStore` builds it as `partitionKey|sortKey` and `ResultKeys.sortKey`
+   formats `measurement.createdAt()` directly, so it is a plain String with no Morphia type mapping
+   in the way, and it additionally proves the value reached the key the store orders and
+   de-duplicates on. Also verified by reverting the line. **All four services are now pinned.**
 
 ### SUGGESTION
 
@@ -179,8 +186,9 @@ that was skipped.
 
 **Next step**:
 
-1. ~~Apply the three warnings.~~ **Done** — `94d5af3`. Full reactor `mvn -B clean verify` with a
-   real `ASYNC_PATH` is green afterwards: 269 unit + 16 CLI ITs, `JmhStoreIntegrationIT` 3/3, and
+1. ~~Apply the three warnings.~~ **Done** — `94d5af3`, plus `b9122a6` pinning the fourth service.
+   Full reactor `mvn -B clean verify` with a real `ASYNC_PATH` is green afterwards: 269 unit + 16
+   CLI ITs, `JmhStoreIntegrationIT` 3/3, `JCStressSubcommandServiceIT` 1/1, and
    `JmhWithAsyncProfilerSubcommandServiceIT` 1/1 with `Skipped: 0`.
 2. **Cut a release** (tasks.md 2.5). Nothing below is exercisable without one.
 3. `baas admin setup`, then the manual run checks (12.2–12.7).
