@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
+import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.entities.jcstress.JCStressTest;
 import pl.wsztajerowski.entities.MongoMeasurementDocument;
 import pl.wsztajerowski.infra.MongoResultsStore;
@@ -23,11 +24,15 @@ import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
+import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.services.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
 class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
+
+    /** Fixed and in the past, so a clock read here cannot land near it by accident. */
+    private static final Instant LAUNCH_INSTANT = Instant.parse("2026-08-20T17:44:32.812Z");
 
     private static MongoDbTestHelpers helper;
 
@@ -50,7 +55,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         JCStressSubcommandService sut = serviceBuilder()
             .withResultsStore(new MongoResultsStore(datastore()))
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", LAUNCH_INSTANT, "test-project", Collections.emptyMap()))
             .withJCStressOptions(jcStressOptions)
             .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())
             .build();
@@ -87,6 +92,24 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
             .anySatisfy(o -> assertThat(o)
                 .asString()
                 .isEqualTo("test-1/jcstress-output.txt"));
+
+        // and the stored timestamp is the caller's instant, not one read on this machine.
+        //
+        // JCStressSubcommandService passes commonOptions.createdAt() into the mapper — one line
+        // that would compile and pass every other assertion here if it were reverted to
+        // Instant.now(), silently breaking the one-instant-per-run property for every run whose
+        // launcher and instance clocks differ. JmhStoreIntegrationIT pins the same line for the
+        // three JMH-flavoured services; this is the fourth.
+        //
+        // Asserted through the document id rather than the createdAt field: MongoResultsStore
+        // builds it as partitionKey|sortKey, and ResultKeys.sortKey formats measurement.createdAt()
+        // directly — so this is a plain String with no Morphia type mapping in the way, and it
+        // additionally proves the value reached the key the store orders and de-duplicates on.
+        helper.assertFindResult(collectionName, all(), documents ->
+            assertThat(documents.first())
+                .isNotNull()
+                .extractingByKey("_id", as(STRING))
+                .contains(ResultKeys.formatTimestamp(LAUNCH_INSTANT)));
     }
 
 }
