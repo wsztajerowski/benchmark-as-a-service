@@ -135,12 +135,12 @@
 
 ## 11. History migration (after the cutover is deployed and verified)
 
-- [ ] 11.1 Write `scripts/migrate-run-layout` taking `--dry-run`, enumerating runs from the table and
+- [x] 11.1 Write `scripts/migrate-run-layout` taking `--dry-run`, enumerating runs from the table and
       resolving each item's current `resultPath`.
-- [ ] 11.2 Server-side copy each run's tree to `runs/<project>/<existing-requestId>/`, then `UpdateItem`
+- [x] 11.2 Server-side copy each run's tree to `runs/<project>/<existing-requestId>/`, then `UpdateItem`
       `resultPath`, `resultJsonKey`, `environmentJsonKey` and the profiler-output prefix. Never touch a
       partition key or sort key. Tolerate an already-expired input JAR by reporting it.
-- [ ] 11.3 Make it idempotent — a second run completes and changes nothing.
+- [x] 11.3 Make it idempotent — a second run completes and changes nothing.
 - [ ] 11.4 Dry-run against the real bucket and read the output by eye against 1.6's counts before the
       real pass.
 - [ ] 11.5 Run it for real, then spot-check: `baas download` on a pre-change run, and a `baas results`
