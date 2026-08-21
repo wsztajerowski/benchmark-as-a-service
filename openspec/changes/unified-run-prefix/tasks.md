@@ -89,10 +89,10 @@
 
 ## 7. CLI — download and results rendering
 
-- [ ] 7.1 Accept a run identifier in the download command, resolving `resultPath` through
+- [x] 7.1 Accept a run identifier in the download command, resolving `resultPath` through
       `requestId-index`; keep the literal-path branch so historical paths resolve.
-- [ ] 7.2 Widen `REQUEST_ID` to 28 in `ResultsQueryService` and delete `truncate(…, 17)`.
-- [ ] 7.3 Test both download argument shapes, and that an unknown run exits non-zero creating no
+- [x] 7.2 Widen `REQUEST_ID` to 28 in `ResultsQueryService` and delete `truncate(…, 17)`.
+- [x] 7.3 Test both download argument shapes, and that an unknown run exits non-zero creating no
       partial directory.
 
 ## 8. Infrastructure

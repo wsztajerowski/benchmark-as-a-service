@@ -5,6 +5,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.results.ResultRow;
+import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -108,5 +109,34 @@ class ResultsFormatTest {
 
         assertThat(parsed.get(0).get("imageVersion").isNull()).isTrue();
         assertThat(parsed.get(0).get("instanceType").isNull()).isTrue();
+    }
+
+    /**
+     * Truncating the identifier at 17 landed inside the old {@code <type>-<date>} prefix, so two
+     * runs of the same type on the same day rendered identically — and the identifier is the value
+     * a user copies into {@code baas download}, so a truncated one is unusable.
+     */
+    @Test
+    void theRunIdentifierRendersWhole() {
+        String runId = "20260820T174432812Z-a3f9c21b";
+        var row = new ResultRow(runId, "com.example.MyBenchmark.run", "jmh", "thrpt",
+            1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        new ResultsQueryService(null, null).printTable(List.of(row));
+
+        assertThat(captured.toString(StandardCharsets.UTF_8)).contains(runId);
+    }
+
+    @Test
+    void twoRunsOfOneTypeOnOneDayRenderDistinctly() {
+        var first = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.B.run", "jmh",
+            "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var second = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.B.run", "jmh",
+            "thrpt", 2.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        new ResultsQueryService(null, null).printTable(List.of(first, second));
+
+        String out = captured.toString(StandardCharsets.UTF_8);
+        assertThat(out).contains("a3f9c21b").contains("b7e4d0f2");
     }
 }

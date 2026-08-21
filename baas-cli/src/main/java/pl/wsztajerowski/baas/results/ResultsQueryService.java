@@ -77,6 +77,28 @@ public class ResultsQueryService implements AutoCloseable {
     }
 
     /**
+     * The S3 prefix a run's artifacts were written to, or {@code null} when the index holds no such
+     * run. Read from the stored attribute rather than reconstructed, which is what keeps every
+     * historical path resolving after the layout changed — and why nothing needs a compatibility
+     * shim. {@code requestId-index} projects ALL, so this is one query and no follow-up GetItem.
+     */
+    public String resultPathForRun(String runId) {
+        var response = client.query(QueryRequest.builder()
+            .tableName(tableName)
+            .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
+            .keyConditionExpression("#pk = :pk")
+            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
+            .expressionAttributeValues(Map.of(
+                ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(runId))))
+            .limit(1)
+            .build());
+        return response.items().stream()
+            .findFirst()
+            .map(item -> MeasurementItemMapper.fromItem(item).resultPath())
+            .orElse(null);
+    }
+
+    /**
      * Paginates to exhaustion. A Query returns at most 1 MB per page regardless of matches, and a
      * filter expression is applied after that budget is spent — so a single page can come back
      * empty with more results behind it, and stopping at the first page would silently truncate.
@@ -97,16 +119,18 @@ public class ResultsQueryService implements AutoCloseable {
             System.out.println("No results found.");
             return;
         }
-        String fmt = "%-45s %-18s %-14s %-8s %14s %12s %-10s%n";
+        // 28 is RunId.LENGTH. Truncating at 17 landed inside the old <type>-<date> prefix, which
+        // rendered distinct rows identically; a fixed-width id removes truncation as a question.
+        String fmt = "%-45s %-28s %-14s %-8s %14s %12s %-10s%n";
         System.out.printf(fmt, "BENCHMARK", "REQUEST_ID", "TYPE", "MODE", "SCORE", "±ERROR", "UNIT");
-        System.out.println("-".repeat(130));
+        System.out.println("-".repeat(141));
         for (ResultRow r : rows) {
             String shortName = r.benchmarkName().contains(".")
                 ? r.benchmarkName().substring(r.benchmarkName().lastIndexOf('.') + 1)
                 : r.benchmarkName();
             System.out.printf(fmt,
                 truncate(shortName, 44),
-                truncate(r.requestId(), 17),
+                r.requestId(),
                 truncate(r.benchmarkType(), 13),
                 r.mode() != null ? r.mode() : "",
                 String.format("%.3f", r.score()),

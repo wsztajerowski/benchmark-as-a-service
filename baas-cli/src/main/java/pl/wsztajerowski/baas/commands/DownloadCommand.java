@@ -11,10 +11,12 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.S3UploadService;
+import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.regex.Pattern;
 
 /**
  * Fetches everything a stored measurement deliberately leaves out.
@@ -34,8 +36,10 @@ public class DownloadCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Parameters(index = "0", paramLabel = "<resultPath>",
-        description = "The run's result path, as reported by `baas results` (e.g. main/jmh/20260819_090000).")
+    @Parameters(index = "0", paramLabel = "<runId|resultPath>",
+        description = "The run identifier `baas run` printed and `baas results` shows "
+            + "(e.g. 20260820T174432812Z-a3f9c21b), or a literal S3 result path "
+            + "(e.g. main/jmh/20260819_090000) for a run stored before the unified layout.")
     String resultPath;
 
     @Option(names = {"-o", "--output-dir"},
@@ -43,6 +47,18 @@ public class DownloadCommand implements Callable<Integer> {
     Path outputDir;
 
     private final ConfigService configService = new ConfigService();
+
+    private static final Pattern RUN_ID = Pattern.compile("\\d{8}T\\d{9}Z-[0-9a-f]{8}");
+
+    /**
+     * A path is never a run identifier and a run identifier never contains a slash, so the two
+     * argument shapes cannot be confused. The path branch is what keeps every run stored before
+     * this layout retrievable — {@code baas download} follows each item's stored {@code resultPath}
+     * rather than reconstructing one.
+     */
+    static boolean looksLikeRunId(String argument) {
+        return argument != null && RUN_ID.matcher(argument).matches();
+    }
 
     @Override
     public Integer call() {
@@ -55,10 +71,23 @@ public class DownloadCommand implements Callable<Integer> {
             return 1;
         }
 
-        String prefix = resultPath.endsWith("/") ? resultPath : resultPath + "/";
-
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+
+        String resolvedPath = resultPath;
+        if (looksLikeRunId(resultPath)) {
+            try (var results = new ResultsQueryService(
+                factory.dynamoDb(), config.getAws().getResultsTable())) {
+                resolvedPath = results.resultPathForRun(resultPath);
+            }
+            // Before anything is written, so an unknown run leaves no partial directory behind.
+            if (resolvedPath == null) {
+                logger.error("No run found with id '{}'. Nothing was written.", resultPath);
+                return 1;
+            }
+            logger.debug("Run {} resolves to {}", resultPath, resolvedPath);
+        }
+        String prefix = resolvedPath.endsWith("/") ? resolvedPath : resolvedPath + "/";
 
         try (var s3 = factory.s3()) {
             var storage = new S3UploadService(s3);
@@ -72,7 +101,7 @@ public class DownloadCommand implements Callable<Integer> {
                 return 1;
             }
 
-            Path destinationRoot = outputDir != null ? outputDir : Path.of(lastSegment(resultPath));
+            Path destinationRoot = outputDir != null ? outputDir : Path.of(lastSegment(resolvedPath));
             for (String key : keys) {
                 Path destination = destinationRoot.resolve(key.substring(prefix.length()));
                 logger.debug("Downloading {} -> {}", key, destination);
@@ -84,7 +113,7 @@ public class DownloadCommand implements Callable<Integer> {
         return 0;
     }
 
-    /** A result path is {@code <branch>/<type>/<timestamp>}; the timestamp alone names the run. */
+    /** The last segment of a run prefix is the run identifier, which is what names the directory. */
     private static String lastSegment(String path) {
         String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
         int slash = trimmed.lastIndexOf('/');
