@@ -39,6 +39,34 @@ class CiTemplateTest {
             .isNull();
     }
 
+    /** {@code ci/} is retired — a CI run is a run, and writes under {@code runs/} like any other. */
+    @Test
+    void theWorkflowRoleHasNoGrantForTheRetiredCiPrefix() {
+        assertThat(workflowRoleResources())
+            .noneMatch(resource -> resource.contains("/ci/*"))
+            .anyMatch(resource -> resource.contains("/runs/*"));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Set<String> workflowRoleResources() {
+        var policies = (List<Map<String, Object>>)
+            InfraFixtures.properties(InfraFixtures.ciTemplate(), "WorkflowRole").get("Policies");
+
+        Set<String> resources = new TreeSet<>();
+        for (Map<String, Object> policy : policies) {
+            var document = (Map<String, Object>) policy.get("PolicyDocument");
+            for (Map<String, Object> statement : (List<Map<String, Object>>) document.get("Statement")) {
+                Object resource = statement.get("Resource");
+                if (resource instanceof List<?> list) {
+                    list.forEach(entry -> resources.add(String.valueOf(entry)));
+                } else if (resource != null) {
+                    resources.add(String.valueOf(resource));
+                }
+            }
+        }
+        return resources;
+    }
+
     @SuppressWarnings("unchecked")
     private Set<String> workflowRoleActions() {
         var policies = (List<Map<String, Object>>)

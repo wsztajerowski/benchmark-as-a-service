@@ -73,6 +73,52 @@ class CoreTemplateTest {
             assertThat(rule).containsKey("AbortIncompleteMultipartUpload"));
     }
 
+    /**
+     * Suspended, not enabled: results are write-once and a run id carries 32 bits of entropy, so
+     * the overwrite versioning guarded against no longer has a mechanism. Stated rather than
+     * implied — there is now no server-side recovery from one.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void bucketVersioningIsSuspended() {
+        var versioning = (Map<String, Object>)
+            InfraFixtures.properties(template, "S3MainBucket").get("VersioningConfiguration");
+
+        assertThat(versioning).containsEntry("Status", "Suspended");
+    }
+
+    /**
+     * The deleted rule's premise — everything under {@code runs/} is re-creatable from source — is
+     * exactly what the unified layout falsifies: results live there now, and the uploaded JAR is
+     * the only copy of what a measurement actually ran. Asserted as an absence so the rule cannot
+     * come back unnoticed.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void noLifecycleRuleExpiresCurrentObjectsUnderRuns() {
+        var lifecycle = (Map<String, Object>)
+            InfraFixtures.properties(template, "S3MainBucket").get("LifecycleConfiguration");
+        var rules = (List<Map<String, Object>>) lifecycle.get("Rules");
+
+        assertThat(rules).allSatisfy(rule ->
+            assertThat(rule).doesNotContainKey("ExpirationInDays"));
+        assertThat(rules).extracting(rule -> rule.get("Id"))
+            .doesNotContain("expire-uploaded-benchmark-jars");
+    }
+
+    /** Suspension is not the same as never having versioned; existing versions persist. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theNoncurrentRulesSurviveSuspension() {
+        var lifecycle = (Map<String, Object>)
+            InfraFixtures.properties(template, "S3MainBucket").get("LifecycleConfiguration");
+        var rules = (List<Map<String, Object>>) lifecycle.get("Rules");
+
+        assertThat(rules).extracting(rule -> rule.get("Id"))
+            .contains("expire-noncurrent-versions", "expire-orphaned-delete-markers",
+                "abort-incomplete-uploads");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void bucketFollowsTheDashedTagConvention() {

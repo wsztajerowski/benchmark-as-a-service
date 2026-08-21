@@ -97,13 +97,13 @@
 
 ## 8. Infrastructure
 
-- [ ] 8.1 Set `S3MainBucket` versioning to `Suspended` and delete the `expire-uploaded-benchmark-jars`
+- [x] 8.1 Set `S3MainBucket` versioning to `Suspended` and delete the `expire-uploaded-benchmark-jars`
       rule. Keep both noncurrent rules and the multipart-abort rule.
-- [ ] 8.2 Remove the CI role's now-dead `ci/*` `PutObject` grant from `cf-template-ci.yaml`; its
+- [x] 8.2 Remove the CI role's now-dead `ci/*` `PutObject` grant from `cf-template-ci.yaml`; its
       `runs/*` grant already covers the new layout.
-- [ ] 8.3 Update `CoreTemplateTest`'s pinned facts, and add an assertion that no lifecycle rule expires
+- [x] 8.3 Update `CoreTemplateTest`'s pinned facts, and add an assertion that no lifecycle rule expires
       current objects under `runs/`, so the rule cannot be reintroduced unnoticed.
-- [ ] 8.4 Confirm `S3UploadService.deleteAllObjects` still walks versions and add a test covering a
+- [x] 8.4 Confirm `S3UploadService.deleteAllObjects` still walks versions and add a test covering a
       suspended bucket that still holds versions written before suspension.
 
 ## 9. CI

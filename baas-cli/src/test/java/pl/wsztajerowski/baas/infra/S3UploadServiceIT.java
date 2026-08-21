@@ -119,4 +119,33 @@ class S3UploadServiceIT {
         assertThat(remaining.versions()).isEmpty();
         assertThat(remaining.deleteMarkers()).isEmpty();
     }
+
+    /**
+     * The stack now declares {@code Status: Suspended}, but suspension is not the same as never
+     * having versioned: versions and delete markers written before it persist until the noncurrent
+     * rules reap them. So {@code deleteAllObjects} must keep walking versions rather than falling
+     * back to a plain {@code listObjectsV2} — otherwise teardown leaves a bucket that looks empty
+     * and refuses to delete.
+     */
+    @Test
+    void emptyingWalksVersionsWrittenBeforeSuspension() {
+        for (int i = 0; i < 2; i++) {
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/input/benchmark.jar").build(),
+                RequestBody.fromString("payload-" + i));
+        }
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/gone.txt").build(),
+            RequestBody.fromString("x"));
+        s3.deleteObject(r -> r.bucket(bucket).key("runs/p/id/gone.txt"));
+
+        s3.putBucketVersioning(r -> r.bucket(bucket)
+            .versioningConfiguration(v -> v.status(BucketVersioningStatus.SUSPENDED)));
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/run-status").build(),
+            RequestBody.fromString("completed"));
+
+        new S3UploadService(s3).deleteAllObjects(bucket);
+
+        var remaining = s3.listObjectVersions(r -> r.bucket(bucket));
+        assertThat(remaining.versions()).isEmpty();
+        assertThat(remaining.deleteMarkers()).isEmpty();
+    }
 }

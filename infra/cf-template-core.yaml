@@ -181,7 +181,13 @@ Resources:
     Properties:
       BucketName: !Sub baas-${ResourceNamePrefix}
       VersioningConfiguration:
-        Status: Enabled
+        # Suspended, not Enabled. Results are write-once and a run id carries 32 bits of entropy,
+        # so the overwrite versioning guarded against no longer has a mechanism — and suspension
+        # ends the noncurrent accumulation that the deleted runs/ expiry rule would otherwise let
+        # grow. The consequence is stated rather than implied: there is no server-side recovery
+        # from an overwrite. The noncurrent rules below stay, because versions written before
+        # suspension persist until they are reaped.
+        Status: Suspended
       LifecycleConfiguration:
         Rules:
           - Id: expire-noncurrent-versions
@@ -197,12 +203,10 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
-          # Uploaded benchmark JARs are re-creatable from source; results under
-          # <branch>/<type>/<timestamp>/ are untouched by these rules.
-          - Id: expire-uploaded-benchmark-jars
-            Status: Enabled
-            Prefix: runs/
-            ExpirationInDays: 30
+          # No rule expires current objects under runs/. The rule that did rested on the premise
+          # that everything there was re-creatable from source; the unified run prefix falsifies
+          # it directly — a run's results, its manifest and the JAR it actually ran all live under
+          # runs/<project>/<runId>/ now. Reintroducing one is silent data loss.
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:

@@ -112,9 +112,8 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:PutObject
-                Resource:
-                  - !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/ci/*'
-                  - !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/runs/*'
+                # ci/ is retired — a CI run is a run, and writes under runs/ like any other.
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/runs/*'
               - Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub 'arn:${AWS::Partition}:s3:::${BucketName}/*'
