@@ -47,10 +47,10 @@ plan's RED → GREEN → commit step sequence, with every new behaviour test-fir
 
 ## Tasks
 
-- **Completed**: `51 of 65` checkboxes in tasks.md
+- **Completed**: `50 of 65` checkboxes in tasks.md
 - **Remaining**: `1.1, 1.2, 1.6, 2.5, 11.4–11.7, 12.2–12.8`
 
-**Every code, infrastructure, CI and documentation task is complete.** All 14 remaining items
+**Every code, infrastructure, CI and documentation task is complete.** All 15 remaining items
 require credentials this session does not have: a GitHub token (`gh auth status` reports an invalid
 keyring token) or AWS credentials (`sts:GetCallerIdentity` reports none). None of them is a coding
 task, and none was skipped for convenience.
