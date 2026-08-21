@@ -21,8 +21,12 @@ import java.util.concurrent.Callable;
     description = "Report the environment fields that differ between two runs.",
     footer = {
         "",
-        "Result paths are <branch>/<type>/<timestamp>, as printed by baas run:",
-        "  baas env diff main/jmh/20260724_120000 main/jmh/20260811_093000"
+        "Result paths are runs/<project>/<runId>, as printed by baas run:",
+        "  baas env diff runs/lynx-journal/20260724T120000000Z-a3f9c21b \\",
+        "                runs/lynx-journal/20260811T093000000Z-b7e4d0f2",
+        "",
+        "A run recorded before the unified layout keeps its original path",
+        "(<branch>/<type>/<timestamp>); both shapes still resolve."
     }
 )
 public class EnvDiffSubcommand implements Callable<Integer> {

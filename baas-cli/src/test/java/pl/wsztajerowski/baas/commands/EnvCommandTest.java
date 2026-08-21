@@ -56,6 +56,9 @@ class EnvCommandTest {
             .getSubcommands().get("env").getSubcommands().get("diff")
             .getUsageMessage(CommandLine.Help.Ansi.OFF);
 
-        assertThat(usage).contains("<branch>/<type>/<timestamp>");
+        assertThat(usage).contains("runs/<project>/<runId>");
+        assertThat(usage)
+            .as("a run stored before the unified layout keeps its original path, and still resolves")
+            .contains("<branch>/<type>/<timestamp>");
     }
 }

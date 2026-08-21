@@ -35,9 +35,9 @@ the `baas run` project-layout assumption, and distribution mechanism.
 | 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Open |
 | 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | **Fixed** |
 | 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | **Fixed** |
-| 9 | A7 | Runner-JAR discovery hardcodes the upstream repo | Med | Open |
+| 9 | A7 | Runner-JAR discovery hardcodes the upstream repo | Med | **Fixed** |
 | 10 | A6 | Config: silent unknown keys, no schema version, stale default | Low | Open |
-| 11 | A9 | `requestId` collides at second granularity | Low | Open |
+| 11 | A9 | `requestId` collides at second granularity | Low | **Fixed** |
 | 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | **Fixed** |
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
@@ -209,6 +209,15 @@ checksum risk.
 
 **Proposed fix:** make repo and release tag configurable; fail loudly on an empty URL.
 
+**Fixed** by `unified-run-prefix`, by removing the call rather than parameterising it. The instance
+no longer contacts GitHub at all: it copies a version-pinned JAR from
+`releases/<version>/benchmark-runner.jar` in the working bucket, and the CLI seeds that slot from
+the release matching *its own* version. The source repository became `runner.sourceRepo` in
+`config.yaml`, so a fork points at its own releases; the fetch fails loudly, naming the repository,
+version and asset, and uploads nothing. Both halves of the finding are closed — and because the
+download moved to the laptop, it also became verifiable, which closed the separately-accepted
+checksum risk.
+
 ## 10. A6 — config handling · Low
 
 `ConfigService` disables `FAIL_ON_UNKNOWN_PROPERTIES`, so a typo'd key in a hand-edited
@@ -223,6 +232,14 @@ stack name the current templates never produce.
 `branch/type/timestamp`. CLAUDE.md justifies request-ID-scoped S3 paths by "two developers on the
 same branch overwrite each other's JARs" — which two developers starting the same type in the same
 second still do. A short random suffix closes it.
+
+**Fixed** by `unified-run-prefix`. `RunId` is `<UTC instant, ISO basic, milliseconds>Z-<8 hex>` from
+`SecureRandom` — the collision is closed rather than narrowed: it now needs the same millisecond
+*and* the same 32-bit draw. The two identifiers this finding names are also gone; there is one
+`runId` and one prefix, `runs/<project>/<runId>/`, and the CLI reads the clock once to produce
+both. The fixed 28-character width additionally removed `ResultsQueryService`'s `truncate(…, 17)`,
+which had been cutting inside the shared `<type>-<date>` prefix and rendering distinct rows
+identically.
 
 ## 12. A5 — command classes depend on each other's statics · Low
 

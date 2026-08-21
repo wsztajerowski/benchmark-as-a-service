@@ -55,7 +55,7 @@ does not explain itself — change them only deliberately.
 |---|---|
 | No `set -e` in the EC2 user-data script | If the IMDSv2 instance-id fetch fails under `set -e`, the script exits *before* starting the watchdog, orphaning the instance. Errors are handled by exit code and the `run-status` sentinel instead. |
 | The watchdog starts immediately after `INSTANCE_ID` is resolved | Same reason: every later failure has to be covered by it. |
-| S3 upload paths are request-ID-scoped (`runs/<requestId>/…`) | Two developers on the same branch otherwise overwrite each other's JARs mid-run. |
+| ~~S3 upload paths are request-ID-scoped (`runs/<requestId>/…`)~~ **Superseded by `unified-run-prefix`** | The concern stands; the shape does not. A run's inputs now live inside the run's own prefix, `runs/<project>/<runId>/input/`, and the run id carries 32 bits of entropy — so two developers on one branch cannot collide even within a millisecond. |
 | Root volume is 30 GB gp3, not the AL2023 default | 8 GB is exhausted by profiling artifacts. |
 | async-profiler is downloaded from GitHub on the instance | Public egress already exists; pre-staging it in S3 or adding a NAT gateway buys nothing. |
 | The benchmark runs from `/app`, never from `/` | The runner scans below its working directory for `.log` files to upload. cloud-init starts user-data in `/`, so that walk covers the whole root filesystem and aborts on `/proc` entries that vanish mid-walk. |

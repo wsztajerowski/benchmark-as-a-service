@@ -16,7 +16,9 @@ CLAUDE.md, `baas` neither dispatches nor depends on the workflows, which exist t
 ## Deliberately excluded
 
 Everything in CLAUDE.md's *Accepted risks* table was skipped and should not be re-raised as a bug —
-in particular runner-JAR checksum verification and the shared `RunnerRole`.
+in particular the shared `RunnerRole`. Runner-JAR checksum verification was on that list and is no
+longer: `unified-run-prefix` moved the download from the instance to the laptop, where it can be
+verified against a published `.sha256`, and closed the risk.
 
 ## Status
 
@@ -35,6 +37,7 @@ walkthrough*; A4 was partly addressed as a side effect of `dynamodb-results-stor
 | 8 | D3 | `ASYNC_PATH` unset in PR CI → async test silently skipped | Low | Open |
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | Open |
 | 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | Open |
+| 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | Open |
 
 ---
 
@@ -176,6 +179,31 @@ Third-party actions are pinned to mutable tags (`machulav/ec2-github-runner@v2`)
 A classic PAT with `repo` scope, used by `machulav/ec2-github-runner` in `start-ec2-runner.yml` and
 `stop-ec2-runner.yml`. A fine-grained PAT or a GitHub App narrows the blast radius.
 
+## 11. A11 — two `@Param` variants of one benchmark method share a sort key · Med
+
+`JmhResult` does not parse JMH's `params` object, so the resolved parameter values never reach the
+stored measurement. The sort key is `class#method#mode#timestamp#requestId`
+(`ResultKeys.sortKey`), and `JmhRunResults` deliberately shares **one timestamp across a run** —
+correctly, since a per-result clock read would make two results from the same run differ by a stray
+millisecond.
+
+Together those two facts collide: a benchmark method with `@Param` produces one JMH result per
+parameter combination, all with the same class, method, mode, timestamp and request id. Every one
+of them therefore maps to an identical sort key, and the second `PutItem` silently overwrites the
+first. A four-variant sweep stores one row, and it is the last one written — not the best, not the
+first, just whichever JMH emitted last.
+
+The failure is silent in both directions: nothing errors, and the surviving row carries no
+indication that it stood for a sweep. It presents as a benchmark that inexplicably has one score.
+
+Live today; predates `unified-run-prefix`, which surfaced it while reasoning about what the sort
+key's last field guarantees. Deliberately not fixed there — it is a stored-shape change, not a
+layout one.
+
+**Proposed fix:** parse `params` into the measurement and fold the resolved values into the sort
+key — the same argument that put `mode` there, for the same reason. Storing them only as a tag
+would make them queryable without fixing the overwrite, so the key change is the load-bearing half.
+
 ---
 
 ## What is genuinely well done
@@ -189,6 +217,7 @@ Worth protecting while changing the rest, and worth not "simplifying" away:
   the `no set -e` decision written down with its reasoning.
 - **IMDSv2 required with `httpPutResponseHopLimit(1)`** in `Ec2ProvisioningService`.
 - **The Mongo URI never enters user-data** — fetched from SSM at runtime with a narrow resource.
-- **The bucket**: versioning, SSE, full public-access block, and a lifecycle policy that even
-  handles orphaned delete markers.
+  (Historical: `baas` no longer speaks MongoDB at all.)
+- **The bucket**: SSE, full public-access block, and a lifecycle policy that even handles orphaned
+  delete markers. (Versioning is now deliberately `Suspended` — see CLAUDE.md's invariants.)
 - **Comments explain *why*.** That is what made this review possible at all.

@@ -304,7 +304,7 @@ Runner instances self-terminate on both the success and failure paths, so the bo
 uploaded to S3 before termination:
 
 ```
-s3://<bucket>/<branch>/<type>/<timestamp>/cloud-init-output.log
+s3://<bucket>/runs/<project>/<runId>/cloud-init-output.log
 ```
 
 `baas run` prints that path when a run fails, and when the instance dies before reporting.

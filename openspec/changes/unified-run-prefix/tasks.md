@@ -118,19 +118,19 @@
 
 ## 10. Documentation and findings
 
-- [ ] 10.1 Rewrite CLAUDE.md's *S3 result layout* section for `runs/<project>/<runId>/`, and update the
+- [x] 10.1 Rewrite CLAUDE.md's *S3 result layout* section for `runs/<project>/<runId>/`, and update the
       *Invariants* entries that name `runs/<requestId>/`, the request-ID-scoped upload rule and the
       GitHub runner-JAR download.
-- [ ] 10.2 Record the new invariants: one clock read per run; the instance never contacts GitHub; the
+- [x] 10.2 Record the new invariants: one clock read per run; the instance never contacts GitHub; the
       `releases/` slot is seeded once and never overwritten; versioning is suspended deliberately.
-- [ ] 10.3 Move the *Runner JAR integrity* row out of *Accepted risks* — the checksum closes it. State
+- [x] 10.3 Move the *Runner JAR integrity* row out of *Accepted risks* — the checksum closes it. State
       what replaced it rather than deleting the row silently.
-- [ ] 10.4 Mark **A7** and **A9** Fixed in `docs/review/baas-cli-findings.md`, including the status
+- [x] 10.4 Mark **A7** and **A9** Fixed in `docs/review/baas-cli-findings.md`, including the status
       table at the top, with a sentence on how each was closed.
-- [ ] 10.5 File the `@Param` sort-key collision in `docs/review/benchmark-runner-findings.md`: one
+- [x] 10.5 File the `@Param` sort-key collision in `docs/review/benchmark-runner-findings.md`: one
       timestamp per run plus an unparsed `params` object means two `@Param` variants of one method
       produce an identical sort key and the second write silently wins. Pre-existing, not fixed here.
-- [ ] 10.6 Update `docs/diagrams/` for any command whose sequence changed, and `infra/README.md` if the
+- [x] 10.6 Update `docs/diagrams/` for any command whose sequence changed, and `infra/README.md` if the
       bucket description names the retired prefixes.
 
 ## 11. History migration (after the cutover is deployed and verified)

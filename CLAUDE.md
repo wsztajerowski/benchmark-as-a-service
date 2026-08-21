@@ -66,8 +66,8 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   carried credentials. A table name carries none — access comes from `RunnerRole`, not from knowing
   the name — so fetching it at boot would buy nothing and cost a round trip on every run. Don't
   "restore" the SSM indirection.
-- **`baas run` forwards `project`, `commit` and every `--tag` to the *runner*, not just to the
-  instance.** They reach `benchmarkMetadata.tags`, which is the only query surface `baas results`
+- **`baas run` forwards `project`, `branch`, `commit` and every `--tag` to the *runner*, not just to
+  the instance.** They reach `benchmarkMetadata.tags`, which is the only query surface `baas results`
   has. A caller `--tag` for a machine-observed key (`imageVersion`, `instanceType`, `jdk`,
   `cpuModel`, `cpuArch`, `type`) is rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
@@ -123,8 +123,29 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 **Other rules that exist because something broke**
 
-- **S3 upload paths are request-ID-scoped** (`runs/<requestId>/…`). Without it, two developers on
-  the same branch overwrite each other's JARs mid-run.
+- **One run is one prefix, one id and one instant.** Everything a run produces or consumes lives
+  under `runs/<project>/<runId>/`, built only by `RunLayout`/`RunId` in `baas-model` — the same
+  reason `ResultKeys` owns DynamoDB keys. A hand-built prefix does not fail to compile; it points at
+  nothing, and that presents as an empty download rather than as an error. Splitting inputs and
+  results back into two trees is the split this design removed.
+- **`baas run` reads the clock once per run.** That instant names the prefix and travels to the
+  runner as `--created-at`, so the id's timestamp and the stored `createdAt` are the same value
+  rather than two that happen to be close. The instance's clock never reaches the record. CI mints
+  its id in bash and must pass the same instant, or the property holds for `baas run` and quietly
+  fails there.
+- **The instance contacts no host outside the account.** Its only runner-JAR source is
+  `releases/<version>/benchmark-runner.jar` in the bucket, seeded by the CLI. Restoring a
+  network fetch reintroduces both the drift — two runs a week apart executing different runner
+  code — and the egress `private-runner-network` exists to remove.
+- **`releases/<version>/benchmark-runner.jar` is seeded once and never overwritten.** That
+  immutability is what the whole pinning argument rests on. A corrupted object therefore does not
+  self-repair: delete the key and the next run re-seeds it, checksum-verified.
+- **Bucket versioning is `Suspended` and no lifecycle rule expires current objects under `runs/`.**
+  Both are load-bearing. The deleted `expire-uploaded-benchmark-jars` rule assumed everything under
+  `runs/` was re-creatable from source; results live there now, so restoring it is silent data loss
+  (`CoreTemplateTest` pins its absence). Versioning only ever guarded an overwrite that the run
+  id's 32-bit entropy suffix now prevents — and the consequence is stated, not implied: there is no
+  server-side recovery from one.
 - **`RunnerSecurityGroup` allows egress on 443 and 80 only — no 27017, and adding it back is a
   regression.** The rule existed because Atlas does not serve clients on 443. Nothing connects to
   Atlas now, and `CoreTemplateTest.runnerHasNoEgressToMongoAtlasAnyMore` pins its absence rather
@@ -153,7 +174,19 @@ The watchdog is the only one that survives a deadlocked JVM.
   runner is `./jmh-with-profiler.sh` / `./jmh-with-async.sh` against LocalStack.
 - **Measurements live in DynamoDB, and a verbatim `jmh-result.json` now exists in S3.** The item
   carries what a table view needs; `rawData` and `scorePercentiles` are dropped from it and are
-  recoverable only from that JSON, via `baas download <result-path>`.
+  recoverable only from that JSON, via `baas download <runId>` (a literal result path also works,
+  which is what keeps pre-unified-layout runs retrievable).
+- **A reactor build cannot launch a run.** The CLI pins the runner JAR to its own released version,
+  and `0.0.0-semantically-released` names no release — so `baas run` fails before the Maven build
+  unless `--runner-jar` is passed. Same no-fallback stance as the runner AMI. Every `baas` in
+  existence is currently an alias onto a reactor build, so this is the case, not the exception;
+  the reactor checkout is now the developer's explicit special case rather than the implicit
+  default.
+- **The runner refuses an unresolved project.** `getProject()` used to fall back to `"unknown"`,
+  and CI has been writing `RESULT#unknown` because of it — a partition nobody queries. It now
+  throws, before the benchmark runs. The historical `RESULT#unknown` rows stay where they are; 36
+  of them are CI fixture runs against `fake-jmh-benchmarks` and nobody recorded what the rest
+  measured.
 - **Absent store configuration is a hard failure, not a silent no-op.** `baas run` resolves the
   table before the Maven build and before any upload, and `benchmark-runner` rejects a missing
   selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
@@ -298,9 +331,15 @@ GHA values whose origin isn't obvious from the workflow files:
 
 ## S3 result layout
 
-Under `<result-path>` = `<branch>/<type>/<YYYYMMDD_HHMMSS>`. Per-type stdout lands in
-`jmh-output.txt`, `jmh-profiler-output.txt`, `jmh-with-async-output.txt`, or `jcstress-output.txt`;
-profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The non-obvious entries:
+One run is one prefix: `<result-path>` = `runs/<project>/<runId>/`, where `runId` is
+`<UTC instant, ISO basic, milliseconds>Z-<8 hex>` (e.g. `20260820T174432812Z-a3f9c21b`) — fixed 28
+characters, time-ordered so a listing reads chronologically, entropy-suffixed so two runs starting
+in the same millisecond cannot collide. Nothing parses it; the format is a readability convention,
+not a contract. Built only by `RunLayout`/`RunId` in `baas-model`, never by hand.
+
+Per-type stdout lands in `jmh-output.txt`, `jmh-profiler-output.txt`, `jmh-with-async-output.txt`,
+or `jcstress-output.txt`; profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The
+non-obvious entries:
 
 | Key | Meaning |
 |---|---|
@@ -310,8 +349,15 @@ profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The non-ob
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/*.log` | Any `.log` found *below the working directory* (hence the `/app` invariant) |
-| `runs/<requestId>/` | Separate top-level prefix holding uploaded inputs, not results |
+| `input/` | The run's own inputs — `benchmark.jar`, and `runner.jar` only when `--runner-jar` overrode the pinned one. Inside the run prefix, so a consumer has one sub-prefix to skip rather than filenames to special-case |
+| `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the run tree. Seeded once by the CLI and never overwritten. `releases/`, not `runner/`, because a prefix one character from `runs/` would need disambiguating in every listing |
 | `image-builds/` | Image Builder build logs (written by the build instance, not by a run) |
+
+Two id shapes coexist and always will: runs recorded before the unified layout keep their original
+`<type>-<timestamp>` request id, because that id is inside every sort key and *is* the GSI partition
+key. Nothing parses the id, so nothing needs to tell them apart. `baas download` follows each item's
+stored `resultPath` rather than reconstructing one, which is what keeps every historical path
+resolving; it also accepts a bare run id, resolved through `requestId-index`.
 
 `environment.json` is the **observation**; `infra/runner-image.yaml` is the **declaration**. The
 observation is strictly richer — it carries what the image cannot control (instance type, CPU
@@ -354,8 +400,12 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `commit` | `baas run`. `type` is reserved like the observed keys; `project` and `commit` are caller-overridable by design |
-| Convention | `branch`, `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side; it is a convention, not a field |
+| Derived | `type`, `project`, `commit`, `branch` | `baas run`. `type` is reserved like the observed keys; `project`, `commit` and `branch` are caller-overridable by design |
+| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side; it is a convention, not a field |
+
+`branch` used to survive only as a segment of the result path and was stored nowhere. The unified
+prefix drops that segment, so what the path stopped carrying the tags now carry — which is the
+whole point of tags being the query surface.
 
 Unknown keys pass through — `baas results` warns only when a `--tag` names a key no row carries.
 Grouping keeps the highest score per `(benchmark, <group-tag>)`, group tag defaulting to `branch`,
@@ -387,7 +437,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + 300 s`. Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
-| Runner JAR integrity | Downloaded from GitHub Releases **without checksum verification**. Known open risk. |
+| ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |
 | MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
 | `baas run` project layout | Assumes a Maven project producing one JAR; `--benchmark-jar` + `--skip-build` covers the rest. |
 | Distribution | Shaded JAR only. Install script, Homebrew tap, jpackage, native image, Docker image were specified but never built — backlog, not decisions. |
