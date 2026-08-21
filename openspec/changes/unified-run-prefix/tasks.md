@@ -108,12 +108,12 @@
 
 ## 9. CI
 
-- [ ] 9.1 In `e2e-cloud-test.yml`, mint one run id per benchmark job (`date -u` plus
+- [x] 9.1 In `e2e-cloud-test.yml`, mint one run id per benchmark job (`date -u` plus
       `openssl rand -hex 4`) and pass the same instant as `--created-at`.
-- [ ] 9.2 Pass `--project` explicitly so CI stops writing `RESULT#unknown`, and drop `ci/` from the
+- [x] 9.2 Pass `--project` explicitly so CI stops writing `RESULT#unknown`, and drop `ci/` from the
       paths the workflow builds.
-- [ ] 9.3 Verify the two benchmark jobs no longer share a `run-status` key.
-- [ ] 9.4 Do not touch `exec-single-benchmark.yml` — `gha-workflow-migration-to-dynamodb` owns it.
+- [x] 9.3 Verify the two benchmark jobs no longer share a `run-status` key.
+- [x] 9.4 Do not touch `exec-single-benchmark.yml` — `gha-workflow-migration-to-dynamodb` owns it.
       Coordinate merge order with that change before landing.
 
 ## 10. Documentation and findings
