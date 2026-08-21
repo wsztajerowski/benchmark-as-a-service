@@ -8,28 +8,28 @@
       in design.md is wrong and section 2 collapses to publishing the CLI JAR and the checksum.
 - [ ] 1.2 Confirm no release asset named `baas-cli.jar` exists on any published release, and that
       `unzip -p baas-cli/target/baas-cli.jar META-INF/MANIFEST.MF` shows no `Implementation-Version`.
-- [ ] 1.3 Confirm `git rev-parse --git-common-dir` resolves to the main repository from a linked
+- [x] 1.3 Confirm `git rev-parse --git-common-dir` resolves to the main repository from a linked
       worktree and is a no-op for an ordinary clone, on the git version in use.
-- [ ] 1.4 Confirm `requestId-index` uses `ProjectionType: ALL`, so resolving a run identifier to its
+- [x] 1.4 Confirm `requestId-index` uses `ProjectionType: ALL`, so resolving a run identifier to its
       `resultPath` needs one query and no follow-up `GetItem`.
-- [ ] 1.5 Confirm `RunnerRole` and the operator policy grant bucket-wide `s3:PutObject`/`GetObject`,
+- [x] 1.5 Confirm `RunnerRole` and the operator policy grant bucket-wide `s3:PutObject`/`GetObject`,
       so `releases/*` needs no new IAM statement. If either is prefix-scoped, the proposal's "no new
       IAM" claim is wrong and must be corrected before proceeding.
 - [ ] 1.6 Inventory the bucket and table: how many runs exist, which projects they span, how many
       items carry `pk = RESULT#unknown`, and whether every item's `resultPath` matches the historical
       `<branch>/<type>/<timestamp>` shape. Record the counts — section 11 checks against them.
-- [ ] 1.7 Confirm the four Image Builder and bucket facts pinned by `CoreTemplateTest` so section 8
+- [x] 1.7 Confirm the four Image Builder and bucket facts pinned by `CoreTemplateTest` so section 8
       knows exactly which assertions move.
 
 ## 2. Release pipeline (prerequisite — nothing downstream works without it)
 
-- [ ] 2.1 Add `<Implementation-Version>${project.version}</Implementation-Version>` to `baas-cli`'s
+- [x] 2.1 Add `<Implementation-Version>${project.version}</Implementation-Version>` to `baas-cli`'s
       shade `ManifestResourceTransformer`, which currently declares only `mainClass`.
-- [ ] 2.2 Add a `BaasVersion` accessor reading the manifest, returning the placeholder unchanged when
+- [x] 2.2 Add a `BaasVersion` accessor reading the manifest, returning the placeholder unchanged when
       it is absent, with a unit test for both branches.
-- [ ] 2.3 In `release.yml`, extend `prepareCmd` so it runs `versions:set`, then rebuilds the shaded
+- [x] 2.3 In `release.yml`, extend `prepareCmd` so it runs `versions:set`, then rebuilds the shaded
       JARs, then writes `benchmark-runner.jar.sha256` next to the runner JAR.
-- [ ] 2.4 Add `baas-cli/target/baas-cli.jar` and `benchmark-runner/target/benchmark-runner.jar.sha256`
+- [x] 2.4 Add `baas-cli/target/baas-cli.jar` and `benchmark-runner/target/benchmark-runner.jar.sha256`
       to the `@semantic-release/github` asset list.
 - [ ] 2.5 Land section 2 and cut a real release before starting section 6's manual verification —
       that section cannot be exercised without one.

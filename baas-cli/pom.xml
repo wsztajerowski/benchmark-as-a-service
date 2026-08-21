@@ -145,6 +145,11 @@
                             <transformers combine.children="append">
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                                     <mainClass>pl.wsztajerowski.baas.BaasApp</mainClass>
+                                    <!-- BaasVersion reads this to pin releases/<version>/benchmark-runner.jar.
+                                         Without it the CLI cannot name the release it was built from. -->
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
                                 </transformer>
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>
