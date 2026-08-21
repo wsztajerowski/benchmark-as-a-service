@@ -7,7 +7,8 @@
 **Change**: `unified-run-prefix`
 **Iteration**: `1`
 **Applied at**: `2026-08-21 09:55`
-**Executor**: `direct (task-by-task, TDD per plan.md)`
+**Executor**: `manual` — the task-by-task loop the apply instruction names as its fallback, not
+`subagent-driven-development` or `executing-plans`. See *Workspace* for why.
 
 ---
 
