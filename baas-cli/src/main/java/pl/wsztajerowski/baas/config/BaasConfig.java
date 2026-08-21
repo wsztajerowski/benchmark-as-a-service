@@ -9,6 +9,7 @@ public class BaasConfig {
     private AwsConfig aws = new AwsConfig();
     private Ec2Config ec2 = new Ec2Config();
     private BenchmarkConfig benchmark = new BenchmarkConfig();
+    private RunnerConfig runner = new RunnerConfig();
 
     public String getPrefix() { return prefix; }
     public void setPrefix(String prefix) { this.prefix = prefix; }
@@ -21,6 +22,9 @@ public class BaasConfig {
 
     public BenchmarkConfig getBenchmark() { return benchmark; }
     public void setBenchmark(BenchmarkConfig benchmark) { this.benchmark = benchmark; }
+
+    public RunnerConfig getRunner() { return runner; }
+    public void setRunner(RunnerConfig runner) { this.runner = runner; }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AwsConfig {
@@ -94,6 +98,18 @@ public class BaasConfig {
 
         public int getWallClockHardKillSeconds() { return wallClockHardKillSeconds; }
         public void setWallClockHardKillSeconds(int s) { this.wallClockHardKillSeconds = s; }
+    }
+
+    /**
+     * Where the version-pinned runner JAR is fetched from when {@code releases/<version>/} is not
+     * yet seeded. Configuration rather than a string baked into the user-data script, so a fork can
+     * point at its own releases (finding A7).
+     */
+    public static class RunnerConfig {
+        private String sourceRepo = "wsztajerowski/benchmark-as-a-service";
+
+        public String getSourceRepo() { return sourceRepo; }
+        public void setSourceRepo(String sourceRepo) { this.sourceRepo = sourceRepo; }
     }
 
     public static class BenchmarkConfig {

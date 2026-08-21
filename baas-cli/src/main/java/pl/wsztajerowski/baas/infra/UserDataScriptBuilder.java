@@ -125,16 +125,13 @@ public class UserDataScriptBuilder {
         aws s3 cp /app/environment.json "s3://${S3_BUCKET}/${RESULT_PATH}/environment.json"
         aws s3 cp /app/packages.txt "s3://${S3_BUCKET}/${RESULT_PATH}/packages.txt"
 
-        # Download runner JAR: from S3 (if --runner-jar provided) or GitHub Releases
-        if [[ -n "${RUNNER_JAR_S3_KEY}" ]]; then
-          aws s3 cp "s3://${S3_BUCKET}/${RUNNER_JAR_S3_KEY}" /app/benchmark-runner.jar
-        else
-          RELEASE_URL=$(curl -sH "Accept: application/vnd.github+json" \\
-            "https://api.github.com/repos/wsztajerowski/benchmark-as-a-service/releases/latest" \\
-            | grep '"browser_download_url"' | grep 'benchmark-runner\\.jar' | head -1 \\
-            | sed 's/.*"browser_download_url": "\\(.*\\)".*/\\1/')
-          wget -nv "${RELEASE_URL}" -O /app/benchmark-runner.jar
-        fi
+        # The runner JAR comes from the bucket and nowhere else. It used to be resolved at boot
+        # from an unpinned upstream "newest release" pointer, so two runs a week apart could
+        # execute different runner code under a tool whose entire product is comparability — the
+        # same class of drift as the boot-time package upgrade that finding A8 removed from this
+        # script. The CLI now pins it to its own version and seeds it checksum-verified, which is
+        # also why this instance reaches no host outside the account.
+        aws s3 cp "s3://${S3_BUCKET}/${RUNNER_JAR_S3_KEY}" /app/benchmark-runner.jar
 
         aws s3 cp "s3://${S3_BUCKET}/${BENCHMARK_JAR_S3_KEY}" /app/benchmark-under-test.jar
 

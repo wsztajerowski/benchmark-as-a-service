@@ -76,15 +76,15 @@
 
 ## 6. CLI — runner JAR distribution
 
-- [ ] 6.1 Delete the `curl api.github.com` / `releases/latest` branch from `UserDataScriptBuilder`.
+- [x] 6.1 Delete the `curl api.github.com` / `releases/latest` branch from `UserDataScriptBuilder`.
       The instance's only runner-JAR source becomes `aws s3 cp` from the bucket.
-- [ ] 6.2 Resolve `releases/<version>/benchmark-runner.jar` from the CLI's own version; when absent,
+- [x] 6.2 Resolve `releases/<version>/benchmark-runner.jar` from the CLI's own version; when absent,
       fetch the release asset and its `.sha256`, verify, then upload. Never overwrite a present object.
-- [ ] 6.3 Make the source repository a config key with the current upstream as its default, and fail
+- [x] 6.3 Make the source repository a config key with the current upstream as its default, and fail
       with a message naming the repository and version attempted. Closes **A7**.
-- [ ] 6.4 Hard-fail before the Maven build and before any upload when the CLI's version is the
+- [x] 6.4 Hard-fail before the Maven build and before any upload when the CLI's version is the
       placeholder and no `--runner-jar` was given, naming the option that resolves it.
-- [ ] 6.5 Unit-test the rendered user-data contains no external host and exactly one bucket-sourced
+- [x] 6.5 Unit-test the rendered user-data contains no external host and exactly one bucket-sourced
       runner download; and that a checksum mismatch uploads nothing and launches nothing.
 
 ## 7. CLI — download and results rendering

@@ -6,6 +6,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import pl.wsztajerowski.baas.BaasVersion;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -13,6 +14,7 @@ import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.ImageBuilderService;
 import pl.wsztajerowski.baas.infra.RunnerImage;
+import pl.wsztajerowski.baas.infra.RunnerJarResolver;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
@@ -73,7 +75,8 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--benchmark-jar", description = "Path to the benchmark JAR (overrides config jarPath).")
     Path benchmarkJar;
 
-    @Option(names = "--runner-jar", description = "Local runner JAR to upload instead of downloading from GitHub Releases.")
+    @Option(names = "--runner-jar", description = "Local runner JAR to upload for this run instead of "
+        + "pinning the release matching this CLI's version. Required from an unreleased build.")
     Path runnerJar;
 
     @Option(names = "--skip-build", description = "Skip mvn build step.")
@@ -94,7 +97,7 @@ public class RunCommand implements Callable<Integer> {
         + "own environment.json.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
-    @Option(names = "--branch", description = "Branch label for result path (defaults to current git branch).")
+    @Option(names = "--branch", description = "Branch recorded as the run's branch tag (defaults to the current git branch).")
     String branch;
 
     @Option(names = "--project", description = "Project name for the results partition (defaults to the git repository name).")
@@ -142,6 +145,18 @@ public class RunCommand implements Callable<Integer> {
     public Integer call() throws Exception {
         if (!VALID_TYPES.contains(benchmarkType)) {
             logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
+            return 1;
+        }
+
+        // Before the Maven build and before any upload, for the same reason the runner image and
+        // the results table are: a run that cannot name the runner JAR it will execute is going to
+        // fail anyway, and there is deliberately no fallback — two provisioning paths produce
+        // silently incomparable results.
+        if (runnerJar == null && !BaasVersion.isReleased()) {
+            logger.error("""
+                This is an unreleased build ({}), so there is no runner release to pin to.
+                  Run against a local build:  baas run --runner-jar <path> ...
+                Nothing was built or launched.""", BaasVersion.current());
             return 1;
         }
 
@@ -225,12 +240,19 @@ public class RunCommand implements Callable<Integer> {
             new S3UploadService(s3).upload(jarPath, config.getAws().getBucket(), benchmarkJarKey);
         }
 
-        String runnerJarS3Key = null;
+        // The instance's only runner-JAR source. A --runner-jar override stays per-run under the
+        // run's own input/, so releases/ holds released artifacts only.
+        String runnerJarS3Key;
         if (runnerJar != null) {
             logger.info("Uploading runner JAR to S3...");
             runnerJarS3Key = inputPrefix + "/runner.jar";
             try (var s3 = factory.s3()) {
                 new S3UploadService(s3).upload(runnerJar, config.getAws().getBucket(), runnerJarS3Key);
+            }
+        } else {
+            try (var s3 = factory.s3()) {
+                runnerJarS3Key = RunnerJarResolver.resolve(s3, config.getAws().getBucket(),
+                    BaasVersion.current(), config.getRunner().getSourceRepo());
             }
         }
 

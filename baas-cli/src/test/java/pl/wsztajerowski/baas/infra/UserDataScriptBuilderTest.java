@@ -651,4 +651,21 @@ class UserDataScriptBuilderTest {
 
         assertThat(process.exitValue()).as("bash -n said: " + output).isZero();
     }
+
+    /**
+     * private-runner-network would otherwise have to tunnel this egress through a NAT or a VPC
+     * endpoint, and releases/latest was an unpinned drift axis besides.
+     */
+    @Test
+    void theInstanceNeverContactsGitHubForItsRunner() {
+        String script = script();
+
+        assertThat(script).doesNotContain("api.github.com")
+            .doesNotContain("releases/latest")
+            .doesNotContain("wget");
+        // Exactly one runner download, and it is the bucket copy. (The JAR path itself appears
+        // twice — the copy, then `java -jar` — so the download line is what must be unique.)
+        assertThat(script).containsOnlyOnce(
+            "aws s3 cp \"s3://${S3_BUCKET}/${RUNNER_JAR_S3_KEY}\" /app/benchmark-runner.jar");
+    }
 }

@@ -209,4 +209,27 @@ class RunCommandTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("--project");
     }
+
+    /**
+     * A reactor build cannot name a release, so it cannot pin the runner JAR a run executes. The
+     * refusal is the same no-fallback stance the runner AMI takes, and it lands before the Maven
+     * build, before any upload and before the first AWS client is constructed — reachable in a
+     * unit test precisely because nothing AWS-shaped happens first.
+     */
+    @Test
+    void refusesToLaunchFromAnUnreleasedBuildWithoutARunnerJar() throws Exception {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+
+        assertThat(command.call())
+            .as("an unreleased CLI has no release to pin to, and there is no fallback")
+            .isEqualTo(1);
+    }
+
+    @Test
+    void theUnreleasedBuildIsWhatTriggersTheRefusalNotTheTypeCheck() {
+        assertThat(pl.wsztajerowski.baas.BaasVersion.isReleased())
+            .as("a reactor build always carries the placeholder version")
+            .isFalse();
+    }
 }

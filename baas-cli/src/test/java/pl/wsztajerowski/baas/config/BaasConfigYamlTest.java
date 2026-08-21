@@ -37,4 +37,24 @@ class BaasConfigYamlTest {
 
         assertThat(readBack.getAws().getCoreStackName()).isEqualTo("baas-a1b2c3d4");
     }
+
+    /**
+     * The runner's source repository used to be a string baked into the user-data shell script
+     * (finding A7), so a fork could not point the CLI at its own releases.
+     */
+    @Test
+    void defaultsTheRunnerSourceRepositoryToUpstream() {
+        assertThat(new BaasConfig().getRunner().getSourceRepo())
+            .isEqualTo("wsztajerowski/benchmark-as-a-service");
+    }
+
+    @Test
+    void roundTripsAnOverriddenRunnerSourceRepository() throws Exception {
+        BaasConfig original = new BaasConfig();
+        original.getRunner().setSourceRepo("acme/baas-fork");
+
+        BaasConfig readBack = yaml.readValue(yaml.writeValueAsString(original), BaasConfig.class);
+
+        assertThat(readBack.getRunner().getSourceRepo()).isEqualTo("acme/baas-fork");
+    }
 }
