@@ -249,11 +249,16 @@ public class RunCommand implements Callable<Integer> {
             try (var s3 = factory.s3()) {
                 new S3UploadService(s3).upload(runnerJar, config.getAws().getBucket(), runnerJarS3Key);
             }
+            logger.info("Runner JAR: {} (local override, not a pinned release)", runnerJar);
         } else {
             try (var s3 = factory.s3()) {
                 runnerJarS3Key = RunnerJarResolver.resolve(s3, config.getAws().getBucket(),
                     BaasVersion.current(), config.getRunner().getSourceRepo());
             }
+            // Which runner build a run executed is the first thing anyone comparing two results
+            // asks, so it is reported on every run — not only on the one that seeded the slot.
+            logger.info("Runner JAR: {} (pinned to CLI version {})",
+                runnerJarS3Key, BaasVersion.current());
         }
 
         // 6. Build user-data

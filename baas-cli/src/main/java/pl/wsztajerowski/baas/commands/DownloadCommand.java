@@ -60,6 +60,11 @@ public class DownloadCommand implements Callable<Integer> {
         return argument != null && RUN_ID.matcher(argument).matches();
     }
 
+    /** Split out from {@link #call()} so the guard is reachable without AWS credentials. */
+    boolean tableUnresolvable(String table) {
+        return table == null || table.isBlank();
+    }
+
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
@@ -76,8 +81,18 @@ public class DownloadCommand implements Callable<Integer> {
 
         String resolvedPath = resultPath;
         if (looksLikeRunId(resultPath)) {
-            try (var results = new ResultsQueryService(
-                factory.dynamoDb(), config.getAws().getResultsTable())) {
+            // Only the run-id branch needs the table; a literal path resolves without it, so this
+            // is checked here rather than beside the bucket check above.
+            String table = config.getAws().getResultsTable();
+            if (tableUnresolvable(table)) {
+                logger.error("""
+                    No results table in config, so run id '{}' cannot be resolved to a path.
+                      Sync it from the stack:  baas config sync --core-stack-name {}
+                      Or pass the run's result path directly.
+                    Nothing was written.""", resultPath, config.getAws().getCoreStackName());
+                return 1;
+            }
+            try (var results = new ResultsQueryService(factory.dynamoDb(), table)) {
                 resolvedPath = results.resultPathForRun(resultPath);
             }
             // Before anything is written, so an unknown run leaves no partial directory behind.
