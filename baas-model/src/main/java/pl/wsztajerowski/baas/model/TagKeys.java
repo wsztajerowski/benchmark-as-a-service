@@ -12,6 +12,7 @@ public final class TagKeys {
     public static final String PROJECT = "project";
     public static final String TYPE = "type";
     public static final String COMMIT = "commit";
+    public static final String BRANCH = "branch";
     public static final String JDK = "jdk";
     public static final String CPU_MODEL = "cpuModel";
     public static final String CPU_ARCH = "cpuArch";
@@ -19,12 +20,12 @@ public final class TagKeys {
     public static final String IMAGE_VERSION = "imageVersion";
 
     public static final Set<String> KNOWN =
-        Set.of(PROJECT, TYPE, COMMIT, JDK, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
+        Set.of(PROJECT, TYPE, COMMIT, BRANCH, JDK, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
 
     /**
      * Observed on the instance (or derived from the benchmark type), so a caller may not set them:
-     * an override would let a result's tags disagree with its own environment.json. `project` and
-     * `commit` are deliberately absent — design.md specifies caller-wins for those.
+     * an override would let a result's tags disagree with its own environment.json. `project`,
+     * `commit` and `branch` are deliberately absent — design.md specifies caller-wins for those.
      */
     public static final List<String> MACHINE_OBSERVED =
         List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, CPU_MODEL, CPU_ARCH, TYPE);

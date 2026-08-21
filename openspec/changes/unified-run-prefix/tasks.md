@@ -36,15 +36,15 @@
 
 ## 3. Run identity in `baas-model`
 
-- [ ] 3.1 Add `RunId` with `generate()` (UTC instant, ISO-8601 basic, milliseconds, `-`, 8 hex from
+- [x] 3.1 Add `RunId` with `generate()` (UTC instant, ISO-8601 basic, milliseconds, `-`, 8 hex from
       `SecureRandom`) and `generate(Instant)` for a caller-supplied instant.
-- [ ] 3.2 Add `RunLayout` owning `runs/<project>/<runId>` and its `input/` sub-prefix. No other module
+- [x] 3.2 Add `RunLayout` owning `runs/<project>/<runId>` and its `input/` sub-prefix. No other module
       concatenates a run prefix.
-- [ ] 3.3 Unit-test: fixed 28-character width; alphabet excludes `#` and `/`; lexicographic order
+- [x] 3.3 Unit-test: fixed 28-character width; alphabet excludes `#` and `/`; lexicographic order
       equals chronological order across month and year boundaries; two ids from one instant differ.
-- [ ] 3.4 Unit-test that a `RunId` placed in the last field of a `ResultKeys` sort key leaves the
+- [x] 3.4 Unit-test that a `RunId` placed in the last field of a `ResultKeys` sort key leaves the
       field count unchanged.
-- [ ] 3.5 Add `TagKeys.BRANCH`, include it in `KNOWN`, and leave it out of `MACHINE_OBSERVED` — it is
+- [x] 3.5 Add `TagKeys.BRANCH`, include it in `KNOWN`, and leave it out of `MACHINE_OBSERVED` — it is
       caller-supplied like `project` and `commit`.
 
 ## 4. Runner

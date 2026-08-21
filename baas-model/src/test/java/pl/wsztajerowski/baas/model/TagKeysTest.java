@@ -7,16 +7,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TagKeysTest {
 
     @Test
-    void theKnownVocabularyIsExactlyTheEightDocumentedKeys() {
+    void theKnownVocabularyIsExactlyTheNineDocumentedKeys() {
         assertThat(TagKeys.KNOWN).containsExactlyInAnyOrder(
-            "project", "type", "commit", "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion");
+            "project", "type", "commit", "branch",
+            "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion");
     }
 
     @Test
     void machineObservedKeysAreTheKnownKeysMinusTheCallerOverridableOnes() {
         assertThat(TagKeys.MACHINE_OBSERVED)
             .containsExactlyInAnyOrder("type", "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion")
-            .doesNotContain("project", "commit");
+            .doesNotContain("project", "commit", "branch");
+    }
+
+    @Test
+    void branchIsKnownButCallerSupplied() {
+        assertThat(TagKeys.KNOWN).contains(TagKeys.BRANCH);
+        assertThat(TagKeys.MACHINE_OBSERVED).doesNotContain(TagKeys.BRANCH);
     }
 
     @Test
