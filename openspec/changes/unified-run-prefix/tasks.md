@@ -41,12 +41,18 @@
       JARs, then writes `benchmark-runner.jar.sha256` next to the runner JAR.
 - [x] 2.4 Add `baas-cli/target/baas-cli.jar` and `benchmark-runner/target/benchmark-runner.jar.sha256`
       to the `@semantic-release/github` asset list.
-- [ ] 2.5 Land section 2 and cut a real release before starting section 12's manual verification —
+- [x] 2.5 Land section 2 and cut a real release before starting section 12's manual verification —
       that section cannot be exercised without one. **The release gate sits behind the merge, not in
       front of it:** `release.yml` triggers only on `push: branches: [main]`, so cutting a release
       means merging this branch to `main` first. Section 12 therefore cannot run on the feature
       branch, and the change's closing work — 11.7's script deletion and the finalize/archive
       artifacts — happens after that merge rather than before it.
+      **Done 2026-09-04: `v2.0.0`**, cut by `release.yml` from the PR #53 merge. Verified by
+      download: the runner JAR's `pom.properties` reads `version=2.0.0` (so `versions:set` and the
+      rebuild both took effect), `baas-cli.jar`'s manifest carries `Implementation-Version: 2.0.0`,
+      the released CLI answers `baas 2.0.0` to `--version`, and the published
+      `benchmark-runner.jar.sha256` matches the asset byte for byte
+      (`381dd7b7…10ff2`) — which is the value `RunnerJarResolver` verifies before it uploads.
 
 ## 3. Run identity in `baas-model`
 
