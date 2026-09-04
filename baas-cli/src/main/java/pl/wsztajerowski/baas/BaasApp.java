@@ -14,6 +14,7 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
 @Command(
     name = "baas",
     mixinStandardHelpOptions = true,
+    versionProvider = BaasApp.VersionProvider.class,
     description = "Benchmark as a Service CLI — provision AWS infrastructure and run benchmarks.",
     subcommands = {
         AdminCommand.class,
@@ -39,6 +40,19 @@ import pl.wsztajerowski.baas.commands.admin.AdminCommand;
     }
 )
 public class BaasApp implements Runnable {
+
+    /**
+     * The version cannot be a constant {@code version = ...} attribute: it is read from the JAR
+     * manifest at run time, and a reactor build legitimately has none. Reporting the placeholder
+     * unchanged is the point — {@code baas run} refuses to launch on it, so a user asking why
+     * needs {@code -V} to say which build they are holding.
+     */
+    public static class VersionProvider implements CommandLine.IVersionProvider {
+        @Override
+        public String[] getVersion() {
+            return new String[]{"baas " + BaasVersion.current()};
+        }
+    }
 
     @Mixin LoggingMixin loggingMixin;
 

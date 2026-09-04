@@ -1,5 +1,8 @@
 package pl.wsztajerowski.baas;
 
+import java.io.PrintWriter;
+import java.io.StringWriter;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
@@ -104,6 +107,27 @@ class BaasAppTest {
         } finally {
             System.clearProperty(LoggingMixin.LEVEL_PROPERTY);
         }
+    }
+
+    /**
+     * mixinStandardHelpOptions advertises -V in the usage text, so the option always parsed and
+     * always exited 0 — it simply printed nothing, because no version or versionProvider was
+     * declared. Asserted through execute() rather than the spec, since printing is the whole
+     * behaviour: a provider that resolved correctly but was never wired to the option would
+     * satisfy any assertion made against BaasVersion alone.
+     */
+    @Test
+    void theVersionOptionPrintsTheVersionRatherThanNothing() {
+        StringWriter out = new StringWriter();
+        CommandLine cmd = new CommandLine(new BaasApp());
+        cmd.setOut(new PrintWriter(out));
+
+        int exitCode = cmd.execute("--version");
+
+        assertThat(exitCode).isZero();
+        assertThat(out.toString())
+            .isNotBlank()
+            .contains(BaasVersion.current());
     }
 
     @Test
