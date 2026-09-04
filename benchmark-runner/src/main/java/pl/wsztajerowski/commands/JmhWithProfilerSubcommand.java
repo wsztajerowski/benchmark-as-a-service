@@ -38,7 +38,7 @@ public class JmhWithProfilerSubcommand implements Runnable {
             .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
             .withJmhOptions(apiJmhOptions.getJmhOptions())
             .withProfilerOptions(profilerOptions)
-            .withMongoConnectionString(apiCommonSharedOptions.getMongoConnectionString())
+            .withResultsStore(apiCommonSharedOptions.buildResultsStore())
             .withStorageService(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
             .build()
             .executeCommand();

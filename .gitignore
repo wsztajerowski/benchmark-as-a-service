@@ -24,6 +24,11 @@ buildNumber.properties
 ### Mac OS ###
 .DS_Store
 
+### Claude Code ###
+# Shared: .claude/skills, .claude/commands. Personal, never shared:
+.claude/settings.local.json
+.claude/worktrees/
+
 #Others
 *.pem
 *.html

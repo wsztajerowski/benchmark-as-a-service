@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-07-21
+goal: Redesign baas-cli setup/teardown to manage a self-contained core stack
+  only, fully decoupled from GitHub Actions/OIDC concerns

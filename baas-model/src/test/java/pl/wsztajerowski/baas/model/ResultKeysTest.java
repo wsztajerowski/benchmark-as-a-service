@@ -1,0 +1,139 @@
+package pl.wsztajerowski.baas.model;
+
+import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Random;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class ResultKeysTest {
+
+    @Test
+    void partitionKeyIsPrefixedProject() {
+        assertThat(ResultKeys.partitionKey("lynx-journal")).isEqualTo("RESULT#lynx-journal");
+    }
+
+    @Test
+    void jmhSortKeyIsBenchmarkMajorThenChronological() {
+        assertThat(ResultKeys.sortKey(StoredMeasurementFixtures.jmh())).isEqualTo(
+            "pl.wsztajerowski.fake.Incrementing_Synchronized"
+                + "#incrementUsingSynchronized"
+                + "#thrpt"
+                + "#2026-08-17T22:07:06.123Z"
+                + "#jmh-20260817_220706");
+    }
+
+    /**
+     * The Mongo store this replaces keyed on (requestId, benchmarkName, benchmarkType) where
+     * benchmarkType is the JMH mode — so `-bm thrpt,avgt` in one run produces two results whose
+     * class+method are identical. Without mode in the key, those two rows are differentiated only
+     * by a millisecond timestamp, and a same-millisecond collision silently overwrites one via
+     * PutItem. Mode has to render as a field even when null, or the key would have a variable
+     * number of `#`-separated fields depending on whether mode was set.
+     */
+    @Test
+    void jmhSortKeyRendersNullModeAsAnEmptyFieldToKeepTheFieldCountFixed() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withoutMode = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), null,
+            original.score(), original.scoreError(), original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
+            original.profilerOutputPath());
+
+        assertThat(ResultKeys.sortKey(withoutMode)).isEqualTo(
+            "pl.wsztajerowski.fake.Incrementing_Synchronized"
+                + "#incrementUsingSynchronized"
+                + "#"
+                + "#2026-08-17T22:07:06.123Z"
+                + "#jmh-20260817_220706");
+    }
+
+    @Test
+    void jcstressSortKeyUsesAFixedPrefixBecauseThereIsNoBenchmarkMethod() {
+        assertThat(ResultKeys.sortKey(StoredMeasurementFixtures.jcstress()))
+            .isEqualTo("JCSTRESS#2026-08-17T22:15:00.000Z#jcstress-20260817_221500");
+    }
+
+    @Test
+    void theRequestIdIndexIsKeyedOnRequestIdThenBenchmark() {
+        var m = StoredMeasurementFixtures.jmh();
+
+        assertThat(ResultKeys.requestIndexPartitionKey(m.requestId())).isEqualTo("jmh-20260817_220706");
+        assertThat(ResultKeys.requestIndexSortKey(m))
+            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#thrpt");
+    }
+
+    /** Two modes benchmarked in one run must not collapse onto one requestId-index GSI row. */
+    @Test
+    void theRequestIndexSortKeyRendersNullModeAsAnEmptyFieldToo() {
+        var original = StoredMeasurementFixtures.jmh();
+        var withoutMode = new StoredMeasurement(
+            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.benchmarkClass(), original.benchmarkMethod(), null,
+            original.score(), original.scoreError(), original.scoreUnit(),
+            original.secondaryMetrics(), original.jcstress(), original.tags(),
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
+            original.profilerOutputPath());
+
+        assertThat(ResultKeys.requestIndexSortKey(withoutMode))
+            .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#");
+    }
+
+    @Test
+    void formattedTimestampsAreAlwaysTheSameWidth() {
+        assertThat(ResultKeys.formatTimestamp(Instant.parse("2026-01-01T00:00:00Z")))
+            .hasSameSizeAs(ResultKeys.formatTimestamp(Instant.parse("2026-12-31T23:59:59.999Z")));
+    }
+
+    /** Instant.toString() drops trailing zero fractions — that is exactly the bug this guards. */
+    @Test
+    void aWholeSecondStillCarriesThreeFractionalDigits() {
+        assertThat(ResultKeys.formatTimestamp(Instant.parse("2026-01-01T00:00:00Z")))
+            .isEqualTo("2026-01-01T00:00:00.000Z");
+    }
+
+    @Test
+    void lexicographicOrderEqualsChronologicalOrderAcrossMonthAndYearBoundaries() {
+        List<Instant> chronological = List.of(
+            Instant.parse("2025-12-31T23:59:59.998Z"),
+            Instant.parse("2025-12-31T23:59:59.999Z"),
+            Instant.parse("2026-01-01T00:00:00.000Z"),
+            Instant.parse("2026-01-31T23:59:59.999Z"),
+            Instant.parse("2026-02-01T00:00:00.000Z"),
+            Instant.parse("2026-09-30T12:00:00.500Z"),
+            Instant.parse("2026-10-01T12:00:00.500Z"));
+
+        List<String> formatted = chronological.stream().map(ResultKeys::formatTimestamp).toList();
+
+        assertThat(formatted).isSorted();
+    }
+
+    @Test
+    void lexicographicOrderEqualsChronologicalOrderForRandomInstants() {
+        var random = new Random(20260817L);
+        var instants = new ArrayList<Instant>();
+        for (int i = 0; i < 500; i++) {
+            instants.add(Instant.ofEpochMilli(Math.abs(random.nextLong()) % 4_102_444_800_000L));
+        }
+        instants.sort(Instant::compareTo);
+
+        assertThat(instants.stream().map(ResultKeys::formatTimestamp).toList()).isSorted();
+    }
+
+    @Test
+    void timestampsAreRenderedInUtcRegardlessOfTheDefaultZone() {
+        var original = java.util.TimeZone.getDefault();
+        try {
+            java.util.TimeZone.setDefault(java.util.TimeZone.getTimeZone("Pacific/Kiritimati"));
+            assertThat(ResultKeys.formatTimestamp(Instant.parse("2026-01-01T00:00:00Z")))
+                .isEqualTo("2026-01-01T00:00:00.000Z");
+        } finally {
+            java.util.TimeZone.setDefault(original);
+        }
+    }
+}

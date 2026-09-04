@@ -52,14 +52,16 @@ jobs:
                 '@semantic-release/github', 
                 {
                   'assets': [
-                    {'path': 'benchmark-runner/target/benchmark-runner.jar', 'label': 'benchmark-runner.jar'}
+                    {'path': 'benchmark-runner/target/benchmark-runner.jar', 'label': 'benchmark-runner.jar'},
+                    {'path': 'benchmark-runner/target/benchmark-runner.jar.sha256', 'label': 'benchmark-runner.jar.sha256'},
+                    {'path': 'baas-cli/target/baas-cli.jar', 'label': 'baas-cli.jar'}
                   ]
                 }
               ],
               [
                 '@semantic-release/exec',
                 {
-                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version}',
+                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version} && mvn --batch-mode -DskipTests package && sha256sum benchmark-runner/target/benchmark-runner.jar | cut -d\" \" -f1 > benchmark-runner/target/benchmark-runner.jar.sha256',
                   'publishCmd': 'mvn --batch-mode deploy -DskipTests'
                 }
               ]

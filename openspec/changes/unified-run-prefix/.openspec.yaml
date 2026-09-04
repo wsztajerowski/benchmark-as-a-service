@@ -1,0 +1,4 @@
+schema: superspec
+created: 2026-08-20
+goal: Give every benchmark run one S3 prefix keyed by request id, and stop the
+  runner JAR coming from GitHub releases/latest

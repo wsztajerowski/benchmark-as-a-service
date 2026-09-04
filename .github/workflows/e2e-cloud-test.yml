@@ -15,17 +15,39 @@ jobs:
     name: Setup env
     runs-on: ubuntu-latest
     outputs:
-      request_id: ${{ steps.gen_request_id.outputs.request_id }}
-      result_path: ${{ steps.gen_request_id.outputs.result_path }}
+      project: ${{ steps.identity.outputs.project }}
+      async_run_id: ${{ steps.identity.outputs.async_run_id }}
+      async_created_at: ${{ steps.identity.outputs.async_created_at }}
+      async_result_path: ${{ steps.identity.outputs.async_result_path }}
+      prof_run_id: ${{ steps.identity.outputs.prof_run_id }}
+      prof_created_at: ${{ steps.identity.outputs.prof_created_at }}
+      prof_result_path: ${{ steps.identity.outputs.prof_result_path }}
       java_version: ${{ env.JAVA_VERSION }}
       s3_bucket: ${{ env.S3_BUCKET }}
     steps:
-      - name: Generate request ID
-        id: gen_request_id
+      # One identity per benchmark job, not one shared by both. The two jobs used to write
+      # run-status to the same key, so whichever finished last decided what the run "was".
+      #
+      # Each id's instant is also passed as --created-at, or the one-instant property would hold
+      # for `baas run` and quietly fail here — CI's id would disagree with its own stored
+      # createdAt by however long the job sat in the queue, and nobody would notice until they
+      # compared a prefix name against a timestamp months later.
+      #
+      # Minting the id in bash is safe because nothing parses it: the format is a readability
+      # convention, not a contract.
+      - name: Mint one run identity per benchmark job
+        id: identity
         run: |
-          ID=CI_E2E_$(date -u +'%Y%m%d_%H%M%S')
-          echo "request_id=$ID" >> "$GITHUB_OUTPUT"
-          echo "result_path=ci/$ID" >> "$GITHUB_OUTPUT"
+          PROJECT="${GITHUB_REPOSITORY##*/}"
+          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
+          for job in async prof; do
+            INSTANT=$(date -u +'%Y-%m-%dT%H:%M:%S.%3NZ')
+            COMPACT=$(date -u -d "$INSTANT" +'%Y%m%dT%H%M%S%3NZ')
+            RUN_ID="${COMPACT}-$(openssl rand -hex 4)"
+            echo "${job}_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+            echo "${job}_created_at=$INSTANT" >> "$GITHUB_OUTPUT"
+            echo "${job}_result_path=runs/$PROJECT/$RUN_ID" >> "$GITHUB_OUTPUT"
+          done
 
 #  Prepare test artifacts and upload to S3
   prepare-test:
@@ -51,14 +73,18 @@ jobs:
       - name: Build runner and benchmark jars
         run: |
           mvn -f ./pom.xml -q clean package -DskipTests
-      - name: Upload runner jar to S3 (CI dir)
+      # Uploaded into each run's own input/, so one prefix holds the whole run — including the
+      # JARs it actually executed. Two runs means two copies; that is the point.
+      - name: Upload the runner and benchmark jars into each run's input prefix
         run: |
-          aws s3 cp ./benchmark-runner/target/benchmark-runner.jar \
-          "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
-      - name: Upload benchmark jar to S3 (CI dir)
-        run: |
-          aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
-          "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
+          BUCKET="${{ needs.setup-env.outputs.s3_bucket }}"
+          for path in "${{ needs.setup-env.outputs.async_result_path }}" \
+                      "${{ needs.setup-env.outputs.prof_result_path }}"; do
+            aws s3 cp ./benchmark-runner/target/benchmark-runner.jar \
+              "s3://$BUCKET/$path/input/runner.jar"
+            aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
+              "s3://$BUCKET/$path/input/test-benchmark.jar"
+          done
 
   start-runner:
     name: Runner
@@ -92,15 +118,14 @@ jobs:
       gha-runner-type: ${{ needs.start-runner.outputs.label }}
       java-version: ${{ needs.setup-env.outputs.java_version }}
       benchmark-type: jmh-with-async
-      request-id: ${{ needs.setup-env.outputs.request_id }}_1
-      results-path: ${{ needs.setup-env.outputs.result_path }}
-      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
-      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
+      request-id: ${{ needs.setup-env.outputs.async_run_id }}
+      results-path: ${{ needs.setup-env.outputs.async_result_path }}
+      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.async_result_path }}/input/test-benchmark.jar"
+      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.async_result_path }}/input/runner.jar"
       s3-result-bucket: ${{ needs.setup-env.outputs.s3_bucket }}
       async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
-      parameters: "--tag source=gha-e2e-test-async Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
-    secrets:
-      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+      parameters: "--project ${{ needs.setup-env.outputs.project }} --created-at ${{ needs.setup-env.outputs.async_created_at }} --tag source=gha-e2e-test-async Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
+      ssm-param-prefix: ${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}
 
   call-workflow-with-profilers:
     name: JHM Profilers
@@ -116,15 +141,14 @@ jobs:
       gha-runner-type: ${{ needs.start-runner.outputs.label }}
       java-version: ${{ needs.setup-env.outputs.java_version }}
       benchmark-type: jmh-with-prof
-      request-id: ${{ needs.setup-env.outputs.request_id }}_2
-      results-path: ${{ needs.setup-env.outputs.result_path }}
-      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/test-benchmark.jar"
-      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.result_path }}/runner.jar"
+      request-id: ${{ needs.setup-env.outputs.prof_run_id }}
+      results-path: ${{ needs.setup-env.outputs.prof_result_path }}
+      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.prof_result_path }}/input/test-benchmark.jar"
+      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.prof_result_path }}/input/runner.jar"
       s3-result-bucket: ${{ needs.setup-env.outputs.s3_bucket }}
       async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
-      parameters: "--tag source=gha-e2e-test-profilers Incrementing_Synchronized -f 1 -wi 1 -i 1 --profiler 'gc=churn=false;alloc=false' --profiler 'jfr=stackDepth=20'"
-    secrets:
-      MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
+      parameters: "--project ${{ needs.setup-env.outputs.project }} --created-at ${{ needs.setup-env.outputs.prof_created_at }} --tag source=gha-e2e-test-profilers Incrementing_Synchronized -f 1 -wi 1 -i 1 --profiler 'gc=churn=false;alloc=false' --profiler 'jfr=stackDepth=20'"
+      ssm-param-prefix: ${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}
 
   stop-runner:
     name: Runner
@@ -156,8 +180,10 @@ jobs:
       - call-workflow-with-async
       - call-workflow-with-profilers
     env:
-      REQUEST_ID: ${{ needs.setup-env.outputs.request_id }}
-      RESULT_PATH: ${{ needs.setup-env.outputs.result_path }}
+      ASYNC_REQUEST_ID: ${{ needs.setup-env.outputs.async_run_id }}
+      PROF_REQUEST_ID: ${{ needs.setup-env.outputs.prof_run_id }}
+      ASYNC_RESULT_PATH: ${{ needs.setup-env.outputs.async_result_path }}
+      PROF_RESULT_PATH: ${{ needs.setup-env.outputs.prof_result_path }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -166,24 +192,35 @@ jobs:
         with:
           role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+      - name: Fetch MongoDB URI from SSM
+        run: |
+          MONGO_URI=$(aws ssm get-parameter \
+            --name "/${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}/mongo/connection-string" \
+            --with-decryption --query Parameter.Value --output text \
+            --region "${{ vars.AWS_REGION }}")
+          echo "MONGO_CONNECTION_STRING=$MONGO_URI" >> "$GITHUB_ENV"
       - name: Download and install mongosh
         run: |
           wget https://downloads.mongodb.com/compass/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
           tar -xzf mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
           chmod +x mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin/mongosh
           echo "$PWD/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
+      # Two prefixes, checked separately. Under the shared path a missing artifact from one job
+      # could be masked by the other job having written the same key.
       - name: Verify S3 results
         run: |
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/jmh-profiler-output.txt" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-wall-forward.html" || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/jfr-wall.jfr" || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.RESULT_PATH }}/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/profile.jfr" || exit 1
+          BENCH_DIR=pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/environment.json" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/input/test-benchmark.jar" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/$BENCH_DIR/flame-wall-forward.html" || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/$BENCH_DIR/jfr-wall.jfr" || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.PROF_RESULT_PATH }}/jmh-profiler-output.txt" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.PROF_RESULT_PATH }}/environment.json" --check-size || exit 1
+          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.PROF_RESULT_PATH }}/$BENCH_DIR/profile.jfr" || exit 1
       - name: Verify MongoDB results
-        env:
-          MONGO_CONNECTION_STRING: ${{ secrets.MONGO_CONNECTION_STRING }}
         run: |
           .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.REQUEST_ID }}_1" || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.REQUEST_ID }}_2" || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.ASYNC_REQUEST_ID }}" || exit 1
+          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.PROF_REQUEST_ID }}" || exit 1
           .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "jmhResult.secondaryMetrics.jfr" || exit 1

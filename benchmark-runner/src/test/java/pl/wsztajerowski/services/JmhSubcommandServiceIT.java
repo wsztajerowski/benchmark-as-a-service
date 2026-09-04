@@ -6,7 +6,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
-import pl.wsztajerowski.entities.jmh.JmhBenchmark;
+import pl.wsztajerowski.entities.MongoMeasurementDocument;
+import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JmhOptions;
@@ -14,11 +15,13 @@ import pl.wsztajerowski.services.options.JmhOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
 import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
@@ -44,8 +47,8 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
         JmhSubcommandService sut = serviceBuilder()
-            .withMongoConnectionString(getConnectionString())
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Collections.emptyMap()))
+            .withResultsStore(new MongoResultsStore(datastore()))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
             .withJmhOptions( new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
@@ -69,13 +72,14 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         sut.executeCommand();
 
         // then
-        String collectionName = JmhBenchmark.class.getAnnotation(Entity.class).value();
+        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
         helper.assertFindResult(collectionName, all(), documents ->
             assertThat(documents.first())
                 .isNotNull()
-                .containsEntry("_t", "JmhBenchmark")
-                .extracting("_id.benchmarkName", as(STRING))
-                .endsWith("incrementUsingSynchronized")
+                .extracting("measurement", as(MAP))
+                .containsEntry("project", "test-project")
+                .extracting(measurement -> measurement.get("benchmarkMethod"), as(STRING))
+                .isEqualTo("incrementUsingSynchronized")
         );
 
         // and
@@ -86,6 +90,14 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
             .anySatisfy(o -> assertThat(o)
                 .asString()
                 .isEqualTo("test-1/jmh-output.txt"));
+
+        // and the thin stored item stays defensible: full fidelity is in the verbatim result JSON
+        assertThatJson(objectsInTestBucket)
+            .inPath("$[*].Key")
+            .isArray()
+            .anySatisfy(o -> assertThat(o)
+                .asString()
+                .isEqualTo("test-1/jmh-result.json"));
     }
 
 

@@ -8,6 +8,8 @@ import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.entities.jmh.JmhBenchmark;
+import pl.wsztajerowski.entities.MongoMeasurementDocument;
+import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.services.options.AsyncProfilerOptions;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
@@ -16,6 +18,7 @@ import pl.wsztajerowski.services.options.JmhOptions;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -48,9 +51,9 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path asyncOutput = Files.createTempDirectory("async-outputs");
         JmhWithAsyncProfilerSubcommandService sut = serviceBuilder()
-            .withMongoConnectionString(getConnectionString())
+            .withResultsStore(new MongoResultsStore(datastore()))
             .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Collections.emptyMap()))
+            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
             .withJmhOptions( new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
@@ -80,13 +83,16 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         sut.executeCommand();
 
         // then
-        String collectionName = JmhBenchmark.class.getAnnotation(Entity.class).value();
+        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
         helper.assertFindResult(collectionName, all(), documents ->
+            // The item points at the prefix rather than listing each artifact; the bucket
+            // assertion below confirms the files actually landed under it.
             assertThat(documents.first())
                 .isNotNull()
-                .containsEntry("_t", "JmhBenchmark")
-                .extracting("benchmarkMetadata.profilerOutputPaths", as(MAP))
-                .containsEntry("flame-cpu-forward", "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/flame-cpu-forward.html")
+                .extracting("measurement", as(MAP))
+                .containsEntry("benchmarkMethod", "incrementUsingSynchronized")
+                .containsEntry("profilerOutputPath",
+                    "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput")
         );
 
         // and

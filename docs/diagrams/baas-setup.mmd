@@ -1,0 +1,72 @@
+sequenceDiagram
+    actor User as CLI User
+    participant picocli as picocli CommandLine
+    participant SC as SetupCommand
+    participant STS as AWS STS
+    participant S3 as AWS S3
+    participant CFSvc as CloudFormationService
+    participant CF as AWS CloudFormation
+    participant DDB as AWS DynamoDB
+    participant FS as Local Filesystem
+
+    Note over User,FS: baas admin setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
+    User->>picocli: baas admin setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    picocli->>SC: parse and bind options into fields
+    SC->>FS: ConfigService.load()
+    FS-->>SC: BaasConfig from ~/.baas/config.yaml
+    Note over SC: apply --region / --aws-profile over config defaults
+    SC->>STS: sts.getCallerIdentity()
+    STS-->>SC: caller ARN
+    Note over SC: prefix = lowercase(base32(sha256(arn)))[0:8]<br/>stackName = bucketName = "baas-" + prefix<br/>tableName = "baas-" + prefix + "-results"<br/>all FIXED by the caller identity, not user-selectable
+    opt --use-existing-vpc set
+        Note over SC: require --vpc-id + --subnet-id + --sg-id, else exit 1
+    end
+    SC->>FS: load /templates/cf-template-core.yaml from the classpath
+    FS-->>SC: template body
+
+    rect rgb(255, 244, 230)
+        Note over SC,DDB: Collision pre-check. The bucket AND the results table are both<br/>DeletionPolicy Retain, so a previous teardown can leave either behind,<br/>and CloudFormation would then fail with an opaque error naming neither.<br/>Both are checked: fixing only the bucket then fails again on the table.
+        SC->>CF: describeStacks(stackName) -- stackExists?
+        SC->>S3: headBucket(bucketName) -- bucketExists?
+        SC->>DDB: describeTable(tableName) -- tableExists?
+        alt stack absent BUT bucket present
+            SC-->>User: explain the retained bucket, print recovery commands, exit 1
+        else stack absent BUT table present
+            SC-->>User: explain the retained table, print recovery commands, exit 1
+        end
+    end
+
+    SC->>CFSvc: createOrUpdateStack(stackName, template, params)
+    Note over CFSvc: params: ResourceNamePrefix, UseExistingVpc,<br/>ExistingVpcId, ExistingSubnetId, ExistingSecurityGroupId
+    CFSvc->>CF: describeStacks(stackName)
+    alt stack absent
+        CF-->>CFSvc: stack not found
+        CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
+        CFSvc->>CF: waiter.waitUntilStackCreateComplete()
+        loop poll DescribeStacks
+            CF-->>CFSvc: status = CREATE_IN_PROGRESS
+        end
+        CF-->>CFSvc: status = CREATE_COMPLETE
+    else stack in ROLLBACK_COMPLETE
+        CF-->>CFSvc: status = ROLLBACK_COMPLETE
+        CFSvc-->>User: IllegalStateException -- delete it first with<br/>baas admin teardown --stack-name X --yes
+    else stack exists and is updatable
+        CF-->>CFSvc: existing stack details
+        CFSvc->>CF: updateStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
+        alt template unchanged
+            CF-->>CFSvc: ValidationError "No updates are to be performed"
+            Note over CFSvc: swallowed -- report "already up to date" and return
+        else changes applied
+            CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
+            CF-->>CFSvc: status = UPDATE_COMPLETE
+        end
+    end
+
+    SC->>CF: describeStacks() -- read stack outputs
+    CF-->>SC: BucketName, ResultsTableName, SubnetId, SecurityGroupId, VpcId,<br/>RunnerInstanceProfileName, OperatorRoleArn,<br/>RunnerRoleName, RunnerRoleArn, S3BucketArn
+    SC->>FS: ConfigService.save() to ~/.baas/config.yaml
+    Note over SC,FS: only non-sensitive values are written to the config file
+
+    SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>until then `baas run` uses the default credential chain
+
+    SC-->>User: exit 0

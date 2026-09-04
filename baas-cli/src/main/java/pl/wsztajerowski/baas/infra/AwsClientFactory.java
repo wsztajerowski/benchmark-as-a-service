@@ -1,0 +1,72 @@
+package pl.wsztajerowski.baas.infra;
+
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.iam.IamClient;
+import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.services.sts.StsClient;
+
+public class AwsClientFactory {
+
+    private final Region region;
+    private final String profile;
+
+    public AwsClientFactory(String region, String profile) {
+        this.region = Region.of(region);
+        this.profile = profile;
+    }
+
+    public Ec2Client ec2() {
+        var b = Ec2Client.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public SsmClient ssm() {
+        var b = SsmClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public S3Client s3() {
+        var b = S3Client.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public DynamoDbClient dynamoDb() {
+        var b = DynamoDbClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public CloudFormationClient cloudFormation() {
+        var b = CloudFormationClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public StsClient sts() {
+        var b = StsClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    public ImagebuilderClient imageBuilder() {
+        var b = ImagebuilderClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    /** IAM is global; the region only selects the endpoint. */
+    public IamClient iam() {
+        var b = IamClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+}

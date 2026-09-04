@@ -1,0 +1,196 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFormation",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStacks",
+        "cloudformation:UpdateStack"
+      ],
+      "Resource": "arn:aws:cloudformation:${REGION}:${ACCOUNT_ID}:stack/baas-${PREFIX}/*"
+    },
+    {
+      "Sid": "CloudFormationValidateTemplate",
+      "Effect": "Allow",
+      "Action": "cloudformation:ValidateTemplate",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "EC2",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AssociateRouteTable",
+        "ec2:AttachInternetGateway",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:CreateInternetGateway",
+        "ec2:CreateRoute",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSubnet",
+        "ec2:CreateTags",
+        "ec2:CreateVpc",
+        "ec2:CreateVpcEndpoint",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteRoute",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSnapshot",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteVpc",
+        "ec2:DeleteVpcEndpoints",
+        "ec2:DeregisterImage",
+        "ec2:Describe*",
+        "ec2:DetachInternetGateway",
+        "ec2:DisassociateRouteTable",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ModifyVpcAttribute",
+        "ec2:RevokeSecurityGroupEgress"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "SsmRunnerAmiPointer",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter"
+      ],
+      "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/${PREFIX}/runner/ami-id"
+    },
+    {
+      "Sid": "ImageBuilder",
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:CreateComponent",
+        "imagebuilder:CreateDistributionConfiguration",
+        "imagebuilder:CreateImagePipeline",
+        "imagebuilder:CreateImageRecipe",
+        "imagebuilder:CreateInfrastructureConfiguration",
+        "imagebuilder:Delete*",
+        "imagebuilder:StartImagePipelineExecution",
+        "imagebuilder:TagResource",
+        "imagebuilder:UntagResource",
+        "imagebuilder:Update*"
+      ],
+      "Resource": "arn:aws:imagebuilder:${REGION}:${ACCOUNT_ID}:*/${PREFIX}-runner*"
+    },
+    {
+      "Sid": "ImageBuilderRead",
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:Get*",
+        "imagebuilder:List*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "${REGION}"
+        }
+      }
+    },
+    {
+      "Sid": "ImageBuilderServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/aws-service-role/imagebuilder.amazonaws.com/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": "imagebuilder.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassRolesToServices",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-image-build-role"
+      ]
+    },
+    {
+      "Sid": "IAM",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AddRoleToInstanceProfile",
+        "iam:AttachRolePolicy",
+        "iam:CreateInstanceProfile",
+        "iam:CreateRole",
+        "iam:DeleteInstanceProfile",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:Get*",
+        "iam:List*",
+        "iam:PutRolePolicy",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-operator-role",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-image-build-role",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-runner-role",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-image-build-role"
+      ]
+    },
+    {
+      "Sid": "PreflightSimulation",
+      "Effect": "Allow",
+      "Action": "iam:SimulatePrincipalPolicy",
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:*"
+    },
+    {
+      "Sid": "ResultsTableLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:Describe*",
+        "dynamodb:UpdateTimeToLive",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/baas-${PREFIX}-results"
+    },
+    {
+      "Sid": "S3WorkingBucketLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:Get*",
+        "s3:List*",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketTagging",
+        "s3:PutBucketVersioning",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration"
+      ],
+      "Resource": [
+        "arn:aws:s3:::baas-${PREFIX}",
+        "arn:aws:s3:::baas-${PREFIX}/*"
+      ]
+    }
+  ]
+}

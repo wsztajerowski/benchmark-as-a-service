@@ -1,0 +1,629 @@
+Parameters:
+  ResourceNamePrefix:
+    Description: Prefix for all resource names created by this stack.
+    Type: String
+    Default: "baas"
+  UseExistingVpc:
+    Description: Set to 'true' to skip networking creation and use existing IDs.
+    Type: String
+    Default: "false"
+    AllowedValues: ["true", "false"]
+  ExistingVpcId:
+    Description: Existing VPC ID (used when UseExistingVpc=true).
+    Type: String
+    Default: ""
+  ExistingSubnetId:
+    Description: Existing subnet ID with outbound internet egress (used when UseExistingVpc=true).
+    Type: String
+    Default: ""
+  ExistingSecurityGroupId:
+    Description: Existing security group ID (used when UseExistingVpc=true).
+    Type: String
+    Default: ""
+  # The three below are rendered from infra/runner-image.yaml by RunnerImageRenderer. Both
+  # `baas admin setup` and `baas admin build-image` render them from the same classpath
+  # resource, so the two commands always submit identical values.
+  RunnerImageVersion:
+    Description: Semantic version of the runner image; versions the Component and ImageRecipe.
+    Type: String
+    Default: "1.0.0"
+    AllowedPattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+  RunnerParentAmiId:
+    Description: Exact parent AL2023 AMI the runner image is built from. Never a selector.
+    Type: String
+    Default: "ami-070cc8ab883065d64"
+    AllowedPattern: "^ami-[0-9a-f]+$"
+  RunnerImageComponentData:
+    Description: Rendered AWSTOE component document that bakes the runner toolchain.
+    Type: String
+    Default: |
+      name: baas-runner-toolchain
+      description: Placeholder; replaced by the rendered component on every CLI deploy.
+      schemaVersion: 1.0
+      phases:
+        - name: build
+          steps:
+            - name: Noop
+              action: ExecuteBash
+              inputs:
+                commands:
+                  - "true"
+
+Conditions:
+  CreateNetworking: !Equals [!Ref UseExistingVpc, "false"]
+
+Resources:
+
+  # ─── Networking (created only when UseExistingVpc=false) ─────────────────────
+
+  BaasVpc:
+    Type: AWS::EC2::VPC
+    Condition: CreateNetworking
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+        - Key: Name
+          Value: !Sub ${ResourceNamePrefix}-vpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Condition: CreateNetworking
+    Properties:
+      VpcId: !Ref BaasVpc
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+        - Key: Name
+          Value: !Sub ${ResourceNamePrefix}-public-subnet
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateNetworking
+    Properties:
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateNetworking
+    Properties:
+      VpcId: !Ref BaasVpc
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateNetworking
+    Properties:
+      VpcId: !Ref BaasVpc
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateNetworking
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateNetworking
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  S3GatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateNetworking
+    Properties:
+      VpcId: !Ref BaasVpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PublicRouteTable
+
+  # Free, unlike an interface endpoint (which bills hourly per AZ). Under
+  # UseExistingVpc=true this is skipped, same as S3GatewayEndpoint — the operator
+  # supplies their own networking and runner traffic to DynamoDB goes out via
+  # whatever route that networking already provides.
+  DynamoDbGatewayEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Condition: CreateNetworking
+    Properties:
+      VpcId: !Ref BaasVpc
+      ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
+      VpcEndpointType: Gateway
+      RouteTableIds:
+        - !Ref PublicRouteTable
+
+  RunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateNetworking
+    Properties:
+      GroupDescription: Benchmark runner security group. No inbound; outbound 443/80 only.
+      VpcId: !Ref BaasVpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS to GitHub, S3 and AWS APIs
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP for package downloads (yum)
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+        - Key: Name
+          Value: !Sub ${ResourceNamePrefix}-runner-sg
+
+  # ─── S3 Bucket ────────────────────────────────────────────────────────────────
+
+  S3MainBucket:
+    Type: AWS::S3::Bucket
+    # Benchmark history outlives any single stack. `baas admin teardown` deletes the
+    # bucket only when explicitly asked (--delete-bucket), which empties it first.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub baas-${ResourceNamePrefix}
+      VersioningConfiguration:
+        # Suspended, not Enabled. Results are write-once and a run id carries 32 bits of entropy,
+        # so the overwrite versioning guarded against no longer has a mechanism — and suspension
+        # ends the noncurrent accumulation that the deleted runs/ expiry rule would otherwise let
+        # grow. The consequence is stated rather than implied: there is no server-side recovery
+        # from an overwrite. The noncurrent rules below stay, because versions written before
+        # suspension persist until they are reaped.
+        Status: Suspended
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-noncurrent-versions
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          # Expiring a versioned object only writes a delete marker; without this the
+          # markers themselves accumulate forever once the versions beneath them go.
+          - Id: expire-orphaned-delete-markers
+            Status: Enabled
+            ExpiredObjectDeleteMarker: true
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+          # No rule expires current objects under runs/. The rule that did rested on the premise
+          # that everything there was re-creatable from source; the unified run prefix falsifies
+          # it directly — a run's results, its manifest and the JAR it actually ran all live under
+          # runs/<project>/<runId>/ now. Reintroducing one is silent data loss.
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+        - Key: baas-role
+          Value: working-bucket
+
+  # ─── DynamoDB Results Table ────────────────────────────────────────────────────
+
+  ResultsTable:
+    Type: AWS::DynamoDB::Table
+    # Benchmark history outlives any single stack, same as S3MainBucket above.
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub baas-${ResourceNamePrefix}-results
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+        - AttributeName: sk
+          AttributeType: S
+        - AttributeName: gsi1pk
+          AttributeType: S
+        - AttributeName: gsi1sk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+        - AttributeName: sk
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: requestId-index
+          KeySchema:
+            - AttributeName: gsi1pk
+              KeyType: HASH
+            - AttributeName: gsi1sk
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+      Tags:
+        - Key: baas-role
+          Value: results
+
+  # ─── IAM ──────────────────────────────────────────────────────────────────────
+
+  RunnerRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourceNamePrefix}-runner-role
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${ResourceNamePrefix}-runner-s3-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !Sub 'arn:${AWS::Partition}:s3:::baas-${ResourceNamePrefix}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::baas-${ResourceNamePrefix}/*'
+        - PolicyName: !Sub ${ResourceNamePrefix}-runner-ec2-terminate-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ec2:TerminateInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/baas-role: benchmark-runner
+        - PolicyName: !Sub ${ResourceNamePrefix}-runner-dynamodb-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                  - dynamodb:BatchWriteItem
+                Resource: !GetAtt ResultsTable.Arn
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+  RunnerInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-runner-role
+      Path: /
+      Roles:
+        - !Ref RunnerRole
+
+  # ─── Runner image build (EC2 Image Builder) ──────────────────────────────────
+  #
+  # Deliberately NO AWS::ImageBuilder::Image here. That resource performs a build during
+  # stack operations, which would add ~15 minutes to every `baas admin setup` — including
+  # setups that changed nothing about the image. Builds are triggered out of band by
+  # `baas admin build-image` via StartImagePipelineExecution; the stack holds only the
+  # durable configuration.
+
+  ImageBuildRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourceNamePrefix}-image-build-role
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      # Both are required by Image Builder itself: SSM carries the build commands to the
+      # instance, and EC2InstanceProfileForImageBuilder covers the imagebuilder callbacks.
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/EC2InstanceProfileForImageBuilder
+      Policies:
+        - PolicyName: !Sub ${ResourceNamePrefix}-image-build-logs-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Build logs only. The build host never reads results and never launches
+              # anything, so this is its entire bucket reach.
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${S3MainBucket.Arn}/image-builds/*"
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+  ImageBuildInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-image-build-role
+      Path: /
+      Roles:
+        - !Ref ImageBuildRole
+
+  RunnerImageComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner-toolchain
+      Description: Bakes the runner toolchain and kernel tunables declared in infra/runner-image.yaml.
+      Platform: Linux
+      # A Component is immutable at a given version, so changing Data without bumping
+      # RunnerImageVersion is rejected. `baas admin build-image` preflights exactly that.
+      Version: !Ref RunnerImageVersion
+      Data: !Ref RunnerImageComponentData
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImageRecipe:
+    Type: AWS::ImageBuilder::ImageRecipe
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner
+      Version: !Ref RunnerImageVersion
+      ParentImage: !Ref RunnerParentAmiId
+      Components:
+        # GetAtt .Arn for the cross-resource references only — this one and the pipeline's three
+        # below. Each of those resources exposes a distinct Arn attribute, which is exactly the
+        # shape where Ref is liable to return the name instead; the properties reject a name, and
+        # the pipeline ARN is handed straight to StartImagePipelineExecution.
+        # The Refs elsewhere in this block are correct and must stay: InstanceProfileName takes a
+        # name, SubnetId/SecurityGroupIds take ids, the rest are template parameters.
+        - ComponentArn: !GetAtt RunnerImageComponent.Arn
+      BlockDeviceMappings:
+        # 30 GB, matching what Ec2ProvisioningService requests at launch. The AL2023
+        # default of 8 GB is exhausted by profiling artifacts.
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 30
+            VolumeType: gp3
+            DeleteOnTermination: true
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImageInfrastructure:
+    Type: AWS::ImageBuilder::InfrastructureConfiguration
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner-build
+      InstanceProfileName: !Ref ImageBuildInstanceProfile
+      # The build host is not the measurement host — it only installs packages, so the
+      # instance family it uses has no bearing on any benchmark score.
+      InstanceTypes:
+        - c5.large
+      SubnetId: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
+      SecurityGroupIds:
+        - !If [CreateNetworking, !Ref RunnerSecurityGroup, !Ref ExistingSecurityGroupId]
+      TerminateInstanceOnFailure: true
+      Logging:
+        S3Logs:
+          S3BucketName: !Ref S3MainBucket
+          S3KeyPrefix: image-builds
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImageDistribution:
+    Type: AWS::ImageBuilder::DistributionConfiguration
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner
+      # Single region, matching the rest of the stack. The AMI tags are set here rather
+      # than by the CLI afterwards so they land atomically with the image — `baas admin
+      # image` reads them back as the image's identity.
+      Distributions:
+        - Region: !Ref AWS::Region
+          AmiDistributionConfiguration:
+            Name: !Sub "${ResourceNamePrefix}-runner-{{ imagebuilder:buildDate }}"
+            AmiTags:
+              project: !Sub ${ResourceNamePrefix}
+              baas-role: runner-image
+              baas-image-version: !Ref RunnerImageVersion
+              baas-parent-ami: !Ref RunnerParentAmiId
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  RunnerImagePipeline:
+    Type: AWS::ImageBuilder::ImagePipeline
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-runner
+      ImageRecipeArn: !GetAtt RunnerImageRecipe.Arn
+      InfrastructureConfigurationArn: !GetAtt RunnerImageInfrastructure.Arn
+      DistributionConfigurationArn: !GetAtt RunnerImageDistribution.Arn
+      Status: ENABLED
+      # No Schedule block: builds are operator-triggered. An image that rebuilt itself on a
+      # timer would move the measurement environment under results nobody was looking at.
+      ImageTestsConfiguration:
+        ImageTestsEnabled: false
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  # BaasCliOperatorRole — assumed (via sts:AssumeRole) by whoever runs
+  # `baas run`/`baas results`/`baas config` locally. Scoped exactly to this
+  # stack's own resources (bucket, RunnerRole, the runner AMI pointer, results table),
+  # which only CloudFormation can do precisely since it knows those ARNs at
+  # deploy time.
+  # Trust is scoped to the account root — this keeps `baas admin setup`
+  # parameter-free, since the stack has no way to know which specific human
+  # IAM identity should get operator access. Actual gating happens per-user:
+  # grant sts:AssumeRole on this role's ARN only to the identities that should
+  # be able to assume it — see infra/README.md.
+  OperatorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub ${ResourceNamePrefix}-operator-role
+      Path: "/"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-ec2-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeInstances
+                  - ec2:DescribeInstanceStatus
+                  # `baas run` validates the AMI the pointer names before provisioning, so a
+                  # deregistered image fails locally instead of as InvalidAMIID.NotFound.
+                  # Describe* takes no resource-level scoping.
+                  - ec2:DescribeImages
+                Resource: "*"
+              # RunInstances is authorized once per resource in the request, and
+              # ec2:InstanceType is only populated for the instance leg. Carrying that
+              # condition on a single Resource:"*" statement makes it evaluate false for
+              # the image/subnet/security-group/network-interface/volume legs, which then
+              # match no Allow at all — the whole call fails. Hence the split.
+              - Effect: Allow
+                Action: ec2:RunInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+                  # Benchmarks are single-node and CPU-bound; compute/general-purpose
+                  # families cover every supported workload. Widen deliberately, not by default.
+                  StringLike:
+                    ec2:InstanceType:
+                      - c5.*
+                      - c6i.*
+                      - c7i.*
+                      - m5.*
+                      - m6i.*
+                      - m7i.*
+              - Effect: Allow
+                Action: ec2:RunInstances
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:ec2:*::image/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:subnet/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:security-group/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:network-interface/*"
+                  - !Sub "arn:${AWS::Partition}:ec2:*:*:volume/*"
+                Condition:
+                  StringEquals:
+                    aws:RequestedRegion: !Ref AWS::Region
+              - Effect: Allow
+                Action: ec2:CreateTags
+                Resource: "*"
+                Condition:
+                  StringEquals:
+                    ec2:CreateAction: RunInstances
+              - Effect: Allow
+                Action: ec2:TerminateInstances
+                Resource: !Sub "arn:${AWS::Partition}:ec2:*:*:instance/*"
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/baas-role: benchmark-runner
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-ssm-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # The runner boots from a purpose-built image now, so the public AL2023 lookup
+              # path is gone and this pointer replaces it. Read-only: publishing it is
+              # `baas admin build-image`, which runs under the deployer.
+              - Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id"
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-s3-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:ListBucket
+                Resource:
+                  - !GetAtt S3MainBucket.Arn
+                  - !Sub "${S3MainBucket.Arn}/*"
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-passrole-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt RunnerRole.Arn
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-cfn-read-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Read-only, and only this stack — enough for `baas config sync` to
+              # populate config.yaml, not enough to mutate any stack.
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/baas-${ResourceNamePrefix}/*"
+        - PolicyName: !Sub ${ResourceNamePrefix}-operator-dynamodb-policy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # A Query against a GSI authorises on the index ARN, not the table's — both
+              # are granted here or `baas results --request-id` fails at runtime with an
+              # opaque AccessDenied, long after the deploy looked successful.
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:GetItem
+                Resource:
+                  - !GetAtt ResultsTable.Arn
+                  - !Sub "${ResultsTable.Arn}/index/*"
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+
+Outputs:
+  BucketName:
+    Value: !Ref S3MainBucket
+  S3BucketArn:
+    Value: !GetAtt S3MainBucket.Arn
+  ResultsTableName:
+    Value: !Ref ResultsTable
+  RunnerRoleName:
+    Value: !Ref RunnerRole
+  RunnerRoleArn:
+    Value: !GetAtt RunnerRole.Arn
+  RunnerInstanceProfileName:
+    Value: !Ref RunnerInstanceProfile
+  OperatorRoleArn:
+    Value: !GetAtt OperatorRole.Arn
+  # `baas admin build-image` reads this and passes it verbatim to
+  # StartImagePipelineExecution, which rejects anything that is not an ARN.
+  RunnerImagePipelineArn:
+    Value: !GetAtt RunnerImagePipeline.Arn
+  RunnerImageRecipeName:
+    Value: !Sub ${ResourceNamePrefix}-runner
+  RunnerImageInfrastructureArn:
+    Value: !GetAtt RunnerImageInfrastructure.Arn
+  # Written by `baas admin build-image`, not by the stack — the AMI ID is not known until a
+  # build completes. Published here so the CLI and infra/README.md name one path.
+  RunnerAmiParameterName:
+    Value: !Sub /${ResourceNamePrefix}/runner/ami-id
+  SubnetId:
+    Value: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
+  SecurityGroupId:
+    Value: !If [CreateNetworking, !Ref RunnerSecurityGroup, !Ref ExistingSecurityGroupId]
+  VpcId:
+    Value: !If [CreateNetworking, !Ref BaasVpc, !Ref ExistingVpcId]

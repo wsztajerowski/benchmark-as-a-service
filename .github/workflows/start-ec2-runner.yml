@@ -26,6 +26,7 @@ on:
         default: |
           project: baas
           runner: request-benchmark-runner
+          baas-role: benchmark-runner
         type: string
     secrets:
       workflow-role-arn:

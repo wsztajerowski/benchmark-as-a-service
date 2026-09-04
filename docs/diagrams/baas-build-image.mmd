@@ -1,0 +1,56 @@
+sequenceDiagram
+    actor User as CLI User
+    participant BIC as BuildImageCommand
+    participant RIR as RunnerImageRenderer
+    participant IB as AWS Image Builder
+    participant CF as AWS CloudFormation
+    participant EC2 as AWS EC2
+    participant SSM as AWS SSM
+
+    User->>BIC: baas admin build-image
+    Note over BIC: ConfigService.load()<br/>deployer credentials (aws.profile), NOT aws.operatorProfile --<br/>this needs imagebuilder:*, ssm:PutParameter and a widened iam:PassRole
+    BIC->>RIR: render /templates/runner-image.yaml
+    RIR-->>BIC: imageVersion, parentAmiId, AWSTOE component document
+    Note over BIC: fail fast if runner-image.yaml pins a parent AMI<br/>in a different region than the stack -- an AMI ID<br/>means nothing outside its own region
+
+    BIC->>IB: listComponents(owner=Self, filter name=<prefix>-runner-toolchain)
+    Note over BIC,IB: deliberately WITHOUT byName: that collapses every version into<br/>one row with no version field and an ARN ending in a literal x.x.x,<br/>so the version filter matches nothing and the preflight passes blind
+    IB-->>BIC: component versions
+    opt declared imageVersion already registered
+        BIC->>IB: listComponentBuildVersions + getComponent
+        IB-->>BIC: registered component document
+        Note over BIC: content differs -> exit 1 naming imageVersion in<br/>infra/runner-image.yaml. No build is started: a component<br/>is immutable at a version, so the stack update would be<br/>rejected ~1 minute in, naming the resource and not the fix.
+    end
+
+    BIC->>CF: updateStack(core template, 3 image parameters)
+    Note over BIC,CF: only the image parameters are sent; every other parameter is<br/>carried forward with UsePreviousValue, or a stack deployed with<br/>--use-existing-vpc would silently flip back to building a VPC
+    CF-->>BIC: UPDATE_COMPLETE (or "no updates are to be performed")
+    BIC->>CF: describeStacks -> RunnerImagePipelineArn
+    CF-->>BIC: pipeline ARN (via !GetAtt .Arn, never !Ref)
+
+    BIC->>SSM: getParameter(/<prefix>/runner/ami-id)
+    SSM-->>BIC: previous AMI id, or empty on a first build
+
+    BIC->>IB: startImagePipelineExecution(pipelineArn)
+    IB-->>BIC: imageBuildVersionArn
+    Note over IB,EC2: Image Builder launches a c5.large build host under<br/>ImageBuildRole, runs the component (dnf install of the pinned<br/>Corretto/perf/awscli, async-profiler tarball, sysctl + grubby<br/>tunables, smoke test), snapshots it, terminates the host
+    loop poll every 30s
+        BIC->>IB: getImage(imageBuildVersionArn)
+        IB-->>BIC: CREATING | BUILDING | DISTRIBUTING | AVAILABLE | FAILED
+    end
+    Note over BIC: FAILED -> throw with Image Builder's own reason.<br/>Pointer and previous AMI are untouched.
+
+    BIC->>EC2: describeImages(newAmiId)
+    EC2-->>BIC: tags set by the DistributionConfiguration
+    opt identity tags absent
+        BIC->>EC2: createTags(baas-image-version, baas-parent-ami)
+    end
+
+    BIC->>SSM: putParameter(/<prefix>/runner/ami-id = newAmiId, String)
+    Note over BIC,SSM: REPOINT BEFORE RETIRE. Deregistering first would aim the<br/>pointer at a deleted AMI for the whole ~15-minute build,<br/>failing every run launched in that window.
+    opt a previous, different AMI existed
+        BIC->>EC2: describeImages(previousAmiId) -> snapshot ids
+        BIC->>EC2: deregisterImage(previousAmiId)
+        BIC->>EC2: deleteSnapshot(each) -- else the snapshots bill forever
+    end
+    BIC-->>User: new AMI id, image version, parent AMI, pointer path; exit 0

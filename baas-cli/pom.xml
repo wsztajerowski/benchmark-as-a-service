@@ -1,0 +1,162 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>pl.wsztajerowski</groupId>
+        <artifactId>benchmark-as-a-service</artifactId>
+        <version>0.0.0-semantically-released</version>
+    </parent>
+
+    <artifactId>baas-cli</artifactId>
+    <packaging>jar</packaging>
+    <name>BaaS CLI</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>pl.wsztajerowski</groupId>
+            <artifactId>baas-model</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ec2</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>ssm</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cloudformation</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sts</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>iam</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>imagebuilder</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-yaml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>dynamodb</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>info.picocli</groupId>
+            <artifactId>picocli</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-simple</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-localstack</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <!-- Treat infra/cf-template-core.yaml as the single source of truth.
+             Maven copies it into the JAR at templates/cf-template-core.yaml so
+             SetupCommand can load it from the classpath without a local file dep. -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}/../infra</directory>
+                <targetPath>templates</targetPath>
+                <includes>
+                    <include>cf-template-core.yaml</include>
+                    <!-- deployer-policy.json is a template, not a policy: `baas admin setup`
+                         renders it with the caller's account/region/prefix and prints it when a
+                         permission is missing, so it has to be readable at runtime. -->
+                    <include>deployer-policy.json</include>
+                    <!-- `baas admin build-image` renders the Image Builder component and recipe
+                         from this at runtime, so it ships rather than staying a repo file. -->
+                    <include>runner-image.yaml</include>
+                </includes>
+            </resource>
+        </resources>
+        <!-- Everything the CLI does not read at runtime reaches the TEST classpath only:
+             cf-template-ci.yaml is deployed by hand and operator-policy.json is reference
+             documentation pinned by OperatorPolicyDriftTest. The bundled set is the core
+             template plus the two deployer policy templates above. -->
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+            <testResource>
+                <directory>${project.basedir}/../infra</directory>
+                <targetPath>infra</targetPath>
+                <includes>
+                    <include>cf-template-ci.yaml</include>
+                    <include>operator-policy.json</include>
+                </includes>
+            </testResource>
+        </testResources>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>run-maven-shade-plugin</id>
+                        <configuration>
+                            <transformers combine.children="append">
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                                    <mainClass>pl.wsztajerowski.baas.BaasApp</mainClass>
+                                    <!-- BaasVersion reads this to pin releases/<version>/benchmark-runner.jar.
+                                         Without it the CLI cannot name the release it was built from. -->
+                                    <manifestEntries>
+                                        <Implementation-Version>${project.version}</Implementation-Version>
+                                    </manifestEntries>
+                                </transformer>
+                                <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                            </transformers>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+</project>
