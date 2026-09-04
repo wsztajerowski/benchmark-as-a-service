@@ -18,6 +18,9 @@
 - [ ] 1.6 Inventory the bucket and table: how many runs exist, which projects they span, how many
       items carry `pk = RESULT#unknown`, and whether every item's `resultPath` matches the historical
       `<branch>/<type>/<timestamp>` shape. Record the counts — section 11 checks against them.
+      **Do this before 12.3, not merely before 11.4:** section 12's manual runs write new items in
+      the new layout, so a count taken after them is not a pre-migration baseline and 11.4 has
+      nothing honest to compare against. There is no second chance to observe the pre-cutover state.
 - [x] 1.7 Confirm the four Image Builder and bucket facts pinned by `CoreTemplateTest` so section 8
       knows exactly which assertions move.
 
@@ -31,8 +34,12 @@
       JARs, then writes `benchmark-runner.jar.sha256` next to the runner JAR.
 - [x] 2.4 Add `baas-cli/target/baas-cli.jar` and `benchmark-runner/target/benchmark-runner.jar.sha256`
       to the `@semantic-release/github` asset list.
-- [ ] 2.5 Land section 2 and cut a real release before starting section 6's manual verification —
-      that section cannot be exercised without one.
+- [ ] 2.5 Land section 2 and cut a real release before starting section 12's manual verification —
+      that section cannot be exercised without one. **The release gate sits behind the merge, not in
+      front of it:** `release.yml` triggers only on `push: branches: [main]`, so cutting a release
+      means merging this branch to `main` first. Section 12 therefore cannot run on the feature
+      branch, and the change's closing work — 11.7's script deletion and the finalize/archive
+      artifacts — happens after that merge rather than before it.
 
 ## 3. Run identity in `baas-model`
 

@@ -69,4 +69,17 @@ class RunnerJarResolverTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("repository");
     }
+
+    /**
+     * The message is the only place the CLI tells a user where this setting lives, so it has to
+     * name the key that exists: the config is a top-level {@code runner:} block, not a field on
+     * {@code aws:}. Setting the key the old message named would have changed nothing.
+     */
+    @Test
+    void theRejectionNamesTheConfigurationKeyThatActuallyExists() {
+        assertThatThrownBy(() -> RunnerJarResolver.assetUrl(null, "1.4.2", "benchmark-runner.jar"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("runner.sourceRepo")
+            .hasMessageNotContaining("aws.runnerSourceRepo");
+    }
 }

@@ -28,6 +28,27 @@ class RunLayoutTest {
     }
 
     @Test
+    void theBenchmarkJarSitsInTheRunsOwnInput() {
+        assertThat(RunLayout.benchmarkJarKey("lynx-journal", ID))
+            .isEqualTo("runs/lynx-journal/" + ID + "/input/benchmark.jar");
+    }
+
+    @Test
+    void aRunnerJarOverrideStaysPerRunRatherThanUnderReleases() {
+        assertThat(RunLayout.runnerJarOverrideKey("lynx-journal", ID))
+            .isEqualTo("runs/lynx-journal/" + ID + "/input/runner.jar");
+        assertThat(RunLayout.runnerJarOverrideKey("lynx-journal", ID))
+            .doesNotStartWith(RunLayout.RELEASES_PREFIX);
+    }
+
+    @Test
+    void bothInputKeysSitUnderTheInputPrefix() {
+        String input = RunLayout.inputPrefix("p", ID);
+        assertThat(RunLayout.benchmarkJarKey("p", ID)).startsWith(input + "/");
+        assertThat(RunLayout.runnerJarOverrideKey("p", ID)).startsWith(input + "/");
+    }
+
+    @Test
     void neitherPrefixEndsWithASlash() {
         assertThat(RunLayout.runPrefix("p", ID)).doesNotEndWith("/");
         assertThat(RunLayout.inputPrefix("p", ID)).doesNotEndWith("/");

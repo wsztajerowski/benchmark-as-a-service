@@ -18,6 +18,8 @@ public final class RunLayout {
     public static final String RELEASES_PREFIX = "releases";
     public static final String INPUT_SEGMENT = "input";
     public static final String RUNNER_JAR_NAME = "benchmark-runner.jar";
+    public static final String BENCHMARK_JAR_NAME = "benchmark.jar";
+    public static final String RUNNER_JAR_OVERRIDE_NAME = "runner.jar";
 
     private RunLayout() {
     }
@@ -30,6 +32,18 @@ public final class RunLayout {
 
     public static String inputPrefix(String project, String runId) {
         return runPrefix(project, runId) + "/" + INPUT_SEGMENT;
+    }
+
+    public static String benchmarkJarKey(String project, String runId) {
+        return inputPrefix(project, runId) + "/" + BENCHMARK_JAR_NAME;
+    }
+
+    /**
+     * A {@code --runner-jar} override stays per-run under the run's own {@code input/}, so
+     * {@link #RELEASES_PREFIX} holds released, immutable artifacts only.
+     */
+    public static String runnerJarOverrideKey(String project, String runId) {
+        return inputPrefix(project, runId) + "/" + RUNNER_JAR_OVERRIDE_NAME;
     }
 
     public static String runnerJarKey(String version) {

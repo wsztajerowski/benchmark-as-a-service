@@ -280,6 +280,25 @@ carrying that condition would evaluate false for the other five and deny the who
 the instance-type constraint lives on an instance-scoped statement and the supporting
 resources get their own.
 
+## Client configuration beyond credentials — `runner.sourceRepo`
+
+`~/.baas/config.yaml` carries one setting that is neither a credential nor a stack output:
+
+```yaml
+runner:
+  sourceRepo: wsztajerowski/benchmark-as-a-service   # default
+```
+
+It names the GitHub repository the version-pinned runner JAR is downloaded from, and it is read
+**only** when `releases/<version>/benchmark-runner.jar` is not yet seeded in the bucket. After the
+first run of a given CLI version the object exists, is never overwritten, and the setting goes
+unread until the next version bump — so changing it does not repoint runs already pinned.
+
+It is configuration rather than a constant in the user-data script so that a fork can point at its
+own releases. Note that the *instance* never contacts GitHub: the CLI does the download on the
+laptop, verifies the asset against the `.sha256` published by the same release build, and uploads
+it. A mismatch uploads nothing and launches nothing.
+
 ## MongoDB Atlas connectivity — removed
 
 **Nothing connects to Atlas.** Measurements go to the DynamoDB results table over the gateway

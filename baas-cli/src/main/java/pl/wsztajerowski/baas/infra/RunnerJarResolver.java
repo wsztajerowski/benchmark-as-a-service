@@ -80,7 +80,7 @@ public final class RunnerJarResolver {
         if (sourceRepo == null || sourceRepo.isBlank()) {
             throw new IllegalArgumentException(
                 "No runner source repository configured, so there is no release to pin to. "
-                    + "Set aws.runnerSourceRepo in ~/.baas/config.yaml.");
+                    + "Set runner.sourceRepo in ~/.baas/config.yaml.");
         }
         return "https://github.com/" + sourceRepo.strip() + "/releases/download/v" + version
             + "/" + assetName;

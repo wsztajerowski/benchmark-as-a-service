@@ -229,13 +229,12 @@ public class RunCommand implements Callable<Integer> {
         String runId = RunId.generate(runInstant);
         String createdAt = runInstant.toString();
         String resultPath = RunLayout.runPrefix(resolvedProject, runId);
-        String inputPrefix = RunLayout.inputPrefix(resolvedProject, runId);
         logger.info("Run {} — results will land under s3://{}/{}",
             runId, config.getAws().getBucket(), resultPath);
 
         // 5. Upload JARs into the run's own prefix, so one prefix holds the whole run.
         logger.info("Uploading benchmark JAR to S3...");
-        String benchmarkJarKey = inputPrefix + "/benchmark.jar";
+        String benchmarkJarKey = RunLayout.benchmarkJarKey(resolvedProject, runId);
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).upload(jarPath, config.getAws().getBucket(), benchmarkJarKey);
         }
@@ -245,7 +244,7 @@ public class RunCommand implements Callable<Integer> {
         String runnerJarS3Key;
         if (runnerJar != null) {
             logger.info("Uploading runner JAR to S3...");
-            runnerJarS3Key = inputPrefix + "/runner.jar";
+            runnerJarS3Key = RunLayout.runnerJarOverrideKey(resolvedProject, runId);
             try (var s3 = factory.s3()) {
                 new S3UploadService(s3).upload(runnerJar, config.getAws().getBucket(), runnerJarS3Key);
             }

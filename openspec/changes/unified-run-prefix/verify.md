@@ -100,7 +100,10 @@ apply here. Nothing to grep for before archiving.
 ## 5. Implementation Signal
 
 - [x] No unstaged files in the worktree relating to this change
-- [ ] All related commits have been pushed — **not pushed**; 13 commits sit on the local branch
+- [x] All related commits have been pushed — **pushed**; `feat/baas-cli-openspec-test` and
+      `origin/feat/baas-cli-openspec-test` are both at `722e5d2` (`git ls-remote` confirms the
+      remote ref). The earlier "13 commits sit on the local branch" reading was taken before the
+      final push and is superseded.
 
 **Commit range**: `f9b46d8..HEAD` on `feat/baas-cli-openspec-test` (base `82d36f8`)
 
@@ -191,7 +194,10 @@ that was skipped.
    CLI ITs, `JmhStoreIntegrationIT` 3/3, `JCStressSubcommandServiceIT` 1/1, and
    `JmhWithAsyncProfilerSubcommandServiceIT` 1/1 with `Skipped: 0`.
 2. **Cut a release** (tasks.md 2.5). Nothing below is exercisable without one.
-3. `baas admin setup`, then the manual run checks (12.2–12.7).
+3. `baas admin setup`, then the manual run checks (12.2–12.7). Note the gate order now
+   recorded in `tasks.md` 2.5: `release.yml` fires only on a push to `main`, so step 2's
+   release requires merging this branch first — steps 3–5 run post-merge, not on the
+   feature branch.
 4. Migration last: dry-run, read it against 1.6's counts, then the real pass and delete the script
    (11.4–11.7).
 5. Then `/opsx:continue` → finalize → `/opsx:archive`.
