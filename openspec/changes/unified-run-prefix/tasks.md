@@ -28,6 +28,15 @@
       **Do this before 12.3, not merely before 11.4:** section 12's manual runs write new items in
       the new layout, so a count taken after them is not a pre-migration baseline and 11.4 has
       nothing honest to compare against. There is no second chance to observe the pre-cutover state.
+      **Bucket half done 2026-09-04** (`baas-3q7i7s65`, 97 objects): `feat/` 31, `impl/` 30,
+      `image-builds/` 21, `runs/` 15. Five old-layout result trees —
+      `feat/baas-cli-openspec-test/{jmh,jmh-with-async}`, `impl/ddb-phase3/{jcstress,jmh}`,
+      `impl/dynamodb-results-store/jmh` — and **zero** new-layout runs, as expected since no
+      post-cutover CLI has run here. Note `runs/` is *not* new-layout: it holds 11 old-style input
+      JARs at `runs/<type>-<timestamp>/*.jar` from the split input/result trees this change removed.
+      The migration must not mistake them for runs.
+      **Table half BLOCKED:** `DescribeTable` reports 126 items, but neither identity can enumerate
+      them — see 11.3a.
 - [x] 1.7 Confirm the four Image Builder and bucket facts pinned by `CoreTemplateTest` so section 8
       knows exactly which assertions move.
 
@@ -161,6 +170,16 @@
       `resultPath`, `resultJsonKey`, `environmentJsonKey` and the profiler-output prefix. Never touch a
       partition key or sort key. Tolerate an already-expired input JAR by reporting it.
 - [x] 11.3 Make it idempotent — a second run completes and changes nothing.
+- [ ] 11.3a **Resolve the `dynamodb:Scan` gap — blocks 11.4, 11.5 and 1.6's table half.**
+      `scripts/migrate-run-layout.sh:19` calls `aws dynamodb scan`, but no identity this project
+      provisions can perform it: `operator-policy.json` grants only `dynamodb:Query` and
+      `GetItem` on the table and its indexes, and the deployer holds just `dynamodb:Describe*`.
+      Verified 2026-09-04 — `Scan` returns `AccessDeniedException` for both `baas-admin` and the
+      assumed `3q7i7s65-operator-role`. Querying instead is not a drop-in: `Query` needs a
+      partition key, and discovering which `RESULT#<project>` partitions exist is the very thing
+      the scan does. Either grant `Scan` on the results table to the operator (policy + the
+      template's `OperatorRole`, kept in step by `OperatorPolicyDriftTest`, then redeploy), or
+      rewrite the script around a caller-supplied project list. Decide before 11.4.
 - [ ] 11.4 Dry-run against the real bucket and read the output by eye against 1.6's counts before the
       real pass.
 - [ ] 11.5 Run it for real, then spot-check: `baas download` on a pre-change run, and a `baas results`
@@ -172,8 +191,18 @@
 
 - [x] 12.1 `mvn -B clean verify` with `ASYNC_PATH` exported, since a plain `verify` silently skips the
       only async-profiler test.
-- [ ] 12.2 `baas admin setup` against a real account; confirm the bucket shows suspended versioning and
+- [x] 12.2 `baas admin setup` against a real account; confirm the bucket shows suspended versioning and
       no `runs/` expiry rule.
+      **Done 2026-09-04** against `baas-3q7i7s65` with the `baas-admin` profile; stack update
+      completed in ~60s. Verified after: versioning `Suspended`, and `expire-uploaded-benchmark-jars`
+      (prefix `runs/`, 30 days) is gone, leaving only `expire-noncurrent-versions`,
+      `expire-orphaned-delete-markers` and `abort-incomplete-uploads`.
+      **This was not hypothetical.** Before the run the live bucket had versioning `Enabled` and
+      that rule still active — the stack had last been updated 2026-08-20, before 8.1. Running the
+      migration first would have copied every historical result into `runs/` and let the rule delete
+      it 30 days later, which is exactly the silent data loss CLAUDE.md records the rule for.
+      `securityGroupId` is unchanged (`sg-0cdb8ebd87d4bbd57`), so the security group was not
+      replaced, and `operatorProfile` survived the config rewrite.
 - [ ] 12.2a **Redeploy the CI stack** (`infra/cf-template-ci.yaml`) by hand — the CLI never deploys
       it. 8.2 replaced the `WorkflowRole`'s `ci/*` `PutObject` grant with `runs/*`, but the template
       edit alone changes nothing until the stack is updated. design.md's migration plan step 3 calls
@@ -183,6 +212,10 @@
       `baas-lynx-github-actions-workflow-role`. Note this does not by itself make that workflow
       green — `GHA_EC2_PAT` is expired, and the SSM mongo gate in `exec-single-benchmark.yml`
       remains broken by the DynamoDB cutover (unclaimed work, tracked outside this change).
+      **Cannot be done from this workstation's credentials.** The CI `WorkflowRole` lives in the
+      `baas-lynx` environment; `baas-admin` is prefix-exact to `3q7i7s65` and is refused even
+      `cloudformation:DescribeStacks` on `baas-lynx-*`. Needs whoever holds that environment's
+      deployer identity.
 - [ ] 12.3 **MANUAL:** `baas run jmh -- <fake benchmark> -f 1 -wi 1 -i 3` from a released CLI. Confirm
       one prefix holds `input/`, the manifest, the output, `jmh-result.json` and `run-status`; that the
       `runId`'s instant equals the stored `createdAt`; and that `cloud-init-output.log` shows no
