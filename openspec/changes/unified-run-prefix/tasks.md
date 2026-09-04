@@ -2,12 +2,19 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Download the current `benchmark-runner.jar` release asset and read
+- [x] 1.1 Download the current `benchmark-runner.jar` release asset and read
       `META-INF/maven/pl.wsztajerowski/benchmark-runner/pom.properties` from it. Confirm it carries
       `0.0.0-semantically-released`. If it already carries a real version, the `release.yml` premise
       in design.md is wrong and section 2 collapses to publishing the CLI JAR and the checksum.
-- [ ] 1.2 Confirm no release asset named `baas-cli.jar` exists on any published release, and that
+      **Confirmed 2026-09-04** against release `v1.6.2`: `pom.properties` reads
+      `version=0.0.0-semantically-released` and the manifest carries no `Implementation-Version`.
+      design.md's premise holds — section 2 was necessary, not over-built.
+- [x] 1.2 Confirm no release asset named `baas-cli.jar` exists on any published release, and that
       `unzip -p baas-cli/target/baas-cli.jar META-INF/MANIFEST.MF` shows no `Implementation-Version`.
+      **Confirmed 2026-09-04**: `v1.6.2` publishes exactly one asset, `benchmark-runner.jar`. The
+      second clause is now superseded by its own fix — 2.1 deliberately added
+      `Implementation-Version` to the CLI shade, so the local JAR carries it by design. The
+      published runner JAR having none corroborates the pre-change state the clause was checking.
 - [x] 1.3 Confirm `git rev-parse --git-common-dir` resolves to the main repository from a linked
       worktree and is a no-op for an ordinary clone, on the git version in use.
 - [x] 1.4 Confirm `requestId-index` uses `ProjectionType: ALL`, so resolving a run identifier to its
@@ -161,6 +168,15 @@
       only async-profiler test.
 - [ ] 12.2 `baas admin setup` against a real account; confirm the bucket shows suspended versioning and
       no `runs/` expiry rule.
+- [ ] 12.2a **Redeploy the CI stack** (`infra/cf-template-ci.yaml`) by hand — the CLI never deploys
+      it. 8.2 replaced the `WorkflowRole`'s `ci/*` `PutObject` grant with `runs/*`, but the template
+      edit alone changes nothing until the stack is updated. design.md's migration plan step 3 calls
+      for this; it had no task until now, which is why it went unnoticed.
+      **Evidence it is outstanding:** PR #53's `e2e-cloud-test` run failed with `AccessDenied` on
+      `s3:PutObject` to `runs/benchmark-as-a-service/<runId>/input/runner.jar` for
+      `baas-lynx-github-actions-workflow-role`. Note this does not by itself make that workflow
+      green — `GHA_EC2_PAT` is expired, and the SSM mongo gate in `exec-single-benchmark.yml`
+      remains broken by the DynamoDB cutover (unclaimed work, tracked outside this change).
 - [ ] 12.3 **MANUAL:** `baas run jmh -- <fake benchmark> -f 1 -wi 1 -i 3` from a released CLI. Confirm
       one prefix holds `input/`, the manifest, the output, `jmh-result.json` and `run-status`; that the
       `runId`'s instant equals the stored `createdAt`; and that `cloud-init-output.log` shows no
