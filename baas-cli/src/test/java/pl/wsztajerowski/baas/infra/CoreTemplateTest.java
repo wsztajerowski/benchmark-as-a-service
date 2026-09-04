@@ -396,12 +396,20 @@ class CoreTemplateTest {
         assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query");
     }
 
+    /**
+     * Scan was pinned as absent here until the history migration needed to enumerate runs.
+     * It is a read, so the property this test defends — the operator never writes — is
+     * unchanged, and it grants no new reach: Query already covers the table and its indexes,
+     * so every row a Scan returns was reachable before. The write exclusions stay exact.
+     * The runner still must not hold Scan; that is pinned separately above.
+     */
     @Test
     void theOperatorCanReadResultsButNeverWriteThem() {
         var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("OperatorRole"));
 
-        assertThat(actions).containsExactlyInAnyOrder("dynamodb:Query", "dynamodb:GetItem");
-        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:Scan", "dynamodb:DeleteItem");
+        assertThat(actions)
+            .containsExactlyInAnyOrder("dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem");
+        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:DeleteItem");
     }
 
     @Test

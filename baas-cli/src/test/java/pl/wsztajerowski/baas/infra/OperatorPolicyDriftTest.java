@@ -46,6 +46,23 @@ class OperatorPolicyDriftTest {
     }
 
     /**
+     * The history migration enumerates runs with `aws dynamodb scan`, and Query cannot stand in
+     * for it: Query needs a partition key, and discovering which `RESULT#<project>` partitions
+     * exist is the very thing the scan does. Granting Scan widens convenience, not reach — the
+     * operator already holds Query on the table *and* its indexes, so every row a scan returns
+     * was already reachable.
+     */
+    @Test
+    void operatorCanEnumerateTheResultsTable() {
+        Set<String> actions = InfraFixtures.actions(InfraFixtures.operatorPolicy());
+
+        assertThat(actions)
+            .as("scripts/migrate-run-layout.sh calls dynamodb:Scan; without it the migration "
+                + "cannot enumerate runs and 1.6's table inventory has no baseline")
+            .contains("dynamodb:Scan");
+    }
+
+    /**
      * The whole point of the credential split: `baas run` resolves the image, `baas admin
      * build-image` publishes it. An operator who could also build or retire images could move
      * the measurement environment under results without holding deployer credentials.
