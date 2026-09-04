@@ -22,7 +22,7 @@
 - [x] 1.5 Confirm `RunnerRole` and the operator policy grant bucket-wide `s3:PutObject`/`GetObject`,
       so `releases/*` needs no new IAM statement. If either is prefix-scoped, the proposal's "no new
       IAM" claim is wrong and must be corrected before proceeding.
-- [ ] 1.6 Inventory the bucket and table: how many runs exist, which projects they span, how many
+- [x] 1.6 Inventory the bucket and table: how many runs exist, which projects they span, how many
       items carry `pk = RESULT#unknown`, and whether every item's `resultPath` matches the historical
       `<branch>/<type>/<timestamp>` shape. Record the counts — section 11 checks against them.
       **Do this before 12.3, not merely before 11.4:** section 12's manual runs write new items in
@@ -35,8 +35,16 @@
       post-cutover CLI has run here. Note `runs/` is *not* new-layout: it holds 11 old-style input
       JARs at `runs/<type>-<timestamp>/*.jar` from the split input/result trees this change removed.
       The migration must not mistake them for runs.
-      **Table half BLOCKED:** `DescribeTable` reports 126 items, but neither identity can enumerate
-      them — see 11.3a.
+      **Table half done 2026-09-04** once 11.3a granted `Scan` — 126 items:
+      `RESULT#lynx-journal` 80, `RESULT#unknown-migrated` 41, `RESULT#dynamodb-results-store` 4,
+      `RESULT#benchmark-as-a-service` 1; 116 distinct `gsi1pk` runs.
+      **Two answers here contradict what section 11 assumes — see 11.4.**
+      `resultPath`: 0 new-layout, 69 old-layout, **57 absent entirely**. And there is no single
+      historical shape: `feat/<branch>/jmh-with-async` (no timestamp),
+      `impl/ddb-phase3/jmh/20260819_232659` (with timestamp), and
+      `ci/CI_E2E_<ts>/<fully.qualified.Benchmark-Mode>` (a benchmark name in the last segment)
+      all coexist. `RESULT#unknown` is **0** — the rows 11.6 goes looking for are
+      `RESULT#unknown-migrated`, renamed by the earlier `dynamodb-results-store` migration.
 - [x] 1.7 Confirm the four Image Builder and bucket facts pinned by `CoreTemplateTest` so section 8
       knows exactly which assertions move.
 
@@ -170,7 +178,7 @@
       `resultPath`, `resultJsonKey`, `environmentJsonKey` and the profiler-output prefix. Never touch a
       partition key or sort key. Tolerate an already-expired input JAR by reporting it.
 - [x] 11.3 Make it idempotent — a second run completes and changes nothing.
-- [ ] 11.3a **Resolve the `dynamodb:Scan` gap — blocks 11.4, 11.5 and 1.6's table half.**
+- [x] 11.3a **Resolve the `dynamodb:Scan` gap — blocks 11.4, 11.5 and 1.6's table half.**
       `scripts/migrate-run-layout.sh:19` calls `aws dynamodb scan`, but no identity this project
       provisions can perform it: `operator-policy.json` grants only `dynamodb:Query` and
       `GetItem` on the table and its indexes, and the deployer holds just `dynamodb:Describe*`.
@@ -180,11 +188,28 @@
       the scan does. Either grant `Scan` on the results table to the operator (policy + the
       template's `OperatorRole`, kept in step by `OperatorPolicyDriftTest`, then redeploy), or
       rewrite the script around a caller-supplied project list. Decide before 11.4.
+      **Resolved 2026-09-04 by granting `Scan`** on the results table to the operator, in
+      `cf-template-core.yaml`'s `OperatorRole` and the `operator-policy.json` reference copy
+      together (`OperatorPolicyDriftTest` fails if they part). `CoreTemplateTest`'s
+      `theOperatorCanReadResultsButNeverWriteThem` had pinned `Scan` as *absent*; that pin moved,
+      and the write exclusions stayed exact — Scan is a read, and it grants no new reach, since
+      Query already covered the table and its indexes. Redeployed with a locally built CLI (the
+      template ships inside the JAR, so the released v2.0.0 still carries the old policy), and
+      confirmed live: the operator now scans the table, 126 items, unpaginated.
 - [ ] 11.4 Dry-run against the real bucket and read the output by eye against 1.6's counts before the
       real pass.
+      **Check the script against 1.6's findings before running it.** The design assumed one
+      historical shape, `<branch>/<type>/<timestamp>`; the table holds at least three, plus 57 of
+      126 items with no `resultPath` at all, which 11.1's "resolve each item's current
+      `resultPath`" does not describe. The `ci/CI_E2E_<ts>/<Benchmark-Mode>` rows put a benchmark
+      name where a timestamp is expected. Decide per shape what the script should do — and what it
+      should do with a null path — before the dry-run, or the dry-run's output cannot be read
+      against anything.
 - [ ] 11.5 Run it for real, then spot-check: `baas download` on a pre-change run, and a `baas results`
       row whose `resultPath` was rewritten.
 - [ ] 11.6 Confirm `RESULT#unknown` items landed under `runs/unknown/` with their keys unchanged.
+      **Premise needs correcting:** this table has 0 `RESULT#unknown` items and 41
+      `RESULT#unknown-migrated`. Confirm which partition is meant before relying on this check.
 - [ ] 11.7 Delete the script in the same commit that records it ran.
 
 ## 12. End-to-end verification (MANUAL — no automated test drives `baas run`)

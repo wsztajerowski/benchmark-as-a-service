@@ -108,6 +108,7 @@
       "Effect": "Allow",
       "Action": [
         "dynamodb:Query",
+        "dynamodb:Scan",
         "dynamodb:GetItem"
       ],
       "Resource": [

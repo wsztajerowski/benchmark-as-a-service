@@ -583,9 +583,14 @@ Resources:
               # A Query against a GSI authorises on the index ARN, not the table's — both
               # are granted here or `baas results --request-id` fails at runtime with an
               # opaque AccessDenied, long after the deploy looked successful.
+              # Scan is here for enumeration, not for reach: Query already covers the table
+              # and its indexes, so every row a Scan returns was reachable anyway. It is
+              # needed because finding which RESULT#<project> partitions exist cannot be
+              # done with Query, which requires the partition key as input.
               - Effect: Allow
                 Action:
                   - dynamodb:Query
+                  - dynamodb:Scan
                   - dynamodb:GetItem
                 Resource:
                   - !GetAtt ResultsTable.Arn
