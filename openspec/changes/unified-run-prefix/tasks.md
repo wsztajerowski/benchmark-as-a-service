@@ -241,18 +241,83 @@
       `baas-lynx` environment; `baas-admin` is prefix-exact to `3q7i7s65` and is refused even
       `cloudformation:DescribeStacks` on `baas-lynx-*`. Needs whoever holds that environment's
       deployer identity.
-- [ ] 12.3 **MANUAL:** `baas run jmh -- <fake benchmark> -f 1 -wi 1 -i 3` from a released CLI. Confirm
+- [x] 12.3 **MANUAL:** `baas run jmh -- <fake benchmark> -f 1 -wi 1 -i 3` from a released CLI. Confirm
       one prefix holds `input/`, the manifest, the output, `jmh-result.json` and `run-status`; that the
       `runId`'s instant equals the stored `createdAt`; and that `cloud-init-output.log` shows no
       request to GitHub.
-- [ ] 12.4 **MANUAL:** launch a second run of the same type in the same second and confirm two distinct
+      **Done 2026-09-08 — run `20260908T151821926Z-00e1f7b9`**, 93s, from the released v2.0.0 CLI.
+      One prefix held `input/benchmark.jar`, `environment.json`, `run-status` = `completed`,
+      `jmh-output.txt`, `jmh-result.json`, `packages.txt`, `cloud-init-output.log`; no object for the
+      run existed outside it. Stored `createdAt` = `2026-09-08T15:18:21.926Z`, exactly the runId's
+      instant — the change's central property, proven against real EC2 for the first time. All nine
+      tags present (`imageVersion` 1.2.0, `instanceType` c5.2xlarge, `jdk` 25.0.4, `cpuModel`,
+      `cpuArch`, `type`, `project`, `branch`, `commit`). No GitHub reference in
+      `cloud-init-output.log`. The first run also seeded `releases/2.0.0/benchmark-runner.jar` from
+      the real release, checksum-verified.
+- [x] 12.4 **MANUAL:** launch a second run of the same type in the same second and confirm two distinct
       prefixes and two distinct sort keys — the A9 regression check.
-- [ ] 12.5 **MANUAL:** kill a run mid-flight and confirm the prefix still identifies the project, branch
+      **Done 2026-09-08.** Two runs minted 2 ms apart in the same second:
+      `20260908T152147850Z-d972b1c3` and `20260908T152147852Z-ee088133`. Distinct prefixes, distinct
+      sort keys (differing in both the timestamp field and the trailing run id), and both items
+      stored — neither overwrote the other. Note the ids differ by their entropy suffix as well as
+      their millisecond, so the property would have held even on a same-millisecond collision.
+- [x] 12.5 **MANUAL:** kill a run mid-flight and confirm the prefix still identifies the project, branch
       and instant from `environment.json` alone.
-- [ ] 12.6 **MANUAL:** `baas download <runId>` and `baas download <old result path>` both succeed.
-- [ ] 12.7 **MANUAL:** from a reactor build, confirm `baas run` fails naming `--runner-jar` before
+      **Done 2026-09-08 — run `20260908T152412789Z-920598ea`**, SIGTERM at 55 s. The JVM shutdown
+      hook fired and terminated the instance (`i-01630f3e8ccfc855f`); the CLI exited 143. The prefix
+      holds `environment.json`, `input/` and `packages.txt` and, correctly, no `run-status` — and the
+      manifest alone gives `project` = benchmark-as-a-service, `branch` =
+      feat/unified-run-prefix-closeout, `createdAt` = `2026-09-08T15:24:12.789388Z` (the runId's
+      instant), plus `amiId` and `imageVersion`. Written before the benchmark, as the invariant
+      requires.
+- [x] 12.6 **MANUAL:** `baas download <runId>` and `baas download <old result path>` both succeed.
+      **Done 2026-09-08.** `baas download 20260908T151821926Z-00e1f7b9` fetched 7 artifacts;
+      `baas download impl/ddb-phase3/jmh/20260819_232659` — a pre-change literal path — fetched 6.
+      Both exited 0.
+- [x] 12.7 **MANUAL:** from a reactor build, confirm `baas run` fails naming `--runner-jar` before
       building, and succeeds with it, writing nothing under `releases/`.
-- [ ] 12.8 **MANUAL — comparability:** run the same benchmark that CI has history for and compare the
+      **Done 2026-09-08.** Without the flag the reactor build refused — *"This is an unreleased
+      build (0.0.0-semantically-released) … Nothing was built or launched."* With it, run
+      `20260908T152621412Z-12a4e4e7` completed, logging *"(local override, not a pinned release)"*.
+      `releases/` was byte-identical before and after (only `releases/2.0.0/benchmark-runner.jar`),
+      and the override JAR landed at the run's own `input/runner.jar`.
+- [x] 12.8 **MANUAL — comparability:** run the same benchmark that CI has history for and compare the
       score against a pre-change run. State the observed spread; CI history spans roughly 10.0M-29.6M
       ops/s on one benchmark, so a difference inside that band is not evidence of a regression, and a
       difference outside it must be investigated rather than accepted.
+      **Done 2026-09-08.** The fake `Incrementing_Synchronized` benchmark is the one CI has
+      history for. Across 45 historical rows: min 6,738,540 / median 16,255,672 / max 29,560,304
+      ops/s. Today's three runs: 8,600,130 / 9,794,140 / 10,025,544 — median 9,794,140, **inside**
+      the historical spread, so not evidence of a regression by the rule above.
+      Two honest qualifications: today's median sits below the historical median, and `-f 1 -wi 1
+      -i 3` yields error bars of ±4.5-7.4 M — roughly 70 % of the score — so this comparison is weak
+      by construction rather than reassuring. Also, the band quoted above understates the data: the
+      observed historical minimum is **6.74 M**, not 10.0 M.
+
+### Step 2 — real-project run (`lynx-journal`), 2026-09-08
+
+Run `20260908T152909727Z-6bd298d0`, `baas run jmh-with-async -- ReadLastRecordJournalPerformanceBenchmark
+-f 1 -wi 3 -i 5`, launched from the released v2.0.0 CLI with `lynx-journal` as the working directory.
+Completed in 122 s; instance terminated.
+
+Everything section 12 checks for a fake benchmark held for a real one: one prefix, `run-status` =
+`completed`, stored `createdAt` = `2026-09-08T15:29:09.727Z` equal to the runId's instant, partition
+`RESULT#lynx-journal` (so it joins the existing history rather than starting a new partition), all
+nine tags, and no GitHub contact. `project` derived to `lynx-journal` from the git repo name without
+being passed.
+
+**This is the run that covers what nothing else does.** Async-profiler artifacts landed under
+`pl.wsztajerowski.journal.ReadLastRecordJournalPerformanceBenchmark.journal_mpmc-Throughput/` as
+`flame-cpu-forward.html` and `flame-cpu-reverse.html` — the `<fully.qualified.BenchmarkName-Mode>/`
+convention, produced on real EC2 from the baked AMI. CLAUDE.md records that no automated test drives
+this path.
+
+**The score is not a comparability result and should not be read as one.** Today: 44.834 ops/s
+(±40.928, an error bar ~90 % of the score). The 54 historical rows for the same class and method span
+10.797 to 1,295,057 ops/s, median 446,066. A min-max band covering five orders of magnitude tests
+nothing — those rows were measured on different branches against different journal implementations.
+The plumbing is proven; the performance question needs a controlled re-run against a named baseline.
+
+Also verified incidentally: `releases/2.0.0/benchmark-runner.jar` was seeded once by the first run
+and reused unmodified by all five later ones, and `--format json` emits `9794139.909319` with a dot
+under a comma-decimal locale, so the `Locale.ROOT` rule in `printJson` is holding.
