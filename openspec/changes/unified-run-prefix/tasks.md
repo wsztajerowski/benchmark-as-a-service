@@ -248,10 +248,11 @@ unneeded, not as unfinished.
       it 30 days later, which is exactly the silent data loss CLAUDE.md records the rule for.
       `securityGroupId` is unchanged (`sg-0cdb8ebd87d4bbd57`), so the security group was not
       replaced, and `operatorProfile` survived the config rewrite.
-- [ ] 12.2a **Redeploy the CI stack** (`infra/cf-template-ci.yaml`) by hand — the CLI never deploys
-      it. 8.2 replaced the `WorkflowRole`'s `ci/*` `PutObject` grant with `runs/*`, but the template
-      edit alone changes nothing until the stack is updated. design.md's migration plan step 3 calls
-      for this; it had no task until now, which is why it went unnoticed.
+- [~] 12.2a **Redeploy the CI stack** (`infra/cf-template-ci.yaml`) by hand — the CLI never deploys
+      it. ~~8.2 replaced the `WorkflowRole`'s `ci/*` `PutObject` grant with `runs/*`~~ — **that was
+      wrong**: 8.2 only *deleted* the retired `ci/*` entry, and `runs/*` has been granted since
+      `adfb448` (2026-07-22). design.md's migration plan step 3 mentions a redeploy; it had no task
+      until this one.
       **Evidence it is outstanding:** PR #53's `e2e-cloud-test` run failed with `AccessDenied` on
       `s3:PutObject` to `runs/benchmark-as-a-service/<runId>/input/runner.jar` for
       `baas-lynx-github-actions-workflow-role`. Note this does not by itself make that workflow
@@ -261,6 +262,14 @@ unneeded, not as unfinished.
       `baas-lynx` environment; `baas-admin` is prefix-exact to `3q7i7s65` and is refused even
       `cloudformation:DescribeStacks` on `baas-lynx-*`. Needs whoever holds that environment's
       deployer identity.
+      **MOVED 2026-09-09 to `gha-workflow-migration-to-dynamodb`.** It does not belong to this
+      change. `cf-template-ci.yaml` has granted `runs/*` since the original core/CI split, so this
+      change added no IAM requirement and nothing in it depends on the redeploy. The delta spec's CI
+      requirement covers layout and attribution — properties of the CLI and user-data that section 12
+      verified directly — and does not assert the GHA path currently runs. A redeploy would not turn
+      that workflow green in any case: the expired `GHA_EC2_PAT` fires first, and the deleted mongo
+      SSM parameter after it. Both are the unclaimed work the GHA change exists for, and the full
+      blocker ordering is recorded in its `assumptions.md`.
 - [x] 12.3 **MANUAL:** `baas run jmh -- <fake benchmark> -f 1 -wi 1 -i 3` from a released CLI. Confirm
       one prefix holds `input/`, the manifest, the output, `jmh-result.json` and `run-status`; that the
       `runId`'s instant equals the stored `createdAt`; and that `cloud-init-output.log` shows no

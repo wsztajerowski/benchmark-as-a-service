@@ -110,3 +110,46 @@ error message already instructs the operator to set it to match the stack — so
 to keep in sync rather than two. Alternative worth weighing: read the core stack's
 `ResultsTableName` output at runtime via `cloudformation:DescribeStacks`, which is self-correcting
 but needs a new grant on `WorkflowRole`.
+
+## Third blocker, observed 2026-09-08 — the deployed CI stack is out of sync
+
+Found while closing `unified-run-prefix`, and moved here because it belongs to this change, not
+that one. PR #53's `e2e-cloud-test` run failed *before* reaching the connection-string check:
+
+```
+User: arn:aws:sts::381492019823:assumed-role/baas-lynx-github-actions-workflow-role/GitHubActions
+is not authorized to perform: s3:PutObject on resource:
+"arn:aws:s3:::baas-lynx-main/runs/benchmark-as-a-service/20260904T200915130Z-ce8ee1d3/input/runner.jar"
+because no identity-based policy allows the s3:PutObject action
+```
+
+**This is not fallout from the unified layout.** `cf-template-ci.yaml` has granted
+`${BucketName}/runs/*` since `adfb448` (2026-07-22), the original core/CI split;
+`unified-run-prefix` only deleted the retired `ci/*` sibling. So the template has been correct for
+this the whole time and the *deployed* role has not.
+
+`no identity-based policy allows` means the role holds no `PutObject` on that bucket at all — not
+that a prefix condition failed. Three explanations fit, and they were not distinguished because the
+`baas-lynx` environment is unreachable from the `3q7i7s65` deployer identity (prefix-exact policy;
+even `cloudformation:DescribeStacks` on `baas-lynx-*` is refused):
+
+1. the deployed stack predates the `runs/*` grant,
+2. it was deployed with a `BucketName` parameter other than `baas-lynx-main` — note the workflow
+   hard-codes `S3_BUCKET: baas-lynx-main` in its `env:` block rather than reading a stack output, so
+   the two can drift silently, or
+3. the role was not created from this template at all.
+
+**Whoever picks this change up should check which, before assuming a redeploy fixes it** — under
+explanation 2 a redeploy changes nothing.
+
+### Known blockers on `e2e-cloud-test.yml`, in the order they fire
+
+| # | Blocker | Status |
+|---|---|---|
+| 1 | `Start EC2 runner` — `GitHub Registration Token receiving error / Bad credentials` | `GHA_EC2_PAT` expired; needs a new classic token with `repo` scope |
+| 2 | `Build` — `AccessDenied` on `s3:PutObject` to `runs/.../input/runner.jar` | This section |
+| 3 | `exec-single-benchmark.yml` — SSM `mongo/connection-string` deleted, `exit 1` | The original reason for this change; not yet reached in any recent run |
+
+Blocker 3 has never actually fired in a recent run: its jobs report `skipping`, because 1 and 2 fail
+upstream first. Fixing only the connection string would therefore not turn the workflow green, and a
+green run is the only real proof this change works.
