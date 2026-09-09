@@ -170,7 +170,26 @@
 - [x] 10.6 Update `docs/diagrams/` for any command whose sequence changed, and `infra/README.md` if the
       bucket description names the retired prefixes.
 
-## 11. History migration (after the cutover is deployed and verified)
+## 11. History migration — **DROPPED 2026-09-09 by decision**
+
+The migration will not run and `scripts/migrate-run-layout.sh` is deleted. The delta spec's
+"Existing runs are relocated without altering their stored keys" requirement is removed with it, so
+the archive cannot publish a relocation that never happened.
+
+**Why, on the evidence from 1.6.** Of 39 distinct historical `resultPath` values, only **4** have any
+objects in `baas-3q7i7s65`; the other 35 (65 of 69 items) point at trees that live elsewhere, mostly
+the Mongo-era CI layout. `aws s3 cp --recursive` exits 0 on an empty source, so the script would have
+copied nothing and then rewritten those 65 rows to empty `runs/` prefixes — trading a path that
+records where data historically lived for one pointing at nothing, and turning `baas download` into
+an empty result rather than an error. A further 18 of 39 paths are shared by more than one run, up to
+five, so one tree would have been attributed to several runs.
+
+Nothing is lost by dropping it. 12.6 verified that `baas download` resolves a pre-change literal path
+directly, which is what keeps every historical run retrievable — the relocation was never what made
+history readable. The two id shapes were always going to coexist; CLAUDE.md says so.
+
+Tasks 11.1-11.3 stay checked: the script was written, self-tested and reviewed. It is deleted as
+unneeded, not as unfinished.
 
 - [x] 11.1 Write `scripts/migrate-run-layout` taking `--dry-run`, enumerating runs from the table and
       resolving each item's current `resultPath`.
@@ -196,7 +215,7 @@
       Query already covered the table and its indexes. Redeployed with a locally built CLI (the
       template ships inside the JAR, so the released v2.0.0 still carries the old policy), and
       confirmed live: the operator now scans the table, 126 items, unpaginated.
-- [ ] 11.4 Dry-run against the real bucket and read the output by eye against 1.6's counts before the
+- [~] 11.4 Dry-run against the real bucket and read the output by eye against 1.6's counts before the
       real pass.
       **Check the script against 1.6's findings before running it.** The design assumed one
       historical shape, `<branch>/<type>/<timestamp>`; the table holds at least three, plus 57 of
@@ -205,12 +224,13 @@
       name where a timestamp is expected. Decide per shape what the script should do — and what it
       should do with a null path — before the dry-run, or the dry-run's output cannot be read
       against anything.
-- [ ] 11.5 Run it for real, then spot-check: `baas download` on a pre-change run, and a `baas results`
+- [~] 11.5 Run it for real, then spot-check: `baas download` on a pre-change run, and a `baas results`
       row whose `resultPath` was rewritten.
-- [ ] 11.6 Confirm `RESULT#unknown` items landed under `runs/unknown/` with their keys unchanged.
+- [~] 11.6 Confirm `RESULT#unknown` items landed under `runs/unknown/` with their keys unchanged.
       **Premise needs correcting:** this table has 0 `RESULT#unknown` items and 41
       `RESULT#unknown-migrated`. Confirm which partition is meant before relying on this check.
-- [ ] 11.7 Delete the script in the same commit that records it ran.
+- [~] 11.7 Delete the script in the same commit that records it ran.
+      **Superseded:** deleted in the commit that records the decision not to run it.
 
 ## 12. End-to-end verification (MANUAL — no automated test drives `baas run`)
 

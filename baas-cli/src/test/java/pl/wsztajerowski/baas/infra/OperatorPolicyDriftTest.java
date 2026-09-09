@@ -46,19 +46,22 @@ class OperatorPolicyDriftTest {
     }
 
     /**
-     * The history migration enumerates runs with `aws dynamodb scan`, and Query cannot stand in
-     * for it: Query needs a partition key, and discovering which `RESULT#<project>` partitions
-     * exist is the very thing the scan does. Granting Scan widens convenience, not reach — the
-     * operator already holds Query on the table *and* its indexes, so every row a scan returns
-     * was already reachable.
+     * Answering "what is actually in this table" needs Scan: Query requires a partition key, so
+     * discovering which `RESULT#<project>` partitions exist cannot be done with it. Granting Scan
+     * widens convenience, not reach — the operator already holds Query on the table *and* its
+     * indexes, so every row a scan returns was already reachable.
+     *
+     * <p>Added for the history migration, which has since been dropped. Kept because the
+     * inventory it enabled is the operator's own question, not the migration's: nothing else can
+     * enumerate the partitions.
      */
     @Test
     void operatorCanEnumerateTheResultsTable() {
         Set<String> actions = InfraFixtures.actions(InfraFixtures.operatorPolicy());
 
         assertThat(actions)
-            .as("scripts/migrate-run-layout.sh calls dynamodb:Scan; without it the migration "
-                + "cannot enumerate runs and 1.6's table inventory has no baseline")
+            .as("without Scan the operator cannot discover which RESULT#<project> partitions "
+                + "exist, so the table cannot be inventoried at all")
             .contains("dynamodb:Scan");
     }
 
