@@ -35,11 +35,15 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** the request succeeds (the policy's resource ARN matches the bucket's actual name)
 
 ### Requirement: Working bucket survives stack deletion by default
-`S3MainBucket` SHALL declare `DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`, and SHALL declare lifecycle rules expiring noncurrent versions and aborting incomplete multipart uploads.
+`S3MainBucket` SHALL declare `DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`, and SHALL declare lifecycle rules expiring noncurrent versions, reaping orphaned delete markers, and aborting incomplete multipart uploads. It SHALL NOT declare any rule that expires current objects under the run prefix, since a run's uploaded input is the only record of what that run measured.
 
 #### Scenario: Default teardown retains the bucket by design
 - **WHEN** `baas admin teardown --yes` deletes the core stack without `--delete-bucket`
 - **THEN** the stack reaches `DELETE_COMPLETE` and the bucket still exists
+
+#### Scenario: No lifecycle rule expires run artifacts
+- **WHEN** the rendered core template's lifecycle rules are inspected
+- **THEN** none of them expires current objects under the run prefix
 
 ### Requirement: baas admin setup is self-sufficient
 `baas admin setup` SHALL accept `--region` and `--aws-profile` directly as command-line options, derive the resource prefix from the caller's AWS identity, apply defaults for any omitted option, deploy or update the core stack, and write the result to `~/.baas/config.yaml`. It SHALL NOT require `~/.baas/config.yaml` to pre-exist, and it SHALL NOT expose a `--prefix` option.
@@ -85,11 +89,15 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** the core stack is deleted but the S3 bucket persists
 
 ### Requirement: Bucket emptying handles object versions
-`S3UploadService.deleteAllObjects` SHALL delete every object version and delete marker, not only current versions.
+`S3UploadService.deleteAllObjects` SHALL delete every object version and delete marker, not only current versions. This SHALL remain true after versioning is suspended, because versions written before suspension persist until a lifecycle rule reaps them.
 
 #### Scenario: Versioned bucket is fully emptied
-- **WHEN** `deleteAllObjects` runs against a versioning-enabled bucket whose keys have multiple versions
+- **WHEN** `deleteAllObjects` runs against a bucket whose keys have multiple versions
 - **THEN** a subsequent `listObjectVersions` returns no versions and no delete markers
+
+#### Scenario: Suspension does not remove the need to walk versions
+- **WHEN** `deleteAllObjects` runs against a bucket whose versioning is suspended but which still holds versions written earlier
+- **THEN** those earlier versions and any delete markers are deleted
 
 ### Requirement: Deployer policy is created out-of-band, before the core stack exists
 `BaasCliDeployerPolicy` (matching `infra/deployer-policy.json`) SHALL cover: CloudFormation stack lifecycle (create, update, delete, describe, change-set operations), VPC/EC2 networking create/delete/describe — including `ec2:DescribeInstances`, needed by `baas admin teardown`'s active-run safety gate — IAM role/instance-profile create (covers both `RunnerRole` and `OperatorRole`, since both are the same resource type), S3 bucket create, and the DynamoDB table lifecycle actions. `baas admin setup`/`baas admin teardown` SHALL require `BaasCliDeployerPolicy`. This policy SHALL be created manually, before the first `baas admin setup` run — the core stack SHALL NOT create it, since CloudFormation cannot grant permission to create CloudFormation stacks.
@@ -167,7 +175,7 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
 - **THEN** `config.yaml` is written with the stack's outputs and `baas run` works without hand-copying any file
 
 ### Requirement: Failed runs leave diagnosable output
-The user-data script SHALL upload `/var/log/cloud-init-output.log` to `s3://<bucket>/<resultPath>/cloud-init-output.log` before terminating the instance, on both the success and failure paths.
+The user-data script SHALL upload `/var/log/cloud-init-output.log` into the run's S3 prefix, alongside the run's other artifacts, before terminating the instance, on both the success and failure paths.
 
 #### Scenario: Log survives self-termination
 - **WHEN** a benchmark run exits non-zero and the instance self-terminates
@@ -365,3 +373,15 @@ a parameter-store lookup.
 #### Scenario: Output is present
 - **WHEN** the core stack is deployed
 - **THEN** its outputs include the results table name
+
+### Requirement: The working bucket accumulates no new object versions
+`S3MainBucket` SHALL declare `VersioningConfiguration.Status: Suspended`. Overwrite recovery SHALL NOT
+be relied upon as a safeguard; run identifiers SHALL be unique enough that an overwrite does not occur.
+
+#### Scenario: Suspended versioning is declared
+- **WHEN** the rendered core template is inspected
+- **THEN** `S3MainBucket`'s versioning status is `Suspended`
+
+#### Scenario: A new write creates no noncurrent version
+- **WHEN** an object is overwritten after suspension
+- **THEN** no additional noncurrent version is retained for it
