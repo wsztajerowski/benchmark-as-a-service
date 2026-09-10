@@ -71,7 +71,8 @@ public class RunCommand implements Callable<Integer> {
         description = "Parameters forwarded to benchmark-runner.jar. Must follow a -- separator.")
     List<String> benchmarkParams = new ArrayList<>();
 
-    @Option(names = "--benchmark-jar", description = "Path to the benchmark JAR (overrides config jarPath).")
+    @Option(names = "--benchmark-jar", required = true,
+        description = "Path to the pre-built benchmark JAR. Required — baas run builds nothing.")
     Path benchmarkJar;
 
     @Option(names = "--runner-jar", description = "Local runner JAR to upload for this run instead of "
@@ -178,10 +179,19 @@ public class RunCommand implements Callable<Integer> {
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
-        // 1. Resolve the runner image, before the build and before anything is uploaded or
-        //    launched. A missing image is a hard stop — there is no fallback to AL2023 + yum,
-        //    since two provisioning paths would produce silently incomparable results — so
-        //    discovering it here costs two API calls rather than a full Maven build first.
+        // 1. The JAR is named, never derived. Checked before the image lookup and before any
+        //    upload, like every other precondition this command has.
+        if (!benchmarkJar.toFile().exists()) {
+            logger.error("Benchmark JAR not found: {}\nBuild it first, then pass --benchmark-jar.",
+                benchmarkJar);
+            return 1;
+        }
+        Path jarPath = benchmarkJar;
+
+        // 2. Resolve the runner image, before anything is uploaded or launched. A missing image
+        //    is a hard stop — there is no fallback to AL2023 + yum, since two provisioning paths
+        //    would produce silently incomparable results — so discovering it here costs two API
+        //    calls rather than an upload that would only fail afterward.
         RunnerImage runnerImage;
         try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
             var resolved = resolveRunnerImage(
@@ -206,14 +216,7 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
 
-        // 3. Determine JAR path
-        Path jarPath = benchmarkJar != null ? benchmarkJar : Path.of(config.getBenchmark().getJarPath());
-        if (!jarPath.toFile().exists()) {
-            logger.error("Benchmark JAR not found: {}\nRun without --skip-build or specify --benchmark-jar.", jarPath);
-            return 1;
-        }
-
-        // 4. Name the run. One clock read: the instant travels into the identifier, into the S3
+        // 3. Name the run. One clock read: the instant travels into the identifier, into the S3
         //    prefix and on to the runner as --created-at, so the prefix name and the stored
         //    timestamp are the same value rather than two values that happen to be close.
         Instant runInstant = Instant.now();
@@ -223,7 +226,7 @@ public class RunCommand implements Callable<Integer> {
         logger.info("Run {} — results will land under s3://{}/{}",
             runId, config.getAws().getBucket(), resultPath);
 
-        // 5. Upload JARs into the run's own prefix, so one prefix holds the whole run.
+        // 4. Upload JARs into the run's own prefix, so one prefix holds the whole run.
         logger.info("Uploading benchmark JAR to S3...");
         String benchmarkJarKey = RunLayout.benchmarkJarKey(resolvedProject, runId);
         try (var s3 = factory.s3()) {
@@ -251,7 +254,7 @@ public class RunCommand implements Callable<Integer> {
                 runnerJarS3Key, BaasVersion.current());
         }
 
-        // 6. Build user-data
+        // 5. Build user-data
         Map<String, String> runnerTags =
             buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit(), resolvedBranch);
         String userData = new UserDataScriptBuilder().build(
@@ -264,7 +267,7 @@ public class RunCommand implements Callable<Integer> {
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 7. Launch instance. These are EC2 *instance* tags — console visibility and the
+        // 6. Launch instance. These are EC2 *instance* tags — console visibility and the
         //    `baas-role` scoping that RunnerRole's TerminateInstances condition depends on. They
         //    are NOT what `baas results` reads: ResultsQueryService reads
         //    benchmarkMetadata.tags, which is populated only by the runner's own --tag options,
@@ -291,7 +294,7 @@ public class RunCommand implements Callable<Integer> {
         logger.info("Instance launched: {}", instanceId);
         logger.info("Run ID: {}", runId);
 
-        // 8. Shutdown hook
+        // 7. Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             logger.info("Terminating instance {} ...", instanceId);
             try (var ec2 = factory.ec2()) {
@@ -299,7 +302,7 @@ public class RunCommand implements Callable<Integer> {
             }
         }));
 
-        // 9. Poll
+        // 8. Poll
         return poll(factory, config, instanceId, runId, resultPath, resolvedWallClock);
     }
 

@@ -247,4 +247,38 @@ class RunCommandTest {
             .extracting(java.lang.reflect.Field::getName)
             .doesNotContain("skipBuild");
     }
+
+    /**
+     * With no build and no config default, an unnamed JAR has nowhere to come from. picocli
+     * rejects it at parse time, which is before the AMI lookup and before any upload.
+     */
+    @Test
+    void refusesToRunWithoutAnExplicitBenchmarkJar() {
+        var parser = new picocli.CommandLine(new RunCommand());
+
+        assertThatThrownBy(() -> parser.parseArgs("jmh"))
+            .isInstanceOf(picocli.CommandLine.MissingParameterException.class)
+            .hasMessageContaining("--benchmark-jar");
+    }
+
+    @Test
+    void acceptsAnExplicitBenchmarkJar() {
+        var command = new RunCommand();
+
+        new picocli.CommandLine(command).parseArgs("--benchmark-jar", "target/b.jar", "jmh");
+
+        assertThat(command.benchmarkJar).isEqualTo(Path.of("target/b.jar"));
+    }
+
+    /**
+     * The default pointed at jmh-benchmarks/target/jmh-benchmarks.jar — a path from an older
+     * layout, filed as part of A6. Harmless while the build usually produced something; the only
+     * fallback once the build is gone.
+     */
+    @Test
+    void theBenchmarkConfigNoLongerCarriesAJarPath() {
+        assertThat(BaasConfig.BenchmarkConfig.class.getDeclaredMethods())
+            .extracting(java.lang.reflect.Method::getName)
+            .doesNotContain("getJarPath", "setJarPath");
+    }
 }
