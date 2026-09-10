@@ -23,7 +23,6 @@ import pl.wsztajerowski.baas.model.RunLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,7 +36,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "run",
     mixinStandardHelpOptions = true,
-    description = "Build a benchmark JAR, launch an EC2 runner, and poll for results.",
+    description = "Launch an EC2 runner for a pre-built benchmark JAR, and poll for results.",
     // Lines are kept under 80 columns: picocli wraps the footer at the usage width and
     // re-wrapping mid-sentence makes the -- rule harder to read than no footer at all.
     footer = {
@@ -78,9 +77,6 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--runner-jar", description = "Local runner JAR to upload for this run instead of "
         + "pinning the release matching this CLI's version. Required from an unreleased build.")
     Path runnerJar;
-
-    @Option(names = "--skip-build", description = "Skip mvn build step.")
-    boolean skipBuild;
 
     @Option(names = "--instance-type", description = "EC2 instance type (overrides config default).")
     String instanceType;
@@ -209,11 +205,6 @@ public class RunCommand implements Callable<Integer> {
         }
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
-
-        // 2. Build
-        if (!skipBuild) {
-            runMavenBuild();
-        }
 
         // 3. Determine JAR path
         Path jarPath = benchmarkJar != null ? benchmarkJar : Path.of(config.getBenchmark().getJarPath());
@@ -403,15 +394,6 @@ public class RunCommand implements Callable<Integer> {
         } catch (Exception e) {
             logger.warn("Could not fetch results from the results table: {}", e.getMessage());
         }
-    }
-
-    private void runMavenBuild() throws IOException, InterruptedException {
-        logger.info("Building benchmark JAR (mvn clean package -q)...");
-        var pb = new ProcessBuilder("mvn", "clean", "package", "-q", "-DskipTests")
-            .inheritIO()
-            .directory(Path.of(".").toAbsolutePath().normalize().toFile());
-        int exit = pb.start().waitFor();
-        if (exit != 0) throw new RuntimeException("Maven build failed with exit code " + exit);
     }
 
     private String currentGitBranch() {

@@ -232,4 +232,19 @@ class RunCommandTest {
             .as("a reactor build always carries the placeholder version")
             .isFalse();
     }
+
+    /**
+     * An installed `baas` is invoked from anywhere, so building whatever is in the working
+     * directory stopped being coherent. The absence is pinned rather than merely untested: a
+     * restored build would silently compile an unrelated project.
+     */
+    @Test
+    void noLongerCarriesABuildStep() {
+        assertThat(RunCommand.class.getDeclaredMethods())
+            .extracting(java.lang.reflect.Method::getName)
+            .doesNotContain("runMavenBuild");
+        assertThat(RunCommand.class.getDeclaredFields())
+            .extracting(java.lang.reflect.Field::getName)
+            .doesNotContain("skipBuild");
+    }
 }
