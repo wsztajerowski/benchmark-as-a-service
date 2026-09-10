@@ -38,5 +38,40 @@ assert_contains "$out" "0.0.0-semantically-released"
 run_case "--version with no value exits non-zero"
 sh "$INSTALLER" --version >/dev/null 2>&1; assert_fails $?
 
+# --- fixture release ----------------------------------------------------------
+# A local file:// "release" is enough to exercise fetch + verify + install without a network or a
+# published release. BAAS_REPO is a variable precisely so a fork — or a test — can retarget it.
+
+FIXTURE=$(mktemp -d)
+trap 'rm -rf "$FIXTURE"' EXIT
+mkdir -p "$FIXTURE/releases/download/v9.9.9-test"
+printf 'not-really-a-jar' > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar"
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
+        > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+else
+    shasum -a 256 "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
+        > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+fi
+
+SANDBOX=$(mktemp -d)
+export BAAS_SHARE="$SANDBOX/share/baas" BAAS_BIN="$SANDBOX/bin"
+export BAAS_BASE_URL="file://$FIXTURE"
+
+run_case "installs a verified artifact"
+out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+if [ "$rc" -ne 0 ]; then fail "install failed: $out"
+elif [ ! -f "$BAAS_SHARE/baas-cli.jar" ]; then fail "jar not installed"
+elif [ ! -x "$BAAS_BIN/baas" ]; then fail "shim not executable"
+else pass; fi
+
+run_case "rejects a corrupted artifact and writes nothing"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+printf 'deadbeef' > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1; rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected checksum failure"
+elif [ -f "$BAAS_SHARE/baas-cli.jar" ]; then fail "jar written despite mismatch"
+else pass; fi
+
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]
