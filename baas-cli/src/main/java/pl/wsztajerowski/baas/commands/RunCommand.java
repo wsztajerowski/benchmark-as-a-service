@@ -175,8 +175,8 @@ public class RunCommand implements Callable<Integer> {
         int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
         int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
             : (timeoutSeconds != null ? timeoutSeconds + 300 : config.getEc2().getWallClockHardKillSeconds());
-        String resolvedBranch = branch != null ? branch : currentGitBranch();
-        String resolvedCommit = commit != null ? commit : currentGitCommit();
+        String resolvedBranch = resolveBranch();
+        String resolvedCommit = resolveCommit();
         logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, resolvedProject, benchmarkParams);
 
@@ -405,16 +405,25 @@ public class RunCommand implements Callable<Integer> {
     }
 
     private String currentGitBranch() {
-        try {
-            var pb = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-                .redirectErrorStream(true);
-            var proc = pb.start();
-            String out = new String(proc.getInputStream().readAllBytes()).trim();
-            proc.waitFor();
-            return out.isEmpty() ? null : out;
-        } catch (Exception e) {
-            return null;
-        }
+        return currentGitBranch(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /**
+     * Package-private overload for the same testability reason as {@link #resolveProject(Path)}.
+     *
+     * <p>Routed through {@link #gitOutput(Path, String...)} — which is {@link GitProject#gitOutput}
+     * underneath and checks the subprocess exit code — rather than a hand-rolled
+     * {@code ProcessBuilder} with {@code redirectErrorStream(true)}. The previous implementation
+     * merged stderr into the captured output and never inspected the exit code, so outside a git
+     * repository it returned {@code "fatal: not a git repository (or any of the parent
+     * directories): .git"} as if it were a branch name — worse than the {@code "unknown"} this
+     * change replaced, since a git error message would have landed in the only query surface the
+     * tool has. {@link #currentGitCommit(Path)} already got this for free; the two are now
+     * symmetric.
+     */
+    String currentGitBranch(Path workingDir) {
+        String branch = gitOutput(workingDir, "git", "rev-parse", "--abbrev-ref", "HEAD");
+        return branch != null && !branch.isBlank() ? branch : null;
     }
 
     /** Shared with {@code baas results}, which must resolve the same partition. */
@@ -453,8 +462,39 @@ public class RunCommand implements Callable<Integer> {
     }
 
     private String currentGitCommit() {
-        String commit = gitOutput("git", "rev-parse", "HEAD");
+        return currentGitCommit(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /** Package-private overload for the same testability reason as {@link #resolveProject(Path)}. */
+    String currentGitCommit(Path workingDir) {
+        String commit = gitOutput(workingDir, "git", "rev-parse", "HEAD");
         return commit != null && !commit.isBlank() ? commit : null;
+    }
+
+    private String resolveBranch() {
+        return resolveBranch(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /**
+     * Package-private overload for the same testability reason as {@link #resolveProject(Path)}.
+     *
+     * <p>An explicit {@code --branch ""} is blank-checked the same way {@link #resolveProject}
+     * blank-checks {@code --project}: a blank override is treated as not supplied and falls through
+     * to derivation, rather than being stored as an empty-string tag. An empty string is a
+     * placeholder standing in for an unknown value, same as the {@code "unknown"} this change
+     * already removed.
+     */
+    String resolveBranch(Path workingDir) {
+        return (branch != null && !branch.isBlank()) ? branch : currentGitBranch(workingDir);
+    }
+
+    private String resolveCommit() {
+        return resolveCommit(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /** Package-private overload for the same testability reason as {@link #resolveBranch(Path)}. */
+    String resolveCommit(Path workingDir) {
+        return (commit != null && !commit.isBlank()) ? commit : currentGitCommit(workingDir);
     }
 
     /**

@@ -255,6 +255,46 @@ class RunCommandTest {
     }
 
     /**
+     * The previous implementation merged git's stderr into the captured output and never checked
+     * the exit code, so outside a git repository it returned the literal
+     * {@code "fatal: not a git repository (or any of the parent directories): .git"} as if it were
+     * a branch name, and {@code buildRunnerTags} then stored that text as the {@code branch} tag —
+     * worse than the {@code "unknown"} placeholder this change removed. {@code currentGitBranch}
+     * must now report absence, exactly like {@code currentGitCommit} already does via the same
+     * exit-code-checked {@link #gitOutput(Path, String...)} seam.
+     */
+    @Test
+    void aGitFailureYieldsNoBranchRatherThanTheErrorText(@TempDir Path notARepo) {
+        var command = new RunCommand();
+
+        assertThat(command.currentGitBranch(notARepo)).isNull();
+    }
+
+    /**
+     * An explicit {@code --commit ""} or {@code --branch ""} is a value the caller supplied, so the
+     * naive {@code field != null} check treats it as present and stores an empty-string tag — a
+     * placeholder standing in for an unknown value, the same defect class as {@code "unknown"}.
+     * {@code resolveProject} already blank-checks {@code --project}; {@code resolveBranch} and
+     * {@code resolveCommit} must do the same and fall through to derivation, which here (outside a
+     * git repository) yields absence rather than the empty string that was explicitly passed.
+     */
+    @Test
+    void aBlankExplicitBranchIsTreatedAsAbsentRatherThanStoredEmpty(@TempDir Path notARepo) {
+        var command = new RunCommand();
+        command.branch = "";
+
+        assertThat(command.resolveBranch(notARepo)).isNull();
+    }
+
+    @Test
+    void aBlankExplicitCommitIsTreatedAsAbsentRatherThanStoredEmpty(@TempDir Path notARepo) {
+        var command = new RunCommand();
+        command.commit = "";
+
+        assertThat(command.resolveCommit(notARepo)).isNull();
+    }
+
+    /**
      * A reactor build cannot name a release, so it cannot pin the runner JAR a run executes. The
      * refusal is the same no-fallback stance the runner AMI takes, and it lands before the Maven
      * build, before any upload and before the first AWS client is constructed — reachable in a
