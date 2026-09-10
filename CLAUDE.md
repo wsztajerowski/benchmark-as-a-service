@@ -23,6 +23,13 @@ The same applies to names you are asked to create: a dictated branch, change or 
 without spelling or casing, so slugify it to match what is already in the tree and state what you
 chose.
 
+**Open questions get asked one at a time, the way brainstorming does.** When you have several
+decisions to put to the user — an artifact's Open Questions, a set of unresolved options, a list of
+things to confirm — do not present them as a batch to be answered in one reply. Ask the first,
+wait for the answer, then ask the next. Dictating a reply that addresses four numbered questions
+at once is exactly where answers get merged, misattributed or silently dropped. Analysis and
+recommendations for all of them may be written out together; the *questions* are serialised.
+
 ## What this is
 
 Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to a DynamoDB table,
