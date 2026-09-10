@@ -7,6 +7,22 @@ look arbitrary but aren't, facts about what *isn't* there, and decisions whose r
 nowhere else. Standard Maven/AWS/picocli behaviour, directory-name-restates-purpose descriptions,
 and anything `--help` or a template file will tell you are omitted on purpose. Don't add them back.
 
+## How to read the prompts here
+
+**Most prompts in this repository are dictated, not typed.** So the transcript is one lossy step
+away from what was meant, and the errors cluster in exactly the words that matter most here:
+identifiers, flags, file names, AWS service names, and anything CamelCase.
+
+Treat a word that doesn't fit — a wrong homophone, a mangled class or option name, a sentence that
+parses strangely, a stray "the" splitting a term — as a speech-to-text artefact first and a
+deliberate instruction second. Reconstruct the term the code actually uses, and say in one line
+which reading you took ("reading X as Y") rather than either asking about it or silently guessing.
+Ask only when two readings would lead to materially different work.
+
+The same applies to names you are asked to create: a dictated branch, change or file name arrives
+without spelling or casing, so slugify it to match what is already in the tree and state what you
+chose.
+
 ## What this is
 
 Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to a DynamoDB table,
