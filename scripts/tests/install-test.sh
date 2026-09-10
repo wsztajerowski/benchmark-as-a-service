@@ -28,8 +28,11 @@ out=$(sh "$INSTALLER" 2>&1); rc=$?
 if [ "$rc" -eq 0 ]; then fail "expected refusal from an unreleased installer"
 else assert_contains "$out" "--version"; fi
 
-run_case "reports the baked default when --version has no value"
-out=$(sh "$INSTALLER" --version 2>&1); rc=$?
+run_case "--version with no value: names the missing option"
+out=$(sh "$INSTALLER" --version 2>&1)
+assert_contains "$out" "requires a version"
+
+run_case "--version with no value: reports the baked default"
 assert_contains "$out" "0.0.0-semantically-released"
 
 run_case "--version with no value exits non-zero"
