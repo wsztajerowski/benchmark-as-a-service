@@ -195,6 +195,50 @@ class RunCommandTest {
     }
 
     /**
+     * `commit=unknown` is the same junk as the RESULT#unknown partition the runner now refuses:
+     * a non-answer wearing a value's clothing, in the only query surface the tool has.
+     */
+    @Test
+    void omitsAnUnresolvableCommitRatherThanRecordingUnknown() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", null, "main"))
+            .doesNotContainKey("commit")
+            .containsEntry("branch", "main");
+    }
+
+    @Test
+    void omitsAnUnresolvableBranchRatherThanRecordingUnknown() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", null))
+            .doesNotContainKey("branch")
+            .containsEntry("commit", "abc123");
+    }
+
+    @Test
+    void aRunOutsideARepositoryStillCarriesItsProjectAndType() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "explicit-project", null, null))
+            .containsEntry("project", "explicit-project")
+            .containsEntry("type", "jmh")
+            .doesNotContainKey("commit")
+            .doesNotContainKey("branch");
+    }
+
+    /** --branch and --project had dedicated options; commit was overridable only via --tag. */
+    @Test
+    void acceptsADedicatedCommitOption() {
+        var command = new RunCommand();
+
+        new picocli.CommandLine(command)
+            .parseArgs("--benchmark-jar", "b.jar", "--commit", "deadbeef", "jmh");
+
+        assertThat(command.commit).isEqualTo("deadbeef");
+    }
+
+    /**
      * call() itself can't run in a unit test — it needs a real BaasConfig, AWS credentials, and
      * a published runner image — so this pins the one piece that IS reachable without any of
      * that: resolveProject() genuinely throws (not a mock standing in for one) when run outside

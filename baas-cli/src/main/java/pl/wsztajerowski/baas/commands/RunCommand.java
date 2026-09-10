@@ -97,6 +97,10 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--branch", description = "Branch recorded as the run's branch tag (defaults to the current git branch).")
     String branch;
 
+    @Option(names = "--commit",
+        description = "Commit recorded as the run's commit tag (defaults to the current git commit).")
+    String commit;
+
     @Option(names = "--project", description = "Project name for the results partition (defaults to the git repository name).")
     String project;
 
@@ -172,6 +176,7 @@ public class RunCommand implements Callable<Integer> {
         int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
             : (timeoutSeconds != null ? timeoutSeconds + 300 : config.getEc2().getWallClockHardKillSeconds());
         String resolvedBranch = branch != null ? branch : currentGitBranch();
+        String resolvedCommit = commit != null ? commit : currentGitCommit();
         logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, resolvedProject, benchmarkParams);
 
@@ -256,7 +261,7 @@ public class RunCommand implements Callable<Integer> {
 
         // 5. Build user-data
         Map<String, String> runnerTags =
-            buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit(), resolvedBranch);
+            buildRunnerTags(benchmarkType, resolvedProject, resolvedCommit, resolvedBranch);
         String userData = new UserDataScriptBuilder().build(
             config.getAws().getRegion(), config.getAws().getBucket(),
             benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
@@ -406,9 +411,9 @@ public class RunCommand implements Callable<Integer> {
             var proc = pb.start();
             String out = new String(proc.getInputStream().readAllBytes()).trim();
             proc.waitFor();
-            return out.isEmpty() ? "unknown" : out;
+            return out.isEmpty() ? null : out;
         } catch (Exception e) {
-            return "unknown";
+            return null;
         }
     }
 
@@ -449,7 +454,7 @@ public class RunCommand implements Callable<Integer> {
 
     private String currentGitCommit() {
         String commit = gitOutput("git", "rev-parse", "HEAD");
-        return commit != null ? commit : "unknown";
+        return commit != null && !commit.isBlank() ? commit : null;
     }
 
     /**
@@ -459,8 +464,8 @@ public class RunCommand implements Callable<Integer> {
      * actual subcommand disagree. A result's tags must never be able to disagree with that same
      * run's {@code environment.json} (see {@code UserDataScriptBuilder}'s {@code --tag} block),
      * so {@link #buildRunnerTags} rejects a caller {@code --tag} for any of these outright rather
-     * than silently dropping or overriding it. {@code project} and {@code commit} are
-     * deliberately NOT in this set — design.md specifies the caller wins for those.
+     * than silently dropping or overriding it. {@code project}, {@code commit} and {@code branch}
+     * are deliberately NOT in this set — design.md specifies the caller wins for those.
      *
      * <p>Defined once in baas-model so the CLI and the runner cannot drift apart.
      */
@@ -506,12 +511,18 @@ public class RunCommand implements Callable<Integer> {
                     + " observed on the instance (or derived from the benchmark type), and a "
                     + "caller override would let a result's tags disagree with its own "
                     + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
-                    + ". --project and --commit remain overridable.");
+                    + ". --project, --commit and --branch remain overridable.");
         }
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put(TagKeys.PROJECT, project);
-        tags.put(TagKeys.COMMIT, commit);
-        tags.put(TagKeys.BRANCH, branch);
+        // An unresolvable commit or branch is absent, not "unknown". A placeholder value is
+        // indistinguishable from a real one at query time, which is how RESULT#unknown grew.
+        if (commit != null) {
+            tags.put(TagKeys.COMMIT, commit);
+        }
+        if (branch != null) {
+            tags.put(TagKeys.BRANCH, branch);
+        }
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.putAll(extraTags);
         return tags;
