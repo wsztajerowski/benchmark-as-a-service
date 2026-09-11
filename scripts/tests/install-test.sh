@@ -3,6 +3,9 @@
 # does not justify adding one. Run from the repository root: sh scripts/tests/install-test.sh
 set -u
 INSTALLER="${INSTALLER:-scripts/install.sh}"
+# Mirrors install.sh's own JAR_NAME constant. Not sourced from it — the harness invokes install.sh
+# as a subprocess throughout, never sources it, so this is a second, hand-kept copy.
+JAR_NAME=baas-cli.jar
 FAILURES=0
 CASES=0
 
@@ -144,6 +147,38 @@ assert_contains "$out" "current"
 run_case "update refuses to downgrade"
 out=$(BAAS_INSTALLED_VERSION=9.9.9-test BAAS_LATEST_TAG=0.0.1 sh "$INSTALLER" --update 2>&1)
 assert_contains "$out" "newer than"
+
+# --- uninstall ------------------------------------------------------------
+
+run_case "uninstall removes the command"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+CONFIG="$SANDBOX/dot-baas/config.yaml"
+mkdir -p "$(dirname "$CONFIG")"; printf 'prefix: sentinel\n' > "$CONFIG"
+sh "$INSTALLER" --uninstall >/dev/null 2>&1
+if [ -e "$BAAS_BIN/baas" ]; then fail "shim survived"
+elif [ -e "$BAAS_SHARE/$JAR_NAME" ]; then fail "jar survived"
+else pass; fi
+
+run_case "uninstall leaves the configuration byte-for-byte"
+if [ "$(cat "$CONFIG")" = "prefix: sentinel" ]; then pass
+else fail "configuration was modified or removed"; fi
+
+# CONFIG lives at $SANDBOX/dot-baas, a sibling of $BAAS_SHARE/$BAAS_BIN that install.sh has no
+# knowledge of — it exists only to catch an over-broad delete of the sandbox itself. On its own
+# that is weak: an uninstall that deletes nothing at all would also leave it untouched. This case
+# asserts the positive shape directly, and in two parts: first that $BAAS_SHARE itself (the leaf
+# "baas" this installer owns, one level under a "share" parent that mirrors the real default
+# ~/.local/share/baas) is gone — ls on $SANDBOX alone cannot see that, since it is a level deeper —
+# and then that $SANDBOX holds exactly what should survive: the untouched dot-baas directory, the
+# "share" parent (like "bin", ~/.local/bin's stand-in here — a directory other programs may also
+# use, deliberately left alone), and bin itself.
+run_case "uninstall removes the now-empty share directory, and nothing more"
+if [ -d "$BAAS_SHARE" ]; then fail "share directory not removed: $BAAS_SHARE"
+else
+    remaining=$(ls "$SANDBOX" | sort | tr '\n' ' ')
+    assert_eq "$remaining" "bin dot-baas share "
+fi
 
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]

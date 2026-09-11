@@ -272,5 +272,21 @@ Install it first:
         printf 'Updating baas %s -> %s\n' "$current" "$newest"
         exec sh -c "curl -fsSL '$BAAS_BASE_URL/releases/download/v$newest/install.sh' | sh"
         ;;
+    uninstall)
+        removed=0
+        for target in "$BAAS_BIN/baas" "$BAAS_SHARE/$JAR_NAME" "$BAAS_SHARE/install.sh"; do
+            if [ -e "$target" ]; then rm -f "$target"; removed=$((removed + 1)); fi
+        done
+        # rmdir, never rm -rf: it removes the directory only when this installer's files were the
+        # last things in it, so anything a user put there survives. BAAS_BIN (e.g. ~/.local/bin) is
+        # not touched the same way — it is a shared directory other programs install into, and
+        # nothing here ever creates it purely for baas's own use the way $BAAS_SHARE is.
+        [ ! -d "$BAAS_SHARE" ] || rmdir "$BAAS_SHARE" 2>/dev/null || true
+        if [ "$removed" -eq 0 ]; then
+            printf 'No baas installation found under %s.\n' "$BAAS_SHARE"
+        else
+            printf 'Removed baas. Your configuration in ~/.baas was not touched.\n'
+        fi
+        ;;
 esac
 fi
