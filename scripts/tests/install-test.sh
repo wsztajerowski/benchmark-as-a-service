@@ -180,5 +180,19 @@ else
     assert_eq "$remaining" "bin dot-baas share "
 fi
 
+# This is the case that pins rmdir vs. rm -rf on $BAAS_SHARE directly — the single highest-risk
+# line in the uninstall arm, and none of the cases above actually distinguish the two: they never
+# leave anything else behind in $BAAS_SHARE for a wrongly-recursive delete to catch. rmdir's whole
+# reason for being there is that it fails, harmlessly, on a non-empty directory; rm -rf would not.
+run_case "uninstall never removes a non-empty share directory, or what's in it"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+EXTRA="$BAAS_SHARE/user-placed-file.txt"
+printf 'not baas to delete\n' > "$EXTRA"
+sh "$INSTALLER" --uninstall >/dev/null 2>&1
+if [ ! -d "$BAAS_SHARE" ]; then fail "share directory removed despite a file left inside it"
+elif [ ! -f "$EXTRA" ]; then fail "a file the user placed in \$BAAS_SHARE was deleted"
+else pass; fi
+
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]
