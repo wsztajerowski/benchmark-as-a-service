@@ -149,10 +149,10 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
-        // Before the Maven build and before any upload, for the same reason the runner image and
-        // the results table are: a run that cannot name the runner JAR it will execute is going to
-        // fail anyway, and there is deliberately no fallback — two provisioning paths produce
-        // silently incomparable results.
+        // Checked first, before resolving the project, the results table, the runner image or
+        // anything else: a run that cannot name the runner JAR it will execute is going to fail
+        // anyway, and there is deliberately no fallback — two provisioning paths produce silently
+        // incomparable results.
         if (runnerJar == null && !BaasVersion.isReleased()) {
             logger.error("""
                 This is an unreleased build ({}), so there is no runner release to pin to.
@@ -161,15 +161,15 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
-        // Resolved before any AWS call — a Maven build and an S3 upload both come later in this
-        // method, and neither should run for a request that is going to fail anyway because it
-        // can't be attributed to a project. resolveProject() throws IllegalStateException with a
+        // Resolved before any AWS call — the runner-image lookup and the S3 upload both come later
+        // in this method, and neither should run for a request that is going to fail anyway because
+        // it can't be attributed to a project. resolveProject() throws IllegalStateException with a
         // message naming --project when this isn't a git repository and none was passed.
         String resolvedProject = resolveProject();
 
         BaasConfig config = configService.load();
-        // Same reasoning as resolveProject() above, and deliberately before the build and the
-        // upload: a run that cannot say where its measurements go is going to fail anyway.
+        // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
+        // and the upload: a run that cannot say where its measurements go is going to fail anyway.
         String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
@@ -514,11 +514,11 @@ public class RunCommand implements Callable<Integer> {
     /**
      * The results table this run will write to, or empty when {@code --no-database} was passed.
      *
-     * <p>Resolved before the Maven build and before anything is uploaded or launched, for the same
-     * reason the runner image is: discovering it later costs a paid instance. There is no silent
-     * fallback. Before the cutover, an unset store selected a no-op adapter and the run reported
-     * success while the measurements were discarded; that behaviour still exists, but it now has
-     * to be asked for by name.
+     * <p>Resolved before the runner-image lookup and before anything is uploaded or launched, like
+     * every other precondition this command checks early: discovering it later costs a paid
+     * instance. There is no silent fallback. Before the cutover, an unset store selected a no-op
+     * adapter and the run reported success while the measurements were discarded; that behaviour
+     * still exists, but it now has to be asked for by name.
      */
     static Optional<String> resolveResultsTable(BaasConfig config, boolean noDatabase) {
         if (noDatabase) {

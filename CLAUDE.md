@@ -105,8 +105,9 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 **The runner image (`infra/runner-image.yaml`, `baas admin build-image`)**
 
-- **`baas run` has no fallback.** No AMI at `/<prefix>/runner/ami-id` → it fails before the Maven
-  build and before any upload. Two provisioning paths would produce silently incomparable results.
+- **`baas run` has no fallback.** No AMI at `/<prefix>/runner/ami-id` → the runner-image lookup
+  fails there, before any upload. Two provisioning paths would produce silently incomparable
+  results.
 - **Exactly one image, rebuilt in place.** No slots, no AMI history, no second pointer. The archive
   is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to reconstruct.
 - **The pointer is repointed *before* the replaced AMI is deregistered.** Retiring first aims the
@@ -267,9 +268,11 @@ The watchdog is the only one that survives a deadlocked JVM.
   table if you want one. The local act E2E additionally needs `/baas/mongo/connection-string` as a
   SecureString, since the GHA path it exercises still writes to Mongo.
 - **`scripts/install.sh` is the one script CI does invoke.** `release.yml`'s `prepareCmd` `sed`s the
-  released version into it and publishes it as a release asset; `install-test.yml` then executes
-  the published installer on `ubuntu-latest` and `macos-latest`. The other utilities under
-  `scripts/` still have no CI coverage.
+  released version into it and publishes it as a release asset, but `install-test.yml` never installs
+  that asset: it builds a fixture release in the job (`BAAS_BASE_URL: file://…/fixture`) and runs
+  the working-tree installer against it, on `ubuntu-latest` and `macos-latest`. No CI job exercises
+  a published installer or the release-time `sed` bake — those run only during a real release. The
+  other utilities under `scripts/` still have no CI coverage.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
   S3-object-create trigger path. Any reference you find is stale.
 - **The zsh orchestration helpers are gone** (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,

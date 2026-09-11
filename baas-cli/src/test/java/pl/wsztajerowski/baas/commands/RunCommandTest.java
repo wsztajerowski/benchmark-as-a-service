@@ -58,7 +58,7 @@ class RunCommandTest {
     /**
      * Before the cutover, absent store configuration selected a no-op adapter: the run booted an
      * instance, measured, reported success and discarded every number. Failing here — before the
-     * Maven build, the upload and the launch — is what replaced that, so the cost of a
+     * runner-image lookup, the upload and the launch — is what replaced that, so the cost of a
      * misconfigured CLI is an error message rather than a paid instance and no data.
      */
     @Test
@@ -296,9 +296,9 @@ class RunCommandTest {
 
     /**
      * A reactor build cannot name a release, so it cannot pin the runner JAR a run executes. The
-     * refusal is the same no-fallback stance the runner AMI takes, and it lands before the Maven
-     * build, before any upload and before the first AWS client is constructed — reachable in a
-     * unit test precisely because nothing AWS-shaped happens first.
+     * refusal is the same no-fallback stance the runner AMI takes, and it lands before the project
+     * or results table is resolved, before any upload and before the first AWS client is
+     * constructed — reachable in a unit test precisely because nothing AWS-shaped happens first.
      */
     @Test
     void refusesToLaunchFromAnUnreleasedBuildWithoutARunnerJar() throws Exception {
