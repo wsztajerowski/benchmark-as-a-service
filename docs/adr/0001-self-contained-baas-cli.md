@@ -109,6 +109,12 @@ code disagree, **the code wins**.
   `DeletionPolicy: Retain`. Because the prefix is a hash of the caller's ARN, a retained bucket
   blocks any later `setup` — so `baas admin teardown --delete-bucket` empties and deletes it
   explicitly (opt-in; the default retains), and setup detects and reports the collision.
+- **Distribution gained an installer.** `scripts/install.sh` (`installable-cli-command`) makes the
+  shaded JAR installable: release-time version resolution, checksum-verified atomic install, a
+  `~/.local/bin/baas` launcher shim, `--update` (hands off to the newer release's own installer,
+  never downgrades) and `--uninstall` (never touches `~/.baas/`). The paragraph below still holds
+  for everything else it named — a Homebrew tap, jpackage bundles, a native image and a Docker
+  image remain unbuilt backlog.
 
 Distribution beyond a shaded JAR — an install script, a Homebrew tap, jpackage bundles, a
 native image, a Docker image — was specified but never built. It remains backlog, not a

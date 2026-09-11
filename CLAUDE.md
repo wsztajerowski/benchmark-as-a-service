@@ -190,6 +190,15 @@ The watchdog is the only one that survives a deadlocked JVM.
   `prefix = lowercase(base32(sha256(arn)))[0:8]` → both are `baas-<prefix>`. Not user-selectable.
   The bucket is `DeletionPolicy: Retain`, so a teardown that keeps it blocks the next setup with a
   CloudFormation error that never mentions S3 — `SetupCommand` pre-checks for that case explicitly.
+- **The installer installs released artifacts only, and the repository copy refuses.**
+  `scripts/install.sh` carries `BAAS_VERSION_DEFAULT`, rewritten at release time by `release.yml`'s
+  `prepareCmd` and never committed back. A checkout copy holds the placeholder and exits naming
+  `--version`, the same no-fallback stance `RunCommand` takes on an unreleased build. `--update`
+  never installs anything itself: it resolves the newest release and re-executes *that release's*
+  installer, so the script installing version X is always version X's own.
+- **`commit` and `branch` are absent when unresolved, never `"unknown"`.** A placeholder value is
+  indistinguishable from a real one at query time, which is how `RESULT#unknown` accumulated. Tags
+  are the entire query surface, so a fake value there is worse than a missing one.
 
 ## What isn't there, and what fails silently
 
@@ -255,8 +264,10 @@ The watchdog is the only one that survives a deadlocked JVM.
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
   table if you want one. The local act E2E additionally needs `/baas/mongo/connection-string` as a
   SecureString, since the GHA path it exercises still writes to Mongo.
-- **Nothing in CI invokes `scripts/`.** `release.yml` builds its semantic-release config inline and
-  shells out only to `mvn`, so CI does not protect those three utilities.
+- **`scripts/install.sh` is the one script CI does invoke.** `release.yml`'s `prepareCmd` `sed`s the
+  released version into it and publishes it as a release asset; `install-test.yml` then executes
+  the published installer on `ubuntu-latest` and `macos-latest`. The other utilities under
+  `scripts/` still have no CI coverage.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
   S3-object-create trigger path. Any reference you find is stale.
 - **The zsh orchestration helpers are gone** (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
@@ -269,8 +280,6 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **`--` is required before benchmark parameters**, and `baas` options must come before it.
   Without it picocli parses JMH flags as `baas` options: `Unknown options: '-f', '-wi', '-i'`.
   `baas run --instance-type c6i.4xlarge jmh -- MyBenchmark -f 1 -wi 1 -i 3`
-- **`baas run` builds in the current working directory** — the user's benchmark project, not this
-  repo.
 - **`mvn -pl benchmark-runner verify` alone fails.** It needs the `fake-jmh-benchmarks` and
   `fake-stress-tests` shaded JARs already in the local repo (`classifier=shaded`). Run the full
   reactor first.
@@ -462,5 +471,5 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
 | ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |
 | MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
-| `baas run` project layout | Assumes a Maven project producing one JAR; `--benchmark-jar` + `--skip-build` covers the rest. |
-| Distribution | Shaded JAR only. Install script, Homebrew tap, jpackage, native image, Docker image were specified but never built — backlog, not decisions. |
+| `baas run` project layout | Assumes a pre-built JAR handed in by `--benchmark-jar`, which is required — `baas run` does not build. Anything that produces a JAR before invoking it is fine; the CLI has no opinion on how. |
+| Distribution | Installable via `scripts/install.sh` as of this change. Homebrew tap, jpackage, native image and Docker image were specified but never built — backlog, not decisions. |
