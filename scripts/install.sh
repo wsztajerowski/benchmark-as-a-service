@@ -33,6 +33,11 @@ USAGE
 MODE=install
 REQUESTED_VERSION="${BAAS_VERSION:-}"
 
+# BAAS_PROBE lets a test source this script to get its function definitions (version_newer, in
+# particular) without running the installer — set by scripts/tests/version-compare-probe.sh and by
+# nothing else. Every top-level executable region is guarded by it; function definitions are not,
+# since defining a function has no side effect.
+if [ -z "${BAAS_PROBE:-}" ]; then
 while [ $# -gt 0 ]; do
     case "$1" in
         --version)
@@ -46,6 +51,7 @@ while [ $# -gt 0 ]; do
         *)           die "Unknown option: $1. Try --help." ;;
     esac
 done
+fi
 
 resolve_version() {
     if [ -n "$REQUESTED_VERSION" ]; then
@@ -59,7 +65,14 @@ Pass --version <v>, or fetch the published installer:
     printf '%s' "$BAAS_VERSION_DEFAULT"
 }
 
-VERSION=$(resolve_version) || exit 1
+# Guarded like the argument loop above: resolve_version() dies on the checked-in placeholder, and
+# without this guard sourcing under BAAS_PROBE would exit before version_newer is ever reachable.
+# Also scoped to `install`: --update resolves its own target version through latest_tag(), and
+# --uninstall needs none, so resolving one unconditionally would make an unreleased checkout's
+# placeholder refusal block --update and --uninstall for no reason.
+if [ -z "${BAAS_PROBE:-}" ] && [ "$MODE" = install ]; then
+    VERSION=$(resolve_version) || exit 1
+fi
 
 BAAS_BASE_URL="${BAAS_BASE_URL:-https://github.com/$BAAS_REPO}"
 
@@ -183,6 +196,48 @@ Nothing was installed."
     esac
 }
 
+# Field-wise and numeric. A string comparison ranks 3.9.0 above 3.10.0, which is the classic
+# version-sort bug; sort -V would avoid it but is GNU-only in practice.
+version_newer() {
+    a="$1"; b="$2"
+    [ "$a" != "$b" ] || return 1
+    i=1
+    while [ "$i" -le 3 ]; do
+        fa=$(printf '%s' "$a" | cut -d. -f"$i")
+        fb=$(printf '%s' "$b" | cut -d. -f"$i")
+        fa=${fa:-0}; fb=${fb:-0}
+        case "$fa$fb" in
+            *[!0-9]*) die "Cannot compare versions $a and $b. Pass --version <v> explicitly." ;;
+        esac
+        [ "$fa" -eq "$fb" ] || { [ "$fa" -gt "$fb" ]; return $?; }
+        i=$((i + 1))
+    done
+    return 1
+}
+
+latest_tag() {
+    # One request. BAAS_LATEST_TAG is a test seam; nothing else sets it.
+    [ -z "${BAAS_LATEST_TAG:-}" ] || { printf '%s' "$BAAS_LATEST_TAG"; return 0; }
+    url=$(curl -fsSLI -o /dev/null -w '%{url_effective}' \
+        "$BAAS_BASE_URL/releases/latest") || die "Could not determine the newest release."
+    tag=${url##*/tag/}
+    [ "$tag" != "$url" ] || die "Could not determine the newest release from: $url"
+    printf '%s' "${tag#v}"
+}
+
+installed_version() {
+    # baas --version reads Implementation-Version out of the jar manifest — the same value that
+    # pins the runner JAR, so it cannot drift from what is actually installed. A VERSION marker
+    # file would avoid this parsing but could disagree with the jar beside it.
+    # BAAS_INSTALLED_VERSION is a test seam; nothing else sets it. The real parsing path is
+    # covered by the CI job, which builds a genuine shaded jar and asserts the exact output.
+    [ -z "${BAAS_INSTALLED_VERSION:-}" ] || { printf '%s' "$BAAS_INSTALLED_VERSION"; return 0; }
+    [ -x "$BAAS_BIN/baas" ] || return 1
+    "$BAAS_BIN/baas" --version 2>/dev/null | awk 'NR==1 {print $2}'
+}
+
+# Guarded like the two regions above: sourcing under BAAS_PROBE must define functions only.
+if [ -z "${BAAS_PROBE:-}" ]; then
 case "$MODE" in
     install)
         check_prerequisites
@@ -192,4 +247,30 @@ case "$MODE" in
         printf 'Installed baas %s to %s\n' "$VERSION" "$BAAS_BIN/baas"
         printf '(this installer is pinned to %s — re-fetch it for a newer release)\n' "$VERSION"
         ;;
+    update)
+        current=$(installed_version) || die \
+"No installed baas found at $BAAS_BIN/baas, so there is nothing to update.
+Install it first:
+  curl -fsSL https://github.com/$BAAS_REPO/releases/latest/download/install.sh | sh"
+        [ -n "$current" ] || die "Could not read the installed version. Nothing was changed."
+        newest=$(latest_tag) || exit 1
+
+        if [ "$current" = "$newest" ]; then
+            printf 'baas %s is current. Nothing to do.\n' "$current"
+            exit 0
+        fi
+        if version_newer "$current" "$newest"; then
+            printf 'Installed baas %s is newer than the newest release (%s). Nothing changed.\n' \
+                "$current" "$newest"
+            printf 'Use --version %s to install it deliberately.\n' "$newest"
+            exit 0
+        fi
+
+        # Hand off rather than install. The script that installs version X must always be version
+        # X's own script: if a later release moves the layout, an older installer would place the
+        # newer jar wrongly, which is exactly what baking the version was meant to prevent.
+        printf 'Updating baas %s -> %s\n' "$current" "$newest"
+        exec sh -c "curl -fsSL '$BAAS_BASE_URL/releases/download/v$newest/install.sh' | sh"
+        ;;
 esac
+fi

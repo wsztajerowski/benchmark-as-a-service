@@ -129,5 +129,21 @@ else
     assert_contains "$out" "Cannot create $BAAS_SHARE"
 fi
 
+# --- version comparison and --update --------------------------------------
+
+run_case "orders versions numerically, not lexically"
+if sh scripts/tests/version-compare-probe.sh 3.10.0 3.9.0 \
+   && ! sh scripts/tests/version-compare-probe.sh 3.9.0 3.10.0 \
+   && ! sh scripts/tests/version-compare-probe.sh 2.1.0 2.1.0; then pass
+else fail "3.10.0 should outrank 3.9.0, and equal versions are not newer"; fi
+
+run_case "update reports current and downloads nothing"
+out=$(BAAS_INSTALLED_VERSION=9.9.9-test BAAS_LATEST_TAG=9.9.9-test sh "$INSTALLER" --update 2>&1)
+assert_contains "$out" "current"
+
+run_case "update refuses to downgrade"
+out=$(BAAS_INSTALLED_VERSION=9.9.9-test BAAS_LATEST_TAG=0.0.1 sh "$INSTALLER" --update 2>&1)
+assert_contains "$out" "newer than"
+
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]
