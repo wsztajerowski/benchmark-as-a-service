@@ -21,6 +21,10 @@ assert_fails() {
     if [ "$1" -eq 0 ]; then fail "expected a non-zero exit, got 0"; else pass; fi
 }
 
+assert_eq() {
+    if [ "$1" = "$2" ]; then pass; else fail "expected '$2', got '$1'"; fi
+}
+
 # --- version resolution -------------------------------------------------------
 
 run_case "refuses the placeholder default"
@@ -46,6 +50,9 @@ FIXTURE=$(mktemp -d)
 trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/releases/download/v9.9.9-test"
 printf 'not-really-a-jar' > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar"
+# store_installer fetches this on every successful install, not only in the case that asserts on
+# it, so the fixture needs it from the start.
+cp "$INSTALLER" "$FIXTURE/releases/download/v9.9.9-test/install.sh"
 if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
         > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
@@ -72,6 +79,40 @@ sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1; rc=$?
 if [ "$rc" -eq 0 ]; then fail "expected checksum failure"
 elif [ -f "$BAAS_SHARE/baas-cli.jar" ]; then fail "jar written despite mismatch"
 else pass; fi
+
+run_case "a failed re-verify leaves a good, pre-existing installation intact"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+sha256_fixture=$(command -v sha256sum >/dev/null 2>&1 \
+    && sha256sum "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
+    || shasum -a 256 "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1)
+printf '%s' "$sha256_fixture" > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+cp "$BAAS_SHARE/baas-cli.jar" "$SANDBOX/good-baas-cli.jar"
+printf 'deadbeef' > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+if cmp -s "$SANDBOX/good-baas-cli.jar" "$BAAS_SHARE/baas-cli.jar"; then pass
+else fail "pre-existing jar was modified or removed by the failed re-verify"; fi
+
+# --- prerequisites, PATH reporting and the stored installer -------------------
+
+run_case "stores an installer alongside the jar"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+cp "$INSTALLER" "$FIXTURE/releases/download/v9.9.9-test/install.sh"
+# restore the good checksum clobbered by the previous case
+sha256_fixture=$(command -v sha256sum >/dev/null 2>&1 \
+    && sha256sum "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
+    || shasum -a 256 "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1)
+printf '%s' "$sha256_fixture" > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+if [ -f "$BAAS_SHARE/install.sh" ]; then pass; else fail "no stored installer"; fi
+
+run_case "creates only its own directories, never a configuration directory"
+created=$(ls "$SANDBOX" | sort | tr '\n' ' ')
+assert_eq "$created" "bin share "
+
+run_case "reports PATH without editing shell configuration"
+out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1)
+assert_contains "$out" "export PATH"
 
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]
