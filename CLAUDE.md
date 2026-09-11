@@ -197,8 +197,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   never installs anything itself: it resolves the newest release and re-executes *that release's*
   installer, so the script installing version X is always version X's own.
 - **`commit` and `branch` are absent when unresolved, never `"unknown"`.** A placeholder value is
-  indistinguishable from a real one at query time, which is how `RESULT#unknown` accumulated. Tags
-  are the entire query surface, so a fake value there is worse than a missing one.
+  indistinguishable from a real one at query time — the same non-answer wearing a value's clothing
+  that produced `RESULT#unknown` (below). Tags are the entire query surface, so a fake value there
+  is worse than a missing one.
 
 ## What isn't there, and what fails silently
 
@@ -209,8 +210,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   recoverable only from that JSON, via `baas download <runId>` (a literal result path also works,
   which is what keeps pre-unified-layout runs retrievable).
 - **A reactor build cannot launch a run.** The CLI pins the runner JAR to its own released version,
-  and `0.0.0-semantically-released` names no release — so `baas run` fails before the Maven build
-  unless `--runner-jar` is passed. Same no-fallback stance as the runner AMI. Every `baas` in
+  and `0.0.0-semantically-released` names no release — so `baas run` fails immediately, before
+  resolving the project or the results table, unless `--runner-jar` is passed. Same no-fallback
+  stance as the runner AMI. Every `baas` in
   existence is currently an alias onto a reactor build, so this is the case, not the exception;
   the reactor checkout is now the developer's explicit special case rather than the implicit
   default.
@@ -220,8 +222,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   of them are CI fixture runs against `fake-jmh-benchmarks` and nobody recorded what the rest
   measured.
 - **Absent store configuration is a hard failure, not a silent no-op.** `baas run` resolves the
-  table before the Maven build and before any upload, and `benchmark-runner` rejects a missing
-  selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
+  table before the runner-image lookup and before any upload, and `benchmark-runner` rejects a
+  missing selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
   behaviour — unset URI selects a no-op store, run reports success, numbers vanish — is gone, and
   reintroducing any fallback brings it back.
 - **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
