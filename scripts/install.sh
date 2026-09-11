@@ -66,9 +66,11 @@ BAAS_BASE_URL="${BAAS_BASE_URL:-https://github.com/$BAAS_REPO}"
 asset_url() { printf '%s/releases/download/v%s/%s' "$BAAS_BASE_URL" "$1" "$2"; }
 
 fetch() {
-    # -L because release assets redirect to a CDN host.
+    # -L because release assets redirect to a CDN host. $3, when given, replaces the generic
+    # "Nothing was installed." trailer — some call sites (store_installer) fire after the CLI
+    # itself is already on disk and working, where that claim would be false.
     curl -fsSL "$1" -o "$2" || die "Could not fetch $1
-Nothing was installed."
+${3:-Nothing was installed.}"
 }
 
 sha256_of() {
@@ -138,10 +140,21 @@ store_installer() {
     # NOT `cp "$0"`: in the dominant path the script arrives on stdin through `curl | sh`, where
     # $0 is `sh` and there is no file to copy. Downloading the pinned installer is correct in every
     # path and guarantees the stored copy is the released one for exactly this version.
+    version="$1"
     stage="$BAAS_SHARE/.install.$$"
-    fetch "$(asset_url "$1" install.sh)" "$stage"
-    chmod +x "$stage"
-    mv -f "$stage" "$BAAS_SHARE/install.sh"
+    # Same cleanup discipline as install_jar and write_shim: an interrupt mid-write must not leave
+    # a stray .install.$$ file behind in $BAAS_SHARE.
+    # shellcheck disable=SC2064
+    trap "rm -f '$stage'" EXIT INT TERM
+    # By the time this runs, install_jar and write_shim have already succeeded — the CLI is on
+    # disk and working. A failure here must say so; "Nothing was installed" would be false.
+    partial_msg="baas $version is installed at $BAAS_BIN/baas and is working, but the updater copy
+could not be stored at $BAAS_SHARE/install.sh, so --update is unavailable until this succeeds.
+Re-run this installer (it is idempotent) to fix it."
+    fetch "$(asset_url "$version" install.sh)" "$stage" "$partial_msg"
+    chmod +x "$stage" || die "$partial_msg"
+    mv -f "$stage" "$BAAS_SHARE/install.sh" || die "$partial_msg"
+    trap - EXIT INT TERM
 }
 
 java_major() {

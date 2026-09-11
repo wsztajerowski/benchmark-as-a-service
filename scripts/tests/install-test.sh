@@ -114,5 +114,20 @@ run_case "reports PATH without editing shell configuration"
 out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1)
 assert_contains "$out" "export PATH"
 
+run_case "an unwritable destination fails, naming the path, with no false success"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+chmod 555 "$SANDBOX"
+out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+chmod 755 "$SANDBOX"
+if [ "$rc" -eq 0 ]; then fail "expected a failure, got success: $out"
+elif printf '%s' "$out" | grep -q "Installed baas"; then fail "false success line printed: $out"
+else
+    # "Cannot create ..." is install_jar's own guard on its mkdir; a nearby but different guard
+    # (the staging mkdir a few lines down) also dies on this same unwritable sandbox with "Cannot
+    # write to ...", so asserting on the path alone would pass even with install_jar's own guard
+    # deleted. Pin the exact wording so the case is sensitive to that specific guard.
+    assert_contains "$out" "Cannot create $BAAS_SHARE"
+fi
+
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]
