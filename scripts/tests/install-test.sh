@@ -132,6 +132,107 @@ else
     assert_contains "$out" "Cannot create $BAAS_SHARE"
 fi
 
+# --- the installed launcher's own guard (M-2) -------------------------------
+# check_prerequisites above is the INSTALLER's own Java guard, run once at install time. The SHIM
+# it writes (install.sh:141-143) carries a second, separate `command -v` guard, run fresh on every
+# `baas` invocation — nothing exercised it before this case; BAAS_JAVA appeared in no test file.
+
+run_case "the installed launcher names Java and BAAS_JAVA when neither resolves"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+out=$(BAAS_JAVA=/nonexistent/java-that-does-not-exist "$BAAS_BIN/baas" --version 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected a non-zero exit when BAAS_JAVA does not resolve, got 0: $out"
+elif printf '%s' "$out" | grep -q "Java" && printf '%s' "$out" | grep -q "BAAS_JAVA"; then pass
+else fail "expected a message naming both Java and BAAS_JAVA, got: $out"
+fi
+
+# --- checksum failure modes (M-3) -------------------------------------------
+# Every case above corrupts the CONTENT of baas-cli.jar.sha256. Neither removing the asset nor
+# hiding the hashing tools was covered.
+
+run_case "a missing checksum asset fails the install, not a skip"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+mv "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256" "$FIXTURE/baas-cli.jar.sha256.stashed"
+out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+mv "$FIXTURE/baas-cli.jar.sha256.stashed" "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
+if [ "$rc" -eq 0 ]; then fail "expected a failure with no checksum asset, got success: $out"
+elif [ -f "$BAAS_SHARE/$JAR_NAME" ]; then fail "jar was installed despite a missing checksum asset"
+else pass; fi
+
+# BAAS_PROBE sources install.sh for its function definitions only (no top-level execution — see
+# the guard comment in install.sh itself), so sha256_of and verify can be called directly under a
+# PATH that resolves neither sha256sum nor shasum, with no need to hide curl or java from the rest
+# of the installer.
+run_case "sha256_of dies naming the requirement when no hashing tool is on PATH"
+out=$(BAAS_PROBE=1 sh -c \
+    "PATH=/nonexistent-empty-dir; . '$INSTALLER'; sha256_of '$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar'" \
+    2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected sha256_of to fail with no hashing tool, got success: $out"
+else assert_contains "$out" "No SHA-256 utility found"; fi
+
+run_case "verify() does not double-print a bogus mismatch when the hashing tool is missing"
+out=$(BAAS_PROBE=1 sh -c \
+    "PATH=/nonexistent-empty-dir; . '$INSTALLER'; verify '$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar' '$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256'" \
+    2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected verify() to fail with no hashing tool, got success: $out"
+elif printf '%s' "$out" | grep -q "Checksum mismatch"; then
+    fail "verify() printed a second, bogus 'Checksum mismatch' after sha256_of's own failure: $out"
+else
+    assert_contains "$out" "No SHA-256 utility found"
+fi
+
+# --- signal handling (I-4) -------------------------------------------------
+# install_jar, write_shim and store_installer each trap INT/TERM to clean up a staging file — the
+# bug was that the old single `trap "cleanup" EXIT INT TERM` cleans up but does NOT stop the
+# script, so execution runs on and operates on the file the trap just deleted. Reproducing that
+# with a real slow network fetch is inherently timing-dependent (the reviewer did it by hand, see
+# the fix report); this case gets the same coverage deterministically and with no sleep at all by
+# having a fake `curl` signal the installer's own PID ($PPID) the instant it is invoked, then exit
+# successfully — install_jar's blocked wait() returns with the signal already pending, so the trap
+# runs before the very next statement (the second fetch, for the .sha256 asset) does. A fake curl
+# that reaches a second invocation proves the bug: the fix must never let that happen.
+FAKECURL_BIN="$FIXTURE/fakecurl-bin"
+mkdir -p "$FAKECURL_BIN"
+cat > "$FAKECURL_BIN/curl" <<'FAKECURL'
+#!/bin/sh
+count=0
+[ -f "$FAKE_CURL_COUNT_FILE" ] && count=$(cat "$FAKE_CURL_COUNT_FILE")
+count=$((count + 1))
+printf '%s' "$count" > "$FAKE_CURL_COUNT_FILE"
+if [ "$count" -eq 1 ]; then
+    prev=""; dest=""
+    for arg in "$@"; do
+        [ "$prev" = "-o" ] && dest="$arg"
+        prev="$arg"
+    done
+    [ -n "$dest" ] && printf 'irrelevant' > "$dest"
+    kill -TERM "$PPID"
+    exit 0
+else
+    # Reached only if the installer kept going after the trap — the defect this case exists to
+    # catch.
+    : > "$FAKE_CURL_COUNT_FILE.second-fetch-happened"
+    exit 1
+fi
+FAKECURL
+chmod +x "$FAKECURL_BIN/curl"
+
+run_case "a TERM mid-fetch stops install_jar instead of continuing past the cleanup"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+FAKE_CURL_COUNT_FILE="$SANDBOX/fakecurl-count"
+export FAKE_CURL_COUNT_FILE
+out=$(PATH="$FAKECURL_BIN:$PATH" sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+if [ -f "$FAKE_CURL_COUNT_FILE.second-fetch-happened" ]; then
+    fail "installer continued past the TERM trap and issued a second fetch"
+elif [ "$rc" -eq 0 ]; then
+    fail "expected a non-zero exit after a TERM mid-fetch, got 0: $out"
+elif find "$BAAS_SHARE" -maxdepth 1 -name '.stage.*' 2>/dev/null | grep -q .; then
+    fail "the TERM trap did not clean up the staging directory"
+else
+    pass
+fi
+unset FAKE_CURL_COUNT_FILE
+
 # --- version comparison and --update --------------------------------------
 
 run_case "orders versions numerically, not lexically"
