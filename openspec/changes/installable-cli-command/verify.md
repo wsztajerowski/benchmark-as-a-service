@@ -5,9 +5,9 @@
 > Failed checks must be fixed in the corresponding artifact, then re-run verify.
 
 **Change**: `installable-cli-command`
-**Verified at**: `2026-09-11 17:24`
-**Iteration**: `1`
-**Verifier**: `Claude Opus 5 (controller), via openspec-verify-change — every result below was gathered first-hand at HEAD 14138b9, not taken from review reports`
+**Verified at**: `2026-09-12 10:40`
+**Iteration**: `2`
+**Verifier**: `Claude Opus 5 (controller), via openspec-verify-change — every result below was gathered first-hand at HEAD 994efbf, not taken from review reports`
 
 ---
 
@@ -19,11 +19,9 @@
 
 ```text
 totals: 12 items — 10 passed, 2 failed
-  spec:   8 items, 8 passed   (includes cli-command-structure, results-store-schema,
-                                runner-jar-distribution)
-  change: 4 items, 2 passed   installable-cli-command     valid=true   ← this change
-                              private-runner-network      valid=true
-                              export-before-teardown      valid=false
+  spec:   8 items, 8 passed
+  change: 4 items, 2 passed   installable-cli-command  valid=true   ← this change
+                              export-before-teardown              valid=false
                               gha-workflow-migration-to-dynamodb  valid=false
 ```
 
@@ -32,10 +30,9 @@ totals: 12 items — 10 passed, 2 failed
 | `export-before-teardown` | change | "Change must have at least one delta. No deltas found." |
 | `gha-workflow-migration-to-dynamodb` | change | "Change must have at least one delta. No deltas found." |
 
-**This change is valid, and so are all eight specs.** Both failures are other changes that are
-still at an early stage (no tasks, no delta specs yet). Fixing them means editing another change's
-artifacts, which is outside this change's scope. They are recorded here as a warning, not treated as
-a blocker — see *Warnings*, W1.
+This change is valid, and so are all eight specs. Both failures are other changes, still early
+enough to have no delta specs. Fixing them means editing another change's artifacts. Recorded as
+warning W1, not treated as a blocker. Unchanged from iteration 1.
 
 ---
 
@@ -43,43 +40,40 @@ a blocker — see *Warnings*, W1.
 
 - [ ] All `- [ ]` have been changed to `- [x]` — **57 of 65**
 
-**Incomplete tasks**:
+Unchanged by iteration 2, whose work came from verification warnings rather than from a task.
 
 | Task | Reason incomplete | Blocks archive? |
 |---|---|---|
-| 8.5 | Manual. The clean-machine README walk needs a published release that carries the installer asset. | Yes |
-| 9.1 | Manual by design. `RunCommand.call()` is executed by no automated test anywhere in the project. | Yes |
+| 8.5 | Manual. The clean-machine README walk needs a published release carrying the installer. | Yes |
+| 9.1 | Manual by design. `RunCommand.call()` is executed by no automated test anywhere. | Yes |
 | 9.2 | Manual, post-release. Install on macOS and Linux from the published one-liner. | Yes |
-| 9.3 | Manual, post-release. A real `baas run` against AWS, pinning `releases/<version>/benchmark-runner.jar`. This is the path the change exists to make reachable, and it has never executed. | Yes |
-| 9.4 | Manual, post-release. Confirm a stored measurement carries `commit`/`branch` from a checkout, and neither from outside one. | Yes |
+| 9.3 | Manual, post-release. A real `baas run` against AWS, pinning `releases/<version>/benchmark-runner.jar` — the path this change exists to make reachable, which has never executed. | Yes |
+| 9.4 | Manual, post-release. A stored measurement carries `commit`/`branch` from a checkout, neither from outside one. | Yes |
 | 9.5 | Manual, post-release. `--update` against real releases. | Yes |
-| 9.6 | Manual, post-release. Upgrade while a `baas run` is polling; the in-flight run must complete. | Yes |
+| 9.6 | Manual, post-release. Upgrade while a `baas run` polls; the in-flight run must complete. | Yes |
 | 9.7 | Manual, post-release. `--uninstall`, then reinstall without reconfiguring. | Yes |
 
-All eight need a release carrying `install.sh` and `baas-cli.jar.sha256`, and no such release
-exists until this change is merged and released. They block **archive**, not finalize. Nothing was
-skipped; each is open because it cannot run yet.
-
-The total is 65 rather than the plan's 64, because task 7.10 was added to record the
-`docs/diagrams/baas-run.mmd` update. The plan omitted it, and CLAUDE.md requires it whenever a
-command changes.
+All eight need a release carrying `install.sh` and `baas-cli.jar.sha256`, and none exists until this
+change is merged and released. They block **archive**, not finalize. Nothing was skipped.
 
 ---
 
 ## 3. Delta Spec Sync State
 
+Unchanged from iteration 1: both iteration-2 commits touched only
+`scripts/tests/install-test.sh`, so no spec file moved.
+
 | Capability | Sync status | Notes |
 |---|---|---|
-| `cli-command-structure` | ✗ pending sync | ADDED ×2. The main spec exists; neither new heading is in it yet, and neither collides with an existing requirement name. |
+| `cli-command-structure` | ✗ pending sync | ADDED ×2. Main spec exists; neither heading is in it yet, and neither collides with an existing requirement name. |
 | `cli-distribution` | ✗ pending sync | ADDED ×10. New capability; `openspec/specs/cli-distribution/` is created at archive. |
-| `results-store-schema` | ✗ pending sync | MODIFIED ×1. The heading matches the main spec **verbatim**. |
-| `runner-jar-distribution` | ✗ pending sync | MODIFIED ×1. The heading matches the main spec **verbatim**. |
+| `results-store-schema` | ✗ pending sync | MODIFIED ×1. Heading matches the main spec **verbatim**. |
+| `runner-jar-distribution` | ✗ pending sync | MODIFIED ×1. Heading matches the main spec **verbatim**. |
 
-"Pending sync" is the expected state before archive, because `openspec archive` performs the sync.
-The verbatim heading match on both MODIFIED requirements matters. CLAUDE.md records that archive
-matches a delta requirement to the main spec by name, and that a paraphrased heading archives with
-only a warning. The real requirement is then left in the main spec, describing behaviour the code
-no longer has. That cannot happen here.
+Pending sync is the expected pre-archive state; `openspec archive` performs the sync. The verbatim
+match on both MODIFIED headings matters: CLAUDE.md records that archive matches a delta requirement
+to the main spec by name, and a paraphrase archives with only a warning, leaving the real
+requirement describing behaviour the code no longer has. That cannot happen here.
 
 ---
 
@@ -87,124 +81,110 @@ no longer has. That cannot happen here.
 
 | Sample item | design description | specs counterpart | Gap |
 |---|---|---|---|
-| Verify before write, rename to replace | "Nothing is written until the checksum verifies, and every write is a rename" | cli-distribution: *Nothing is installed unverified*; *Installation replaces files atomically* | None. Staging directories sit inside `$BAAS_SHARE`/`$BAAS_BIN`, so the rename is on the same filesystem; `verify` runs before any `mv`. |
-| One `latest` lookup | "`releases/latest/download/` is used in exactly one place — fetching the installer" | *Artifacts SHALL be fetched by explicit version* | None. `install.sh:241` (`latest_tag`) is the only functional use; `:64` and `:273` are the documented one-liner inside help text. Artifacts always go through `asset_url` → `releases/download/v<version>/`. |
-| Pinned self-copy | "The self-copy is downloaded at the pinned version, never `cp "$0"`" | *The update path remains available after a piped installation* | None. The only `cp "$0"` in the file is the comment at `:169` explaining why it is not used. |
-| Hand off, never downgrade | "`--update` decides, then hands off; it never installs" | *Updating resolves the current release and defers to that release's installer* | None. `:292` `exec`s the newer release's own installer. The newer-installed branch reports and changes nothing. |
-| A builtin guard, not a fork | "The shim resolves `java` through `PATH`, guarded by a builtin" | *SHALL NOT spawn a process merely to validate the runtime* | None. The shim's guard is `command -v "${BAAS_JAVA:-java}"`; there is no `java -version` per invocation. |
-| No build | "`baas run` builds nothing; the benchmark JAR is named on every invocation" | cli-command-structure: *consumes a pre-built benchmark JAR* | None. |
-| Absent, not unknown | "`commit` and `branch` are absent rather than `unknown`" | cli-command-structure R2; results-store-schema MODIFIED | None. |
-| Numeric ordering | "Version comparison is field-wise numeric" | *Version ordering is numeric, not lexical* | None. Probe: `3.10.0 > 3.9.0` → 0, the reverse → 1. |
-| No rc edits | "The installer prints the `PATH` line; it never edits shell rc files" | *PATH is reported, never edited* | None. No `.bashrc`/`.zshrc`/`.profile` reference anywhere in the script. |
+| Verify before write, rename to replace | "Nothing is written until the checksum verifies, and every write is a rename" | *Nothing is installed unverified*; *Installation replaces files atomically* | None. Staging sits inside the destination directories, so the rename is same-filesystem; `verify` precedes every `mv`. |
+| One `latest` lookup | "`releases/latest/download/` is used in exactly one place" | *Artifacts SHALL be fetched by explicit version* | None. `install.sh:241` (`latest_tag`) is the only functional use; the others are help text. |
+| Pinned self-copy | "never `cp "$0"`" | *The update path remains available after a piped installation* | None. The only mention is the comment explaining why. |
+| Hand off, never downgrade | "`--update` decides, then hands off; it never installs" | *Updating resolves the current release and defers* | None, and now directly tested — see below. |
+| A builtin guard, not a fork | "The shim resolves `java` through `PATH`, guarded by a builtin" | *SHALL NOT spawn a process merely to validate the runtime* | None. `command -v`, no `java -version` per invocation. |
+| No build | "`baas run` builds nothing" | *consumes a pre-built benchmark JAR* | None. |
+| Absent, not unknown | "`commit`/`branch` absent rather than `unknown`" | cli-command-structure R2; results-store-schema | None. |
+| Numeric ordering | "field-wise numeric" | *Version ordering is numeric, not lexical* | None. Probe: `3.10.0 > 3.9.0` → 0; reverse → 1. |
+| No rc edits | "prints the `PATH` line; never edits rc files" | *PATH is reported, never edited* | None. |
 
-**Drift warnings** (non-blocking): None between `design.md` and `specs/`. Gaps in *test coverage*
-are a different kind of issue, and are listed below.
+**Drift warnings**: None between `design.md` and `specs/`.
 
 ### 4b. Requirement → implementation → scenario coverage
 
-Harness numbers refer to the 23 cases in `scripts/tests/install-test.sh`, in order.
+Harness numbers refer to the 30 cases in `scripts/tests/install-test.sh`.
 
 | # | Requirement | Implementation | Automated scenario coverage |
 |---|---|---|---|
-| 1 | `baas run` consumes a pre-built JAR | `RunCommand.java:74` `required = true`; step 1 at `:187` checks existence before the image lookup (`:196`) and the upload (`:234`); no `runMavenBuild` | `noLongerCarriesABuildStep`, `refusesToRunWithoutAnExplicitBenchmarkJar`, `acceptsAnExplicitBenchmarkJar`, `theBenchmarkConfigNoLongerCarriesAJarPath`. **Gap: W4a** |
-| 2 | `commit`/`branch` derived, overridable, omitted when unknown | `:97`, `:100` options; `:178-179` resolution; blank-to-null at `:426`, `:471`, `:488`, `:497`; omission at `:560`, `:563` | `omitsAnUnresolvable{Commit,Branch}…`, `aRunOutsideARepository…`, `acceptsADedicatedCommitOption`, `aGitFailureYieldsNoBranch…`, `aBlankExplicit{Branch,Commit}…`. **Gap: W4b** |
+| 1 | `baas run` consumes a pre-built JAR | `RunCommand.java:74` required; step 1 at `:187` precedes the image lookup (`:196`) and the upload (`:234`) | 4 unit tests. **Gap: W4a** |
+| 2 | `commit`/`branch` derived, overridable, omitted | `:97`, `:100`; `:178-179`; blank→null at `:426`/`:471`/`:488`/`:497`; omission at `:560`/`:563` | 8 unit tests. **Gap: W4b** |
 | 3 | Installed onto `PATH` | `write_shim` `:143` | #5, #10, #12; CI `baas --version` |
-| 4 | Installs the version it was published with | `resolve_version` `:56`; `BAAS_VERSION_DEFAULT` `:10` | #1–#5. **Gap: W4h** |
+| 4 | Installs the version it was published with | `resolve_version` `:56` | #1–#5. **Gap: W4h** |
 | 5 | Nothing is installed unverified | `sha256_of` `:88-96`; `verify` `:100` | #6, #7, #13, #14, #15 |
-| 6 | Atomic replacement | same-filesystem staging + `mv -f`; INT/TERM traps `:130`/`:132` | #7, #16. **Gap: W4g** |
-| 7 | Prerequisites; fail only on the runtime | `check_prerequisites` `:200`; floor `-ge 25` at `:205`; git warning `:209`; PATH report `:213` | #10. **Gaps: W4c, W4d** |
-| 8 | Never touches the configuration | no `~/.baas` path is ever operated on | #9, #21; CI sentinel step |
-| 9 | Update resolves and defers | `latest_tag` `:237`, `installed_version` `:247`, `version_newer` `:220`, hand-off `:292` | #17, #18, #19; probe. **Gaps: W4e, W4f** |
+| 6 | Atomic replacement | same-filesystem staging + `mv -f`; INT/TERM traps | #7, #16. **Gap: W4g** |
+| 7 | Prerequisites; fail only on the runtime | `check_prerequisites` `:200`; `command -v` guard `:201`; floor `-ge 25` `:205`; git warning `:209`; PATH report `:213` | #10, plus **new**: Java absent, Java 17 refused, `java_major("1.8.0_402")` → 8, and `git` absent warning with exit 0. **No gap.** |
+| 8 | Never touches the configuration | no `~/.baas` path is operated on | #9, #21; CI sentinel |
+| 9 | Update resolves and defers | `latest_tag` `:237`, `installed_version` `:247`, `version_newer` `:220`, hand-off `:292` | #17–#19; probe; plus **new**: the hand-off actually executing the newer release's installer, and two unreadable-version cases. **No gap.** |
 | 10 | Update path after a piped install | `store_installer` `:168` | #8 |
-| 11 | Uninstall removes exactly what was installed | uninstall arm; `rmdir`, never `rm -rf`, at `:303` | #20–#23 |
-| 12 | Runs on macOS and Linux | run-time `sha256sum`/`shasum` detection | 23/0 under `sh` and `dash` on macOS. **Gap: W3** |
-| 13 | Tags: `commit`/`branch` only when supplied | `buildRunnerTags` `:560-565`; the runner injects no default (`grep` over `benchmark-runner/src/main`: no hits) | the `omits…` cases above |
-| 14 | Release publishes versioned artifacts + checksums | `release.yml:55-59` (five assets); `prepareCmd`: `versions:set` → package → both checksums → `sed` bake; `@semantic-release/git` absent; repo keeps the placeholder | CI fixture asserts `baas 9.9.9-ci`, which was proven locally. **Gap: W4h** |
+| 11 | Uninstall removes exactly what was installed | `rmdir`, never `rm -rf`, `:303` | #20–#23 |
+| 12 | Runs on macOS and Linux | run-time `sha256sum`/`shasum` detection | 30/0 under `sh` and `dash` on macOS. **Gap: W3** |
+| 13 | Tags recorded only when supplied | `buildRunnerTags` `:560-565`; runner injects no default | the `omits…` unit tests |
+| 14 | Release publishes versioned artifacts + checksums | `release.yml:55-59`; `versions:set` → package → both checksums → `sed`; `@semantic-release/git` absent | CI fixture asserts `baas 9.9.9-ci`, proven locally. **Gap: W4h** |
 
 ---
 
 ## 5. Implementation Signal
 
-- [ ] No unstaged files in the worktree — **all code is committed** (0 uncommitted paths outside
-  `openspec/`). The only open files are this change's bookkeeping: `apply.md`, `tasks.md` and
-  this `verify.md`. They are committed together immediately after this report, because finalize
-  merges only committed files.
+- [ ] No unstaged files in the worktree — **all code is committed.** The only open files are this
+  change's own bookkeeping, `apply.md` and this `verify.md`, committed together immediately after
+  this report, because finalize merges only committed files.
 - [ ] All related commits have been pushed — **not pushed.** `feat/installable-cli-command` has no
-  upstream. Merging and pushing are finalize's job and need the user's go-ahead.
+  upstream. Merging and pushing are finalize's, and need the user's go-ahead.
 
-**Commit range**: `e4ce6bb..14138b9` (20 commits)
+**Commit range**: `e4ce6bb..994efbf` (23 commits; iteration 2 added 2)
 
-### Build and test evidence, first-hand at `14138b9`
+### Evidence, first-hand at `994efbf`
 
-- `mvn -B -DskipITs clean install` → **BUILD SUCCESS**. baas-model 51/0, benchmark-runner 36/0,
-  baas-cli 283/0 (tests run / failures).
-  *Observation:* the baas-cli module took 17:58 of wall-clock time, against 49.6 s on the previous
-  full run. Test counts are identical and there are no failures, and the only change between the
-  two commits touched Java comments, which cannot slow a test. So the cause is environmental, not a
-  regression; it is worth a look if it recurs.
-- Full `mvn -B clean verify`, Docker up and every integration test running, was green at `d7f4b05`
-  (baas-cli 283 unit + 16 IT). Everything committed since touches only comments, shell and docs.
-- `sh scripts/tests/install-test.sh` → **23 cases, 0 failures**; the same under `dash`. `sh -n`
-  is clean on all three scripts.
+- **Harness**: `sh` → **30 cases, 0 failures**; `dash` → **30/0**. `sh -n` clean on all three scripts.
+- **Mutation check of the newest case**: neutralising `check_prerequisites`' guard changed exactly
+  one line (`install.sh:201`, `command -v "${BAAS_JAVA:-java}" …` → `true`), after which the suite
+  failed exactly one case — the absent-Java one — with `Could not determine the Java version`, the
+  fall-through that removal produces. Restored: 30/0. Assertion uniqueness confirmed: `No java
+  found on PATH` has one emission site and one assertion, and the shim's message at `install.sh:158`
+  is different text, so the case cannot pass against the wrong guard.
+- **Build**: unchanged and still valid — iteration 2 touched no production code. Full
+  `mvn -B clean verify` with every integration test was green at `d7f4b05`; `mvn -B -DskipITs clean
+  install` green at `14138b9` (51 / 36 / 283, zero failures).
+- **Version chain**: a build at `9.9.9-ci` made `baas --version` print exactly `baas 9.9.9-ci`,
+  directly and through the installed shim.
 
 ---
 
 ## Warnings
 
-- **W1** — `openspec validate --all` fails on two unrelated changes (section 1). This change and all
-  specs pass. *Recommendation:* give each of those changes its delta specs, or set
-  `skip_specs: true` in its `.openspec.yaml`, as part of its own work.
-- **W2** — Eight tasks are open: every manual, post-release item (section 2). *Recommendation:* run
-  §9 and 8.5 after the first release that publishes the installer, then archive.
+- **W1** — `openspec validate --all` fails on two unrelated changes (section 1). *Recommendation:*
+  give each its delta specs, or set `skip_specs: true`, as part of its own work.
+- **W2** — Eight tasks open, all manual and post-release (section 2). *Recommendation:* run §9 and
+  8.5 after the first release that publishes the installer, then archive.
 - **W3** — **CI has never run.** `install-test.yml` is committed but not pushed, so neither matrix
-  leg has executed. macOS is covered locally, under `sh` and `dash`. Linux is only approximated by
-  `dash`. *Recommendation:* confirm both legs are green on the first PR run. The workflow triggers
-  on `pull_request` and on pushes to `main`, so pushing a bare branch alone will not run it.
-- **W4** — Spec scenarios with **no automated test**:
-  - **a.** *A named JAR that does not exist fails before provisioning.* The check lives in
-    `call()`, which no test executes (a known, project-wide gap). Covered by the step-1 ordering in
-    code and by manual 9.3. *Recommendation:* extract the precondition into a testable method, as
+  leg has executed. macOS is covered locally under `sh` and `dash`; Linux is only approximated by
+  `dash`. The workflow triggers on `pull_request` and on pushes to `main`, so pushing a bare branch
+  will not start it. *Recommendation:* confirm both legs on the first PR run.
+- **W4** — Spec scenarios with no automated test. Iteration 2 closed four of the original eight
+  (c, d, e, f). These four remain:
+  - **a.** *A named JAR that does not exist fails before provisioning.* The check is in `call()`,
+    which no test executes — a known project-wide gap. Covered by the step-1 ordering in code and
+    by manual 9.3. *Recommendation:* extract the precondition into a testable method, as
     `resolveResultsTable` already is.
   - **b.** *Derived values are forwarded.* The failure path is tested; positive derivation from a
     real repository is not. Manual 9.4. *Recommendation:* a test pointing `resolveBranch(Path)` /
     `resolveCommit(Path)` at the repository's own checkout.
-  - **c.** *An absent or too-old Java runtime blocks installation* (install time, not the
-    launcher). A reviewer checked `java_major`'s parsing by hand. *Recommendation:* a harness case
-    with `BAAS_JAVA` pointing at a fake `java` that prints `version "17.0.2"`, asserting a refusal
-    that names Java 25.
-  - **d.** *An optional tool is reported, not enforced* (git absent). *Recommendation:* a harness
-    case running `check_prerequisites` through the `BAAS_PROBE` seam with `git` unresolvable.
-  - **e.** *A newer release is installed by its own installer.* A reviewer checked the hand-off by
-    planting a marker installer; manual 9.5. *Recommendation:* a fixture carrying a marker
-    `install.sh` at a higher version, plus `BAAS_LATEST_TAG`.
-  - **f.** *An unreadable installed version stops the update.* A reviewer checked three sub-cases
-    by hand. *Recommendation:* run `--update` with no installed shim and assert the message and
-    that nothing changed.
-  - **g.** *An in-flight command is unaffected by a concurrent install.* The same-filesystem
-    staging and rename are verified in code; a real test needs a live JVM. Manual 9.6.
-  - **h.** *The published installer installs its own release* / *the installer asset carries that
-    release's version.* These only exist on a real release. A reviewer ran the generated `sed` under
-    GNU sed in an `ubuntu:latest` container; manual 9.2.
-
-  c, d, e and f are cheap harness cases; together, one short apply iteration.
+  - **g.** *An in-flight command is unaffected by a concurrent install.* Same-filesystem staging and
+    the rename are verified in code; a real test needs a live JVM. Manual 9.6.
+  - **h.** *The published installer installs its own release*, and *the installer asset carries that
+    release's version.* These exist only on a real release. A reviewer ran the generated `sed` under
+    GNU sed in an `ubuntu:latest` container. Manual 9.2.
 
 ---
 
 ## Overall Decision
 
 - [ ] ✅ PASS — ready to proceed via /opsx:continue to the finalize artifact, then /opsx:archive
-- [x] ⚠️ PASS WITH WARNINGS — can proceed but note: every requirement is implemented and every
-  design decision is followed. All code is committed. The full build and the installer harness are
-  green. Archive, however, is blocked until the eight manual, post-release tasks are done. CI has
-  never run. Seven spec scenarios have no automated test (W4); four of them are cheap to add.
+- [x] ⚠️ PASS WITH WARNINGS — every requirement is implemented, every design decision followed, all
+  code committed, the build and the 30-case harness green. Archive remains blocked until the eight
+  manual post-release tasks are done; CI has never run; four spec scenarios still have no automated
+  test, and each is either awaiting a release, needing a live JVM, or covered by manual §9.
 - [ ] ❌ FAIL — return to the failed artifact, fix, then re-run verify
 
 **Next step**:
 
-1. Commit `apply.md`, `tasks.md` and this `verify.md` together on `feat/installable-cli-command`.
-2. Finalize: merge this worktree into `feat/baas-user-artifact` and push. **This needs the user's
-   go-ahead.** Optionally, first run one more apply iteration for W4 c–f.
-3. Open or update a PR, so that `install-test.yml` runs both legs for the first time (W3).
+1. Commit `apply.md` and this `verify.md` on `feat/installable-cli-command`.
+2. Finalize: merge this worktree into `feat/baas-user-artifact` and push. **Needs the user's
+   go-ahead**, and must run from the main checkout, where the target branch is checked out.
+3. Open or update a PR so `install-test.yml` runs both legs for the first time (W3).
 4. Release. Then run §9 and 8.5 by hand against the published installer, then `/opsx:archive`.
 
 > **Convergence loop reminder**:
