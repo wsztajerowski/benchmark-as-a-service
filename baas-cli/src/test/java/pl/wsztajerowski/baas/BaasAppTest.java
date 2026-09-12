@@ -84,7 +84,8 @@ class BaasAppTest {
     @Test
     void parametersAfterTheSeparatorAreForwardedVerbatim() {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("run", "jmh", "--", "MyBenchmark", "-f", "1", "-wi", "1");
+            .parseArgs("run", "--benchmark-jar", "target/b.jar", "jmh", "--",
+                "MyBenchmark", "-f", "1", "-wi", "1");
 
         assertThat(result.subcommand().matchedPositionalValue(1, java.util.List.<String>of()))
             .containsExactly("MyBenchmark", "-f", "1", "-wi", "1");

@@ -21,7 +21,8 @@ neither dispatches nor depends on the workflows.
 
 Everything in CLAUDE.md's *Accepted risks* table was skipped and should not be re-raised as a bug:
 Atlas IP allowlist, runner-JAR checksum verification, shared `RunnerRole`, connect-only MongoDB,
-the `baas run` project-layout assumption, and distribution mechanism.
+the `baas run` project-layout assumption, and distribution beyond `scripts/install.sh` — a
+Homebrew tap, jpackage bundles, a native image, a Docker image.
 
 ## Status
 
@@ -41,6 +42,7 @@ the `baas run` project-layout assumption, and distribution mechanism.
 | 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | **Fixed** |
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
+| 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | Open |
 
 **Next up: S5.**
 
@@ -226,6 +228,15 @@ resolved from `user.home` at class-load, so the class is awkward to test without
 properties. Separately, `BaasConfig.AwsConfig.coreStackName` still defaults to `"baas-main"` — a
 stack name the current templates never produce.
 
+**Narrowed by `installable-cli-command`.** One instance of the stale-default problem is gone:
+`BenchmarkConfig.jarPath` defaulted to `jmh-benchmarks/target/jmh-benchmarks.jar` — a path from an
+older project layout — and stood in as the build's fallback JAR whenever `--benchmark-jar` was
+omitted. The whole key is deleted along with the build it fed: `--benchmark-jar` is now required,
+with no config-file substitute, so there is nothing left to go stale there. `coreStackName`'s
+default above is a separate instance of the same problem and is untouched by this change. Status
+stays **Open**: silent unknown keys, no schema version, and `coreStackName`'s stale default all
+remain.
+
 ## 11. A9 — `requestId` collides at second granularity · Low
 
 `RunCommand` ~line 129-131 builds it from `benchmarkType + yyyyMMdd_HHmmss`; `resultPath` from
@@ -278,3 +289,22 @@ rename cannot silently desync the schema from the infrastructure either.
 
 No bucket policy denying `aws:SecureTransport: false`. `ConfigService` creates `~/.baas` with
 default permissions; 0700 is free.
+
+## 15. A10 — the caller-ARN prefix is unnormalised · Med · Open
+
+`SetupCommand.computePrefix` hashes the raw ARN from `sts:GetCallerIdentity`. For an IAM user
+(`arn:aws:iam::123:user/alice`) that is stable. For an SSO or assumed-role identity the ARN is
+`arn:aws:sts::123:assumed-role/Role/<session-name>`, and the session name changes per login.
+
+Only `SetupCommand:76` and `DeployerPolicyCommand:54` derive the prefix; every other command reads
+`config.getPrefix()`. So day-to-day use is unaffected, and the damage is concentrated in a second
+`baas admin setup`: it creates a duplicate stack, bucket and results table — both retained by
+`DeletionPolicy` — and rewrites `~/.baas/config.yaml` to point at the empty one. It presents as
+"all my benchmark history is gone". The history is intact in the first table; nothing says so.
+`baas admin deployer-policy` compounds it by rendering a policy for a prefix that does not match
+the user's existing stack.
+
+**Proposed fix:** normalise `assumed-role` ARNs to their role ARN
+(`arn:aws:sts::123:assumed-role/Role/session` → `arn:aws:iam::123:role/Role`) before hashing. This
+does not migrate anything: IAM-user ARNs hash exactly as before, so no existing prefix moves.
+Tracked as its own OpenSpec change, deferred.

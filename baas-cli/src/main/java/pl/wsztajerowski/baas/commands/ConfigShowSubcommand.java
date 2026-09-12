@@ -56,8 +56,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("  benchmarkTimeoutSeconds:  ").append(config.getEc2().getBenchmarkTimeoutSeconds()).append('\n')
             .append("  wallClockHardKillSeconds: ").append(config.getEc2().getWallClockHardKillSeconds()).append('\n')
             .append("benchmark:\n")
-            .append("  asyncProfilerVersion:     ").append(config.getBenchmark().getAsyncProfilerVersion()).append('\n')
-            .append("  jarPath:                  ").append(config.getBenchmark().getJarPath()).append('\n');
+            .append("  asyncProfilerVersion:     ").append(config.getBenchmark().getAsyncProfilerVersion()).append('\n');
 
         // Every value above is local. `config show` makes no AWS call at all now that the masked
         // Mongo connection string — the one field that had to be read from SSM — is gone, so it

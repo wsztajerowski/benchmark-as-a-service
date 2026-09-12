@@ -114,12 +114,8 @@ public class BaasConfig {
 
     public static class BenchmarkConfig {
         private String asyncProfilerVersion = "4.0";
-        private String jarPath = "jmh-benchmarks/target/jmh-benchmarks.jar";
 
         public String getAsyncProfilerVersion() { return asyncProfilerVersion; }
         public void setAsyncProfilerVersion(String v) { this.asyncProfilerVersion = v; }
-
-        public String getJarPath() { return jarPath; }
-        public void setJarPath(String p) { this.jarPath = p; }
     }
 }

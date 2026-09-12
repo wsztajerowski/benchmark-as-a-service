@@ -23,7 +23,6 @@ import pl.wsztajerowski.baas.model.RunLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
-import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -37,7 +36,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "run",
     mixinStandardHelpOptions = true,
-    description = "Build a benchmark JAR, launch an EC2 runner, and poll for results.",
+    description = "Launch an EC2 runner for a pre-built benchmark JAR, and poll for results.",
     // Lines are kept under 80 columns: picocli wraps the footer at the usage width and
     // re-wrapping mid-sentence makes the -- rule harder to read than no footer at all.
     footer = {
@@ -72,15 +71,13 @@ public class RunCommand implements Callable<Integer> {
         description = "Parameters forwarded to benchmark-runner.jar. Must follow a -- separator.")
     List<String> benchmarkParams = new ArrayList<>();
 
-    @Option(names = "--benchmark-jar", description = "Path to the benchmark JAR (overrides config jarPath).")
+    @Option(names = "--benchmark-jar", required = true,
+        description = "Path to the pre-built benchmark JAR. Required — baas run builds nothing.")
     Path benchmarkJar;
 
     @Option(names = "--runner-jar", description = "Local runner JAR to upload for this run instead of "
         + "pinning the release matching this CLI's version. Required from an unreleased build.")
     Path runnerJar;
-
-    @Option(names = "--skip-build", description = "Skip mvn build step.")
-    boolean skipBuild;
 
     @Option(names = "--instance-type", description = "EC2 instance type (overrides config default).")
     String instanceType;
@@ -99,6 +96,10 @@ public class RunCommand implements Callable<Integer> {
 
     @Option(names = "--branch", description = "Branch recorded as the run's branch tag (defaults to the current git branch).")
     String branch;
+
+    @Option(names = "--commit",
+        description = "Commit recorded as the run's commit tag (defaults to the current git commit).")
+    String commit;
 
     @Option(names = "--project", description = "Project name for the results partition (defaults to the git repository name).")
     String project;
@@ -148,10 +149,10 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
-        // Before the Maven build and before any upload, for the same reason the runner image and
-        // the results table are: a run that cannot name the runner JAR it will execute is going to
-        // fail anyway, and there is deliberately no fallback — two provisioning paths produce
-        // silently incomparable results.
+        // Checked first, before resolving the project, the results table, the runner image or
+        // anything else: a run that cannot name the runner JAR it will execute is going to fail
+        // anyway, and there is deliberately no fallback — two provisioning paths produce silently
+        // incomparable results.
         if (runnerJar == null && !BaasVersion.isReleased()) {
             logger.error("""
                 This is an unreleased build ({}), so there is no runner release to pin to.
@@ -160,21 +161,22 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
-        // Resolved before any AWS call — a Maven build and an S3 upload both come later in this
-        // method, and neither should run for a request that is going to fail anyway because it
-        // can't be attributed to a project. resolveProject() throws IllegalStateException with a
+        // Resolved before any AWS call — the runner-image lookup and the S3 upload both come later
+        // in this method, and neither should run for a request that is going to fail anyway because
+        // it can't be attributed to a project. resolveProject() throws IllegalStateException with a
         // message naming --project when this isn't a git repository and none was passed.
         String resolvedProject = resolveProject();
 
         BaasConfig config = configService.load();
-        // Same reasoning as resolveProject() above, and deliberately before the build and the
-        // upload: a run that cannot say where its measurements go is going to fail anyway.
+        // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
+        // and the upload: a run that cannot say where its measurements go is going to fail anyway.
         String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
         int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
             : (timeoutSeconds != null ? timeoutSeconds + 300 : config.getEc2().getWallClockHardKillSeconds());
-        String resolvedBranch = branch != null ? branch : currentGitBranch();
+        String resolvedBranch = resolveBranch();
+        String resolvedCommit = resolveCommit();
         logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, resolvedProject, benchmarkParams);
 
@@ -182,10 +184,19 @@ public class RunCommand implements Callable<Integer> {
         var factory = new AwsClientFactory(
             config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
 
-        // 1. Resolve the runner image, before the build and before anything is uploaded or
-        //    launched. A missing image is a hard stop — there is no fallback to AL2023 + yum,
-        //    since two provisioning paths would produce silently incomparable results — so
-        //    discovering it here costs two API calls rather than a full Maven build first.
+        // 1. The JAR is named, never derived. Checked before the image lookup and before any
+        //    upload, like every other precondition this command has.
+        if (!benchmarkJar.toFile().exists()) {
+            logger.error("Benchmark JAR not found: {}\nBuild it first, then pass --benchmark-jar.",
+                benchmarkJar);
+            return 1;
+        }
+        Path jarPath = benchmarkJar;
+
+        // 2. Resolve the runner image, before anything is uploaded or launched. A missing image
+        //    is a hard stop — there is no fallback to AL2023 + yum, since two provisioning paths
+        //    would produce silently incomparable results — so discovering it here costs two API
+        //    calls rather than an upload that would only fail afterward.
         RunnerImage runnerImage;
         try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
             var resolved = resolveRunnerImage(
@@ -210,19 +221,7 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
 
-        // 2. Build
-        if (!skipBuild) {
-            runMavenBuild();
-        }
-
-        // 3. Determine JAR path
-        Path jarPath = benchmarkJar != null ? benchmarkJar : Path.of(config.getBenchmark().getJarPath());
-        if (!jarPath.toFile().exists()) {
-            logger.error("Benchmark JAR not found: {}\nRun without --skip-build or specify --benchmark-jar.", jarPath);
-            return 1;
-        }
-
-        // 4. Name the run. One clock read: the instant travels into the identifier, into the S3
+        // 3. Name the run. One clock read: the instant travels into the identifier, into the S3
         //    prefix and on to the runner as --created-at, so the prefix name and the stored
         //    timestamp are the same value rather than two values that happen to be close.
         Instant runInstant = Instant.now();
@@ -232,7 +231,7 @@ public class RunCommand implements Callable<Integer> {
         logger.info("Run {} — results will land under s3://{}/{}",
             runId, config.getAws().getBucket(), resultPath);
 
-        // 5. Upload JARs into the run's own prefix, so one prefix holds the whole run.
+        // 4. Upload JARs into the run's own prefix, so one prefix holds the whole run.
         logger.info("Uploading benchmark JAR to S3...");
         String benchmarkJarKey = RunLayout.benchmarkJarKey(resolvedProject, runId);
         try (var s3 = factory.s3()) {
@@ -260,9 +259,9 @@ public class RunCommand implements Callable<Integer> {
                 runnerJarS3Key, BaasVersion.current());
         }
 
-        // 6. Build user-data
+        // 5. Build user-data
         Map<String, String> runnerTags =
-            buildRunnerTags(benchmarkType, resolvedProject, currentGitCommit(), resolvedBranch);
+            buildRunnerTags(benchmarkType, resolvedProject, resolvedCommit, resolvedBranch);
         String userData = new UserDataScriptBuilder().build(
             config.getAws().getRegion(), config.getAws().getBucket(),
             benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
@@ -273,7 +272,7 @@ public class RunCommand implements Callable<Integer> {
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 7. Launch instance. These are EC2 *instance* tags — console visibility and the
+        // 6. Launch instance. These are EC2 *instance* tags — console visibility and the
         //    `baas-role` scoping that RunnerRole's TerminateInstances condition depends on. They
         //    are NOT what `baas results` reads: ResultsQueryService reads
         //    benchmarkMetadata.tags, which is populated only by the runner's own --tag options,
@@ -300,7 +299,7 @@ public class RunCommand implements Callable<Integer> {
         logger.info("Instance launched: {}", instanceId);
         logger.info("Run ID: {}", runId);
 
-        // 8. Shutdown hook
+        // 7. Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             logger.info("Terminating instance {} ...", instanceId);
             try (var ec2 = factory.ec2()) {
@@ -308,7 +307,7 @@ public class RunCommand implements Callable<Integer> {
             }
         }));
 
-        // 9. Poll
+        // 8. Poll
         return poll(factory, config, instanceId, runId, resultPath, resolvedWallClock);
     }
 
@@ -405,26 +404,26 @@ public class RunCommand implements Callable<Integer> {
         }
     }
 
-    private void runMavenBuild() throws IOException, InterruptedException {
-        logger.info("Building benchmark JAR (mvn clean package -q)...");
-        var pb = new ProcessBuilder("mvn", "clean", "package", "-q", "-DskipTests")
-            .inheritIO()
-            .directory(Path.of(".").toAbsolutePath().normalize().toFile());
-        int exit = pb.start().waitFor();
-        if (exit != 0) throw new RuntimeException("Maven build failed with exit code " + exit);
+    private String currentGitBranch() {
+        return currentGitBranch(Path.of(".").toAbsolutePath().normalize());
     }
 
-    private String currentGitBranch() {
-        try {
-            var pb = new ProcessBuilder("git", "rev-parse", "--abbrev-ref", "HEAD")
-                .redirectErrorStream(true);
-            var proc = pb.start();
-            String out = new String(proc.getInputStream().readAllBytes()).trim();
-            proc.waitFor();
-            return out.isEmpty() ? "unknown" : out;
-        } catch (Exception e) {
-            return "unknown";
-        }
+    /**
+     * Package-private overload for the same testability reason as {@link #resolveProject(Path)}.
+     *
+     * <p>Routed through {@link #gitOutput(Path, String...)} — which is {@link GitProject#gitOutput}
+     * underneath and checks the subprocess exit code — rather than a hand-rolled
+     * {@code ProcessBuilder} with {@code redirectErrorStream(true)}. The previous implementation
+     * merged stderr into the captured output and never inspected the exit code, so outside a git
+     * repository it returned {@code "fatal: not a git repository (or any of the parent
+     * directories): .git"} as if it were a branch name — worse than the {@code "unknown"} this
+     * change replaced, since a git error message would have landed in the only query surface the
+     * tool has. {@link #currentGitCommit(Path)} already got this for free; the two are now
+     * symmetric.
+     */
+    String currentGitBranch(Path workingDir) {
+        String branch = gitOutput(workingDir, "git", "rev-parse", "--abbrev-ref", "HEAD");
+        return branch != null && !branch.isBlank() ? branch : null;
     }
 
     /** Shared with {@code baas results}, which must resolve the same partition. */
@@ -463,8 +462,39 @@ public class RunCommand implements Callable<Integer> {
     }
 
     private String currentGitCommit() {
-        String commit = gitOutput("git", "rev-parse", "HEAD");
-        return commit != null ? commit : "unknown";
+        return currentGitCommit(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /** Package-private overload for the same testability reason as {@link #resolveProject(Path)}. */
+    String currentGitCommit(Path workingDir) {
+        String commit = gitOutput(workingDir, "git", "rev-parse", "HEAD");
+        return commit != null && !commit.isBlank() ? commit : null;
+    }
+
+    private String resolveBranch() {
+        return resolveBranch(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /**
+     * Package-private overload for the same testability reason as {@link #resolveProject(Path)}.
+     *
+     * <p>An explicit {@code --branch ""} is blank-checked the same way {@link #resolveProject}
+     * blank-checks {@code --project}: a blank override is treated as not supplied and falls through
+     * to derivation, rather than being stored as an empty-string tag. An empty string is a
+     * placeholder standing in for an unknown value, same as the {@code "unknown"} this change
+     * already removed.
+     */
+    String resolveBranch(Path workingDir) {
+        return (branch != null && !branch.isBlank()) ? branch : currentGitBranch(workingDir);
+    }
+
+    private String resolveCommit() {
+        return resolveCommit(Path.of(".").toAbsolutePath().normalize());
+    }
+
+    /** Package-private overload for the same testability reason as {@link #resolveBranch(Path)}. */
+    String resolveCommit(Path workingDir) {
+        return (commit != null && !commit.isBlank()) ? commit : currentGitCommit(workingDir);
     }
 
     /**
@@ -474,8 +504,8 @@ public class RunCommand implements Callable<Integer> {
      * actual subcommand disagree. A result's tags must never be able to disagree with that same
      * run's {@code environment.json} (see {@code UserDataScriptBuilder}'s {@code --tag} block),
      * so {@link #buildRunnerTags} rejects a caller {@code --tag} for any of these outright rather
-     * than silently dropping or overriding it. {@code project} and {@code commit} are
-     * deliberately NOT in this set — design.md specifies the caller wins for those.
+     * than silently dropping or overriding it. {@code project}, {@code commit} and {@code branch}
+     * are deliberately NOT in this set — design.md specifies the caller wins for those.
      *
      * <p>Defined once in baas-model so the CLI and the runner cannot drift apart.
      */
@@ -484,11 +514,11 @@ public class RunCommand implements Callable<Integer> {
     /**
      * The results table this run will write to, or empty when {@code --no-database} was passed.
      *
-     * <p>Resolved before the Maven build and before anything is uploaded or launched, for the same
-     * reason the runner image is: discovering it later costs a paid instance. There is no silent
-     * fallback. Before the cutover, an unset store selected a no-op adapter and the run reported
-     * success while the measurements were discarded; that behaviour still exists, but it now has
-     * to be asked for by name.
+     * <p>Resolved before the runner-image lookup and before anything is uploaded or launched, like
+     * every other precondition this command checks early: discovering it later costs a paid
+     * instance. There is no silent fallback. Before the cutover, an unset store selected a no-op
+     * adapter and the run reported success while the measurements were discarded; that behaviour
+     * still exists, but it now has to be asked for by name.
      */
     static Optional<String> resolveResultsTable(BaasConfig config, boolean noDatabase) {
         if (noDatabase) {
@@ -521,12 +551,18 @@ public class RunCommand implements Callable<Integer> {
                     + " observed on the instance (or derived from the benchmark type), and a "
                     + "caller override would let a result's tags disagree with its own "
                     + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
-                    + ". --project and --commit remain overridable.");
+                    + ". --project, --commit and --branch remain overridable.");
         }
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put(TagKeys.PROJECT, project);
-        tags.put(TagKeys.COMMIT, commit);
-        tags.put(TagKeys.BRANCH, branch);
+        // An unresolvable commit or branch is absent, not "unknown". A placeholder value is
+        // indistinguishable from a real one at query time, which is how RESULT#unknown grew.
+        if (commit != null) {
+            tags.put(TagKeys.COMMIT, commit);
+        }
+        if (branch != null) {
+            tags.put(TagKeys.BRANCH, branch);
+        }
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.putAll(extraTags);
         return tags;

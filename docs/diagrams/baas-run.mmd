@@ -8,23 +8,20 @@ sequenceDiagram
     participant DDB as DynamoDB results table
     participant GH as GitHub Releases (laptop only)
 
-    User->>RC: baas run <type> [params] [--instance-type] [--timeout] [--skip-build] [--ami-id]<br/>[--project] [--branch] [--runner-jar] [--tag k=v] [--no-database]
+    User->>RC: baas run <type> [params] --benchmark-jar <path> [--instance-type] [--timeout]<br/>[--ami-id] [--project] [--branch] [--commit] [--runner-jar] [--tag k=v] [--no-database]
     Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() from ~/.baas/config.yaml
-    Note over RC: an unreleased CLI (0.0.0-semantically-released) names no<br/>release to pin the runner JAR to, so it exits 1 naming<br/>--runner-jar -- before the build and before any upload.
+    Note over RC: an unreleased CLI (0.0.0-semantically-released) names no<br/>release to pin the runner JAR to, so it exits 1 naming<br/>--runner-jar -- before any upload. baas run builds nothing.
     RC->>Sub: git rev-parse --path-format=absolute --git-common-dir
     Sub-->>RC: repo root -> project name, or "not a git repository"
     Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project outside a repo -> exit 1.<br/>No table in config and no --no-database -> exit 1 naming<br/>`baas config sync`. Absent config is never a silent no-op:<br/>discarding measurements takes --no-database by name.
     RC->>Sub: git rev-parse --abbrev-ref HEAD, git rev-parse HEAD
-    Sub-->>RC: branch name, commit sha
+    Sub-->>RC: branch name, commit sha -- each absent (not "unknown") if unresolved
+    Note over RC: --benchmark-jar is required; checked for existence here --<br/>before the runner-image lookup and before any upload.<br/>Missing -> exit 1 naming --benchmark-jar. Nothing is built.
     RC->>SSM: ssm.getParameter(/<prefix>/runner/ami-id)
     SSM-->>RC: amiId, or ParameterNotFound
     RC->>EC2: ec2.describeImages(amiId)
     EC2-->>RC: image + tags (baas-image-version), or InvalidAMIID.NotFound
-    Note over RC: no image -> exit 1 naming `baas admin build-image`.<br/>Deliberately FIRST: before the Maven build and before any<br/>upload, so a missing image costs two API calls.<br/>There is no fallback to AL2023 + yum.
-    opt --skip-build = false (default)
-        RC->>Sub: mvn clean package -q -DskipTests
-        Sub-->>RC: BUILD SUCCESS or RuntimeException on failure
-    end
+    Note over RC: no image -> exit 1 naming `baas admin build-image`.<br/>Checked before any upload, so a missing image costs two API<br/>calls rather than a wasted upload. There is no fallback to<br/>AL2023 + yum.
     Note over RC: ONE clock read: runInstant = Instant.now().<br/>runId = RunId.generate(runInstant) -- 20260820T174432812Z-a3f9c21b<br/>resultPath = RunLayout.runPrefix(project, runId)<br/>= runs/&lt;project&gt;/&lt;runId&gt;.<br/>The same instant travels on as --created-at, so the prefix<br/>name and the stored createdAt cannot disagree.
     RC->>S3: s3.putObject(bucket, runs/&lt;project&gt;/&lt;runId&gt;/input/benchmark.jar)
     S3-->>RC: PutObjectResponse
