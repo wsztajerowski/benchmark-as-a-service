@@ -301,6 +301,22 @@ else pass; fi
 # resolves on every invocation; check_prerequisites additionally parses the version once, at
 # install time, and refuses anything older than 25.
 
+run_case "an absent Java runtime blocks installation, before any fetch"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+out=$(BAAS_JAVA=/nonexistent/java-that-does-not-exist sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected refusal with no java runtime, got success: $out"
+elif [ -f "$BAAS_SHARE/$JAR_NAME" ]; then fail "jar was installed despite no java runtime"
+elif [ -e "$BAAS_BIN/baas" ]; then fail "shim was written despite no java runtime"
+else
+    # "No java found on PATH" is check_prerequisites's own die for java not resolving at all
+    # (install.sh:202-203). Its sibling die for "resolves but too old" says "found Java $major"
+    # instead, and the installed shim's guard — never reached here, since this runs the top-level
+    # installer, not the shim — reads "baas needs Java 25 on PATH, or BAAS_JAVA pointing at one."
+    # All three share the "baas needs Java 25" prefix, so asserting on that alone would pass
+    # against any of them; "No java found on PATH" is unique to this one.
+    assert_contains "$out" "No java found on PATH"
+fi
+
 FAKEJAVA17_BIN=$(mktemp -d)
 cat > "$FAKEJAVA17_BIN/java" <<'FAKEJAVA'
 #!/bin/sh
