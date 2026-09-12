@@ -7,6 +7,29 @@ look arbitrary but aren't, facts about what *isn't* there, and decisions whose r
 nowhere else. Standard Maven/AWS/picocli behaviour, directory-name-restates-purpose descriptions,
 and anything `--help` or a template file will tell you are omitted on purpose. Don't add them back.
 
+## How to read the prompts here
+
+**Most prompts in this repository are dictated, not typed.** So the transcript is one lossy step
+away from what was meant, and the errors cluster in exactly the words that matter most here:
+identifiers, flags, file names, AWS service names, and anything CamelCase.
+
+Treat a word that doesn't fit — a wrong homophone, a mangled class or option name, a sentence that
+parses strangely, a stray "the" splitting a term — as a speech-to-text artefact first and a
+deliberate instruction second. Reconstruct the term the code actually uses, and say in one line
+which reading you took ("reading X as Y") rather than either asking about it or silently guessing.
+Ask only when two readings would lead to materially different work.
+
+The same applies to names you are asked to create: a dictated branch, change or file name arrives
+without spelling or casing, so slugify it to match what is already in the tree and state what you
+chose.
+
+**Open questions get asked one at a time, the way brainstorming does.** When you have several
+decisions to put to the user — an artifact's Open Questions, a set of unresolved options, a list of
+things to confirm — do not present them as a batch to be answered in one reply. Ask the first,
+wait for the answer, then ask the next. Dictating a reply that addresses four numbered questions
+at once is exactly where answers get merged, misattributed or silently dropped. Analysis and
+recommendations for all of them may be written out together; the *questions* are serialised.
+
 ## What this is
 
 Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to a DynamoDB table,
@@ -82,8 +105,9 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 **The runner image (`infra/runner-image.yaml`, `baas admin build-image`)**
 
-- **`baas run` has no fallback.** No AMI at `/<prefix>/runner/ami-id` → it fails before the Maven
-  build and before any upload. Two provisioning paths would produce silently incomparable results.
+- **`baas run` has no fallback.** No AMI at `/<prefix>/runner/ami-id` → the runner-image lookup
+  fails there, before any upload. Two provisioning paths would produce silently incomparable
+  results.
 - **Exactly one image, rebuilt in place.** No slots, no AMI history, no second pointer. The archive
   is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to reconstruct.
 - **The pointer is repointed *before* the replaced AMI is deregistered.** Retiring first aims the
@@ -167,6 +191,16 @@ The watchdog is the only one that survives a deadlocked JVM.
   `prefix = lowercase(base32(sha256(arn)))[0:8]` → both are `baas-<prefix>`. Not user-selectable.
   The bucket is `DeletionPolicy: Retain`, so a teardown that keeps it blocks the next setup with a
   CloudFormation error that never mentions S3 — `SetupCommand` pre-checks for that case explicitly.
+- **The installer installs released artifacts only, and the repository copy refuses.**
+  `scripts/install.sh` carries `BAAS_VERSION_DEFAULT`, rewritten at release time by `release.yml`'s
+  `prepareCmd` and never committed back. A checkout copy holds the placeholder and exits naming
+  `--version`, the same no-fallback stance `RunCommand` takes on an unreleased build. `--update`
+  never installs anything itself: it resolves the newest release and re-executes *that release's*
+  installer, so the script installing version X is always version X's own.
+- **`commit` and `branch` are absent when unresolved, never `"unknown"`.** A placeholder value is
+  indistinguishable from a real one at query time — the same non-answer wearing a value's clothing
+  that produced `RESULT#unknown` (below). Tags are the entire query surface, so a fake value there
+  is worse than a missing one.
 
 ## What isn't there, and what fails silently
 
@@ -177,8 +211,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   recoverable only from that JSON, via `baas download <runId>` (a literal result path also works,
   which is what keeps pre-unified-layout runs retrievable).
 - **A reactor build cannot launch a run.** The CLI pins the runner JAR to its own released version,
-  and `0.0.0-semantically-released` names no release — so `baas run` fails before the Maven build
-  unless `--runner-jar` is passed. Same no-fallback stance as the runner AMI. Every `baas` in
+  and `0.0.0-semantically-released` names no release — so `baas run` fails immediately, before
+  resolving the project or the results table, unless `--runner-jar` is passed. Same no-fallback
+  stance as the runner AMI. Every `baas` in
   existence is currently an alias onto a reactor build, so this is the case, not the exception;
   the reactor checkout is now the developer's explicit special case rather than the implicit
   default.
@@ -188,8 +223,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   of them are CI fixture runs against `fake-jmh-benchmarks` and nobody recorded what the rest
   measured.
 - **Absent store configuration is a hard failure, not a silent no-op.** `baas run` resolves the
-  table before the Maven build and before any upload, and `benchmark-runner` rejects a missing
-  selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
+  table before the runner-image lookup and before any upload, and `benchmark-runner` rejects a
+  missing selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
   behaviour — unset URI selects a no-op store, run reports success, numbers vanish — is gone, and
   reintroducing any fallback brings it back.
 - **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
@@ -232,8 +267,12 @@ The watchdog is the only one that survives a deadlocked JVM.
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
   table if you want one. The local act E2E additionally needs `/baas/mongo/connection-string` as a
   SecureString, since the GHA path it exercises still writes to Mongo.
-- **Nothing in CI invokes `scripts/`.** `release.yml` builds its semantic-release config inline and
-  shells out only to `mvn`, so CI does not protect those three utilities.
+- **`scripts/install.sh` is the one script CI does invoke.** `release.yml`'s `prepareCmd` `sed`s the
+  released version into it and publishes it as a release asset, but `install-test.yml` never installs
+  that asset: it builds a fixture release in the job (`BAAS_BASE_URL: file://…/fixture`) and runs
+  the working-tree installer against it, on `ubuntu-latest` and `macos-latest`. No CI job exercises
+  a published installer or the release-time `sed` bake — those run only during a real release. The
+  other utilities under `scripts/` still have no CI coverage.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
   S3-object-create trigger path. Any reference you find is stale.
 - **The zsh orchestration helpers are gone** (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
@@ -246,8 +285,6 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **`--` is required before benchmark parameters**, and `baas` options must come before it.
   Without it picocli parses JMH flags as `baas` options: `Unknown options: '-f', '-wi', '-i'`.
   `baas run --instance-type c6i.4xlarge jmh -- MyBenchmark -f 1 -wi 1 -i 3`
-- **`baas run` builds in the current working directory** — the user's benchmark project, not this
-  repo.
 - **`mvn -pl benchmark-runner verify` alone fails.** It needs the `fake-jmh-benchmarks` and
   `fake-stress-tests` shaded JARs already in the local repo (`classifier=shaded`). Run the full
   reactor first.
@@ -439,5 +476,5 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
 | ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |
 | MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
-| `baas run` project layout | Assumes a Maven project producing one JAR; `--benchmark-jar` + `--skip-build` covers the rest. |
-| Distribution | Shaded JAR only. Install script, Homebrew tap, jpackage, native image, Docker image were specified but never built — backlog, not decisions. |
+| `baas run` project layout | Assumes a pre-built JAR handed in by `--benchmark-jar`, which is required — `baas run` does not build. Anything that produces a JAR before invoking it is fine; the CLI has no opinion on how. |
+| Distribution | Installable via `scripts/install.sh` as of this change. Homebrew tap, jpackage, native image and Docker image were specified but never built — backlog, not decisions. |

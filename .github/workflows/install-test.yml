@@ -1,0 +1,95 @@
+name: Installer
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  install:
+    name: install.sh on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          java-version: 25
+          distribution: temurin
+          cache: maven
+
+      # This leg was added believing macos-latest had no sha256sum, only shasum -a 256. That is no
+      # longer true and was the whole stated reason for the leg: ubuntu-latest has
+      # /usr/bin/sha256sum, and macOS ships /sbin/sha256sum as part of the OS — Apple's
+      # com.apple.md5sum multi-call binary, SIP-restricted, hard-linked alongside md5sum, sha1sum
+      # and sha512sum. So BOTH legs take install.sh's preferred branch and this matrix does not
+      # exercise the shasum fallback. There is deliberately no test for that fallback either: it is
+      # two lines kept as insurance for a macOS old enough to predate those binaries, and a harness
+      # case for a branch no supported platform executes costs more than it protects.
+      # This step stays as the tripwire for the reverse change — if a runner ever stops shipping
+      # sha256sum, the fallback silently becomes the live path here and the log should say so.
+      # The two legs still earn their keep on BSD-vs-GNU userland (mktemp, sed, install) and on
+      # Java resolution.
+      - name: Record which checksum utility this runner has
+        run: |
+          command -v sha256sum || echo "no sha256sum on this runner"
+          command -v shasum    || echo "no shasum"
+
+      # A fixture release, not a published one. No published release carries baas-cli.jar.sha256 —
+      # this change is what starts publishing it — so pinning to one would fail on every run until
+      # after the first release. Building the artifact here also proves the chain the whole change
+      # rests on: versions:set reaching the shaded manifest, and a checksum computed after the
+      # repackage matching it.
+      - name: Build a fixture release
+        run: |
+          mvn --batch-mode versions:set -DnewVersion=9.9.9-ci
+          mvn --batch-mode -DskipTests package
+          mkdir -p fixture/releases/download/v9.9.9-ci
+          cp baas-cli/target/baas-cli.jar fixture/releases/download/v9.9.9-ci/
+          cp scripts/install.sh           fixture/releases/download/v9.9.9-ci/
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum baas-cli/target/baas-cli.jar | cut -d' ' -f1 \
+              > fixture/releases/download/v9.9.9-ci/baas-cli.jar.sha256
+          else
+            shasum -a 256 baas-cli/target/baas-cli.jar | cut -d' ' -f1 \
+              > fixture/releases/download/v9.9.9-ci/baas-cli.jar.sha256
+          fi
+
+      - name: Run the installer test suite
+        run: sh scripts/tests/install-test.sh
+
+      - name: Install from the fixture
+        env:
+          BAAS_BASE_URL: file://${{ github.workspace }}/fixture
+        run: sh scripts/install.sh --version 9.9.9-ci
+
+      # The single assertion covering the failure class this change exists to prevent, and the one
+      # that pins the `baas <version>` output format --update parses.
+      - name: The installed CLI reports the fixture version
+        run: |
+          export PATH="$HOME/.local/bin:$PATH"
+          actual=$(baas --version)
+          echo "baas --version -> $actual"
+          [ "$actual" = "baas 9.9.9-ci" ] || { echo "expected 'baas 9.9.9-ci'"; exit 1; }
+
+      - name: A corrupted checksum fails the install
+        env:
+          BAAS_BASE_URL: file://${{ github.workspace }}/fixture
+        run: |
+          echo deadbeef > fixture/releases/download/v9.9.9-ci/baas-cli.jar.sha256
+          rm -rf "$HOME/.local/share/baas"
+          if sh scripts/install.sh --version 9.9.9-ci; then
+            echo "expected a checksum failure"; exit 1
+          fi
+          [ ! -f "$HOME/.local/share/baas/baas-cli.jar" ] || { echo "jar written"; exit 1; }
+
+      - name: Uninstall leaves the configuration intact
+        run: |
+          mkdir -p "$HOME/.baas" && echo 'prefix: sentinel' > "$HOME/.baas/config.yaml"
+          sh scripts/install.sh --uninstall
+          [ ! -e "$HOME/.local/bin/baas" ] || { echo "shim survived"; exit 1; }
+          [ "$(cat "$HOME/.baas/config.yaml")" = "prefix: sentinel" ] \
+            || { echo "configuration touched"; exit 1; }

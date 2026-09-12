@@ -8,36 +8,80 @@ The `baas` CLI provisions its own AWS infrastructure, launches the runner, polls
 and prints the numbers. It does not need GitHub Actions.
 
 ```bash
-baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
+baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 3
 ```
 
 ## Requirements
 
-- **Java 25** and Maven (the build targets 25; fat JARs via `maven-shade-plugin`)
-- **AWS account** and credentials — see [Permissions](#permissions) for the two roles involved
+- **Java 25** on your `PATH` — that's what runs `baas` itself; the installer checks for it and
+  refuses anything older.
+- **AWS account** and credentials — see [Permissions](#permissions) for the two roles involved. If
+  you authenticate through SSO, you also need the **AWS CLI**: `aws sso login` is what writes the
+  token cache the Java SDK reads. `baas` never shells out to `aws` itself.
 - No database to bring. The results table is created by `baas admin setup` alongside the rest of
   the stack.
-- Docker, for integration tests and local development
+- Maven, Gradle, or whatever your benchmark project already uses, to build **your own** benchmark
+  JAR — `baas run` builds nothing, so this is not a prerequisite of `baas` itself. Building `baas`
+  from source (see *Developing BaaS itself* below) does need Maven.
+- Docker, for integration tests and local development of `baas` itself.
 
 ## Getting started
 
-### 1. Build
+### 1. Install
+
+```bash
+curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh
+```
+
+Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/`, a launcher shim to
+`~/.local/bin/baas`, and a copy of the installer itself alongside the jar — that stored copy is
+what makes `--update` reachable later, since a piped install leaves nothing else on disk to
+re-invoke. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never touches
+`~/.baas/config.yaml`, which belongs to `baas admin setup`.
+
+Installer options: `--version <v>` (install a specific release instead of the latest),
+`--update`, `--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides:
+`BAAS_VERSION`, `BAAS_REPO`, `BAAS_SHARE`, `BAAS_BIN`, `BAAS_JAVA` (the JVM the shim execs).
+
+`--update` resolves the newest release, compares it field-wise against what's installed, and hands
+off to *that release's own installer* rather than installing anything itself — it never downgrades,
+and if your installed version is already newer it reports both and changes nothing. Re-run it as:
+
+```bash
+~/.local/share/baas/install.sh --update
+```
+
+A *saved* `install.sh` — the one under `~/.local/share/baas/`, or a copy you kept yourself —
+reinstalls its own baked-in version when run plain; it does not upgrade on its own. That's the
+whole reason `--update` exists. Note also that `--update` ignores `--version`: pairing them
+(`install.sh --update --version X`) silently drops the requested version, since `--version` only
+makes sense for a separate install-mode invocation.
+
+### Developing BaaS itself
+
+Working from a checkout instead of a release:
 
 ```bash
 mvn clean package -DskipTests
-```
-
-There is no packaged binary yet — no install script, no Homebrew tap, no native image. `baas` is a
-shaded JAR, so alias it:
-
-```bash
 alias baas='java -jar '"$PWD"'/baas-cli/target/baas-cli.jar'
 ```
+
+A reactor build carries the placeholder version `0.0.0-semantically-released`, so `baas run`
+refuses to launch anything with it unless you also pass `--runner-jar` — the CLI has no released
+runner JAR to pin to, and there is deliberately no fallback. That refusal is the point: the reactor
+checkout is the developer's explicit special case, not a silent stand-in for a pinned release.
 
 ### 2. Deploy the infrastructure
 
 One-time, and it needs the elevated deployer credentials described under
 [Permissions](#permissions).
+
+> **SSO users:** an SSO session's caller ARN carries a per-session name, so a second `baas admin
+> setup` computes a different prefix — creating a *separate* stack, bucket and results table (all
+> retained) and repointing your config at the empty one. It presents as "all my benchmark history
+> is gone," though the original table is untouched. Run `setup` from a stable identity until this
+> is fixed (tracked as finding **A10** in
+> [`docs/review/baas-cli-findings.md`](docs/review/baas-cli-findings.md)).
 
 ```bash
 baas admin setup
@@ -91,12 +135,20 @@ flags when your working tree declares a version you haven't built yet.
 
 ### 4. Run a benchmark
 
-From **your benchmark project's** directory, not this repo — `baas run` builds in the current
-working directory.
+`baas run` builds nothing — build your own benchmark JAR first, then point `baas run` at it with
+`--benchmark-jar`, which is required:
 
 ```bash
-baas run jmh -- MyBenchmark -f 1 -wi 1 -i 3
+mvn package
+baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 3
 ```
+
+`commit`, `branch` and the default `--project` are still derived from the working directory's git
+repository, so run this from **your benchmark project's** checkout even though nothing gets built
+there. Because the JAR is now named explicitly, a JAR built elsewhere can end up tagged with a
+commit it didn't come from — pass `--commit` / `--branch` to override the derived values when that
+matters. Outside a git repository, `commit` and `branch` are simply omitted from the stored tags,
+never recorded as `"unknown"`.
 
 Types: `jmh`, `jmh-with-async` (async-profiler flame graphs), `jmh-with-prof` (JMH's own
 profilers), `jcstress`.
@@ -106,25 +158,27 @@ profilers), `jcstress`.
 > `Unknown options: '-f', '-wi', '-i'`. `baas` options go *before* the separator:
 >
 > ```bash
-> baas run --instance-type c6i.4xlarge --timeout 1800 jmh -- MyBenchmark -f 1 -wi 1 -i 3
+> baas run --benchmark-jar target/benchmarks.jar --instance-type c6i.4xlarge --timeout 1800 \
+>   jmh -- MyBenchmark -f 1 -wi 1 -i 3
 > ```
 
-Useful options: `--skip-build`, `--benchmark-jar`, `--runner-jar`, `--instance-type`, `--timeout`,
-`--max-wall-clock`, `--tag key=value`, `--branch`, `--project`, `--no-database`.
+Useful options: `--benchmark-jar` (required), `--runner-jar`, `--ami-id`, `--instance-type`,
+`--timeout`, `--max-wall-clock`, `--tag key=value`, `--commit`, `--branch`, `--project`,
+`--no-database`.
 
 > **`--project` defaults to the current git repository's directory name** and composes the results
 > partition key, as well as being recorded as a tag. Outside a git repository, `baas run`
-> hard-fails before any build or upload unless `--project <name>` is passed explicitly.
+> hard-fails before any upload unless `--project <name>` is passed explicitly.
 
 > **Tags are how you find a result later.** `--tag key=value` is repeatable and reaches the stored
-> measurement, not just the EC2 instance. `project`, `commit` and `type` are added for you, and the
-> instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch`.
-> Passing `--tag` for one of those observed keys is rejected — they come from the same values the
-> run's own `environment.json` records, so the two can never disagree.
+> measurement, not just the EC2 instance. `project`, `commit`, `branch` and `type` are added for
+> you, and the instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
+> `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
+> values the run's own `environment.json` records, so the two can never disagree.
 
 > **A run with nowhere to store its measurements fails before it costs anything.** If the table
-> name is missing from your config, `baas run` stops before the Maven build and before any upload,
-> and tells you to run `baas config sync`. To deliberately throw the numbers away, pass
+> name is missing from your config, `baas run` stops before any upload — before any AWS call at
+> all — and tells you to run `baas config sync`. To deliberately throw the numbers away, pass
 > `--no-database`.
 
 `-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved run
@@ -157,13 +211,15 @@ group. Filters:
 ### 6. Fetch everything a run produced
 
 ```bash
-baas download main/jmh/20260819_090000
+baas download 20260820T174432812Z-a3f9c21b
 ```
 
-Takes a result path as `baas results` reports it, and pulls down the whole run: the verbatim
-`jmh-result.json`, `environment.json`, process output, logs and profiling artifacts. The stored
-measurement deliberately drops JMH's `rawData` and `scorePercentiles` — per-iteration numbers
-dominate a result's size — so this is where you go when you need them.
+Takes the run id `baas run` printed (or a literal S3 result path, `runs/<project>/<runId>` — also
+accepted for a run stored before the unified layout, at its original `<branch>/<type>/<timestamp>`
+path), and pulls down the whole run: the verbatim `jmh-result.json`, `environment.json`, process
+output, logs and profiling artifacts. The stored measurement deliberately drops JMH's `rawData`
+and `scorePercentiles` — per-iteration numbers dominate a result's size — so this is where you go
+when you need them.
 
 ### 7. Check that two results are comparable
 
@@ -188,7 +244,8 @@ JVM and tool versions, and the kernel tunables in effect. `<result-path>/package
 full `rpm -qa`, kept separate so it doesn't drown the readable file.
 
 ```bash
-baas env diff main/jmh/20260812_233528 main/jmh/20260813_000550
+baas env diff runs/lynx-journal/20260724T120000000Z-a3f9c21b \
+              runs/lynx-journal/20260811T093000000Z-b7e4d0f2
 ```
 
 ```
@@ -198,8 +255,9 @@ imageVersion   1.0.0                           1.1.0
 jvmVersion     openjdk version "25.0.4" ...    openjdk version "25.0.3" ...
 ```
 
-Result paths are `<branch>/<type>/<timestamp>`, as printed by `baas run`. Identical environments
-report no differences and exit 0.
+Result paths are `runs/<project>/<runId>`, as printed by `baas run`. A run recorded before the
+unified layout keeps its original `<branch>/<type>/<timestamp>` path; both shapes still resolve.
+Identical environments report no differences and exit 0.
 
 Note the split: `infra/runner-image.yaml` is the *declaration* — what was asked for.
 `environment.json` is the *observation* — what was got, including what the image cannot control
@@ -221,15 +279,18 @@ history outlives the stack — and teardown names both so the next setup doesn't
 
 ```
 baas run
-  ├─ resolve the runner AMI from /<prefix>/runner/ami-id  (fails here if unbuilt —
-  │    before the build, before any upload, before anything is launched)
-  ├─ build the benchmark JAR in the current directory
-  ├─ upload it to s3://<bucket>/runs/<requestId>/benchmark.jar
+  ├─ resolve the results table and the runner AMI from /<prefix>/runner/ami-id
+  │    (fails here if either is missing, before any upload or launch —
+  │    --benchmark-jar is required; baas run builds nothing)
+  ├─ upload --benchmark-jar to s3://<bucket>/runs/<project>/<runId>/input/benchmark.jar
+  ├─ seed releases/<version>/benchmark-runner.jar from GitHub Releases, checksum-
+  │    verified, the first time that version runs — never overwritten after
   └─ ec2:RunInstances from that AMI, with a generated user-data script
        ├─ record the environment: environment.json + packages.txt, uploaded
        │    BEFORE the benchmark starts, so a crashed run still says what it
        │    crashed on  (nothing is installed — the toolchain is already baked)
-       ├─ download benchmark-runner.jar (GitHub Releases, or S3 if overridden)
+       ├─ download benchmark-runner.jar from S3 — the instance reaches no host
+       │    outside the account
        ├─ run benchmark-runner.jar from /app, pointed at the results table
        │    └─ launch the benchmark JAR as a subprocess, parse results,
        │       upload output and the verbatim result JSON to S3, then write
@@ -249,7 +310,7 @@ stored, so a stored row always has its full-fidelity counterpart to point at. Th
 a table view needs; `rawData` and `scorePercentiles` live only in S3, reachable with
 `baas download`.
 
-**Nothing is silently discarded.** A run with no store configured fails before the build, and a
+**Nothing is silently discarded.** A run with no store configured fails before any upload, and a
 store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. Discarding
 measurements requires `--no-database`.
 

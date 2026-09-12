@@ -58,7 +58,7 @@ class RunCommandTest {
     /**
      * Before the cutover, absent store configuration selected a no-op adapter: the run booted an
      * instance, measured, reported success and discarded every number. Failing here — before the
-     * Maven build, the upload and the launch — is what replaced that, so the cost of a
+     * runner-image lookup, the upload and the launch — is what replaced that, so the cost of a
      * misconfigured CLI is an error message rather than a paid instance and no data.
      */
     @Test
@@ -195,6 +195,50 @@ class RunCommandTest {
     }
 
     /**
+     * `commit=unknown` is the same junk as the RESULT#unknown partition the runner now refuses:
+     * a non-answer wearing a value's clothing, in the only query surface the tool has.
+     */
+    @Test
+    void omitsAnUnresolvableCommitRatherThanRecordingUnknown() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", null, "main"))
+            .doesNotContainKey("commit")
+            .containsEntry("branch", "main");
+    }
+
+    @Test
+    void omitsAnUnresolvableBranchRatherThanRecordingUnknown() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", null))
+            .doesNotContainKey("branch")
+            .containsEntry("commit", "abc123");
+    }
+
+    @Test
+    void aRunOutsideARepositoryStillCarriesItsProjectAndType() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "explicit-project", null, null))
+            .containsEntry("project", "explicit-project")
+            .containsEntry("type", "jmh")
+            .doesNotContainKey("commit")
+            .doesNotContainKey("branch");
+    }
+
+    /** --branch and --project had dedicated options; commit was overridable only via --tag. */
+    @Test
+    void acceptsADedicatedCommitOption() {
+        var command = new RunCommand();
+
+        new picocli.CommandLine(command)
+            .parseArgs("--benchmark-jar", "b.jar", "--commit", "deadbeef", "jmh");
+
+        assertThat(command.commit).isEqualTo("deadbeef");
+    }
+
+    /**
      * call() itself can't run in a unit test — it needs a real BaasConfig, AWS credentials, and
      * a published runner image — so this pins the one piece that IS reachable without any of
      * that: resolveProject() genuinely throws (not a mock standing in for one) when run outside
@@ -211,10 +255,50 @@ class RunCommandTest {
     }
 
     /**
+     * The previous implementation merged git's stderr into the captured output and never checked
+     * the exit code, so outside a git repository it returned the literal
+     * {@code "fatal: not a git repository (or any of the parent directories): .git"} as if it were
+     * a branch name, and {@code buildRunnerTags} then stored that text as the {@code branch} tag —
+     * worse than the {@code "unknown"} placeholder this change removed. {@code currentGitBranch}
+     * must now report absence, exactly like {@code currentGitCommit} already does via the same
+     * exit-code-checked {@link #gitOutput(Path, String...)} seam.
+     */
+    @Test
+    void aGitFailureYieldsNoBranchRatherThanTheErrorText(@TempDir Path notARepo) {
+        var command = new RunCommand();
+
+        assertThat(command.currentGitBranch(notARepo)).isNull();
+    }
+
+    /**
+     * An explicit {@code --commit ""} or {@code --branch ""} is a value the caller supplied, so the
+     * naive {@code field != null} check treats it as present and stores an empty-string tag — a
+     * placeholder standing in for an unknown value, the same defect class as {@code "unknown"}.
+     * {@code resolveProject} already blank-checks {@code --project}; {@code resolveBranch} and
+     * {@code resolveCommit} must do the same and fall through to derivation, which here (outside a
+     * git repository) yields absence rather than the empty string that was explicitly passed.
+     */
+    @Test
+    void aBlankExplicitBranchIsTreatedAsAbsentRatherThanStoredEmpty(@TempDir Path notARepo) {
+        var command = new RunCommand();
+        command.branch = "";
+
+        assertThat(command.resolveBranch(notARepo)).isNull();
+    }
+
+    @Test
+    void aBlankExplicitCommitIsTreatedAsAbsentRatherThanStoredEmpty(@TempDir Path notARepo) {
+        var command = new RunCommand();
+        command.commit = "";
+
+        assertThat(command.resolveCommit(notARepo)).isNull();
+    }
+
+    /**
      * A reactor build cannot name a release, so it cannot pin the runner JAR a run executes. The
-     * refusal is the same no-fallback stance the runner AMI takes, and it lands before the Maven
-     * build, before any upload and before the first AWS client is constructed — reachable in a
-     * unit test precisely because nothing AWS-shaped happens first.
+     * refusal is the same no-fallback stance the runner AMI takes, and it lands before the project
+     * or results table is resolved, before any upload and before the first AWS client is
+     * constructed — reachable in a unit test precisely because nothing AWS-shaped happens first.
      */
     @Test
     void refusesToLaunchFromAnUnreleasedBuildWithoutARunnerJar() throws Exception {
@@ -231,5 +315,54 @@ class RunCommandTest {
         assertThat(pl.wsztajerowski.baas.BaasVersion.isReleased())
             .as("a reactor build always carries the placeholder version")
             .isFalse();
+    }
+
+    /**
+     * An installed `baas` is invoked from anywhere, so building whatever is in the working
+     * directory stopped being coherent. The absence is pinned rather than merely untested: a
+     * restored build would silently compile an unrelated project.
+     */
+    @Test
+    void noLongerCarriesABuildStep() {
+        assertThat(RunCommand.class.getDeclaredMethods())
+            .extracting(java.lang.reflect.Method::getName)
+            .doesNotContain("runMavenBuild");
+        assertThat(RunCommand.class.getDeclaredFields())
+            .extracting(java.lang.reflect.Field::getName)
+            .doesNotContain("skipBuild");
+    }
+
+    /**
+     * With no build and no config default, an unnamed JAR has nowhere to come from. picocli
+     * rejects it at parse time, which is before the AMI lookup and before any upload.
+     */
+    @Test
+    void refusesToRunWithoutAnExplicitBenchmarkJar() {
+        var parser = new picocli.CommandLine(new RunCommand());
+
+        assertThatThrownBy(() -> parser.parseArgs("jmh"))
+            .isInstanceOf(picocli.CommandLine.MissingParameterException.class)
+            .hasMessageContaining("--benchmark-jar");
+    }
+
+    @Test
+    void acceptsAnExplicitBenchmarkJar() {
+        var command = new RunCommand();
+
+        new picocli.CommandLine(command).parseArgs("--benchmark-jar", "target/b.jar", "jmh");
+
+        assertThat(command.benchmarkJar).isEqualTo(Path.of("target/b.jar"));
+    }
+
+    /**
+     * The default pointed at jmh-benchmarks/target/jmh-benchmarks.jar — a path from an older
+     * layout, filed as part of A6. Harmless while the build usually produced something; the only
+     * fallback once the build is gone.
+     */
+    @Test
+    void theBenchmarkConfigNoLongerCarriesAJarPath() {
+        assertThat(BaasConfig.BenchmarkConfig.class.getDeclaredMethods())
+            .extracting(java.lang.reflect.Method::getName)
+            .doesNotContain("getJarPath", "setJarPath");
     }
 }

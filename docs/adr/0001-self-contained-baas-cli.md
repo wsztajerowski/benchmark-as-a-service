@@ -64,7 +64,7 @@ does not explain itself — change them only deliberately.
 | An empty or unset Mongo URI selects `NoOpDatabaseService` | Benchmarks still run; measurements are discarded rather than failing the run. Useful for infrastructure testing, dangerous to hit unintentionally. **Superseded** — it was hit unintentionally, so absent store configuration is now a hard failure and discarding takes an explicit `--no-database`. |
 | `benchmark-runner.jar` needs no code changes | It already reads `MONGO_CONNECTION_STRING`. The migration changed only where that value comes from. **Superseded** — the runner gained a storage-neutral `ResultsStore` port with DynamoDB, MongoDB and no-op adapters. |
 | The CloudFormation template ships as a classpath resource | `baas admin setup` has no external file dependency. Only the core template ships; CI templates and policy JSONs are test fixtures. |
-| `baas run` builds in the current working directory | That is the user's benchmark project, not this repo. |
+| `baas run` builds in the current working directory | That is the user's benchmark project, not this repo. **Superseded** — `baas run` builds nothing; `--benchmark-jar` names a pre-built JAR, and the working directory is only where `git` is invoked to derive `project`/`branch`/`commit`. |
 
 ## Risks
 
@@ -91,7 +91,7 @@ readable and unwritten until that change's §14 decommissions it.
 | The runner JAR is fetched from GitHub Releases without checksum verification | Low | Add SHA-256 verification from the release's checksum asset. |
 | A shared `RunnerRole` can read any operator's Mongo URI — one SSM path | Low–Med | Per-operator SSM path prefixes if this ever becomes multi-tenant. Out of scope for v1. |
 | The runner has a public IP | Low | Mitigated: no inbound security-group rules, IMDSv2 with hop limit 1, short-lived self-terminating instance. |
-| `baas run` assumes a Maven project producing one JAR | Low | `--benchmark-jar` plus `--skip-build` covers other layouts. |
+| `baas run` assumes a Maven project producing one JAR | Low | `--benchmark-jar` plus `--skip-build` covers other layouts. **Superseded** — `--skip-build` is gone; `baas run` never builds, and `--benchmark-jar` (now required) is the only way a JAR reaches it, so any project layout works as long as something produces the JAR beforehand. |
 
 ## Amendments since acceptance
 
@@ -109,6 +109,12 @@ code disagree, **the code wins**.
   `DeletionPolicy: Retain`. Because the prefix is a hash of the caller's ARN, a retained bucket
   blocks any later `setup` — so `baas admin teardown --delete-bucket` empties and deletes it
   explicitly (opt-in; the default retains), and setup detects and reports the collision.
+- **Distribution gained an installer.** `scripts/install.sh` (`installable-cli-command`) makes the
+  shaded JAR installable: release-time version resolution, checksum-verified atomic install, a
+  `~/.local/bin/baas` launcher shim, `--update` (hands off to the newer release's own installer,
+  never downgrades) and `--uninstall` (never touches `~/.baas/`). The paragraph below still holds
+  for everything else it named — a Homebrew tap, jpackage bundles, a native image and a Docker
+  image remain unbuilt backlog.
 
 Distribution beyond a shaded JAR — an install script, a Homebrew tap, jpackage bundles, a
 native image, a Docker image — was specified but never built. It remains backlog, not a
