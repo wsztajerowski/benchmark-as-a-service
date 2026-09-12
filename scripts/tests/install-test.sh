@@ -295,5 +295,135 @@ if [ ! -d "$BAAS_SHARE" ]; then fail "share directory removed despite a file lef
 elif [ ! -f "$EXTRA" ]; then fail "a file the user placed in \$BAAS_SHARE was deleted"
 else pass; fi
 
+# --- Java version enforcement at install time (W4c) ------------------------
+# check_prerequisites (install.sh:200) is the installer's own Java floor, checked once before any
+# fetch. It is distinct from the shim's guard above (M-2): the shim only checks that *some* java
+# resolves on every invocation; check_prerequisites additionally parses the version once, at
+# install time, and refuses anything older than 25.
+
+FAKEJAVA17_BIN=$(mktemp -d)
+cat > "$FAKEJAVA17_BIN/java" <<'FAKEJAVA'
+#!/bin/sh
+printf 'openjdk version "17.0.2" 2022-01-18\n' >&2
+exit 0
+FAKEJAVA
+chmod +x "$FAKEJAVA17_BIN/java"
+
+run_case "an old Java runtime blocks installation, naming Java 25, before any fetch"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+out=$(BAAS_JAVA="$FAKEJAVA17_BIN/java" sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected refusal with Java 17, got success: $out"
+elif [ -f "$BAAS_SHARE/$JAR_NAME" ]; then fail "jar was installed despite an old Java runtime"
+elif [ -e "$BAAS_BIN/baas" ]; then fail "shim was written despite an old Java runtime"
+else
+    # This exact sentence is check_prerequisites's version-floor die. Its sibling die ("No java
+    # found") fires when java is unresolvable, and the shim's own guard is worded differently
+    # again ("baas needs Java 25 on PATH, or BAAS_JAVA pointing at one.") — pinning the full
+    # wording, including the parsed major version, keeps this case sensitive to this one branch.
+    assert_contains "$out" "baas needs Java 25; found Java 17. Nothing was installed."
+fi
+rm -rf "$FAKEJAVA17_BIN"
+
+run_case "java_major parses the 1.8.0_x version shape as 8, not 1"
+FAKEJAVA8_BIN=$(mktemp -d)
+cat > "$FAKEJAVA8_BIN/java" <<'FAKEJAVA'
+#!/bin/sh
+printf 'java version "1.8.0_402"\n' >&2
+exit 0
+FAKEJAVA
+chmod +x "$FAKEJAVA8_BIN/java"
+out=$(BAAS_PROBE=1 BAAS_JAVA="$FAKEJAVA8_BIN/java" sh -c ". '$INSTALLER'; java_major" 2>&1); rc=$?
+rm -rf "$FAKEJAVA8_BIN"
+if [ "$rc" -ne 0 ]; then fail "expected java_major to succeed on the 1.8.0_x shape, got: $out"
+else assert_eq "$out" "8"; fi
+
+# --- an optional tool is reported, not enforced (W4d) -----------------------
+# git absent must warn, never fail the install. Exercised through BAAS_PROBE directly, with a PATH
+# built to resolve everything check_prerequisites and java_major touch (java, sed, head) except
+# git — a bare PATH=/nonexistent-empty-dir would also hide java and die on "No java found", which
+# is a different branch than the one this case targets.
+
+FAKEGITLESS_BIN=$(mktemp -d)
+cat > "$FAKEGITLESS_BIN/java" <<'FAKEJAVA'
+#!/bin/sh
+printf 'openjdk version "25.0.1" 2025-10-01\n' >&2
+exit 0
+FAKEJAVA
+chmod +x "$FAKEGITLESS_BIN/java"
+ln -s "$(command -v sed)" "$FAKEGITLESS_BIN/sed"
+ln -s "$(command -v head)" "$FAKEGITLESS_BIN/head"
+
+run_case "an absent git is reported, and check_prerequisites still succeeds"
+# PATH is reassigned INSIDE the -c script, not as a prefix on this sh invocation itself — a prefix
+# here would make this very `sh -c` unresolvable, since the replacement PATH governs the command
+# lookup for the command it prefixes too (the same reason the sha256_of/verify cases above set
+# PATH as their first statement rather than as an external prefix).
+out=$(BAAS_PROBE=1 sh -c "PATH='$FAKEGITLESS_BIN'; . '$INSTALLER'; check_prerequisites" 2>&1); rc=$?
+rm -rf "$FAKEGITLESS_BIN"
+if [ "$rc" -ne 0 ]; then fail "expected check_prerequisites to succeed with git absent, got: $out"
+else
+    # check_prerequisites' only git-related output; a mutation that dropped the warning, or made
+    # it fatal, is caught either by this text going missing or by rc becoming non-zero above.
+    assert_contains "$out" "git not found. baas run derives project, commit and branch from git"
+fi
+
+# --- update hands off to the newer release's own installer (W4e) -----------
+# --update (install.sh:292) must never install the newer artifact itself; it execs the newer
+# release's own installer. A marker installer stands in for that here: it never touches
+# BAAS_SHARE/BAAS_BIN itself, so a calling script that fell back to installing directly would have
+# to fetch a real baas-cli.jar for the marker version — which does not exist in the fixture — and
+# fail loudly instead of quietly succeeding.
+
+MARKER_VERSION=42.0.0
+mkdir -p "$FIXTURE/releases/download/v$MARKER_VERSION"
+
+run_case "update hands off to the newer release's own installer"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+MARKER_SENTINEL="$SANDBOX/marker-ran"
+cat > "$FIXTURE/releases/download/v$MARKER_VERSION/install.sh" <<MARKEREOF
+#!/bin/sh
+printf 'marker-installer-ran\n' > '$MARKER_SENTINEL'
+MARKEREOF
+chmod +x "$FIXTURE/releases/download/v$MARKER_VERSION/install.sh"
+out=$(BAAS_INSTALLED_VERSION=1.0.0 BAAS_LATEST_TAG="$MARKER_VERSION" sh "$INSTALLER" --update 2>&1); rc=$?
+if [ "$rc" -ne 0 ]; then fail "expected the hand-off to succeed, got: $out"
+elif [ ! -f "$MARKER_SENTINEL" ]; then fail "the newer release's own installer never ran: $out"
+elif [ -f "$BAAS_SHARE/$JAR_NAME" ]; then
+    fail "the calling installer installed the jar itself instead of handing off"
+elif [ -e "$BAAS_BIN/baas" ]; then
+    fail "the calling installer wrote a shim itself instead of handing off"
+else
+    assert_contains "$out" "Updating baas 1.0.0 -> $MARKER_VERSION"
+fi
+rm -rf "$FIXTURE/releases/download/v$MARKER_VERSION"
+
+# --- an unreadable installed version stops the update (W4f) -----------------
+
+run_case "update with no installed shim reports it and changes nothing"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+out=$(sh "$INSTALLER" --update 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected update to fail with no installed shim, got success: $out"
+elif [ -e "$BAAS_BIN/baas" ] || [ -d "$BAAS_SHARE" ]; then
+    fail "update created files despite finding nothing installed"
+else
+    assert_contains "$out" "No installed baas found at $BAAS_BIN/baas"
+fi
+
+run_case "update with an unreadable installed version reports it and changes nothing"
+rm -rf "$SANDBOX"; mkdir -p "$BAAS_BIN"
+cat > "$BAAS_BIN/baas" <<'FAKESHIM'
+#!/bin/sh
+exit 1
+FAKESHIM
+chmod +x "$BAAS_BIN/baas"
+out=$(sh "$INSTALLER" --update 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then
+    fail "expected update to fail when the version cannot be read, got success: $out"
+elif [ -d "$BAAS_SHARE" ]; then
+    fail "update created $BAAS_SHARE despite an unreadable installed version"
+else
+    assert_contains "$out" "Could not read the installed version. Nothing was changed."
+fi
+
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"
 [ "$FAILURES" -eq 0 ]
