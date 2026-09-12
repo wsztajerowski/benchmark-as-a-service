@@ -21,12 +21,21 @@ jobs:
           distribution: temurin
           cache: maven
 
-      # macos-latest has no sha256sum, only shasum -a 256 — that split is the whole reason this
-      # leg exists. If sha256sum ever shows up here, the macOS leg has stopped covering it and the
-      # detection logic needs a dedicated test instead.
+      # This leg was added believing macos-latest had no sha256sum, only shasum -a 256. That is no
+      # longer true and was the whole stated reason for the leg: ubuntu-latest has
+      # /usr/bin/sha256sum, and macOS ships /sbin/sha256sum as part of the OS — Apple's
+      # com.apple.md5sum multi-call binary, SIP-restricted, hard-linked alongside md5sum, sha1sum
+      # and sha512sum. So BOTH legs take install.sh's preferred branch and this matrix does not
+      # exercise the shasum fallback. There is deliberately no test for that fallback either: it is
+      # two lines kept as insurance for a macOS old enough to predate those binaries, and a harness
+      # case for a branch no supported platform executes costs more than it protects.
+      # This step stays as the tripwire for the reverse change — if a runner ever stops shipping
+      # sha256sum, the fallback silently becomes the live path here and the log should say so.
+      # The two legs still earn their keep on BSD-vs-GNU userland (mktemp, sed, install) and on
+      # Java resolution.
       - name: Record which checksum utility this runner has
         run: |
-          command -v sha256sum || echo "no sha256sum (expected on macOS)"
+          command -v sha256sum || echo "no sha256sum on this runner"
           command -v shasum    || echo "no shasum"
 
       # A fixture release, not a published one. No published release carries baas-cli.jar.sha256 —

@@ -106,9 +106,20 @@ a paid EC2 instance, and the crash would arrive later, looking unrelated.
 
 ### A missing checksum *tool* is a failure, not a skip
 
-Linux has `sha256sum`; stock macOS has only `shasum -a 256`. The script detects whichever exists and
-exits non-zero if neither does, rather than installing unverified. This mirrors the existing
-requirement that a missing published checksum is a hard failure.
+Linux has `sha256sum`; macOS was believed to have only `shasum -a 256`. The script detects whichever
+exists and exits non-zero if neither does, rather than installing unverified. This mirrors the
+existing requirement that a missing published checksum is a hard failure.
+
+**Correction (2026-09-12, first CI run).** The premise about macOS is false. `macos-latest` reports
+`/sbin/sha256sum`, and so does stock macOS: it is Apple's own `com.apple.md5sum` multi-call binary
+in SIP-restricted `/sbin`, hard-linked alongside `md5sum`, `sha1sum` and `sha512sum`. The classic
+"macOS has only `shasum -a 256`" portability split is therefore gone, and the preferred branch is
+the only one that runs on any platform this project supports.
+
+The fallback is kept anyway — two lines insuring a macOS old enough to predate those binaries — but
+deliberately **not** tested: a harness case for a branch no supported platform executes costs more
+than it protects. Its correctness was confirmed by hand once, under a PATH resolving only `shasum`
+and `cut`, where `sha256_of` returned a digest identical to `sha256sum`'s.
 
 The published `.sha256` is a bare hash — `release.yml` already pipes through `cut -d" " -f1` — so the
 comparison is against a bare hash with trailing whitespace stripped, not against either tool's native
@@ -297,8 +308,12 @@ that a checksum computed after the repackage matches, and that `BaasVersion.curr
 reports a real version. Step 3 is the single assertion covering the failure class this change exists
 to prevent, and it also pins the output format `--update` parses.
 
-The macOS leg is what catches the `sha256sum` / `shasum -a 256` split. A published release remains
-worth installing from by hand after the fact, which is what the migration plan's verification step is.
+The macOS leg was expected to catch the `sha256sum` / `shasum -a 256` split. The first CI run showed
+it does not — stock macOS ships `sha256sum` (see the correction above) — so that split is exercised
+neither by CI nor, by decision, by a harness case. The two legs still earn their place on BSD-vs-GNU
+userland differences (`mktemp`, `sed`, `install`) and on Java resolution. A published release remains
+worth installing from by hand after the fact, which is what the migration plan's verification step
+is.
 
 This also makes CLAUDE.md's "Nothing in CI invokes `scripts/`" false, which the change corrects.
 

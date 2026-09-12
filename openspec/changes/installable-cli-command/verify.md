@@ -110,7 +110,7 @@ Harness numbers refer to the 30 cases in `scripts/tests/install-test.sh`.
 | 9 | Update resolves and defers | `latest_tag` `:237`, `installed_version` `:247`, `version_newer` `:220`, hand-off `:292` | #17–#19; probe; plus **new**: the hand-off actually executing the newer release's installer, and two unreadable-version cases. **No gap.** |
 | 10 | Update path after a piped install | `store_installer` `:168` | #8 |
 | 11 | Uninstall removes exactly what was installed | `rmdir`, never `rm -rf`, `:303` | #20–#23 |
-| 12 | Runs on macOS and Linux | run-time `sha256sum`/`shasum` detection | 30/0 under `sh` and `dash` on macOS. **Gap: W3** |
+| 12 | Runs on macOS and Linux | run-time `sha256sum`/`shasum` detection | 30/0 under `sh` and `dash`; both CI legs green on the first PR run. **W3 closed.** The macOS leg does *not* cover the detection split — stock macOS ships `sha256sum` too — so only the preferred branch is exercised, by design. **No gap.** |
 | 13 | Tags recorded only when supplied | `buildRunnerTags` `:560-565`; runner injects no default | the `omits…` unit tests |
 | 14 | Release publishes versioned artifacts + checksums | `release.yml:55-59`; `versions:set` → package → both checksums → `sed`; `@semantic-release/git` absent | CI fixture asserts `baas 9.9.9-ci`, proven locally. **Gap: W4h** |
 
@@ -149,10 +149,25 @@ Harness numbers refer to the 30 cases in `scripts/tests/install-test.sh`.
   give each its delta specs, or set `skip_specs: true`, as part of its own work.
 - **W2** — Eight tasks open, all manual and post-release (section 2). *Recommendation:* run §9 and
   8.5 after the first release that publishes the installer, then archive.
-- **W3** — **CI has never run.** `install-test.yml` is committed but not pushed, so neither matrix
-  leg has executed. macOS is covered locally under `sh` and `dash`; Linux is only approximated by
-  `dash`. The workflow triggers on `pull_request` and on pushes to `main`, so pushing a bare branch
-  will not start it. *Recommendation:* confirm both legs on the first PR run.
+- **W3** — **CLOSED 2026-09-12.** CI has now run, on PR #57. Both legs pass: `install.sh on
+  ubuntu-latest` (36 s) and `install.sh on macos-latest` (47 s), each reporting `30 case(s), 0
+  failure(s)`, `baas --version -> baas 9.9.9-ci`, and green corrupted-checksum and uninstall steps.
+  `CI PR Maven Build` also passed (7m19s).
+  **What confirming it exposed:** the macOS leg does not cover what it was added for. `macos-latest`
+  reports `/sbin/sha256sum` and `ubuntu-latest` `/usr/bin/sha256sum`, so *both* legs take
+  `sha256_of`'s preferred branch and the `shasum -a 256` fallback executes nowhere. This is not a
+  runner-image quirk: `/sbin/sha256sum` is Apple's own `com.apple.md5sum` multi-call binary, SIP-
+  restricted, hard-linked alongside `md5sum`/`sha1sum`/`sha512sum`, so stock macOS has it and the
+  portability split the leg existed for is gone.
+  **Decision:** no test was added for the fallback. It is two lines retained as insurance for a
+  macOS predating those binaries, and a harness case for a branch no supported platform executes
+  costs more than it protects. Its correctness was confirmed once by hand during this
+  investigation — under a PATH resolving only `shasum` and `cut`, `sha256_of` returned
+  `555915df02bb5747633e1efd1456d29434328a60cbf11ab0da800e5a7a002732`, identical to `sha256sum`'s
+  digest for the same file. The stale rationale is corrected in `install-test.yml` and `design.md`.
+  *Note:* `E2E Production Benchmark Test` is red on #57 and on every recorded run since 2026-02-09,
+  including on `main`; it dies at `Start EC2 runner` on a bad `GHA_EC2_PAT`, before reaching the
+  deleted SSM mongo parameter that CLAUDE.md names. Pre-existing and out of scope.
 - **W4** — Spec scenarios with no automated test. Iteration 2 closed four of the original eight
   (c, d, e, f). These four remain:
   - **a.** *A named JAR that does not exist fails before provisioning.* The check is in `call()`,
@@ -184,7 +199,7 @@ Harness numbers refer to the 30 cases in `scripts/tests/install-test.sh`.
 1. Commit `apply.md` and this `verify.md` on `feat/installable-cli-command`.
 2. Finalize: merge this worktree into `feat/baas-user-artifact` and push. **Needs the user's
    go-ahead**, and must run from the main checkout, where the target branch is checked out.
-3. Open or update a PR so `install-test.yml` runs both legs for the first time (W3).
+3. ~~Open or update a PR so `install-test.yml` runs both legs for the first time (W3).~~ **Done** — PR #57, both legs green.
 4. Release. Then run §9 and 8.5 by hand against the published installer, then `/opsx:archive`.
 
 > **Convergence loop reminder**:
