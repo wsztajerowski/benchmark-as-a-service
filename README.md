@@ -438,7 +438,11 @@ Variables: `SUBNET_ID`, `SECURITY_GROUP_ID`, `AWS_REGION`, `ASYNC_PROFILER_VERSI
 > cutover, which covered `baas run` only. Cutting this path over or retiring it is open work.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
-real version is set at release time.
+real version is set at release time. The bump comes from the commit subjects under the
+**conventionalcommits** preset, so a breaking change has to carry the `!` marker
+(`feat(cli)!: …`) or a `BREAKING CHANGE:` footer. The angular preset in use up to and including
+v2.2.0 honoured only the footer, which is why that release shipped three `feat(cli)!:` commits as
+a minor.
 
 ## E2E test
 
