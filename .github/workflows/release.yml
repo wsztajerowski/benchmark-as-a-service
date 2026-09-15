@@ -38,8 +38,15 @@ jobs:
         with:
           node-version: 22
 
+      # The preset major is pinned on purpose. conventional-changelog-conventionalcommits@10
+      # switched to @conventional-changelog/template and needs conventional-changelog-writer@9+,
+      # but @semantic-release/release-notes-generator@14 — the newest stable — pins writer ^8.
+      # With v10 the run analyses commits correctly and then dies in generateNotes with
+      # 'Missing helper'. v9 is the newest major that renders against writer 8, and it still
+      # treats a '!' subject as a major. Don't drop the ^9 until release-notes-generator ships
+      # a stable release built on writer 9.
       - name: Install dependencies
-        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/exec @semantic-release/github @semantic-release/release-notes-generator conventional-changelog-conventionalcommits
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/exec @semantic-release/github @semantic-release/release-notes-generator 'conventional-changelog-conventionalcommits@^9'
 
       - name: Generate release configuration
         run: |
