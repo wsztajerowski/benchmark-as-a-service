@@ -39,7 +39,7 @@ jobs:
           node-version: 22
 
       - name: Install dependencies
-        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/exec @semantic-release/github @semantic-release/release-notes-generator
+        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/exec @semantic-release/github @semantic-release/release-notes-generator conventional-changelog-conventionalcommits
 
       - name: Generate release configuration
         run: |
@@ -68,7 +68,7 @@ jobs:
                 }
               ]
             ],
-            preset: 'angular'
+            preset: 'conventionalcommits'
           };" > release.config.js
 
       - name: Run Semantic Release

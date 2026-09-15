@@ -78,7 +78,7 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   file that only fails weeks later in `baas env diff`. Values that can contain `"` or `\` go
   through `json_escape`.
 - **`imageVersion`/`instanceType` reach the database via the runner's `--tag`, not EC2 tags.**
-  `ResultsQueryService` reads `benchmarkMetadata.tags`; tagging the *instance* leaves every stored
+  `ResultsQueryService` reads the item's top-level `tags` map; tagging the *instance* leaves every stored
   result with a null `imageVersion` and the comparison silently never fires. The tag values are the
   ones observed on the box, so a result's tags cannot disagree with its own `environment.json`.
 - **The benchmark runs from `/app`, never `/`.** The runner scans below its working directory for
@@ -90,7 +90,7 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   the name — so fetching it at boot would buy nothing and cost a round trip on every run. Don't
   "restore" the SSM indirection.
 - **`baas run` forwards `project`, `branch`, `commit` and every `--tag` to the *runner*, not just to
-  the instance.** They reach `benchmarkMetadata.tags`, which is the only query surface `baas results`
+  the instance.** They reach the item's top-level `tags` map, which is the only query surface `baas results`
   has. A caller `--tag` for a machine-observed key (`imageVersion`, `instanceType`, `jdk`,
   `cpuModel`, `cpuArch`, `type`) is rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.

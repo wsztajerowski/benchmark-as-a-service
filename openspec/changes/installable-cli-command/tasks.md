@@ -146,22 +146,62 @@
       `mvn package && baas run …` shape.
 - [ ] 8.5 Walk the zero-to-first-result path on a clean machine and fix what is stale — install, AWS
       credentials, `admin deployer-policy`, `admin setup`, `admin build-image`, first run.
+      **Partly done 2026-09-12.** Verified: install from the published one-liner, AWS credentials,
+      `admin deployer-policy` (renders valid JSON, 12 statements, prefix-exact, no unrendered
+      placeholders, 4076 non-whitespace chars), and a first run end to end. Stale-doc sweep found
+      README clean of `--skip-build`/`jarPath`/`jmh-benchmarks/target`, and fixed CLAUDE.md's
+      `benchmarkMetadata.tags` → the item's top-level `tags` map. **Not walked:** `admin setup` and
+      `admin build-image`, which would rebuild live infrastructure; they need a genuinely separate
+      account or a clean machine. Note `~/.baas/config.yaml` still carries the deleted
+      `benchmark.jarPath` key — silently ignored, the open half of finding A6.
 - [x] 8.6 Add the one-line SSO warning from A10: a second `admin setup` under a new session identity
       creates separate infrastructure and repoints config at it.
 
 ## 9. End-to-end verification
 
-- [ ] 9.1 **Manual.** Nothing automated covers `baas run`; `RunCommand.call()` is executed by no test and
+- [x] 9.1 **Manual.** Nothing automated covers `baas run`; `RunCommand.call()` is executed by no test and
       `e2e-cloud-test.yml` drives the GitHub Actions path instead. Every check below is by hand.
+      **Done 2026-09-12** — 9.3/9.4/9.6 executed by hand against real AWS.
 - [ ] 9.2 **Manual.** After the first release publishing the installer: install on macOS and on Linux
       from the documented one-liner, and confirm `baas --version` reports that release.
-- [ ] 9.3 **Manual.** `baas run --benchmark-jar <jar> jmh -- <benchmark>` completes against real AWS,
+      **macOS done 2026-09-12** against v2.2.0: install → uninstall → reinstall, 25/25 assertions,
+      `baas --version` → `baas 2.2.0`. Ran with no `--version`, so the release-time `sed` bake of
+      `BAAS_VERSION_DEFAULT` is proven (a checkout copy refuses that invocation). **Linux leg still
+      open** — needs a real Linux machine; CI's ubuntu leg uses a fixture release, not a published one.
+- [x] 9.3 **Manual.** `baas run --benchmark-jar <jar> jmh -- <benchmark>` completes against real AWS,
       pinning `releases/<version>/benchmark-runner.jar` — the path this change exists to make reachable,
-      and which has never executed.
-- [ ] 9.4 **Manual.** Confirm the stored measurement carries `commit` and `branch` when run from a
+      and which has never executed. **Done 2026-09-12**, run `20260912T130002729Z-ef20b6e7`
+      (project `baas-cli-verification`). Seeded `releases/2.2.0/benchmark-runner.jar` from the v2.2.0
+      release — 29,631,273 bytes, matching the asset exactly — then reported "pinned to CLI version
+      2.2.0", launched `i-0150e1f5c85439bc5` from `ami-0aa25ec7fbf1c80f5`, reached `run-status:
+      completed`, printed a score and self-terminated. All artifacts present: `environment.json`,
+      `jmh-result.json`, `jmh-output.txt`, `packages.txt`, `cloud-init-output.log`,
+      `input/benchmark.jar` (no `runner.jar`, correctly).
+- [x] 9.4 **Manual.** Confirm the stored measurement carries `commit` and `branch` when run from a
       checkout, and that a run from outside a repository stores neither and still succeeds.
+      **Done 2026-09-12.** From the checkout: `commit=5095083c…`, `branch=ci/conventionalcommits-preset`,
+      and the tags agree with the run's own `environment.json` on every shared field. From
+      `/tmp` (confirmed outside any repo), run `20260912T131243061Z-a02f33f3` stored tags
+      `[cpuArch, cpuModel, imageVersion, instanceType, jdk, project, source, type]` — `commit` and
+      `branch` both **absent**, not `"unknown"` — and still reached `completed`.
 - [ ] 9.5 **Manual.** `--update` on a current installation reports current and downloads nothing; on an
       older one it installs the newer release.
-- [ ] 9.6 **Manual.** Upgrade while a `baas run` is polling, and confirm the in-flight run completes.
-- [ ] 9.7 **Manual.** `--uninstall`, then confirm `~/.baas/config.yaml` is untouched and a reinstall
-      restores a working `baas` without reconfiguration.
+      **First half done 2026-09-12:** `baas 2.2.0 is current. Nothing to do.`, exit 0, jar checksum
+      *and* mtime unchanged, so nothing was fetched. Also confirmed `--update --version 2.1.0`
+      silently ignores the version, as the README documents. **Second half blocked, not skipped:**
+      v2.2.0 is the first release carrying `baas-cli.jar.sha256`, so no older *installable* version
+      exists — `--version 2.1.0` correctly fails on the missing checksum asset and leaves the
+      working install intact (itself a useful verification of that refusal). Retest once a second
+      such release exists.
+- [x] 9.6 **Manual.** Upgrade while a `baas run` is polling, and confirm the in-flight run completes.
+      **Done 2026-09-12** during run `20260912T131243061Z-a02f33f3`: the installer was re-run while
+      the CLI was polling, and the jar's **inode changed** while its content stayed identical —
+      `rename(2)` swapping the inode is exactly why the running JVM keeps its original jar. The
+      in-flight run reached `completed` and exited 0.
+- [x] 9.7 **Manual.** `--uninstall`, then confirm `~/.baas/config.yaml` is untouched and a reinstall
+      restores a working `baas` without reconfiguration. **Done 2026-09-12.** Uninstall ran via the
+      documented stored installer, which deletes the script it is executing, and still completed
+      cleanly — a path the harness never covers, since it invokes the repo copy. Shim, jar, stored
+      installer and the emptied share dir all removed; `~/.baas` byte-identical by whole-directory
+      manifest, mtime unchanged; reinstall restored a working `baas config show` with no
+      reconfiguration.
