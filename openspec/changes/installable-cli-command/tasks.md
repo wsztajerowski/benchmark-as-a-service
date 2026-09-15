@@ -184,15 +184,20 @@
       `/tmp` (confirmed outside any repo), run `20260912T131243061Z-a02f33f3` stored tags
       `[cpuArch, cpuModel, imageVersion, instanceType, jdk, project, source, type]` — `commit` and
       `branch` both **absent**, not `"unknown"` — and still reached `completed`.
-- [ ] 9.5 **Manual.** `--update` on a current installation reports current and downloads nothing; on an
+- [x] 9.5 **Manual.** `--update` on a current installation reports current and downloads nothing; on an
       older one it installs the newer release.
-      **First half done 2026-09-12:** `baas 2.2.0 is current. Nothing to do.`, exit 0, jar checksum
-      *and* mtime unchanged, so nothing was fetched. Also confirmed `--update --version 2.1.0`
-      silently ignores the version, as the README documents. **Second half blocked, not skipped:**
-      v2.2.0 is the first release carrying `baas-cli.jar.sha256`, so no older *installable* version
-      exists — `--version 2.1.0` correctly fails on the missing checksum asset and leaves the
-      working install intact (itself a useful verification of that refusal). Retest once a second
-      such release exists.
+      **Both halves done 2026-09-15**, unblocked by the v3.0.0 release — v2.2.0 is now the older
+      *installable* version the second half needed. *Older to newer:* the stored installer printed
+      `Updating baas 2.2.0 -> 3.0.0` and exited 0; the installed jar's sha256 equals v3.0.0's
+      published `baas-cli.jar.sha256` exactly (`c3d9cb2a…`), its inode changed (atomic rename), and
+      the stored installer is now byte-identical to v3.0.0's **own** published `install.sh` — the
+      hand-off invariant, that the script installing a version is that version's own, verified
+      against a real release rather than a fixture. *Already current:* `baas 3.0.0 is current.
+      Nothing to do.`, exit 0, with the jar's checksum, **inode** and mtime all unchanged, so
+      nothing was fetched — not even replaced by an identical copy, which a checksum alone could
+      not distinguish. `~/.baas` stayed byte-identical across both runs and `baas config show`
+      worked afterwards with no reconfiguration. The 2026-09-12 finding that `--update --version
+      2.1.0` silently ignores the version still holds.
 - [x] 9.6 **Manual.** Upgrade while a `baas run` is polling, and confirm the in-flight run completes.
       **Done 2026-09-12** during run `20260912T131243061Z-a02f33f3`: the installer was re-run while
       the CLI was polling, and the jar's **inode changed** while its content stayed identical —
