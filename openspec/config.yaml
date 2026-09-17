@@ -1,4 +1,4 @@
-schema: superspec
+schema: spec-driven
 
 # Injected into every artifact's instructions (50KB cap; larger is silently dropped).
 # Deliberately a pointer, not a copy: CLAUDE.md is the single source for invariants, and a
@@ -16,40 +16,37 @@ context: |
   Real AWS spend per run. The project's standing cost was zero until the runner AMI snapshot
   (~$0.20/mo), so any new standing cost is a change in kind and must be argued, not absorbed.
 
-# Additive to the schema's own guidance. Keys must be SuperSpec artifact IDs:
-# brainstorm, proposal, design, specs, tasks, plan, apply, verify, finalize.
+# Additive to the schema's own guidance, and only what spec-driven does not already say.
+# Keys must be spec-driven artifact IDs: proposal, specs, design, tasks. Any other key is dropped:
+# `openspec instructions` warns on stderr only, so the agent never sees the rule. apply and verify
+# are not artifacts and take no rules — a verification requirement belongs in tasks, where an
+# unchecked box is something both verify and archive report.
 rules:
-  brainstorm:
-    - Check CLAUDE.md's Accepted risks table before proposing an approach. Those are decided;
-      reopening one needs new information that changes the trade-off, not a fresh opinion.
-    - For anything touching the runner, the image, or user-data, state explicitly what the change
-      does to comparability with existing results.
-
   proposal:
-    - Structure as "## Why", "## What Changes", "## Capabilities" (New/Modified), "## Impact".
-    - Mark breaking changes **BREAKING** inline in What Changes.
     - Impact must include a Cost line whenever AWS resources change, and must name what is
       deliberately NOT changed — especially invariants preserved.
     - Cite the docs/review finding IDs the change closes.
 
   design:
+    - Check CLAUDE.md's Accepted risks table before choosing an approach. Those are decided;
+      reopening one needs new information that changes the trade-off, not a fresh opinion.
+    - For anything touching the runner, the image, or user-data, state explicitly what the change
+      does to comparability with existing results.
     - Phrase each "### " heading under Decisions as the decision asserted, not the topic.
     - Record rejected alternatives with the reason they lost.
     - Move answered questions from Open Questions to Resolved Questions with the evidence.
 
-  specs:
-    - Capability slugs must match an existing openspec/specs/ directory, or appear under New
-      Capabilities in the proposal.
-
   tasks:
     - 'Section 1 is always "Verify blocking assumptions": anything that would invalidate the
       design gets resolved before implementation tasks.'
-    - The final section is end-to-end verification, marked explicitly manual for anything on the
+    - The end-to-end verification section is marked explicitly manual for anything on the
       `baas run` path — no automated test covers it.
+    - For measurement-affecting changes, include a task comparing a benchmark score against a
+      pre-change run that investigates any difference rather than accepting it. Run-to-run variance
+      is large (CI history spans 10.0M-29.6M ops/s on one benchmark), so the task records the spread.
     - Include tasks to update CLAUDE.md when an invariant changes, and the docs/review status
       table when a finding is closed.
-
-  verify:
-    - For measurement-affecting changes, compare a benchmark score against a pre-change run and
-      investigate any difference rather than accepting it. Note run-to-run variance is large
-      (CI history spans 10.0M-29.6M ops/s on one benchmark), so state what the spread was.
+    - 'The last task is: run /opsx:verify and record the result in verify.md in the change
+      directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…)
+      that later notes can cite, and any deviation from design or tasks. verify.md is a convention,
+      not a schema artifact.'
