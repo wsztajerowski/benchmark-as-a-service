@@ -51,6 +51,16 @@ no checked-in SVGs — update the `.mmd` when a command changes). Design rationa
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
+**OpenSpec changes use the stock `spec-driven` schema**, driven by `/opsx:explore` → `/opsx:propose`
+→ `/opsx:apply` → `/opsx:verify` → `/opsx:archive`. For those, explore replaces
+`superpowers:brainstorming` and `tasks.md` replaces `writing-plans`: both skills write a second copy
+under `docs/superpowers/`, the duplication the retired `superspec` schema existed to redirect
+(`git log -- openspec/schemas/superspec`). `verify.md` is a convention, not an artifact — it holds
+the requirement → code → test → gap table and the `W<n>` warning IDs later notes cite. Project rules
+live in `openspec/config.yaml`, keyed by artifact ID only; any other key is dropped with a stderr
+warning the agent never sees. Archived changes still pinned to `superspec` are never re-read, so
+the deleted schema breaks nothing.
+
 **Open review findings live in [`docs/review/`](docs/review/)** — one file per module, plus one per
 reviewed change (`prebaked-runner-ami-review.md`), each entry marked Open or Fixed. An in-progress walkthrough works through them by severity; read the relevant
 file before proposing security or architecture work, and update the status table when one is
