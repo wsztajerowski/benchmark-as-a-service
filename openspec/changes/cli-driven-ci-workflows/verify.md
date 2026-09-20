@@ -408,6 +408,7 @@ CLI, within the job, not by the shell watchdog.
 | `20260908T152147852Z-ee088133` | jmh | 10,025,544 | ±6,261,229 | 1.2.0 | c5.2xlarge |
 | `20260920T161636923Z-08785de7` | jmh-with-async | 11,590,125 | 0 | 1.2.0 | c5.2xlarge |
 | `20260920T173156909Z-fedd5ee4` | jmh-with-async | 12,239,764 | 0 | 1.2.0 | c5.2xlarge |
+| `20260920T174231871Z-9afe54f3` | jmh-with-async | 11,295,939 | 0 | 1.2.0 | c5.2xlarge |
 
 Same `imageVersion`, `instanceType` and `jdk` throughout, and both new scores sit inside the
 10.0M-29.6M band CI history spans. **The comparison cannot say more than that, and the reason is
@@ -469,3 +470,41 @@ natural fix is to fall back to reconstructing the prefix from the id, or to cons
 index misses — but the run id alone does not name the project, and `RunLayout` needs both, so it is
 not a one-liner. Out of scope here; worth its own change. Nothing in this change depends on it now
 that the workflow uses the path.
+
+
+## 6.9 — revocation, in progress
+
+`baas admin setup --revoke-github-oidc` updated the stack (`UPDATE_COMPLETE`) and submitted all
+three federation parameters explicitly empty:
+
+```
+GitHubOrg = ""   GitHubOidcProviderArn = ""   GitHubRepo = ""
+```
+
+`3q7i7s65-operator-role` afterwards carries **only** `arn:aws:iam::381492019823:root` — the
+federated statement is gone and the account-root principal survives, so revoking cannot lock a
+local operator out. `MaxSessionDuration` stays 9000, correctly untouched: it is not a federation
+parameter, and carry-forward preserved it through an update that changed three others.
+
+**Revoked — CI loses access.** Run
+[35526505294](https://github.com/wsztajerowski/benchmark-as-a-service/actions/runs/35526505294):
+
+```
+Configure AWS credentials: failure
+##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+Sync configuration from the deployed core stack: skipped
+```
+
+It launched **no instance** (0 benchmark runners running while it executed), because it fails before
+`baas run` is reached — so revocation is free to test as well as effective.
+
+**Restored — CI regains access.** `baas admin setup` with the three federation options put the
+statement back (`UPDATE_COMPLETE`), and run
+[35526693984](https://github.com/wsztajerowski/benchmark-as-a-service/actions/runs/35526693984)
+passed `Configure AWS credentials` and `baas config sync`, launched instance
+`i-0d2bb541ec5fcfee0` for run `20260920T174231871Z-9afe54f3`, and **completed green** with every
+assertion passing. Score 11,295,939 ops/s, instance `terminated`.
+
+Both directions observed, on the live installation. `--revoke-github-oidc` is the supported way to
+cut CI's access, and nothing else does it by accident — proven by 6.2's carry-forward run, which
+left the trust untouched.

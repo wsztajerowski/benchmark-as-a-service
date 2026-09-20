@@ -155,7 +155,7 @@
       `token.actions.githubusercontent.com` provider still exists — the change set was confirmed to
       carry exactly one action, `Remove WorkflowRole`, but the provider is the thing a mistake here
       would cost most
-- [ ] 6.9 Prove revocation against the live installation — verify that
+- [x] 6.9 Prove revocation against the live installation — verify that
       `baas admin setup --revoke-github-oidc` removes the federated statement and that a dispatched
       workflow then fails to assume the role, then restore federation and confirm the workflow is
       green again
