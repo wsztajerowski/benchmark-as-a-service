@@ -126,7 +126,7 @@
       stack reaches `UPDATE_COMPLETE` and `OperatorRole`'s trust policy carries both principals; then
       run `baas admin setup` again naming no federation options and verify the trust statement is
       still there, which is the carry-forward behaviour in the environment that matters
-- [~] 6.3 Swap the repository secrets and variables: operator role ARN as a plain `vars.` entry,
+- [x] 6.3 Swap the repository secrets and variables: operator role ARN as a plain `vars.` entry,
       delete `WORKFLOW_ROLE_ARN`, `GHA_EC2_PAT`, `RUNNER_ROLE_NAME`, `SUBNET_ID`,
       `SECURITY_GROUP_ID`, `RESOURCE_NAME_PREFIX` — verify by listing the repository's secrets and
       variables afterwards
@@ -191,6 +191,6 @@
 
 - [x] 8.1 Run the full reactor build with `ASYNC_PATH` exported — verify `mvn verify` is green and
       that the async-profiler integration test executed rather than being skipped
-- [ ] 8.2 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
+- [x] 8.2 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
       requirement → code → test → gap table, open warnings under stable IDs (`W1`, `W2`…) that later
       notes can cite, and any deviation from this design or task list
