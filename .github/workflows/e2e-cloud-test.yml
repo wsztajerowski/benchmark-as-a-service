@@ -179,10 +179,13 @@ jobs:
           path: ./artifacts
           if-no-files-found: ignore
 
-      # The failure path is precisely when the id is most useful: --format json prints the summary
-      # with status "failed" even as the command exits non-zero, so the boot log is reachable.
+      # Downloaded by RESULT PATH, not by run id, and that distinction is the whole point of the
+      # summary carrying both. `baas download <runId>` resolves the id through requestId-index —
+      # but a run that failed stored no measurement, so it has no index entry, and the lookup
+      # reports "No run found" exactly when the boot log is most needed. Verified against a real
+      # forced failure: the id form fails, the path form retrieves all seven artifacts.
       - name: Surface the runner boot log on failure
-        if: failure() && steps.run.outputs.run_id != ''
+        if: failure() && steps.run.outputs.result_path != ''
         run: |
-          $BAAS download "${{ steps.run.outputs.run_id }}" -o ./failed || true
+          $BAAS download "${{ steps.run.outputs.result_path }}" -o ./failed || true
           cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"
