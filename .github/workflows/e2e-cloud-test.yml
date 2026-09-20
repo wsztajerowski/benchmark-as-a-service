@@ -108,11 +108,21 @@ jobs:
                --async-output-type=flamegraph,jfr \
                --async-additional-param threads=true \
             | tee summary.json || status=$?
+          run_id=$(jq -r '.runId // empty' summary.json)
           {
-            echo "run_id=$(jq -r '.runId // empty' summary.json)"
+            echo "run_id=$run_id"
             echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
             echo "project=$(jq -r '.project // empty' summary.json)"
           } >> "$GITHUB_OUTPUT"
+          # An unparseable summary must fail here, naming itself. Without this the empty id flows
+          # into `baas results --request-id ""`, which fails in DynamoDB as "The AttributeValue for
+          # a key attribute cannot contain an empty string value. Key: gsi1pk" — an error that
+          # says nothing about the actual cause, three steps away from it.
+          if [ "$status" -eq 0 ] && [ -z "$run_id" ]; then
+            echo "::error::the run succeeded but its JSON summary carried no runId"
+            echo "--- captured stdout ---"; cat summary.json
+            exit 1
+          fi
           exit "$status"
 
       # Every assertion below is expressed against a value this job supplied or received. The

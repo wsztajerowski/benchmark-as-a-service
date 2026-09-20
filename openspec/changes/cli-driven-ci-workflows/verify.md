@@ -276,7 +276,7 @@ afterwards. Had the old `createOrUpdateStack` path survived, this run would inst
 | `baas config sync --core-stack-name baas-3q7i7s65` | Succeeds |
 | `baas results --format json` | Returns well-formed JSON with `.` decimal separators, so the workflow's `jq` assertions parse (the pl-PL locale hazard does not apply — `printJson` uses `Locale.ROOT`) |
 | Repository variables | `OPERATOR_ROLE_ARN`, `CORE_STACK_NAME`, `AWS_REGION` all set |
-| Workflow on GitHub | **Not yet** — the rewritten `e2e-cloud-test.yml` exists only locally |
+| Workflow on GitHub | Pushed as branch `cli-driven-ci-workflows` (commit `5ec43ee`) |
 
 **Baseline for 6.6, already in the table.** Project `benchmark-as-a-service` holds two prior runs of
 the same fixture benchmark on the same image and instance type, so the comparison needs no
@@ -290,3 +290,18 @@ archaeology:
 Both carry error bars larger than the gap between them (±12.5M and ±6.3M on a single-iteration run),
 which is the variance the task warns about — the finding will be whether the new score sits in that
 band, not whether it matches either number.
+
+
+## 6.4 — first dispatch
+
+Branch `cli-driven-ci-workflows` pushed, workflow dispatched manually:
+<https://github.com/wsztajerowski/benchmark-as-a-service/actions/runs/35522172677>
+
+`workflow_dispatch` resolves the workflow file from the dispatched ref, so this runs the rewritten
+single-job version even though `main` still carries the old one. Nothing fires automatically — no
+pull request was opened, so the path-filtered `pull_request` trigger has not been exercised yet.
+
+The commit is marked `feat(ci)!` with an explicit `BREAKING CHANGE` footer, so merging it to `main`
+will bump the major version. That is faithful to the change (the consumer contract moves from
+*call our reusable workflow* to *install the CLI*), but it is a release-visible consequence worth
+confirming before merge rather than discovering in the release notes.
