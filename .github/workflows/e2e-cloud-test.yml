@@ -1,226 +1,178 @@
+# The project's own end-to-end self-test: one real benchmark run on one real EC2 instance,
+# launched exactly the way a developer's laptop launches one.
+#
+# It drives the CLI rather than re-implementing it. Nothing here provisions or terminates an
+# instance, mints a run identifier, builds an S3 key, installs a JDK or a profiler onto the
+# measuring instance, or reads database configuration from a parameter store — `baas run` owns all
+# of that, and a workflow that re-implemented any of it could leave CI measuring something
+# different from a laptop after a CLI change.
+#
+# The benchmark instance is not a GitHub Actions runner. That matters beyond tidiness:
+# `private-runner-network` moves runners onto a subnet with no route to github.com, which a
+# self-hosted runner agent must reach.
+#
+# Cost: this provisions a paid instance per triggering event, so the pull_request trigger is
+# path-filtered and there is no schedule. workflow_dispatch is what makes it provable on demand.
+
 name: E2E Production Benchmark Test
 
 on:
   workflow_dispatch:
   pull_request:
+    paths:
+      - 'baas-cli/**'
+      - 'baas-model/**'
+      - 'benchmark-runner/**'
+      - 'fake-jmh-benchmarks/**'
+      - 'infra/**'
+      - 'pom.xml'
+      - '.github/workflows/e2e-cloud-test.yml'
 
-env:
-  S3_BUCKET: baas-lynx-main
-  JAVA_VERSION: 25
-  JAVA_DISTRIBUTION: temurin
-  MONGOSH_VERSION: 2.5.8
+concurrency:
+  # One paid run at a time per ref; a superseded push should not leave two instances running.
+  group: e2e-cloud-test-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  setup-env:
-    name: Setup env
+  benchmark:
+    name: Benchmark on EC2 via baas run
     runs-on: ubuntu-latest
-    outputs:
-      project: ${{ steps.identity.outputs.project }}
-      async_run_id: ${{ steps.identity.outputs.async_run_id }}
-      async_created_at: ${{ steps.identity.outputs.async_created_at }}
-      async_result_path: ${{ steps.identity.outputs.async_result_path }}
-      prof_run_id: ${{ steps.identity.outputs.prof_run_id }}
-      prof_created_at: ${{ steps.identity.outputs.prof_created_at }}
-      prof_result_path: ${{ steps.identity.outputs.prof_result_path }}
-      java_version: ${{ env.JAVA_VERSION }}
-      s3_bucket: ${{ env.S3_BUCKET }}
-    steps:
-      # One identity per benchmark job, not one shared by both. The two jobs used to write
-      # run-status to the same key, so whichever finished last decided what the run "was".
-      #
-      # Each id's instant is also passed as --created-at, or the one-instant property would hold
-      # for `baas run` and quietly fail here — CI's id would disagree with its own stored
-      # createdAt by however long the job sat in the queue, and nobody would notice until they
-      # compared a prefix name against a timestamp months later.
-      #
-      # Minting the id in bash is safe because nothing parses it: the format is a readability
-      # convention, not a contract.
-      - name: Mint one run identity per benchmark job
-        id: identity
-        run: |
-          PROJECT="${GITHUB_REPOSITORY##*/}"
-          echo "project=$PROJECT" >> "$GITHUB_OUTPUT"
-          for job in async prof; do
-            INSTANT=$(date -u +'%Y-%m-%dT%H:%M:%S.%3NZ')
-            COMPACT=$(date -u -d "$INSTANT" +'%Y%m%dT%H%M%S%3NZ')
-            RUN_ID="${COMPACT}-$(openssl rand -hex 4)"
-            echo "${job}_run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
-            echo "${job}_created_at=$INSTANT" >> "$GITHUB_OUTPUT"
-            echo "${job}_result_path=runs/$PROJECT/$RUN_ID" >> "$GITHUB_OUTPUT"
-          done
-
-#  Prepare test artifacts and upload to S3
-  prepare-test:
-    name: Build
-    runs-on: ubuntu-latest
-    needs: setup-env
     permissions:
       id-token: write
       contents: read
+    env:
+      # jmh-with-async is the one type whose failure modes live in what nothing else tests: the
+      # baked AMI, the perf_event_paranoid/kptr_restrict tunables, the pinned perf and
+      # async-profiler versions, and profiling-artifact upload. The others re-test orchestration
+      # that is identical across types. This is the self-test's choice, not a limit on `baas run`:
+      # the type is a positional parameter and consumers run jmh and jcstress through the same
+      # mechanism.
+      BENCHMARK_TYPE: jmh-with-async
+      BENCHMARK_CLASS: Incrementing_Synchronized
+      BAAS: java -jar baas-cli/target/baas-cli.jar
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
+
       - name: Set up Java
         uses: actions/setup-java@v5
         with:
-          java-version: ${{ env.JAVA_VERSION }}
-          distribution: ${{ env.JAVA_DISTRIBUTION }}
-      - name: Set up AWS CLI
-        uses: aws-actions/configure-aws-credentials@v5
-        with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION }}
-      - name: Build runner and benchmark jars
-        run: |
-          mvn -f ./pom.xml -q clean package -DskipTests
-      # Uploaded into each run's own input/, so one prefix holds the whole run — including the
-      # JARs it actually executed. Two runs means two copies; that is the point.
-      - name: Upload the runner and benchmark jars into each run's input prefix
-        run: |
-          BUCKET="${{ needs.setup-env.outputs.s3_bucket }}"
-          for path in "${{ needs.setup-env.outputs.async_result_path }}" \
-                      "${{ needs.setup-env.outputs.prof_result_path }}"; do
-            aws s3 cp ./benchmark-runner/target/benchmark-runner.jar \
-              "s3://$BUCKET/$path/input/runner.jar"
-            aws s3 cp ./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
-              "s3://$BUCKET/$path/input/test-benchmark.jar"
-          done
+          java-version: 25
+          distribution: temurin
+          cache: maven
 
-  start-runner:
-    name: Runner
-    permissions:
-      id-token: write
-      contents: read
-    uses: ./.github/workflows/start-ec2-runner.yml
-    with:
-      aws-region: ${{ vars.AWS_REGION }}
-      subnet-id: ${{ vars.SUBNET_ID }}
-      security-group-id: ${{ vars.SECURITY_GROUP_ID }}
-      tags: |
-        project: baas
-        environment: ci-run
-    secrets:
-      workflow-role-arn: ${{ secrets.WORKFLOW_ROLE_ARN }}
-      runner-role-name: ${{ secrets.RUNNER_ROLE_NAME }}
-      gha-ec2-pat: ${{ secrets.GHA_EC2_PAT }}
+      - name: Build the CLI, the runner and the fixture benchmark
+        run: mvn -B -q clean package -DskipTests
 
-  call-workflow-with-async:
-    name: Async Profiler
-    needs:
-      - setup-env
-      - prepare-test
-      - start-runner
-    permissions:
-      id-token: write
-      contents: read
-    uses: ./.github/workflows/exec-single-benchmark.yml
-    with:
-      gha-runner-type: ${{ needs.start-runner.outputs.label }}
-      java-version: ${{ needs.setup-env.outputs.java_version }}
-      benchmark-type: jmh-with-async
-      request-id: ${{ needs.setup-env.outputs.async_run_id }}
-      results-path: ${{ needs.setup-env.outputs.async_result_path }}
-      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.async_result_path }}/input/test-benchmark.jar"
-      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.async_result_path }}/input/runner.jar"
-      s3-result-bucket: ${{ needs.setup-env.outputs.s3_bucket }}
-      async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
-      parameters: "--project ${{ needs.setup-env.outputs.project }} --created-at ${{ needs.setup-env.outputs.async_created_at }} --tag source=gha-e2e-test-async Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true"
-      ssm-param-prefix: ${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}
-
-  call-workflow-with-profilers:
-    name: JHM Profilers
-    needs:
-      - setup-env
-      - prepare-test
-      - start-runner
-    permissions:
-      id-token: write
-      contents: read
-    uses: ./.github/workflows/exec-single-benchmark.yml
-    with:
-      gha-runner-type: ${{ needs.start-runner.outputs.label }}
-      java-version: ${{ needs.setup-env.outputs.java_version }}
-      benchmark-type: jmh-with-prof
-      request-id: ${{ needs.setup-env.outputs.prof_run_id }}
-      results-path: ${{ needs.setup-env.outputs.prof_result_path }}
-      benchmark-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.prof_result_path }}/input/test-benchmark.jar"
-      runner-path: "s3://${{ needs.setup-env.outputs.s3_bucket }}/${{ needs.setup-env.outputs.prof_result_path }}/input/runner.jar"
-      s3-result-bucket: ${{ needs.setup-env.outputs.s3_bucket }}
-      async-profiler-version: ${{ vars.ASYNC_PROFILER_VERSION }}
-      parameters: "--project ${{ needs.setup-env.outputs.project }} --created-at ${{ needs.setup-env.outputs.prof_created_at }} --tag source=gha-e2e-test-profilers Incrementing_Synchronized -f 1 -wi 1 -i 1 --profiler 'gc=churn=false;alloc=false' --profiler 'jfr=stackDepth=20'"
-      ssm-param-prefix: ${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}
-
-  stop-runner:
-    name: Runner
-    permissions:
-      id-token: write
-      contents: read
-    uses: ./.github/workflows/stop-ec2-runner.yml
-    needs:
-      - start-runner
-      - call-workflow-with-async
-      - call-workflow-with-profilers
-    if: always()
-    with:
-      label: ${{ needs.start-runner.outputs.label }}
-      ec2-instance-id: ${{ needs.start-runner.outputs.ec2-instance-id }}
-      aws-region: ${{ vars.AWS_REGION }}
-    secrets:
-      workflow-role-arn: ${{ secrets.WORKFLOW_ROLE_ARN }}
-      gha-ec2-pat: ${{ secrets.GHA_EC2_PAT }}
-
-  verify-test-result:
-    name: Verify benchmark results
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    needs:
-      - setup-env
-      - call-workflow-with-async
-      - call-workflow-with-profilers
-    env:
-      ASYNC_REQUEST_ID: ${{ needs.setup-env.outputs.async_run_id }}
-      PROF_REQUEST_ID: ${{ needs.setup-env.outputs.prof_run_id }}
-      ASYNC_RESULT_PATH: ${{ needs.setup-env.outputs.async_result_path }}
-      PROF_RESULT_PATH: ${{ needs.setup-env.outputs.prof_result_path }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v5
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
-          role-to-assume: ${{ secrets.WORKFLOW_ROLE_ARN }}
+          # Federates straight into the operator role. No intermediate role: a role-chained
+          # session is capped at 60 minutes by STS whatever MaxSessionDuration says, and this run
+          # can last up to the 7500 s wall-clock cap. A session expiring mid-poll would kill the
+          # polling AND the CLI's shutdown hook, leaving the shell watchdog to terminate — a red
+          # job with a good measurement and a full EC2 bill.
+          role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-      - name: Fetch MongoDB URI from SSM
+          role-duration-seconds: 9000
+          role-session-name: GitHubActions
+
+      - name: Sync configuration from the deployed core stack
+        run: $BAAS config sync --core-stack-name "${{ vars.CORE_STACK_NAME }}"
+
+      # --runner-jar is mandatory, not a convenience: a reactor build's version is
+      # 0.0.0-semantically-released, which names no release, so `baas run` refuses to resolve a
+      # pinned runner JAR and exits before launching anything. The upside is that CI tests the
+      # runner it just built rather than the last released one.
+      #
+      # --tag exclude_from_results=true because this measures fixture code and carries no
+      # analytical meaning. It stays visible to `--request-id`, which is a request for one named
+      # run rather than a query over the project's history.
+      - name: Run the benchmark on EC2
+        id: run
         run: |
-          MONGO_URI=$(aws ssm get-parameter \
-            --name "/${{ vars.RESOURCE_NAME_PREFIX || 'baas' }}/mongo/connection-string" \
-            --with-decryption --query Parameter.Value --output text \
-            --region "${{ vars.AWS_REGION }}")
-          echo "MONGO_CONNECTION_STRING=$MONGO_URI" >> "$GITHUB_ENV"
-      - name: Download and install mongosh
+          set -o pipefail
+          # The exit code is captured rather than allowed to end the step, because the summary
+          # has to reach GITHUB_OUTPUT on the failure path too — that is the whole reason
+          # --format json prints on failure. Under bash -e an exiting `baas run` would take the
+          # run id with it, and the boot-log step below would have nothing to download.
+          status=0
+          $BAAS run "$BENCHMARK_TYPE" \
+            --format json \
+            --runner-jar benchmark-runner/target/benchmark-runner.jar \
+            --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
+            --tag exclude_from_results=true \
+            -- "$BENCHMARK_CLASS" -f 1 -wi 1 -i 1 \
+               --async-event=wall \
+               --async-output-type=flamegraph,jfr \
+               --async-additional-param threads=true \
+            | tee summary.json || status=$?
+          {
+            echo "run_id=$(jq -r '.runId // empty' summary.json)"
+            echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
+            echo "project=$(jq -r '.project // empty' summary.json)"
+          } >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      # Every assertion below is expressed against a value this job supplied or received. The
+      # previous self-test asserted tags.source == "gha-e2e-test" while the runs were tagged
+      # "gha-e2e-test-async" — a literal maintained separately from the invocation, which is why
+      # it could never pass.
+      - name: The run's measurements are retrievable by the id the run reported
         run: |
-          wget https://downloads.mongodb.com/compass/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
-          tar -xzf mongosh-${{ env.MONGOSH_VERSION }}-linux-x64.tgz
-          chmod +x mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin/mongosh
-          echo "$PWD/mongosh-${{ env.MONGOSH_VERSION }}-linux-x64/bin" >> $GITHUB_PATH
-      # Two prefixes, checked separately. Under the shared path a missing artifact from one job
-      # could be masked by the other job having written the same key.
-      - name: Verify S3 results
+          $BAAS results --request-id "${{ steps.run.outputs.run_id }}" --format json \
+            | tee measurements.json
+          test "$(jq 'length' measurements.json)" -gt 0
+
+      - name: The measurements carry the tags this job asked for and the instance observed
         run: |
-          BENCH_DIR=pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/jmh-with-async-output.txt" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/environment.json" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/input/test-benchmark.jar" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/$BENCH_DIR/flame-wall-forward.html" || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.ASYNC_RESULT_PATH }}/$BENCH_DIR/jfr-wall.jfr" || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.PROF_RESULT_PATH }}/jmh-profiler-output.txt" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.PROF_RESULT_PATH }}/environment.json" --check-size || exit 1
-          .github/test/testing-scripts/verify-s3.sh --bucket "${{ env.S3_BUCKET }}" --key "${{ env.PROF_RESULT_PATH }}/$BENCH_DIR/profile.jfr" || exit 1
-      - name: Verify MongoDB results
+          test "$(jq -r '.[0].imageVersion // "null"' measurements.json)" != "null"
+          test "$(jq -r '.[0].instanceType // "null"' measurements.json)" != "null"
+
+      # Deliberately not asserted here: source=ci. `baas results --format json` projects score
+      # columns plus imageVersion/instanceType, not the whole tag map, and --request-id refuses to
+      # combine with --tag (the filter would be silently ignored) — while the project sweep that
+      # does take --tag is exactly what this run is excluded from. Asserting it would mean
+      # re-implementing a DynamoDB query in shell, which is the class of thing this workflow
+      # exists to stop doing. The derivation is unit-tested in RunCommandTest, including that the
+      # tag reaches the rendered user-data, and the stored value is checked by hand in tasks 6.5.
+
+      # Excluded from the project sweep, present under its own id: the two halves of the
+      # exclusion contract, asserted against each other.
+      - name: The excluded run is absent from the project sweep
         run: |
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "benchmarkMetadata.tags.source" --value gha-e2e-test || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.ASYNC_REQUEST_ID }}" || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "_id.requestId" --value "${{ env.PROF_REQUEST_ID }}" || exit 1
-          .github/test/testing-scripts/verify-mongo.sh --connection-string "$MONGO_CONNECTION_STRING" --collection "jmh_benchmarks" --key "jmhResult.secondaryMetrics.jfr" || exit 1
+          $BAAS results --project "${{ steps.run.outputs.project }}" --all --format json > sweep.json
+          test "$(jq --arg id "${{ steps.run.outputs.run_id }}" \
+            '[.[] | select(.requestId == $id)] | length' sweep.json)" -eq 0
+
+      - name: The image-dependent artifacts reached the run's own prefix
+        run: |
+          $BAAS download "${{ steps.run.outputs.run_id }}" -o ./artifacts
+          find ./artifacts -type f | sort
+          test -s ./artifacts/environment.json
+          test -s ./artifacts/jmh-result.json
+          test -s ./artifacts/run-status
+          test -s "./artifacts/${BENCHMARK_TYPE}-output.txt"
+          # Written by async-profiler on the baked image — the tunables, the pinned profiler and
+          # perf versions and the artifact upload path, all exercised end to end.
+          find ./artifacts -name '*.html' | grep -q . || {
+            echo "no flamegraph produced — the profiler did not run on the baked image"; exit 1; }
+          find ./artifacts -name '*.jfr' | grep -q . || {
+            echo "no JFR recording produced"; exit 1; }
+
+      - name: Publish the run's artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-run-${{ steps.run.outputs.run_id }}
+          path: ./artifacts
+          if-no-files-found: ignore
+
+      # The failure path is precisely when the id is most useful: --format json prints the summary
+      # with status "failed" even as the command exits non-zero, so the boot log is reachable.
+      - name: Surface the runner boot log on failure
+        if: failure() && steps.run.outputs.run_id != ''
+        run: |
+          $BAAS download "${{ steps.run.outputs.run_id }}" -o ./failed || true
+          cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"

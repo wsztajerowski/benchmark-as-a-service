@@ -7,6 +7,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    env:
+      # Pinned to the version infra/runner-image.yaml bakes into the runner AMI, so the test
+      # exercises the profiler the measuring instance actually carries. Bump both together.
+      ASYNC_PROFILER_VERSION: "4.0"
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -18,5 +23,33 @@ jobs:
           java-version: 25
           cache: maven
 
+      # JmhWithAsyncProfilerSubcommandServiceIT is
+      # @EnabledIfEnvironmentVariable(named = "ASYNC_PATH", matches = ".*") and reads the variable
+      # as the path to the shared library. Without it a plain `mvn verify` silently SKIPS the only
+      # test exercising async-profiler end to end — so the green tick on every PR has never
+      # covered it. This installs the profiler on the hosted runner only; the measuring instance
+      # still installs nothing, which is the invariant the baked AMI exists to hold.
+      - name: Install async-profiler for the async integration test
+        run: |
+          set -euo pipefail
+          url="https://github.com/async-profiler/async-profiler/releases/download/v${ASYNC_PROFILER_VERSION}/async-profiler-${ASYNC_PROFILER_VERSION}-linux-x64.tar.gz"
+          curl -fsSL "$url" -o /tmp/async-profiler.tar.gz
+          tar -xzf /tmp/async-profiler.tar.gz -C /tmp
+          lib="$(find /tmp -name libasyncProfiler.so -type f | head -1)"
+          test -n "$lib"
+          echo "ASYNC_PATH=$lib" >> "$GITHUB_ENV"
+
       - name: Build and run tests (unit and integration)
         run: mvn -B clean verify
+
+      # The variable only gates the test; it does not make it run. A typo in the path, or a
+      # release whose layout moved, would leave it skipped again and the build still green —
+      # which is the exact failure being fixed, so it is asserted rather than assumed.
+      - name: Fail if the async-profiler test was skipped
+        if: always()
+        run: |
+          report=benchmark-runner/target/failsafe-reports/pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceIT.txt
+          test -f "$report" || { echo "no report — the async-profiler test did not run"; exit 1; }
+          cat "$report"
+          grep -qE 'Tests run: [1-9][0-9]*,.*Skipped: 0' "$report" \
+            || { echo "the async-profiler test was skipped or ran nothing"; exit 1; }

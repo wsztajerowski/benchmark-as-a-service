@@ -8,6 +8,24 @@
 > Extended 2026-09-10 after reading the java-wonderland and lynx-journal working copies and
 > walking the current CI against `RunCommand`/`UserDataScriptBuilder`. Sections marked with
 > that date are the second vintage; they add facts and reframe questions, and settle none.
+>
+> **Renamed 2026-09-17 from `gha-workflow-migration-to-dynamodb`.** DynamoDB stopped being what
+> this change is about: option 4 below — CI stops provisioning and calls `baas run` — is the
+> direction taken, and under it the connection string is not migrated but deleted along with the
+> four workflows that read it. Archived changes still cite the old name
+> (`2026-08-20-dynamodb-results-store`, `2026-09-09-unified-run-prefix`,
+> `2026-09-17-installable-cli-command`); those are historical records and are deliberately not
+> rewritten. This note is the trail.
+>
+> **Two corrections, 2026-09-20, from the explore session recorded in `explore.md`.** First, the
+> opening sentence above is stale: `brainstorm` was the retired `superspec` schema's first
+> artifact. Under the stock `spec-driven` schema this change now uses, the artifacts are
+> `proposal`, `specs`, `design` and `tasks`, and explore replaces brainstorming — so `explore.md`,
+> not a brainstorm, is what feeds `/opsx:propose`. Second, the claim under "Options" that an
+> `exclude_from_results=true` run stays "reachable by `--request-id`/`--tag`" is **false against
+> the code**: `ResultsQueryService` applies `EXCLUDE_FILTER` to `queryByRequestId` as well as
+> `queryProject`. See `explore.md` F4. The decision taken (D7) makes the assumption true rather
+> than working around it.
 
 ## Why this change exists
 

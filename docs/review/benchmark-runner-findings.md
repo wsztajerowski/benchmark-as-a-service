@@ -22,26 +22,51 @@ verified against a published `.sha256`, and closed the risk.
 
 ## Status
 
-The walkthrough started with baas-cli at the user's request. Nothing here has been fixed *by the
-walkthrough*; A4 was partly addressed as a side effect of `dynamodb-results-store`.
+The walkthrough started with baas-cli at the user's request. A4 was partly addressed as a side
+effect of `dynamodb-results-store`. Five findings closed with `cli-driven-ci-workflows` — not by
+being repaired but by their subject ceasing to exist: that change deletes the four GHA benchmark
+workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 
 | # | ID | Finding | Sev | Status |
 |---|-----|---------|-----|--------|
-| 1 | S1 | Shell injection via `${{ inputs.parameters }}` on a self-hosted runner | High | Open |
-| 2 | S2 | OIDC `sub: repo:org/repo:*` + `on: pull_request` + self-hosted runner | High | Open |
-| 3 | S3 | `WorkflowRole` `RunInstances` on `*`, no type or region conditions | High | Open |
+| 1 | S1 | Shell injection via `${{ inputs.parameters }}` on a self-hosted runner | High | **Fixed** |
+| 2 | S2 | OIDC `sub: repo:org/repo:*` + `on: pull_request` + self-hosted runner | High | **Reduced, not closed** |
+| 3 | S3 | `WorkflowRole` `RunInstances` on `*`, no type or region conditions | High | **Fixed** |
 | 4 | A1 | Four copy-pasted services diverged — only jmh uploads `logs/*.log` | Med | Open |
 | 5 | A2 | Unbounded log walk; no `visitFileFailed`; filename collisions | Med | Open |
 | 6 | A4 | S3 upload before store write — transient error discards paid results | Med | **Partly addressed** |
-| 7 | A10 | CI hardcodes `baas-lynx-main`, unreachable by the prefix scheme | Low | Open |
-| 8 | D3 | `ASYNC_PATH` unset in PR CI → async test silently skipped | Low | Open |
-| 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | Open |
-| 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | Open |
+| 7 | A10 | CI hardcodes `baas-lynx-main`, unreachable by the prefix scheme | Low | **Fixed** |
+| 8 | D3 | `ASYNC_PATH` unset in PR CI → async test silently skipped | Low | **Fixed** |
+| 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | **Reduced in surface** |
+| 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | **Fixed** |
 | 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | Open |
+
+### How `cli-driven-ci-workflows` closed them
+
+- **S1 — Fixed.** `exec-single-benchmark.yml` and `benchmark-runner.yml` are deleted, so there is
+  no `workflow_dispatch` input reaching a `run:` block, and no self-hosted runner carrying an
+  instance profile to reach. The exploit surface is gone rather than escaped.
+- **S2 — Reduced, not closed.** The self-hosted runner disappears, which was the severe half. The
+  `sub: repo:<org>/<repo>:*` wildcard is deliberately kept: fork pull requests cannot obtain an
+  `id-token` at all, so it is not reachable from a fork. That rests on consistently reported
+  GitHub behaviour rather than a documented guarantee — see the change's `verify.md`. Tightening
+  to a branch- or event-scoped `sub` stays a one-line follow-up.
+- **S3 — Fixed.** `WorkflowRole` is deleted. CI now assumes `BaasCliOperatorRole`, whose
+  `ec2:RunInstances` carries region and `c5/c6i/c7i/m5/m6i/m7i.*` instance-family conditions that
+  `WorkflowRole` never had. The merge trades scope in the other direction too: CI gains
+  bucket-wide `s3:DeleteObject`, unexercised because it writes only under `runs/…/input/`.
+- **A10 — Fixed.** `RESOURCE_NAME_PREFIX` and the hardcoded `baas-lynx-main` cease to exist; the
+  bucket comes from `baas config sync` reading the deployed stack's outputs.
+- **D3 — Fixed.** `ci-pr-build.yml` installs async-profiler and exports `ASYNC_PATH`, and then
+  asserts the test reported as run with `Skipped: 0` — because the variable only gates the test,
+  it does not make it run, and a wrong path would leave it skipped with the build still green.
+- **S10 — Reduced in surface.** `machulav/ec2-github-runner` is gone. The remaining third-party
+  actions are still on mutable tags and dependabot still has no `github-actions` ecosystem entry,
+  so the finding stands.
 
 ---
 
-## 1. S1 — shell injection via workflow inputs · High
+## 1. S1 — shell injection via workflow inputs · High · **Fixed**
 
 `.github/workflows/exec-single-benchmark.yml` (~lines 92-116) interpolates
 `${{ inputs.parameters }}`, `${{ inputs.runner-path }}` and `${{ inputs.benchmark-path }}` directly
@@ -52,7 +77,7 @@ dispatch it gets arbitrary shell on an EC2 self-hosted runner carrying an instan
 **Proposed fix:** bind each input to `env:` and reference `"$PARAMETERS"` inside the script —
 GitHub's documented hardening for exactly this. Mechanical, no behaviour change.
 
-## 2. S2 — OIDC trust is repo-wide and PRs trigger it · High
+## 2. S2 — OIDC trust is repo-wide and PRs trigger it · High · **Reduced, not closed**
 
 `infra/cf-template-ci.yaml` (~lines 70-73) pins `token.actions.githubusercontent.com:sub` to
 `repo:${Org}/${Repo}:*`. The wildcard accepts every ref, every PR branch and every tag.
@@ -67,7 +92,7 @@ reviewers; replace the bare `pull_request` trigger with `workflow_dispatch` or a
 GitHub explicitly warns against self-hosted runners on public-repo PRs — check the repo's
 visibility when picking severity.
 
-## 3. S3 — the CI role is more powerful than the human one · High
+## 3. S3 — the CI role is more powerful than the human one · High · **Fixed**
 
 `cf-template-ci.yaml` (~lines 79-86) grants `ec2:RunInstances` on `Resource: "*"` with **no**
 `ec2:InstanceType` and **no** `aws:RequestedRegion` condition. `OperatorRole` in
@@ -151,13 +176,13 @@ the main ordering point is not, and was deliberately decided the other way:
 So the paid-result-discarded risk is reduced rather than removed: a store failure still loses the
 measurement row, but no longer loses the artifacts, and no longer half-writes a run.
 
-## 7. A10 — CI and CLI disagree on naming · Low
+## 7. A10 — CI and CLI disagree on naming · Low · **Fixed**
 
 `e2e-cloud-test.yml` line 8 hardcodes `S3_BUCKET: baas-lynx-main`, which the ARN-hash prefix scheme
 in `SetupCommand.computePrefix` can never generate. CI depends on a hand-built stack that
 `baas admin setup` cannot reproduce.
 
-## 8. D3 — PR CI silently skips the async test · Low
+## 8. D3 — PR CI silently skips the async test · Low · **Fixed**
 
 `ci-pr-build.yml` runs `mvn -B clean verify` without `ASYNC_PATH`, so
 `JmhWithAsyncProfilerSubcommandServiceIT` — annotated
@@ -167,14 +192,14 @@ trap in CLAUDE.md, still unfixed in the one place it matters.
 **Proposed fix:** set `ASYNC_PATH` in the workflow, or make the test fail loudly when the variable
 is absent on CI.
 
-## 9. S10 — supply chain · Low
+## 9. S10 — supply chain · Low · **Reduced in surface**
 
 Third-party actions are pinned to mutable tags (`machulav/ec2-github-runner@v2`), and
 `.github/dependabot.yml` covers only `maven` — so no action ever gets an update PR.
 
 **Proposed fix:** add the `github-actions` ecosystem to dependabot; SHA-pin third-party actions.
 
-## 10. S12 — `GHA_EC2_PAT` · Low
+## 10. S12 — `GHA_EC2_PAT` · Low · **Fixed**
 
 A classic PAT with `repo` scope, used by `machulav/ec2-github-runner` in `start-ec2-runner.yml` and
 `stop-ec2-runner.yml`. A fine-grained PAT or a GitHub App narrows the blast radius.

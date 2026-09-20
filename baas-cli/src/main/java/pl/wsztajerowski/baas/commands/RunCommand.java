@@ -28,6 +28,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -112,6 +113,12 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--ami-id", description = "Launch from this AMI instead of the published runner image.")
     String amiIdOverride;
 
+    @Option(names = "--format", defaultValue = "text",
+        description = "Run summary format: text (default) or json. json writes one object to "
+            + "standard output — on the failure path too, which is when the run id is most "
+            + "needed — while diagnostics stay on standard error.")
+    String format;
+
     private final ConfigService configService = new ConfigService();
 
     /**
@@ -120,12 +127,40 @@ public class RunCommand implements Callable<Integer> {
      * rather than reusing `aws.profile`, which holds deployer credentials.
      */
     public static Optional<String> operatorCredentialsWarning(BaasConfig config) {
-        if (config.getAws().getOperatorProfile() != null) {
+        return operatorCredentialsWarning(config, System.getenv());
+    }
+
+    /**
+     * Package-private overload taking the environment explicitly, for the same testability reason
+     * as {@link #resolveCommit(Path)}.
+     *
+     * <p>Silent when credentials already arrive from the environment. The warning's own advice —
+     * {@code baas config set --operator-profile} — is not merely redundant there but wrong: in
+     * continuous integration the credentials come from an OIDC federation the job performed, and
+     * there is no profile to name. Falling through to the default credential chain is what the
+     * method's own contract calls correct in that case, so warning about it trained the reader to
+     * ignore a warning that still matters on a laptop.
+     */
+    static Optional<String> operatorCredentialsWarning(BaasConfig config, Map<String, String> environment) {
+        if (config.getAws().getOperatorProfile() != null || hasAmbientCredentials(environment)) {
             return Optional.empty();
         }
         return Optional.of(
             "No aws.operatorProfile configured — using the default AWS credential chain. "
                 + "Set one with: baas config set --operator-profile <profile-name>");
+    }
+
+    /**
+     * Whether the default credential chain will find credentials without consulting a profile:
+     * explicit keys, a web identity (what {@code configure-aws-credentials} sets up for OIDC),
+     * container credentials, or a profile already named in the environment.
+     */
+    private static boolean hasAmbientCredentials(Map<String, String> environment) {
+        return isTruthy(environment.get("AWS_ACCESS_KEY_ID"))
+            || isTruthy(environment.get("AWS_WEB_IDENTITY_TOKEN_FILE"))
+            || isTruthy(environment.get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"))
+            || isTruthy(environment.get("AWS_CONTAINER_CREDENTIALS_FULL_URI"))
+            || isTruthy(environment.get("AWS_PROFILE"));
     }
 
     /**
@@ -142,8 +177,38 @@ public class RunCommand implements Callable<Integer> {
             : images.currentImage("/" + prefix + "/runner/ami-id");
     }
 
+    /**
+     * What the JSON summary reports. Populated as the run reaches each fact rather than assembled
+     * at the end, because the failure path has to be able to print whatever is known so far: a run
+     * that died after launching still has an id, and that id is the whole point of the option.
+     */
+    String summaryRunId;
+    String summaryProject;
+    String summaryResultPath;
+    String summaryInstanceId;
+
+    boolean jsonSummary() {
+        return "json".equalsIgnoreCase(format);
+    }
+
     @Override
     public Integer call() throws Exception {
+        int exitCode = 1;
+        try {
+            exitCode = execute();
+            return exitCode;
+        } finally {
+            // In a finally so it also covers the paths that throw — resolveProject() and
+            // resolveResultsTable() both do. Those fail before a run exists, so the object
+            // carries nulls; a consumer still gets one parseable object saying it failed rather
+            // than empty output it has to special-case.
+            if (jsonSummary()) {
+                printRunSummary(exitCode);
+            }
+        }
+    }
+
+    private Integer execute() throws Exception {
         if (!VALID_TYPES.contains(benchmarkType)) {
             logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
             return 1;
@@ -166,6 +231,7 @@ public class RunCommand implements Callable<Integer> {
         // it can't be attributed to a project. resolveProject() throws IllegalStateException with a
         // message naming --project when this isn't a git repository and none was passed.
         String resolvedProject = resolveProject();
+        summaryProject = resolvedProject;
 
         BaasConfig config = configService.load();
         // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
@@ -228,6 +294,8 @@ public class RunCommand implements Callable<Integer> {
         String runId = RunId.generate(runInstant);
         String createdAt = runInstant.toString();
         String resultPath = RunLayout.runPrefix(resolvedProject, runId);
+        summaryRunId = runId;
+        summaryResultPath = resultPath;
         logger.info("Run {} — results will land under s3://{}/{}",
             runId, config.getAws().getBucket(), resultPath);
 
@@ -296,6 +364,7 @@ public class RunCommand implements Callable<Integer> {
                 config.getAws().getRunnerInstanceProfileName(),
                 userData, runId, tags);
         }
+        summaryInstanceId = instanceId;
         logger.info("Instance launched: {}", instanceId);
         logger.info("Run ID: {}", runId);
 
@@ -543,6 +612,16 @@ public class RunCommand implements Callable<Integer> {
      * allowed to override — a silently discarded tag is its own surprise.
      */
     Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit, String branch) {
+        return buildRunnerTags(benchmarkType, project, commit, branch, System.getenv());
+    }
+
+    /**
+     * Package-private overload taking the environment explicitly, for the same testability reason
+     * as {@link #resolveCommit(Path)} — {@code source} is derived from it, and a test that read the
+     * real environment would say {@code local} on a laptop and {@code ci} in CI.
+     */
+    Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit,
+                                        String branch, Map<String, String> environment) {
         List<String> collided = RESERVED_TAG_KEYS.stream().filter(extraTags::containsKey).toList();
         if (!collided.isEmpty()) {
             throw new IllegalArgumentException(
@@ -564,7 +643,59 @@ public class RunCommand implements Callable<Integer> {
             tags.put(TagKeys.BRANCH, branch);
         }
         tags.put(TagKeys.TYPE, benchmarkType);
+        tags.put(TagKeys.SOURCE, deriveSource(environment));
         tags.putAll(extraTags);
         return tags;
+    }
+
+    /**
+     * How this run was triggered. Not a reserved key: the instance never observes it, so a forged
+     * value misleads nobody about the measurement environment — which is the only thing
+     * {@link #RESERVED_TAG_KEYS} exists to protect. Deriving it rather than leaving it to a
+     * convention tag is what makes absence meaningful: a key only present when someone types it
+     * would make {@code --group-by source} unreliable in exactly the direction that matters.
+     *
+     * <p>{@code CI} is the cross-vendor convention and GitHub Actions sets both it and
+     * {@code GITHUB_ACTIONS}; {@code CI=false} is honoured because some environments set it that
+     * way to opt out.
+     */
+    static String deriveSource(Map<String, String> environment) {
+        return isTruthy(environment.get("CI")) || isTruthy(environment.get("GITHUB_ACTIONS"))
+            ? TagKeys.SOURCE_CI
+            : TagKeys.SOURCE_LOCAL;
+    }
+
+    /**
+     * One object on {@code System.out}, following {@code ResultsCommand.printJson}'s rule exactly:
+     * the payload goes to standard output and every diagnostic to the logger, so
+     * {@code baas run --format json | jq} is not corrupted by a timestamped log line — including
+     * under {@code -v}.
+     *
+     * <p>Printed on both outcomes. A failed run is precisely when a continuous-integration job
+     * needs the id: to {@code baas download} it and surface {@code cloud-init-output.log}, the
+     * documented place to start when a run dies before producing output. The command's exit code
+     * is unchanged by this — it still exits non-zero when the run failed.
+     *
+     * <p>Formatted with {@link Locale#ROOT} for the same reason the results formatters are: a
+     * comma-decimal locale would emit text that is not JSON, silently and only on some machines.
+     */
+    void printRunSummary(int exitCode) {
+        System.out.printf(Locale.ROOT,
+            "{\"runId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
+                + "\"exitCode\":%d,\"instanceId\":%s}%n",
+            jsonString(summaryRunId), jsonString(summaryProject), jsonString(summaryResultPath),
+            exitCode == 0 ? "completed" : "failed", exitCode, jsonString(summaryInstanceId));
+    }
+
+    /** A JSON string literal, or the {@code null} literal — absent is not the empty string. */
+    private static String jsonString(String value) {
+        if (value == null) {
+            return "null";
+        }
+        return '"' + value.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+    }
+
+    private static boolean isTruthy(String value) {
+        return value != null && !value.isBlank() && !"false".equalsIgnoreCase(value.strip());
     }
 }

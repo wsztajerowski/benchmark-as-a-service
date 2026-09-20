@@ -2,25 +2,66 @@ package pl.wsztajerowski.baas.infra;
 
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
 import java.util.Map;
-import java.util.Set;
-import java.util.TreeSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * The CI stack is now the identity provider and nothing else. {@code WorkflowRole} moved out
+ * entirely: GitHub Actions federates directly into {@code BaasCliOperatorRole}, which the core
+ * stack owns — see {@link CoreTemplateTest}.
+ */
 class CiTemplateTest {
 
     @Test
-    void grantsBothSingularAndPluralSsmReadsForTheAmiLookup() {
-        assertThat(workflowRoleActions())
-            .as("GetParameter and GetParameters are distinct IAM actions; the core stack uses the singular form")
-            .contains("ssm:GetParameter", "ssm:GetParameters");
+    @SuppressWarnings("unchecked")
+    void theCiStackDeclaresTheIdentityProviderAndNothingElse() {
+        var resources = (Map<String, Object>) InfraFixtures.ciTemplate().get("Resources");
+
+        assertThat(resources).containsOnlyKeys("GithubOidc");
+        assertThat(InfraFixtures.resource(InfraFixtures.ciTemplate(), "GithubOidc"))
+            .containsEntry("Type", "AWS::IAM::OIDCProvider");
     }
 
+    /**
+     * A role-chained session is capped at 60 minutes by STS whatever MaxSessionDuration says,
+     * against a 7200 s default benchmark timeout — and the failure mode was a red job with a good
+     * measurement, an un-terminated instance and a full EC2 bill.
+     */
     @Test
-    void canReadBackWhatItWrites() {
-        assertThat(workflowRoleActions()).contains("s3:GetObject");
+    @SuppressWarnings("unchecked")
+    void noIamRoleRemainsInTheCiStack() {
+        var resources = (Map<String, Object>) InfraFixtures.ciTemplate().get("Resources");
+
+        assertThat(resources.values())
+            .as("an intermediate role between the workload identity and the operator role is "
+                + "exactly what this change removed")
+            .noneMatch(resource -> "AWS::IAM::Role"
+                .equals(((Map<String, Object>) resource).get("Type")));
+    }
+
+    /**
+     * The provider is account-global and the core stack's trust policy references its ARN, so it
+     * outlives any one stack: a delete that took it with it would break every installation
+     * federating through it.
+     */
+    @Test
+    void theIdentityProviderSurvivesAStackDelete() {
+        assertThat(InfraFixtures.resource(InfraFixtures.ciTemplate(), "GithubOidc"))
+            .containsEntry("DeletionPolicy", "Retain");
+    }
+
+    /**
+     * Deploy order inverts: the provider comes first and its ARN is handed to the core stack. So
+     * this template must take nothing from core — a parameter naming a core resource would make
+     * the two circular.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theCiStackTakesNoParameterFromTheCoreStack() {
+        var parameters = (Map<String, Object>) InfraFixtures.ciTemplate().get("Parameters");
+
+        assertThat(parameters).containsOnlyKeys("ResourceNamePrefix");
     }
 
     /**
@@ -37,45 +78,5 @@ class CiTemplateTest {
         assertThat(getClass().getResourceAsStream("/templates/cf-template-ci.yaml"))
             .as("the CI template is a fixture under /infra, never shipped under /templates")
             .isNull();
-    }
-
-    /** {@code ci/} is retired — a CI run is a run, and writes under {@code runs/} like any other. */
-    @Test
-    void theWorkflowRoleHasNoGrantForTheRetiredCiPrefix() {
-        assertThat(workflowRoleResources())
-            .noneMatch(resource -> resource.contains("/ci/*"))
-            .anyMatch(resource -> resource.contains("/runs/*"));
-    }
-
-    @SuppressWarnings("unchecked")
-    private Set<String> workflowRoleResources() {
-        var policies = (List<Map<String, Object>>)
-            InfraFixtures.properties(InfraFixtures.ciTemplate(), "WorkflowRole").get("Policies");
-
-        Set<String> resources = new TreeSet<>();
-        for (Map<String, Object> policy : policies) {
-            var document = (Map<String, Object>) policy.get("PolicyDocument");
-            for (Map<String, Object> statement : (List<Map<String, Object>>) document.get("Statement")) {
-                Object resource = statement.get("Resource");
-                if (resource instanceof List<?> list) {
-                    list.forEach(entry -> resources.add(String.valueOf(entry)));
-                } else if (resource != null) {
-                    resources.add(String.valueOf(resource));
-                }
-            }
-        }
-        return resources;
-    }
-
-    @SuppressWarnings("unchecked")
-    private Set<String> workflowRoleActions() {
-        var policies = (List<Map<String, Object>>)
-            InfraFixtures.properties(InfraFixtures.ciTemplate(), "WorkflowRole").get("Policies");
-
-        Set<String> actions = new TreeSet<>();
-        for (Map<String, Object> policy : policies) {
-            actions.addAll(InfraFixtures.actions((Map<String, Object>) policy.get("PolicyDocument")));
-        }
-        return actions;
     }
 }

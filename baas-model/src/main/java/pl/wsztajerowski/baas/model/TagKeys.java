@@ -18,14 +18,23 @@ public final class TagKeys {
     public static final String CPU_ARCH = "cpuArch";
     public static final String INSTANCE_TYPE = "instanceType";
     public static final String IMAGE_VERSION = "imageVersion";
+    public static final String SOURCE = "source";
 
-    public static final Set<String> KNOWN =
-        Set.of(PROJECT, TYPE, COMMIT, BRANCH, JDK, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
+    public static final Set<String> KNOWN = Set.of(
+        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, JDK, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE,
+        IMAGE_VERSION);
+
+    /** {@link #SOURCE} values baas run derives; a caller may supply any other. */
+    public static final String SOURCE_CI = "ci";
+    public static final String SOURCE_LOCAL = "local";
 
     /**
      * Observed on the instance (or derived from the benchmark type), so a caller may not set them:
      * an override would let a result's tags disagree with its own environment.json. `project`,
-     * `commit` and `branch` are deliberately absent — design.md specifies caller-wins for those.
+     * `commit`, `branch` and `source` are deliberately absent — design.md specifies caller-wins for
+     * those. `source` in particular says how a run was triggered, which the instance never
+     * observes: a forged value misleads nobody about the environment, and reserving it would
+     * foreclose a consumer labelling a nightly or release run.
      */
     public static final List<String> MACHINE_OBSERVED =
         List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, CPU_MODEL, CPU_ARCH, TYPE);

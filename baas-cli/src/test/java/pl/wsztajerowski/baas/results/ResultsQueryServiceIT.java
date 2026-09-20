@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
@@ -129,6 +130,82 @@ class ResultsQueryServiceIT {
         assertThat(service.queryProject("lynx-journal"))
             .as("an absent tags map must not be read as exclude_from_results=true")
             .hasSize(1);
+    }
+
+    /**
+     * Exclusion is a property of a project sweep, not of every query: naming a run by its id is a
+     * request for that run. Without this the project's own CI self-test — which tags itself
+     * excluded because it measures fixture code — is invisible to every assertion surface but
+     * {@code baas download}.
+     */
+    @Test
+    void anExplicitRunLookupReturnsAnExcludedRun() {
+        put(measurement("lynx-journal", "req-excluded", "selfTest",
+            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+
+        assertThat(service.queryByRequestId("req-excluded"))
+            .singleElement()
+            .extracting(ResultRow::benchmarkName)
+            .isEqualTo("com.example.Bench.selfTest");
+    }
+
+    /**
+     * What 2.5 is really about. {@code RunCommand.showResults} fetches by run id and prints the
+     * table; before this change it printed "No results found." after a <em>successful</em> excluded
+     * run, because the fetch itself dropped the rows. Asserting on the rendered summary rather than
+     * only on the row count is what pins the user-visible half of that.
+     */
+    @Test
+    void thePostRunSummaryOfAnExcludedRunIsNotEmpty() {
+        put(measurement("lynx-journal", "req-excluded", "selfTest",
+            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+
+        var out = new java.io.ByteArrayOutputStream();
+        var original = System.out;
+        try {
+            System.setOut(new java.io.PrintStream(out, true, StandardCharsets.UTF_8));
+            service.printTable(service.queryByRequestId("req-excluded"));
+        } finally {
+            System.setOut(original);
+        }
+
+        assertThat(out.toString(StandardCharsets.UTF_8))
+            .doesNotContain("No results found.")
+            .contains("selfTest")
+            .contains("req-excluded");
+    }
+
+    /**
+     * The landmine this change was warned about: deleting the filter expression alone would leave
+     * {@code #tags}, {@code #excluded} and {@code :excluded} declared but unused, and DynamoDB
+     * rejects that outright — so EVERY {@code --request-id} query would fail at runtime with a
+     * {@code ValidationException} while every builder-level unit test stayed green. Only a
+     * round-trip against a real endpoint sees it, which is why this case is an IT.
+     */
+    @Test
+    void anOrdinaryRunLookupStillSucceedsRatherThanFailingValidation() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of("branch", "main")));
+
+        assertThat(service.queryByRequestId("req-1")).hasSize(1);
+    }
+
+    /**
+     * The other half of the new contract: the sweep and the filters layered on it still drop an
+     * excluded run. `baas results --tag` filters client-side over queryProject, so the row must
+     * already be gone by the time the tag filter runs.
+     */
+    @Test
+    void aTagFilterOverTheSweepStillOmitsAnExcludedRun() {
+        put(measurement("lynx-journal", "req-1", "kept", Map.of("branch", "main")));
+        put(measurement("lynx-journal", "req-2", "excluded",
+            Map.of("branch", "main", ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+
+        var rows = ResultsFilters.byTags(service.queryProject("lynx-journal"),
+            Map.of("branch", "main"));
+
+        assertThat(rows).singleElement()
+            .extracting(ResultRow::benchmarkName)
+            .isEqualTo("com.example.Bench.kept");
     }
 
     @Test

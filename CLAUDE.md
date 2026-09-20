@@ -42,9 +42,11 @@ one item per measurement; process output, the verbatim result JSON and profiling
 | `baas-model` | The stored measurement shape, the key encoding and the tag vocabulary — shared by the CLI and the runner so the two cannot drift. No MongoDB dependency, enforced by the build |
 | `fake-jmh-benchmarks`, `fake-stress-tests` | Test fixtures |
 
-Two trigger paths: `baas run` (supported, no GitHub Actions anywhere in it) and
-`benchmark-runner.yml` via `workflow_dispatch` (CI only — `e2e-cloud-test.yml` uses it). `baas`
-neither dispatches nor depends on the workflows.
+One trigger path: `baas run`. CI does not have a second one — `e2e-cloud-test.yml` is a single
+`ubuntu-latest` job that federates into `OperatorRole` and calls `baas run`, so a regression in the
+CLI cannot pass CI. `benchmark-runner.yml`, `exec-single-benchmark.yml`, `start-ec2-runner.yml`,
+`stop-ec2-runner.yml` and the `act` harness under `.github/test/` are deleted; the consumer
+contract is *install the CLI*, not *call our reusable workflow*.
 
 Sequence diagrams for the main CLI commands: [`docs/diagrams/`](docs/diagrams/) (Mermaid sources,
 no checked-in SVGs — update the `.mmd` when a command changes). Design rationale and open risks:
@@ -245,13 +247,16 @@ The watchdog is the only one that survives a deadlocked JVM.
   skips** the only test exercising async-profiler end to end. Export it before trusting a green
   build on profiler changes. Same variable `jmh-with-async.sh` needs, since `--async-path`
   otherwise defaults to the on-instance path.
-- **The GitHub Actions benchmark path is BROKEN, deliberately and knowingly.**
-  `exec-single-benchmark.yml` reads `MONGO_CONNECTION_STRING` from SSM at
-  `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and exits 1 if absent or empty. That parameter
-  is deleted, the `WorkflowRole` grant to read it is gone, and the runner has no 27017 egress. The
-  DynamoDB cutover covered `baas run` only, so `benchmark-runner.yml` and `e2e-cloud-test.yml` now
-  fail at the connection-string check. Cutting that path over to DynamoDB, or retiring it, is
-  unclaimed work — not an oversight to "fix" by restoring the parameter.
+- **The GitHub Actions benchmark path is gone, not fixed.** It was broken six ways at once — a
+  deleted SSM mongo parameter, a revoked IAM grant, no 27017 egress, an expired PAT, an
+  unresolvable project, and an assertion (`tags.source == gha-e2e-test`) no job could ever satisfy
+  because the runs were tagged `gha-e2e-test-async`. Deleting the bash orchestrator and calling
+  `baas run` dissolved all six rather than repairing them. It was also forced:
+  `private-runner-network` moves runners onto a subnet with no route to `github.com`, which a
+  self-hosted Actions runner agent must reach. Any reference you find to
+  `exec-single-benchmark.yml`, `MONGO_CONNECTION_STRING` in CI, `machulav/ec2-github-runner`,
+  `GHA_EC2_PAT`, `RUNNER_ROLE_NAME`, `SUBNET_ID`, `SECURITY_GROUP_ID` or `RESOURCE_NAME_PREFIX` is
+  stale.
 - **`baas -v` needs the argv pre-scan, not just the execution-strategy hook.**
   `LoggingMixin.applyEarlyVerbosity` in `BaasApp.main` looks redundant next to the
   `TestWrapper`-style hook, but SimpleLogger pins a logger's level when the logger is constructed,
@@ -268,11 +273,15 @@ The watchdog is the only one that survives a deadlocked JVM.
   among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
-- **No automated test drives `baas run` end to end.** `e2e-cloud-test.yml` covers `jmh-with-async`
-  against the fake benchmarks on real EC2, but through `workflow_dispatch` — the GHA path, which
-  installs its own async-profiler and never boots the runner AMI. So CI cannot catch a bad bake,
-  and `RunCommand.call()` is executed by no test at all. Verification of the baked image is manual
-  (`openspec/changes/archive/2026-08-14-prebaked-runner-ami/tasks.md` §11).
+- **`e2e-cloud-test.yml` drives `baas run` end to end, and it is the only thing that does.** One
+  `ubuntu-latest` job, `jmh-with-async` against `fake-jmh-benchmarks` on the real runner AMI, so a
+  bad bake now fails CI rather than surviving it. It is path-filtered on `pull_request` plus
+  `workflow_dispatch` because it provisions a paid instance per triggering event, and it tags
+  itself `exclude_from_results=true` — which is why `queryByRequestId` carries no exclusion
+  filter. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
+  JVM test (the JSON summary's shape is pinned against `printRunSummary`, and the wiring through
+  `call()` only on a path that fails before AWS), and `jcstress` has no end-to-end coverage at all
+  now that the old path is gone.
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
   table if you want one. The local act E2E additionally needs `/baas/mongo/connection-string` as a
@@ -287,8 +296,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   S3-object-create trigger path. Any reference you find is stale.
 - **The zsh orchestration helpers are gone** (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
   `benchmark_overview.sh`, `logger.sh`, `git_helpers.sh`, `aws_helpers.sh`). Use `baas run` /
-  `baas results`, and don't reintroduce shell helpers for orchestration.
-  `.github/test/testing-scripts/logger.sh` is a **separate, still-live copy**.
+  `baas results`, and don't reintroduce shell helpers for orchestration. The
+  `.github/test/testing-scripts/` copies went with the `act` harness, so there is no live copy
+  left anywhere.
 
 ## Gotchas that will waste your time
 
@@ -332,13 +342,25 @@ is no `cf-template-main.yaml` and no bootstrap stack.
   `ExistingSubnetId` / `ExistingSecurityGroupId` reuse existing networking. Three parameters —
   `RunnerImageVersion`, `RunnerParentAmiId`, `RunnerImageComponentData` — are rendered from
   `infra/runner-image.yaml` by `RunnerImageRenderer`; the component travels as a parameter value,
-  so it must stay under CloudFormation's 4096-byte cap (guarded by a unit test).
+  so it must stay under CloudFormation's 4096-byte cap (guarded by a unit test). Three more —
+  `GitHubOidcProviderArn`, `GitHubOrg`, `GitHubRepo` — declare the conditional federated principal
+  on `OperatorRole`'s trust policy and create no resource. `GitHubRepo` is a `CommaDelimitedList`
+  of **already-composed** `repo:<org>/<name>:*` subject patterns: `SetupCommand` builds them,
+  because CloudFormation cannot iterate a list and every in-template trick for it leans on
+  `Fn::Sub` re-scanning text substituted into it, which it does not do.
 - **`runner-image.yaml`** — the measurement environment: image version, pinned parent AMI and tool
   versions, kernel tunables. Ships in the JAR as `/templates/runner-image.yaml` because both
   `setup` and `build-image` render it at runtime.
-- **`cf-template-ci.yaml`** — `GithubOidc` (conditional) + `WorkflowRole`, GHA only. **Not deployed
-  by the CLI** — deploy by hand. Split out so the local CLI's identity never needs
-  `iam:CreateOIDCProvider`.
+- **`cf-template-ci.yaml`** — the `GithubOidc` identity provider and **nothing else**. **Not
+  deployed by the CLI** — deploy by hand, with an identity above the deployer, since
+  `deployer-policy.json` scopes `iam:Get*`/`iam:List*` to roles and never to `oidc-provider/*`.
+  Deploy order inverts: the provider is account-global (one per issuer URL per account), so it
+  comes first and its ARN is handed to `baas admin setup`; an account that already has one must
+  reuse that ARN rather than deploy this stack, which fails with `EntityAlreadyExists`.
+  `WorkflowRole` is deleted — GitHub Actions federates straight into `OperatorRole`, because a
+  role-chained session is capped at 60 minutes by STS whatever `MaxSessionDuration` says, against
+  a 7200 s default benchmark timeout. That failure was not an error but a red job with a good
+  measurement, an un-terminated instance and a full EC2 bill.
 
 IAM is split deliberately: `deployer-policy.json` → `BaasCliDeployerPolicy`, elevated, only for
 `baas admin setup`/`build-image`/`teardown`; `operator-policy.json` → the stack-created
@@ -350,8 +372,8 @@ because the CLI renders them at runtime.
 IAM group, capped at 5120 non-whitespace characters, *shared across every inline policy on that
 group* — nothing else is currently attached to it, so the reserve below the cap is precautionary
 rather than protecting a known consumer. A customer-managed policy gets 6144 to itself. The
-rendered document sits around 4.3 KB, and a `renderedPolicyLeavesRoomInAnInlinePolicyBudget` test
-holds it under 4608. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
+rendered document sits at 4105 non-whitespace characters, and a
+`renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4608. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
 `imagebuilder:Get*`, `dynamodb:Describe*`) rather than enumerated — naming every action
 CloudFormation's bucket read handler needs is what pushed it over. `Create` is deliberately *not*
 wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would grant `PutObject`,
@@ -367,14 +389,16 @@ rendered form; `--for-arn` renders it for someone else.
 `AccessDenied` into the rendered policy) is a **UX affordance, not a control** — anyone holding the
 policy can call IAM directly. Don't try to make it one.
 
-GHA values whose origin isn't obvious from the workflow files:
+GHA values whose origin isn't obvious from the workflow files. All are plain `vars.`, no secrets:
+a role ARN is not sensitive, and nothing else is left to hold. `WORKFLOW_ROLE_ARN`,
+`RUNNER_ROLE_NAME`, `GHA_EC2_PAT`, `SUBNET_ID`, `SECURITY_GROUP_ID` and `RESOURCE_NAME_PREFIX` are
+deleted along with the workflows that read them.
 
 | Name | Source |
 |---|---|
-| `WORKFLOW_ROLE_ARN` | CI stack output `WorkflowRoleArn` |
-| `RUNNER_ROLE_NAME` | Core stack output — role *name*, not ARN |
-| `GHA_EC2_PAT` | GitHub classic token, `repo` scope, for `machulav/ec2-github-runner` |
-| `RESOURCE_NAME_PREFIX` | SSM/S3 prefix; defaults to `baas` if unset |
+| `OPERATOR_ROLE_ARN` | Core stack output `OperatorRoleArn` — the role CI federates into directly |
+| `CORE_STACK_NAME` | The installation `baas admin setup` printed (e.g. `baas-3q7i7s65`); `baas config sync` reads it |
+| `AWS_REGION` | The installation's region |
 
 ## S3 result layout
 
@@ -447,7 +471,7 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `commit`, `branch` | `baas run`. `type` is reserved like the observed keys; `project`, `commit` and `branch` are caller-overridable by design |
+| Derived | `type`, `project`, `commit`, `branch`, `source` | `baas run`. `type` is reserved like the observed keys; `project`, `commit`, `branch` and `source` are caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
 | Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side; it is a convention, not a field |
 
 `branch` used to survive only as a segment of the result path and was stored nowhere. The unified
@@ -485,6 +509,6 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
 | ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |
-| MongoDB | Retained in `benchmark-runner` for standalone use only, and connect-only there. `baas` never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
+| MongoDB | Retained in `benchmark-runner`, connect-only, and **no live user is known**. The standalone justification named java-wonderland, which sits on a branch frozen 2024-06-22 that cannot run today's runner at all: `--s3-result-prefix` is gone, no `--project` makes `getProject()` throw, and naming no store fails the exactly-one-of check. So this is no longer a settled trade — retirement is an open decision, deserving its own change and spec delta rather than a rider on someone else's. `baas` itself never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
 | `baas run` project layout | Assumes a pre-built JAR handed in by `--benchmark-jar`, which is required — `baas run` does not build. Anything that produces a JAR before invoking it is fine; the CLI has no opinion on how. |
 | Distribution | Installable via `scripts/install.sh` as of this change. Homebrew tap, jpackage, native image and Docker image were specified but never built — backlog, not decisions. |

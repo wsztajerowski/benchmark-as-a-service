@@ -108,6 +108,22 @@ public class DeployerPreflight {
         // the real stack update fail partway on this action and roll back.
         actionToResource.put("dynamodb:CreateTable",
             "arn:aws:dynamodb:%s:%s:table/baas-%s-results".formatted(region, accountId, prefix));
+        // Same lesson, same shape, and it cost a stuck stack to learn twice. Deploying a core
+        // stack with federation parameters changes OperatorRole two ways, through two different
+        // IAM APIs, and BOTH grants are newer than any policy attached before they existed:
+        //
+        //   iam:UpdateAssumeRolePolicy  the federated trust statement
+        //   iam:UpdateRole              MaxSessionDuration
+        //
+        // Probing only the first is what left baas-3q7i7s65 in UPDATE_ROLLBACK_FAILED: preflight
+        // passed, the update failed partway on iam:UpdateRole, and then the *rollback* failed on
+        // the same action, because unwinding MaxSessionDuration needs it too. A stack in that
+        // state needs ContinueUpdateRollback and a human. Probe every action an update of this
+        // role actually issues, not just the one that motivated the change.
+        actionToResource.put("iam:UpdateAssumeRolePolicy",
+            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
+        actionToResource.put("iam:UpdateRole",
+            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
         return actionToResource;
     }
 

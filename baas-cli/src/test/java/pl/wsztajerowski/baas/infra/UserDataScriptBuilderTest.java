@@ -539,6 +539,18 @@ class UserDataScriptBuilderTest {
             .isLessThan(script.indexOf("BENCHMARK_PARAMS_ARRAY[@]"));
     }
 
+    /**
+     * `source` is caller-overridable, so unlike the observed keys it has no second line of defence
+     * in SCRIPT_BODY — the only thing that carries it to the database is the runner's own --tag.
+     * Tagging the instance instead is the mistake that leaves every stored result with a null
+     * value and no error anywhere.
+     */
+    @Test
+    void theSourceTagReachesTheRunnerAsACommandLineTag() {
+        assertThat(script(Map.of("project", "lynx-journal", "source", "ci")))
+            .contains("--tag \"source=ci\"");
+    }
+
     // ─── Final-review I1: defence in depth against a colliding caller tag ────────
     //
     // RunCommand.buildRunnerTags now rejects a caller --tag whose key is machine-observed before
