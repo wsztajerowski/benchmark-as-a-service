@@ -508,3 +508,95 @@ assertion passing. Score 11,295,939 ops/s, instance `terminated`.
 Both directions observed, on the live installation. `--revoke-github-oidc` is the supported way to
 cut CI's access, and nothing else does it by accident — proven by 6.2's carry-forward run, which
 left the trust untouched.
+
+
+## 6.3 — repository secrets and variables swapped
+
+The repository now carries **zero secrets** and three variables:
+
+```
+AWS_REGION         eu-central-1
+CORE_STACK_NAME    baas-3q7i7s65
+OPERATOR_ROLE_ARN  arn:aws:iam::381492019823:role/3q7i7s65-operator-role
+```
+
+Deleted, after confirming nothing on **either** branch still reads them — `release.yml` uses only
+the automatic `secrets.GITHUB_TOKEN`, and `ci-pr-build.yml` and `install-test.yml` reference none:
+
+| Deleted | Was read by |
+|---|---|
+| `WORKFLOW_ROLE_ARN`, `GHA_EC2_PAT`, `RUNNER_ROLE_NAME` | the deleted benchmark workflows only |
+| `GHA_COMMIT_PAT` | **nothing** — checked specifically, since the name suggests release use; `release.yml` uses `secrets.GITHUB_TOKEN` |
+| `MONGO_CONNECTION_STRING`, `RUNNER_ROLE_ARN` | nothing |
+| `SUBNET_ID` = `subnet-0a1f95224665189f3` | the deleted benchmark workflows only |
+| `SECURITY_GROUP_ID` = `sg-0794efe9e1c8c597a` | the deleted benchmark workflows only |
+| `ASYNC_PROFILER_VERSION` = `4.1` | the deleted workflows; `ci-pr-build.yml` now pins it as a job-level `env` instead, tracking `infra/runner-image.yaml` |
+
+`RESOURCE_NAME_PREFIX` needed no deletion — it never existed as a repository variable; the old
+workflows fell back to their `|| 'baas'` default, which is finding **A10**'s drift to
+`baas-lynx-main` in its original form.
+
+Variable values are recorded above because they are recoverable; **secret values are not** — a
+secret has to be reissued rather than restored. Nothing needs them: the three secrets tied to the
+old path die with it, and the operator role ARN is deliberately a plain variable because a role ARN
+is not sensitive.
+
+**Known consequence, accepted.** `main` still carries the old workflows, which reference the deleted
+names, so they would now fail earlier than before. They have never passed a run — that is this
+change's premise — and `ci-pr-build.yml`, `install-test.yml` and `release.yml` are unaffected. The
+branch merge removes those files.
+
+
+## 8.2 — verification report
+
+Full reactor re-run after the last code change, with `ASYNC_PATH` exported: **BUILD SUCCESS** —
+315 unit tests and 20 integration tests in `baas-cli`, `JmhWithAsyncProfilerSubcommandServiceIT`
+executed (38.7 s), and **0 skipped tests anywhere in the reactor**.
+
+| Dimension | Status |
+|---|---|
+| Completeness | 46/48 tasks; 17/17 requirements implemented |
+| Correctness | 17/17 requirements covered; 2 scenarios satisfied by construction |
+| Coherence | Design followed; 2 deviations, both resolved with the user and folded into design.md |
+
+### Requirement → evidence
+
+| Capability | Requirement | Evidence |
+|---|---|---|
+| ci-benchmark-execution | CI drives the CLI, not its own orchestrator | `e2e-cloud-test.yml` is one job; no launch/terminate/tag call, no id or key built in shell |
+| | Authenticates as operator, no intermediate role | Live: `Configure AWS credentials: success` against a trust policy with one federated statement; `WorkflowRole` deleted from the template |
+| | Mechanism not narrowed to the self-test's type | `benchmarkType` is still `@Parameters(index="0")` against `VALID_TYPES`; the workflow passes it via `BENCHMARK_TYPE` |
+| | Self-test covers the image-dependent type, discards its numbers | 3 green runs producing flamegraphs + JFR; every measurement tagged `exclude_from_results=true` |
+| | Can correlate and diagnose the run it launched | `--format json`; verified on both success and a forced failure |
+| | Assertions satisfiable by the run that produces them | Every assertion reads `steps.run.outputs.*`; no standalone literal |
+| | Triggered deliberately, not on every push | Path-filtered `pull_request` + `workflow_dispatch`, no schedule |
+| cli-command-structure | `baas run --format json` | `RunCommandSummaryTest` (7), plus live stdout on success and failure |
+| core-stack-provisioning | Federation into the operator role | `CoreTemplateTest` (32) + live trust policy |
+| | Parameters carried forward, revoked only on request | `SetupCommandTest` (14) + live: an unrelated setup was a no-op, `--revoke-github-oidc` removed the statement |
+| | CI stack holds only the identity provider | `CiTemplateTest` (5) |
+| | (MOD) Core stack holds only CLI-owned infrastructure | `federationAddsNoResourceToTheCoreStack` |
+| | (MOD) baas-cli never manages the CI stack | Only IAM call in `SetupCommand` is the preflight simulation |
+| | (MOD) Deployer policy holds no CI-stack permissions | `DeployerPolicyTest` (42) |
+| | (MOD) Operator identity is an assumable role | `theAccountRootPrincipalSurvivesAlongsideTheFederatedOne` + live |
+| benchmark-results-query | Exclusion applies to sweeps, not to id lookups | `ResultsQueryServiceIT` (10) + live both ways |
+| results-store-schema | `source` in the shared vocabulary | `TagKeysTest` (6), `RunCommandTest` (40); live item carries `source = ci` |
+
+### Remaining
+
+**6.8** — `remove-workflowrole` change set `AVAILABLE` on `baas-main`, one action (`Remove
+WorkflowRole`). Execution refused by the session sandbox; awaits the user.
+
+### Suggestions (not blocking)
+
+1. `bestPerGroup` is tag-generic, so grouping by `source` works by construction, but every grouping
+   test passes `ResultsFilters.BRANCH`. One case with `source` would pin the scenario.
+2. Nothing asserts that `SetupCommand` performs *no* IAM lookup for the provider ARN — it is true
+   by construction and the ARN is pinned as forwarded verbatim.
+3. W9 (`baas download` cannot resolve a failed run by id) is worked around in the workflow and left
+   open in the CLI; it needs its own change.
+
+### Assessment
+
+No critical issues in the implementation. One task remains and it is an AWS operation the user must
+run. **Ready to archive once 6.8 is executed** — and note that merging carries an explicit
+`BREAKING CHANGE` footer, so the release will bump the major version.
