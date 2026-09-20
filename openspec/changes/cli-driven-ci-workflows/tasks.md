@@ -146,7 +146,7 @@
 - [x] 6.7 Exercise the failure path — verify by forcing a failing run that the JSON summary is still
       printed with `status: "failed"`, the job exits non-zero, and `baas download <runId>` retrieves
       `cloud-init-output.log`
-- [ ] 6.8 Execute the staged `remove-workflowrole` change set on `baas-main` (the legacy stack;
+- [x] 6.8 Execute the staged `remove-workflowrole` change set on `baas-main` (the legacy stack;
       there is no separate `baas-lynx` CI stack — see design.md and `verify.md` W1):
       `aws cloudformation execute-change-set --stack-name baas-main
       --change-set-name remove-workflowrole --profile lynx`, then wait for `UPDATE_COMPLETE`.

@@ -600,3 +600,36 @@ WorkflowRole`). Execution refused by the session sandbox; awaits the user.
 No critical issues in the implementation. One task remains and it is an AWS operation the user must
 run. **Ready to archive once 6.8 is executed** — and note that merging carries an explicit
 `BREAKING CHANGE` footer, so the release will bump the major version.
+
+
+## 6.8 — executed and verified
+
+The user ran the change set on 2026-09-20T18:03:57Z. `baas-main` is `UPDATE_COMPLETE`, and the
+outcome matches what the change set promised exactly — one resource removed, nothing else touched.
+
+| Check | Result |
+|---|---|
+| `WorkflowRole` removed | `NoSuchEntity: The role with name baas-lynx-github-actions-workflow-role cannot be found` |
+| Identity provider survives | `arn:aws:iam::381492019823:oidc-provider/token.actions.githubusercontent.com` — the provider the new federation depends on, and the reason a wholesale stack delete was rejected |
+| `baas-lynx-main` survives | `head-bucket` OK, `BucketRegion: eu-central-1` |
+| Rest of the stack intact | `GithubOidc`, `RunnerRole`, `RunnerInstanceProfile`, `S3MainBucket`, and all three `S3HookLambda*` resources present |
+| Operator role unaffected | `MaxSessionDuration: 9000`, 2 trust statements (account root + federated) |
+
+**The check the task exists for.** Enumerating every role in the account that trusts the GitHub
+OIDC provider now returns exactly one:
+
+```
+3q7i7s65-operator-role   sub = repo:wsztajerowski/benchmark-as-a-service:*
+```
+
+Before this change the account carried two roles this repository could assume, one of them
+unmaintained and holding unscoped `ec2:RunInstances` plus `iam:PassRole` on `Resource: "*"`.
+Finding **S3** is closed by removal, not by narrowing.
+
+No workflow re-run was needed to confirm CI still works: nothing in `e2e-cloud-test.yml` referenced
+`WorkflowRole` — it assumes `OPERATOR_ROLE_ARN` — and that role's trust policy is byte-identical to
+the one three green runs already exercised.
+
+**Still open, unchanged and out of scope:** `GithubOidc` carries no `DeletionPolicy`, so a future
+delete of `baas-main` would still take the identity provider with it. Worth a one-line protective
+edit before anyone retires that stack.
