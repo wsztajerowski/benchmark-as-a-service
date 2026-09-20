@@ -21,6 +21,7 @@ import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
 import pl.wsztajerowski.baas.model.RunId;
 import pl.wsztajerowski.baas.model.RunLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
+import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.nio.file.Path;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.Callable;
+import java.util.function.Consumer;
 
 @Command(
     name = "run",
@@ -465,9 +467,7 @@ public class RunCommand implements Callable<Integer> {
         String tableName = config.getAws().getResultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
             var rows = results.queryByRequestId(runId);
-            // Named, not just shown: this is the value `baas download <runId>` takes.
-            logger.info("Results for run {} (baas download {}):", runId, runId);
-            results.printTable(rows);
+            reportRunResults(rows, runId, results::printTable);
         } catch (Exception e) {
             logger.warn("Could not fetch results from the results table: {}", e.getMessage());
         }
@@ -663,6 +663,32 @@ public class RunCommand implements Callable<Integer> {
         return isTruthy(environment.get("CI")) || isTruthy(environment.get("GITHUB_ACTIONS"))
             ? TagKeys.SOURCE_CI
             : TagKeys.SOURCE_LOCAL;
+    }
+
+    /**
+     * The post-run summary, which under {@code --format json} must not be printed at all.
+     *
+     * <p>{@code printTable} writes to {@code System.out} — deliberately, since a table is a
+     * command payload rather than a diagnostic. But so is the JSON summary, and two payloads on
+     * one stream is not a stream anyone can parse: the table lands first and
+     * {@code baas run --format json | jq} fails on the very first token. Caught by a real CI run,
+     * which read an empty run id and then queried {@code --request-id ""}.
+     *
+     * <p>The rows are not folded into the summary object. They are a separate concern with a
+     * separate command — the object carries the run id precisely so
+     * {@code baas results --request-id} can fetch them.
+     *
+     * @param printTable passed as a function so this is testable without an AWS client
+     */
+    void reportRunResults(List<ResultRow> rows, String runId, Consumer<List<ResultRow>> printTable) {
+        if (jsonSummary()) {
+            logger.info("Run {} stored {} measurement(s) — baas results --request-id {}",
+                runId, rows.size(), runId);
+            return;
+        }
+        // Named, not just shown: this is the value `baas download <runId>` takes.
+        logger.info("Results for run {} (baas download {}):", runId, runId);
+        printTable.accept(rows);
     }
 
     /**

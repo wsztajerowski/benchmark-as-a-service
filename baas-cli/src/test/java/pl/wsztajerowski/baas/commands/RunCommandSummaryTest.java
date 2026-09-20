@@ -140,6 +140,56 @@ class RunCommandSummaryTest {
             .contains("not-a-type");
     }
 
+    /**
+     * The defect a real CI run found. {@code showResults} prints the post-run table through
+     * {@code ResultsQueryService.printTable}, which writes to {@code System.out} — correctly, as a
+     * command payload. But the JSON summary is a payload on that same stream, so under
+     * {@code --format json} the table landed first and {@code | jq} failed on the opening token.
+     * The workflow read an empty run id and went on to query {@code --request-id ""}.
+     *
+     * <p>The earlier redirect test missed this because it drove a path that fails before launching,
+     * which never reaches {@code showResults} at all.
+     */
+    @Test
+    void theResultTableIsSuppressedUnderJsonSoStandardOutputHoldsTheObjectAlone() throws Exception {
+        var command = new RunCommand();
+        command.format = "json";
+        command.summaryRunId = "20260920T161636923Z-08785de7";
+        command.summaryProject = "benchmark-as-a-service";
+        command.summaryResultPath = "runs/benchmark-as-a-service/20260920T161636923Z-08785de7/";
+        command.summaryInstanceId = "i-03c3ad558f45b388c";
+
+        var printed = new java.util.concurrent.atomic.AtomicBoolean(false);
+        var out = new ByteArrayOutputStream();
+        PrintStream original = System.out;
+        try {
+            System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
+            command.reportRunResults(java.util.List.of(), "20260920T161636923Z-08785de7",
+                rows -> printed.set(true));
+            command.printRunSummary(0);
+        } finally {
+            System.setOut(original);
+        }
+
+        assertThat(printed).as("the table must not be printed when the object owns stdout").isFalse();
+        String captured = out.toString(StandardCharsets.UTF_8).strip();
+        assertThat(captured.lines()).hasSize(1);
+        assertThat(JSON.readTree(captured).get("runId").asText())
+            .isEqualTo("20260920T161636923Z-08785de7");
+    }
+
+    /** Default output is unchanged: the table is still the point of a run you watch. */
+    @Test
+    void theResultTableStillPrintsWithoutTheOption() {
+        var command = new RunCommand();
+        var printed = new java.util.concurrent.atomic.AtomicBoolean(false);
+
+        command.reportRunResults(java.util.List.of(), "20260920T161636923Z-08785de7",
+            rows -> printed.set(true));
+
+        assertThat(printed).isTrue();
+    }
+
     @Test
     void withoutTheOptionNoObjectIsWritten() {
         var captured = run("run", "--benchmark-jar", "/nonexistent.jar", "not-a-type");
