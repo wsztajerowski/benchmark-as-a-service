@@ -415,27 +415,26 @@ Endpoints: S3 browser `http://localhost:4566/baas/` · DynamoDB at the same Loca
 
 ## GitHub Actions
 
-The workflows are for CI. `baas` neither dispatches nor depends on them.
+CI runs benchmarks by calling the CLI, not by re-implementing it. There is no GitHub Actions
+benchmark path any more: `benchmark-runner.yml`, `exec-single-benchmark.yml`,
+`start-ec2-runner.yml`, `stop-ec2-runner.yml` and the `act` harness under `.github/test/` are
+deleted, and with them `machulav/ec2-github-runner` and the self-hosted runner. If you consumed
+the reusable workflow, the contract is now *install the CLI* — see [Install](#1-install).
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| `ci-pr-build.yml` | PR | `mvn clean verify` |
-| `e2e-cloud-test.yml` | PR / manual | Full cloud E2E against real AWS |
+| `ci-pr-build.yml` | PR | `mvn clean verify`, with `ASYNC_PATH` exported so the async-profiler test actually runs |
+| `e2e-cloud-test.yml` | path-filtered PR / manual | One `baas run jmh-with-async` on real EC2, against the runner AMI |
+| `install-test.yml` | PR | `scripts/install.sh` against a fixture release, on Linux and macOS |
 | `release.yml` | push to `main` | semantic-release → GitHub Release → GitHub Packages |
-| `benchmark-runner.yml` | `workflow_dispatch` | Benchmark execution via GHA |
-| `exec-single-benchmark.yml`, `start-ec2-runner.yml`, `stop-ec2-runner.yml` | called by the above | Executor and EC2 lifecycle |
 
-Secrets: `WORKFLOW_ROLE_ARN`, `RUNNER_ROLE_NAME` (both from the CI stack / core stack outputs),
-`GHA_EC2_PAT` (classic token, `repo` scope, for `machulav/ec2-github-runner`).
+Variables (no secrets — a role ARN is not sensitive, and nothing else is left to hold):
+`OPERATOR_ROLE_ARN` (core stack output `OperatorRoleArn`), `CORE_STACK_NAME`, `AWS_REGION`.
 
-Variables: `SUBNET_ID`, `SECURITY_GROUP_ID`, `AWS_REGION`, `ASYNC_PROFILER_VERSION`,
-`RESOURCE_NAME_PREFIX`.
-
-> **The GitHub Actions benchmark path does not currently work.** It writes to MongoDB, which BaaS
-> no longer runs: `exec-single-benchmark.yml` reads `MONGO_CONNECTION_STRING` from SSM at
-> `/<RESOURCE_NAME_PREFIX>/mongo/connection-string` and fails the job if it's absent — and that
-> parameter, its IAM grant and the runner's 27017 egress were all removed with the DynamoDB
-> cutover, which covered `baas run` only. Cutting this path over or retiring it is open work.
+`e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its
+`pull_request` trigger is path-filtered and there is no schedule. It tags its own measurements
+`exclude_from_results=true` — it benchmarks fixture code — so they never reach a comparison, while
+`baas results --request-id <runId>` still returns them.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
 real version is set at release time. The bump comes from the commit subjects under the

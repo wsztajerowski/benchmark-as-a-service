@@ -138,6 +138,8 @@
         "iam:Get*",
         "iam:List*",
         "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
         "iam:RemoveRoleFromInstanceProfile",
         "iam:TagRole",
         "iam:UntagRole"

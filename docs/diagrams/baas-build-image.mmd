@@ -23,7 +23,7 @@ sequenceDiagram
     end
 
     BIC->>CF: updateStack(core template, 3 image parameters)
-    Note over BIC,CF: only the image parameters are sent; every other parameter is<br/>carried forward with UsePreviousValue, or a stack deployed with<br/>--use-existing-vpc would silently flip back to building a VPC
+    Note over BIC,CF: only the image parameters are sent, and every other parameter is<br/>carried forward with UsePreviousValue, or a stack deployed with<br/>--use-existing-vpc would silently flip back to building a VPC
     CF-->>BIC: UPDATE_COMPLETE (or "no updates are to be performed")
     BIC->>CF: describeStacks -> RunnerImagePipelineArn
     CF-->>BIC: pipeline ARN (via !GetAtt .Arn, never !Ref)
@@ -53,4 +53,4 @@ sequenceDiagram
         BIC->>EC2: deregisterImage(previousAmiId)
         BIC->>EC2: deleteSnapshot(each) -- else the snapshots bill forever
     end
-    BIC-->>User: new AMI id, image version, parent AMI, pointer path; exit 0
+    BIC-->>User: new AMI id, image version, parent AMI, pointer path -- exit 0

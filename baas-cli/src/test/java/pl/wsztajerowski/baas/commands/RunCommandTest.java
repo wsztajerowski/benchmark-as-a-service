@@ -5,8 +5,10 @@ import org.junit.jupiter.api.io.TempDir;
 import pl.wsztajerowski.baas.config.BaasConfig;
 
 import java.nio.file.Path;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RunCommandTest {
@@ -136,6 +138,104 @@ class RunCommandTest {
 
         assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
             .containsEntry("branch", "main");
+    }
+
+    // ─── operator credentials warning ────────────────────────────────────────────
+
+    /**
+     * On a laptop with no operator profile the warning is the whole point: `run`/`results` are
+     * meant to run under BaasCliOperatorRole, and falling through to `aws.profile` would silently
+     * use deployer credentials.
+     */
+    @Test
+    void warnsOnALaptopWithNoOperatorProfileAndNoAmbientCredentials() {
+        assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(), Map.of()))
+            .get().asString().contains("--operator-profile");
+    }
+
+    /**
+     * In continuous integration the credentials come from an OIDC federation the job already
+     * performed, so there is no profile to name and the warning's advice is wrong rather than
+     * merely redundant — and a warning that is wrong where it always fires is one people learn to
+     * ignore where it matters.
+     */
+    @Test
+    void staysSilentWhenCredentialsComeFromTheEnvironment() {
+        assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(),
+            Map.of("AWS_ACCESS_KEY_ID", "ASIA...", "AWS_SESSION_TOKEN", "...")))
+            .isEmpty();
+        assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(),
+            Map.of("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/token", "AWS_ROLE_ARN", "arn:...")))
+            .isEmpty();
+    }
+
+    @Test
+    void staysSilentWhenAnOperatorProfileIsConfigured() {
+        var config = new BaasConfig();
+        config.getAws().setOperatorProfile("baas-operator");
+
+        assertThat(RunCommand.operatorCredentialsWarning(config, Map.of())).isEmpty();
+    }
+
+    // ─── source: the trigger tag (2.1, 2.2) ─────────────────────────────────────
+    //
+    // Derived rather than left to convention, so that absence is meaningful: a key present only
+    // when someone types it makes `--group-by source` unreliable in exactly the direction that
+    // matters — verifying that CI and laptop runs are comparable.
+
+    @Test
+    void aLaptopRunIsTaggedLocal() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main", Map.of()))
+            .containsEntry("source", "local");
+    }
+
+    @Test
+    void aContinuousIntegrationRunIsTaggedCi() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+            Map.of("CI", "true", "GITHUB_ACTIONS", "true")))
+            .containsEntry("source", "ci");
+    }
+
+    /**
+     * Unlike a machine-observed key, `source` is caller-overridable — it says how a run was
+     * triggered, which the instance never observes, so a supplied value cannot make a result's
+     * tags disagree with its own environment.json. This is what lets a consumer label a nightly.
+     */
+    @Test
+    void anExplicitSourceWinsOverTheDerivedOneRatherThanBeingRejected() {
+        var command = new RunCommand();
+        command.extraTags.put("source", "nightly");
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+            Map.of("CI", "true")))
+            .containsEntry("source", "nightly");
+    }
+
+    @Test
+    void sourceIsNotRejectedTheWayAMachineObservedKeyIs() {
+        var command = new RunCommand();
+        command.extraTags.put("source", "nightly");
+
+        assertThatCode(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+            Map.of()))
+            .doesNotThrowAnyException();
+    }
+
+    /**
+     * Some environments set {@code CI=false} to opt out; honouring that is what stops a developer
+     * machine carrying a stray {@code CI} export from mislabelling every local run.
+     */
+    @Test
+    void ciSetToFalseIsNotContinuousIntegration() {
+        var command = new RunCommand();
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+            Map.of("CI", "false")))
+            .containsEntry("source", "local");
     }
 
     @Test

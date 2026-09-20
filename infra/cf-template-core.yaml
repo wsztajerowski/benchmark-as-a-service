@@ -49,8 +49,43 @@ Parameters:
                 commands:
                   - "true"
 
+  # ─── GitHub OIDC federation (optional) ───────────────────────────────────────
+  # Supplying these declares a federated principal on OperatorRole's trust policy, so a workflow
+  # assumes the operator role directly. No intermediate role: a role-chained session is capped at
+  # 60 minutes by STS regardless of MaxSessionDuration, against a 7200 s default benchmark timeout
+  # — and the failure mode is a red job with a good measurement, an un-terminated instance and a
+  # full EC2 bill.
+  #
+  # They create no resource. The identity provider is account-global and lives in the CI stack,
+  # deployed separately by a higher-privileged identity; this template only references its ARN.
+  GitHubOidcProviderArn:
+    Description: >-
+      ARN of the account's existing GitHub OIDC identity provider. Empty disables federation.
+    Type: String
+    Default: ""
+  GitHubOrg:
+    Description: GitHub organisation or user owning the repositories allowed to assume the operator role.
+    Type: String
+    Default: ""
+  GitHubRepo:
+    Description: >-
+      Comma-separated OIDC subject patterns allowed to assume the operator role, each already in
+      `repo:<org>/<name>:*` form. `baas admin setup` composes them from --github-org and each
+      --github-repo, so the template needs no per-element rendering: CloudFormation cannot iterate
+      a list, and every in-template trick for it relies on Fn::Sub re-scanning substituted text,
+      which it does not do. Several patterns let one installation serve several repositories
+      without a template migration.
+    Type: CommaDelimitedList
+    Default: ""
+
 Conditions:
   CreateNetworking: !Equals [!Ref UseExistingVpc, "false"]
+  # All three are required together: a provider ARN with no repository would admit every
+  # repository in the org, and an org with no provider has nothing to trust.
+  FederateGitHub: !And
+    - !Not [!Equals [!Ref GitHubOidcProviderArn, ""]]
+    - !Not [!Equals [!Ref GitHubOrg, ""]]
+    - !Not [!Equals [!Join ["", !Ref GitHubRepo], ""]]
 
 Resources:
 
@@ -472,6 +507,12 @@ Resources:
     Properties:
       RoleName: !Sub ${ResourceNamePrefix}-operator-role
       Path: "/"
+      # Comfortably above the 7500 s wall-clock default (benchmark timeout 7200 + the 300 s
+      # termination margin), and strictly above it rather than equal: `baas run` polls for the
+      # life of the run and still needs credentials afterwards to terminate the instance. A
+      # session that expired mid-poll would leave the shell watchdog as the only termination
+      # layer — a red job with a good measurement and a full EC2 bill.
+      MaxSessionDuration: 9000
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -479,6 +520,23 @@ Resources:
             Principal:
               AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
             Action: sts:AssumeRole
+          # Additive: the account-root principal above survives, so local operators keep working
+          # and revoking federation cannot lock anyone out. Present only when the federation
+          # parameters are supplied, so an installation that wants none deploys exactly as before.
+          - !If
+            - FederateGitHub
+            - Effect: Allow
+              Principal:
+                Federated: !Ref GitHubOidcProviderArn
+              Action: sts:AssumeRoleWithWebIdentity
+              Condition:
+                StringEquals:
+                  token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                StringLike:
+                  # One value per repository. Fork pull requests cannot obtain an id-token at all,
+                  # so the trailing :* is not reachable from a fork.
+                  token.actions.githubusercontent.com:sub: !Ref GitHubRepo
+            - !Ref AWS::NoValue
       Policies:
         - PolicyName: !Sub ${ResourceNamePrefix}-operator-ec2-policy
           PolicyDocument:

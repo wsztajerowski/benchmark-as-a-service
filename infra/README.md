@@ -66,46 +66,68 @@ aws cloudformation describe-stacks \
   --query 'Stacks[0].Outputs'
 ```
 
-## Stack 2: `baas-ci` — GitHub Actions integration
+## Stack 2: `baas-ci` — the GitHub Actions identity provider
 
-Deploys the `WorkflowRole` (OIDC) assumed by GitHub Actions. Requires `RunnerRoleArn` and
-`BucketName` from the `baas-core` outputs above.
+Deploys the OIDC identity provider and nothing else. It takes no parameter from the core stack,
+and produces none the core stack consumes — so **deploy order is provider first**, then
+`baas admin setup` with the provider's ARN. `WorkflowRole` used to live here and is gone: GitHub
+Actions federates directly into `BaasCliOperatorRole`, which the core stack owns.
 
-### Without an existing GitHub OIDC provider
+The provider is **account-global** — one per issuer URL per account. Check before deploying:
+
+```bash
+aws iam list-open-id-connect-providers --profile YOUR_AWS_PROFILE
+```
+
+If one already exists for `token.actions.githubusercontent.com`, **do not deploy this stack** —
+it would fail with `EntityAlreadyExists`. Use the existing ARN instead.
+
+This needs an identity above the deployer: `deployer-policy.json` scopes `iam:Get*`/`iam:List*` to
+roles and never to `oidc-provider/*`, so the deployer gets `AccessDenied` even on the list above.
 
 ```bash
 aws cloudformation deploy \
-  --profile YOUR_AWS_PROFILE \
+  --profile YOUR_ADMIN_AWS_PROFILE \
   --template-file cf-template-ci.yaml \
   --stack-name baas-ci \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
-    ResourceNamePrefix=RESOURCE_PREFIX \
-    RunnerRoleArn=RUNNER_ROLE_ARN_FROM_CORE_OUTPUTS \
-    BucketName=BUCKET_NAME_FROM_CORE_OUTPUTS \
-    GitHubOrg=YOUR_GITHUB_ORG \
-    GitHubRepo=YOUR_GITHUB_REPO
+  --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX
 ```
 
-### With an existing GitHub OIDC provider
+No `--capabilities` is needed — the stack declares no IAM role.
+
+### Federating a core stack into the provider
 
 ```bash
-aws cloudformation deploy \
-  --profile YOUR_AWS_PROFILE \
-  --template-file cf-template-ci.yaml \
-  --stack-name baas-ci \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --parameter-overrides \
-    ResourceNamePrefix=RESOURCE_PREFIX \
-    RunnerRoleArn=RUNNER_ROLE_ARN_FROM_CORE_OUTPUTS \
-    BucketName=BUCKET_NAME_FROM_CORE_OUTPUTS \
-    GitHubOrg=YOUR_GITHUB_ORG \
-    GitHubRepo=YOUR_GITHUB_REPO \
-    OIDCProviderArn=arn:aws:iam::YOUR_AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com
+baas admin setup \
+  --oidc-provider-arn arn:aws:iam::YOUR_AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com \
+  --github-org YOUR_GITHUB_ORG \
+  --github-repo YOUR_GITHUB_REPO
 ```
 
-The `WorkflowRoleArn` output of the `baas-ci` stack maps to the `WORKFLOW_ROLE_ARN` GitHub
-Actions secret.
+All three are required together: a partial set deploys a trust condition that is always false, so
+the stack would report success while CI has no access — `baas admin setup` rejects that outright.
+`--github-repo` is repeatable (and accepts a comma-separated list), so one installation can serve
+several repositories.
+
+A later `baas admin setup` that names none of them **carries the deployed values forward** rather
+than resubmitting the template defaults, so a setup run for an unrelated reason cannot silently
+revoke CI's access. Removing the trust is therefore its own explicit gesture:
+
+```bash
+baas admin setup --revoke-github-oidc
+```
+
+The account-root principal on the trust policy survives either way, so neither federating nor
+revoking can lock a local operator out. The deployed stack's parameters are the single source of
+truth for what the trust policy says — `~/.baas/config.yaml` holds no copy:
+
+```bash
+aws cloudformation describe-stacks --stack-name baas-PREFIX \
+  --query 'Stacks[0].Parameters[?starts_with(ParameterKey, `GitHub`)]'
+```
+
+The core stack's `OperatorRoleArn` output is what GitHub Actions assumes. Set it as the plain
+`OPERATOR_ROLE_ARN` repository **variable** — a role ARN is not sensitive, so it needs no secret.
 
 ## IAM identities for `baas-cli`
 
@@ -304,7 +326,7 @@ it. A mismatch uploads nothing and launches nothing.
 **Nothing connects to Atlas.** Measurements go to the DynamoDB results table over the gateway
 endpoint. The runner's TCP 27017 egress, the `/<prefix>/mongo/connection-string` parameter, and
 every IAM grant that named it — on the runner, the operator, the deployer and the GHA
-`WorkflowRole` — are all gone.
+`WorkflowRole`, itself since deleted — are all gone.
 
 For the record, while it was live: Atlas does not serve clients on 443, and runner instances get an
 **ephemeral public IP per run** — no NAT gateway, no Elastic IP — so there was no stable address to

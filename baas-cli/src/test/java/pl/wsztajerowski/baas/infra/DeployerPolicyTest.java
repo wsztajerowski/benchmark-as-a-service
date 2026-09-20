@@ -44,12 +44,40 @@ class DeployerPolicyTest {
             .isTrue();
     }
 
+    /**
+     * The identity provider stays out of the deployer's reach — it is account-global and created
+     * by a separate, higher-privileged identity. Editing a trust policy does not: deploying the
+     * core stack now writes {@code BaasCliOperatorRole}'s, so the grant is required.
+     *
+     * <p>It confers no escalation the policy did not already allow. {@code iam:CreateRole} writes
+     * a trust policy too, which is why CLAUDE.md's accepted-risks table already records the
+     * deployer as effectively account admin. That row is settled and is not reopened here.
+     */
     @Test
     void holdsNoCiStackPermissions() {
         assertThat(InfraFixtures.actions(InfraFixtures.deployerPolicy()))
-            .as("the core/CI split exists so the local identity never touches GitHub OIDC trust")
-            .noneMatch(action -> action.endsWith("OpenIDConnectProvider"))
-            .doesNotContain("iam:UpdateAssumeRolePolicy");
+            .as("the core/CI split exists so the local identity never creates the OIDC provider")
+            .noneMatch(action -> action.endsWith("OpenIDConnectProvider"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void canEditTheOperatorRolesTrustPolicyWithoutWideningItsScope() {
+        assertThat(InfraFixtures.grants(InfraFixtures.deployerPolicy(), "iam:UpdateAssumeRolePolicy"))
+            .as("deploying a core stack with federation parameters rewrites this trust policy")
+            .isTrue();
+        // Federating changes the role two ways through two APIs. Missing this one failed the
+        // update partway AND then failed the rollback, because unwinding MaxSessionDuration
+        // needs it too — leaving the stack in UPDATE_ROLLBACK_FAILED.
+        assertThat(InfraFixtures.grants(InfraFixtures.deployerPolicy(), "iam:UpdateRole"))
+            .as("MaxSessionDuration is raised by iam:UpdateRole, not by the trust-policy call")
+            .isTrue();
+
+        assertThat((List<String>) statementWithSid("IAM").get("Resource"))
+            .as("scoped to the same roles as the rest of the IAM statement, never Resource:*")
+            .contains("arn:aws:iam::%s:role/%s-operator-role"
+                .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX))
+            .noneMatch("*"::equals);
     }
 
     @Test
@@ -247,9 +275,10 @@ class DeployerPolicyTest {
      * else is currently attached to that group, so the remaining reserve below the cap is
      * precautionary rather than protecting a known consumer.
      *
-     * <p>With the DynamoDB results-table statement, the policy renders to 4267 non-whitespace
-     * characters — 341 spare under this 4608 budget, and 512 still reserved between this budget
-     * and the 5120 hard cap.
+     * <p>With the DynamoDB results-table statement and the two role-update grants
+     * ({@code iam:UpdateAssumeRolePolicy}, {@code iam:UpdateRole}), the policy renders to 4122
+     * non-whitespace characters — 486 spare under this 4608 budget, and 512 still reserved
+     * between this budget and the 5120 hard cap.
      */
     @Test
     void renderedPolicyLeavesRoomInAnInlinePolicyBudget() {

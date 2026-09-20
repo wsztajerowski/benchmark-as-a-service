@@ -25,6 +25,8 @@ public class ResultsQueryService implements AutoCloseable {
      * Excluded rows are dropped server-side so they never enter the result set or count against the
      * page budget. A row whose {@code tags} map is absent entirely — every measurement carrying no
      * tags at all — must still come back, hence the {@code attribute_not_exists} arm.
+     *
+     * <p>Applied to the project sweep only; see {@link #queryByRequestId}.
      */
     private static final String EXCLUDE_FILTER =
         "attribute_not_exists(#tags) OR attribute_not_exists(#tags.#excluded) OR #tags.#excluded <> :excluded";
@@ -59,20 +61,28 @@ public class ResultsQueryService implements AutoCloseable {
     /**
      * {@code requestId} sits at the tail of the base sort key, so it is the one pattern the table's
      * own key cannot reach — hence the index.
+     *
+     * <p>Deliberately carries no exclusion filter. Exclusion is a property of a project sweep;
+     * naming one run by its id is a request for <em>that run</em>, not a query over the project's
+     * history. Without this a run tagged {@code exclude_from_results=true} is invisible to every
+     * assertion surface except {@code baas download} — and {@link
+     * pl.wsztajerowski.baas.commands.RunCommand}'s own post-run summary, which calls this method,
+     * prints empty after a <em>successful</em> excluded run.
+     *
+     * <p>The filter's {@code #tags}, {@code #excluded} and {@code :excluded} entries go with it,
+     * and must: DynamoDB rejects a request whose expression names or values are unused by any
+     * expression, so leaving them behind fails <em>every</em> {@code --request-id} query at runtime
+     * with a {@code ValidationException}. A builder-level unit test would not see it; the coverage
+     * is an integration test that round-trips against a real endpoint.
      */
     public List<ResultRow> queryByRequestId(String requestId) {
         return runQuery(QueryRequest.builder()
             .tableName(tableName)
             .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
             .keyConditionExpression("#pk = :pk")
-            .expressionAttributeNames(Map.of(
-                "#pk", MeasurementItemMapper.GSI1PK,
-                "#tags", TAGS_ATTRIBUTE,
-                "#excluded", EXCLUDE_FROM_RESULTS))
+            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
             .expressionAttributeValues(Map.of(
-                ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(requestId)),
-                ":excluded", AttributeValue.fromS("true")))
-            .filterExpression(EXCLUDE_FILTER)
+                ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(requestId))))
             .build());
     }
 

@@ -425,6 +425,106 @@ class CoreTemplateTest {
         assertThat(InfraFixtures.resources(dynamoDbPolicyDocumentFor("OperatorRole"))).doesNotContain("*");
     }
 
+    // ─── GitHub OIDC federation on the operator role ─────────────────────────────
+    //
+    // The intrinsic-tolerant YAML loader collapses !If to its argument list, so the conditional
+    // statement reads as ["FederateGitHub", {the statement}, "AWS::NoValue"] — which is exactly
+    // the structure worth asserting: present under the condition, absent otherwise, by
+    // construction rather than by a deploy nobody runs in a test.
+
+    @Test
+    void theFederatedStatementIsConditionalOnTheFederationParameters() {
+        var branches = federatedStatementBranches();
+
+        assertThat(branches.get(0)).isEqualTo("FederateGitHub");
+        assertThat(branches.get(2))
+            .as("an installation supplying no federation parameters must deploy exactly as before")
+            .isEqualTo("AWS::NoValue");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theFederatedPrincipalAssumesTheOperatorRoleDirectly() {
+        var statement = (Map<String, Object>) federatedStatementBranches().get(1);
+
+        assertThat(statement).containsEntry("Action", "sts:AssumeRoleWithWebIdentity");
+        assertThat((Map<String, Object>) statement.get("Principal"))
+            .as("no intermediate role stands between the workload identity and the operator role")
+            .containsEntry("Federated", "GitHubOidcProviderArn");
+    }
+
+    /**
+     * One {@code StringLike} value per repository, composed by {@code baas admin setup} from
+     * {@code --github-org} and each {@code --github-repo}. The template refs the list directly:
+     * CloudFormation cannot iterate one, and every in-template trick for it leans on {@code
+     * Fn::Sub} re-scanning substituted text, which it does not do.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void everyTrustedRepositoryComesFromTheRepositoryList() {
+        var statement = (Map<String, Object>) federatedStatementBranches().get(1);
+        var condition = (Map<String, Object>) statement.get("Condition");
+
+        assertThat((Map<String, Object>) condition.get("StringLike"))
+            .containsEntry("token.actions.githubusercontent.com:sub", "GitHubRepo");
+        assertThat((Map<String, Object>) condition.get("StringEquals"))
+            .as("without an audience check the token of any AWS-federated workload would do")
+            .containsEntry("token.actions.githubusercontent.com:aud", "sts.amazonaws.com");
+    }
+
+    /**
+     * Additive, in both directions: federating must not lock local operators out, and revoking
+     * must not lock anyone out either. Finding S9 (the account-root principal) therefore stays
+     * open even though this change edits that exact trust policy.
+     */
+    @Test
+    void theAccountRootPrincipalSurvivesAlongsideTheFederatedOne() {
+        assertThat(operatorTrustStatements().get(0))
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.map(String.class, Object.class))
+            .containsEntry("Action", "sts:AssumeRole")
+            .extracting("Principal")
+            .asInstanceOf(org.assertj.core.api.InstanceOfAssertFactories.map(String.class, Object.class))
+            .containsEntry("AWS", "arn:${AWS::Partition}:iam::${AWS::AccountId}:root");
+    }
+
+    /**
+     * A session that expired mid-poll would leave the shell watchdog as the only termination
+     * layer: the job goes red, the measurement is fine and the full instance-lifetime is billed.
+     * Strictly above the 7500 s wall-clock default, because terminating the instance needs
+     * credentials too — after the run has finished.
+     */
+    @Test
+    void theOperatorSessionOutlastsTheRunItPolls() {
+        assertThat((Integer) InfraFixtures.properties(template, "OperatorRole")
+            .get("MaxSessionDuration"))
+            .isGreaterThan(7500);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void federationAddsNoResourceToTheCoreStack() {
+        var resources = (Map<String, Object>) template.get("Resources");
+
+        assertThat(resources.values())
+            .as("the identity provider is account-global and lives in the CI stack")
+            .noneMatch(resource -> "AWS::IAM::OIDCProvider"
+                .equals(((Map<String, Object>) resource).get("Type")));
+        assertThat(resources).doesNotContainKey("WorkflowRole");
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Object> operatorTrustStatements() {
+        var trust = (Map<String, Object>)
+            InfraFixtures.properties(template, "OperatorRole").get("AssumeRolePolicyDocument");
+        return (List<Object>) trust.get("Statement");
+    }
+
+    /** The collapsed {@code !If} arms of the conditional federated statement. */
+    @SuppressWarnings("unchecked")
+    private List<Object> federatedStatementBranches() {
+        return (List<Object>) operatorTrustStatements().get(1);
+    }
+
     /** The named-policy list entry (not statement) on {@code logicalId} that grants DynamoDB actions. */
     @SuppressWarnings("unchecked")
     private Map<String, Object> dynamoDbPolicyDocumentFor(String logicalId) {
