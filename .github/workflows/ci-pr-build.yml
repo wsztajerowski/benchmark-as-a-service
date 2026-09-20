@@ -34,9 +34,15 @@ jobs:
           set -euo pipefail
           url="https://github.com/async-profiler/async-profiler/releases/download/v${ASYNC_PROFILER_VERSION}/async-profiler-${ASYNC_PROFILER_VERSION}-linux-x64.tar.gz"
           curl -fsSL "$url" -o /tmp/async-profiler.tar.gz
-          tar -xzf /tmp/async-profiler.tar.gz -C /tmp
-          lib="$(find /tmp -name libasyncProfiler.so -type f | head -1)"
-          test -n "$lib"
+          # Extracted to a known path with --strip-components=1 rather than searched for: the
+          # tarball's layout is fixed (<name>/lib/libasyncProfiler.so — the same shape
+          # RunnerImageRenderer relies on for the AMI), and a `find /tmp` walks systemd-private
+          # directories the runner cannot read, which makes find exit 1 and kills the step under
+          # `set -e` even though the library was extracted correctly.
+          mkdir -p /tmp/async-profiler
+          tar -xzf /tmp/async-profiler.tar.gz -C /tmp/async-profiler --strip-components=1
+          lib=/tmp/async-profiler/lib/libasyncProfiler.so
+          test -f "$lib"
           echo "ASYNC_PATH=$lib" >> "$GITHUB_ENV"
 
       - name: Build and run tests (unit and integration)
