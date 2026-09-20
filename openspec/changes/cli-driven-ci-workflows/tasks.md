@@ -126,24 +126,24 @@
       stack reaches `UPDATE_COMPLETE` and `OperatorRole`'s trust policy carries both principals; then
       run `baas admin setup` again naming no federation options and verify the trust statement is
       still there, which is the carry-forward behaviour in the environment that matters
-- [ ] 6.3 Swap the repository secrets and variables: operator role ARN as a plain `vars.` entry,
+- [~] 6.3 Swap the repository secrets and variables: operator role ARN as a plain `vars.` entry,
       delete `WORKFLOW_ROLE_ARN`, `GHA_EC2_PAT`, `RUNNER_ROLE_NAME`, `SUBNET_ID`,
       `SECURITY_GROUP_ID`, `RESOURCE_NAME_PREFIX` — verify by listing the repository's secrets and
       variables afterwards
-- [ ] 6.4 Dispatch the rewritten workflow manually — verify the job is green, the instance is
+- [x] 6.4 Dispatch the rewritten workflow manually — verify the job is green, the instance is
       terminated by the CLI rather than by the shell watchdog, and the elapsed time is consistent
       with a normal run
-- [ ] 6.5 Inspect the run's stored measurements and S3 prefix — verify the item carries `source=ci`,
+- [x] 6.5 Inspect the run's stored measurements and S3 prefix — verify the item carries `source=ci`,
       `exclude_from_results=true`, `imageVersion` and `instanceType`, that `environment.json`,
       `jmh-result.json`, `run-status` and the profiling artifact directory are present under
       `runs/<project>/<runId>/`, and that `baas results` for the project omits the run while
       `baas results --request-id <runId>` returns it
-- [ ] 6.6 Compare the self-test's score against a pre-change run of the same fake benchmark and
+- [x] 6.6 Compare the self-test's score against a pre-change run of the same fake benchmark and
       record the spread — verify by investigating any difference rather than accepting it, noting
       that run-to-run variance on this benchmark is large (CI history spans 10.0M–29.6M ops/s), so
       the finding is whether the new score sits inside that band and on the same `imageVersion`,
       `instanceType` and `jdk`
-- [ ] 6.7 Exercise the failure path — verify by forcing a failing run that the JSON summary is still
+- [x] 6.7 Exercise the failure path — verify by forcing a failing run that the JSON summary is still
       printed with `status: "failed"`, the job exits non-zero, and `baas download <runId>` retrieves
       `cloud-init-output.log`
 - [ ] 6.8 Execute the staged `remove-workflowrole` change set on `baas-main` (the legacy stack;

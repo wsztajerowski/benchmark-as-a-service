@@ -305,3 +305,167 @@ The commit is marked `feat(ci)!` with an explicit `BREAKING CHANGE` footer, so m
 will bump the major version. That is faithful to the change (the consumer contract moves from
 *call our reusable workflow* to *install the CLI*), but it is a release-visible consequence worth
 confirming before merge rather than discovering in the release notes.
+
+
+### W8 — the first real CI run found a defect no JVM test could have
+
+Run [35522172677](https://github.com/wsztajerowski/benchmark-as-a-service/actions/runs/35522172677)
+**benchmarked successfully** and stored its measurement, then failed on the first assertion:
+
+```
+$BAAS results --request-id "" --format json
+One or more parameter values are not valid. The AttributeValue for a key attribute
+cannot contain an empty string value. Key: gsi1pk
+```
+
+The run id was empty. `RunCommand.showResults` prints the post-run table through
+`ResultsQueryService.printTable`, which writes to `System.out` — correctly, because a table is a
+command *payload*, not a diagnostic, and CLAUDE.md lists it among the deliberately un-migrated
+writers. But the `--format json` summary is a payload on that same stream, and two payloads on one
+stream is not a stream anyone can parse. The table landed first; `jq` failed on the opening token.
+
+**Why the tests missed it.** `verboseDiagnosticsDoNotCorruptTheObject` drove a path that fails
+before launching, which never reaches `showResults`. That is precisely W4 — "`RunCommand.call()`'s
+success path is executed by no test" — and it bit within one run of being written down. The CI run
+was the first thing ever to execute that path.
+
+**Fixed.** `reportRunResults` suppresses the table under `--format json` and says on the logger
+where the rows are instead. The rows are deliberately *not* folded into the summary object: they are
+a separate concern with a separate command, and the object carries the run id so
+`baas results --request-id` can fetch them. The printer is passed as a `Consumer` so the reporting
+path is testable without an AWS client — `theResultTableIsSuppressedUnderJsonSoStandardOutputHoldsTheObjectAlone`
+now asserts stdout holds exactly one JSON object, and `theResultTableStillPrintsWithoutTheOption`
+pins the default.
+
+The workflow also now fails loudly when a successful run yields no `runId`, naming itself, rather
+than passing an empty string three steps downstream into an error that mentions `gsi1pk`.
+
+### What run 35522172677 did prove
+
+Everything except the stdout collision worked on the first attempt:
+
+| Checked | Result |
+|---|---|
+| OIDC federation into `OperatorRole` | `Configure AWS credentials: success` — the trust statement, the `sub` pattern and `role-duration-seconds: 9000` all accepted. The last would have failed outright against the old 3600 `MaxSessionDuration` |
+| `baas config sync` from the deployed stack | success |
+| `baas run` on the real runner AMI | `Run the benchmark on EC2: success`, instance `i-03c3ad558f45b388c` (`c5.2xlarge`, `ami-0aa25ec7fbf1c80f5`) |
+| One clock read per run | `createdAt` `2026-09-20T16:16:36.923…` ↔ runId `20260920T161636923Z-08785de7` — same millisecond |
+| `perf` pinned to the kernel | `perfVersion` and `kernelRelease` both `6.1.177-224.371.amzn2023` |
+| Profiler tunables live | `perfEventParanoid: 1`, `kptrRestrict: 0` |
+| Image-dependent artifacts | `flame-wall-forward.html`, `flame-wall-reverse.html`, `jfr-wall.jfr` under the benchmark directory |
+| `--runner-jar` stays out of `releases/` | both JARs under `runs/…/input/` |
+| Manifest written before the benchmark | `environment.json` + `packages.txt` at 18:17:00, benchmark output after |
+| **Exclusion contract (§2.3)** | `baas results --request-id 20260920T161636923Z-08785de7` returns the row **despite `exclude_from_results=true`** — the change verified in production, not just against LocalStack |
+| Termination | `run-status: completed`, instance `terminated` — by the CLI, not the watchdog |
+
+**Score: 11,590,125 ops/s**, `imageVersion 1.2.0`, `instanceType c5.2xlarge` — the same image and
+instance as both baselines (9.07M, 10.02M) and inside the CI history band (10.0M-29.6M). Preliminary
+for 6.6, pending a green run.
+
+
+## 6.4-6.6 — green
+
+Run [35526129095](https://github.com/wsztajerowski/benchmark-as-a-service/actions/runs/35526129095)
+**succeeded**, every step green, on commit `11c2a64`. Run id `20260920T173156909Z-fedd5ee4`,
+instance `i-0cda61e728d925e03`.
+
+**6.5 — the stored item.** Queried through the operator role:
+
+```
+pk  RESULT#benchmark-as-a-service
+sk  pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#thrpt
+    #2026-09-20T17:31:56.909Z#20260920T173156909Z-fedd5ee4
+tags
+    source               = ci
+    exclude_from_results = true
+    imageVersion = 1.2.0    instanceType = c5.2xlarge    jdk = 25.0.4
+    cpuModel = Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz    cpuArch = x86_64
+    project = benchmark-as-a-service    type = jmh-with-async
+    branch = cli-driven-ci-workflows    commit = 11c2a6429d9c43d9392fdcc07418ca72e595c028
+```
+
+`source = ci` is derived by `baas run` from the environment, not passed by the workflow — **W3 is
+resolved**: the derivation works in a real continuous-integration environment, which is the check
+the workflow itself cannot make. The sort key carries `mode` and a fixed-width millisecond
+timestamp, as the schema requires.
+
+Both halves of the exclusion contract, live:
+
+- `baas results --request-id 20260920T173156909Z-fedd5ee4` → returns the row
+- `baas results --project benchmark-as-a-service --all` → 5 rows, **not** including it
+
+S3 prefix holds `environment.json`, `jmh-result.json`, `jmh-with-async-output.txt`, `packages.txt`,
+`cloud-init-output.log`, `run-status` (`completed`), `input/{benchmark,runner}.jar`, and under
+`pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput/`:
+`flame-wall-forward.html`, `flame-wall-reverse.html`, `jfr-wall.jfr`. Instance `terminated` — by the
+CLI, within the job, not by the shell watchdog.
+
+**6.6 — score comparison.**
+
+| Run | Type | Score (ops/s) | ±error | image | instance |
+|---|---|---|---|---|---|
+| `jmh-20260819_082707` | jmh | 9,071,763 | ±12,462,803 | 1.2.0 | c5.2xlarge |
+| `20260908T152147852Z-ee088133` | jmh | 10,025,544 | ±6,261,229 | 1.2.0 | c5.2xlarge |
+| `20260920T161636923Z-08785de7` | jmh-with-async | 11,590,125 | 0 | 1.2.0 | c5.2xlarge |
+| `20260920T173156909Z-fedd5ee4` | jmh-with-async | 12,239,764 | 0 | 1.2.0 | c5.2xlarge |
+
+Same `imageVersion`, `instanceType` and `jdk` throughout, and both new scores sit inside the
+10.0M-29.6M band CI history spans. **The comparison cannot say more than that, and the reason is
+worth stating rather than glossing:** the self-test runs `-f 1 -wi 1 -i 1`, so a single iteration
+with no error estimate — hence `scoreError = 0`, which means "not measured", not "perfectly
+precise". The two baselines carry error bars (±12.5M, ±6.3M) wider than the entire spread between
+all four numbers. No regression is indicated, and with this configuration none could be detected.
+The self-test is a *functional* check of the image, profiler and upload path; it is not, and should
+not be read as, a performance guard.
+
+Mildly counter-intuitive and explained by the above: the `jmh-with-async` runs score *higher* than
+the un-profiled `jmh` baselines, despite profiling overhead. At one iteration that is noise.
+
+
+## 6.7 — failure path, and a second defect it caught
+
+Forced a failing run locally (`-- NoSuchBenchmarkClassXYZ`), run id
+`20260920T173454249Z-87d8abb2`, instance `i-07f766937b3c9318f`.
+
+Everything the task asks for holds:
+
+```
+EXIT CODE: 1
+stdout: {"runId":"20260920T173454249Z-87d8abb2","project":"benchmark-as-a-service",
+         "resultPath":"runs/benchmark-as-a-service/20260920T173454249Z-87d8abb2",
+         "status":"failed","exitCode":1,"instanceId":"i-07f766937b3c9318f"}
+stderr: Run status: failed:1 / Benchmark failed. Runner log: s3://…/cloud-init-output.log
+        Terminating instance i-07f766937b3c9318f ...
+```
+
+One JSON object on stdout, `status: "failed"`, the command still exits non-zero, diagnostics on
+stderr, and the shutdown hook terminated the instance.
+
+### W9 — `baas download <runId>` cannot retrieve a failed run
+
+```
+$ baas download 20260920T173454249Z-87d8abb2
+ERROR DownloadCommand - No run found with id '20260920T173454249Z-87d8abb2'. Nothing was written.
+
+$ baas download runs/benchmark-as-a-service/20260920T173454249Z-87d8abb2
+INFO  DownloadCommand - Downloaded 7 artifact(s) …
+```
+
+`download` resolves a bare run id through `requestId-index`, and a run that **failed stored no
+measurement** — so it has no item, no index entry, and the lookup reports "No run found" precisely
+when `cloud-init-output.log` is most wanted. CLAUDE.md calls that log "the documented starting
+point when a run fails before producing output"; by run id, it was unreachable.
+
+The result path resolves it (7 artifacts, boot log included), which is exactly why the spec lists
+`resultPath` among the summary's required fields — a detail that reads as redundant next to `runId`
+until this case, and is load-bearing here.
+
+**Fixed in the workflow:** the failure step downloads by `result_path`, not `run_id`, gated on
+`result_path != ''`. Caught only because 6.7 was executed rather than assumed — the workflow had
+shipped the broken form.
+
+**Left open deliberately:** `baas download` itself still cannot resolve a failed run by its id. The
+natural fix is to fall back to reconstructing the prefix from the id, or to consult S3 when the
+index misses — but the run id alone does not name the project, and `RunLayout` needs both, so it is
+not a one-liner. Out of scope here; worth its own change. Nothing in this change depends on it now
+that the workflow uses the path.
