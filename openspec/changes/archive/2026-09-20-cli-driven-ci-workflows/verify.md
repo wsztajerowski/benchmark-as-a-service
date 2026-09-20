@@ -633,3 +633,27 @@ the one three green runs already exercised.
 **Still open, unchanged and out of scope:** `GithubOidc` carries no `DeletionPolicy`, so a future
 delete of `baas-main` would still take the identity provider with it. Worth a one-line protective
 edit before anyone retires that stack.
+
+
+## Post-archive note — per-push cost of the `pull_request` trigger
+
+Found when PR #64 was opened, after the change was archived.
+
+The PR triggered **two** paid e2e runs: one on open, and one when a follow-up commit touched
+`.github/workflows/ci-pr-build.yml` — a file that is *not* in `e2e-cloud-test.yml`'s path filter.
+GitHub evaluates a `pull_request` path filter against the PR's **cumulative diff**, not the
+individual push, so once a PR touches `baas-cli/**` every later push to it launches another
+instance regardless of what that push changed.
+
+design.md and proposal.md both describe the cost as "bounded by a path filter … per triggering
+push". That is right per PR and understated per push, and the difference was not anticipated.
+
+**Decided 2026-09-20 by the user: leave it as is.** Cents per push, and a real measurement on every
+revision is worth having. Recorded in CLAUDE.md so the next person meets it before the invoice
+rather than after.
+
+Rejected: `cancel-in-progress: true`, which is cheaper but can kill the CLI mid-`baas run` before
+its shutdown hook fires, leaving the shell watchdog as the only termination layer — a bounded
+version of the exact red-job-and-full-bill failure this change removed. Also rejected: restricting
+to `types: [opened, ready_for_review]`, which would stop re-verifying a PR after review feedback,
+i.e. exactly when the code changed most.

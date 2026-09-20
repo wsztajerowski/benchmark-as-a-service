@@ -278,7 +278,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   bad bake now fails CI rather than surviving it. It is path-filtered on `pull_request` plus
   `workflow_dispatch` because it provisions a paid instance per triggering event, and it tags
   itself `exclude_from_results=true` — which is why `queryByRequestId` carries no exclusion
-  filter. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
+  filter. **The path filter bounds it per PR, not per push:** GitHub evaluates a `pull_request`
+  path filter against the PR's cumulative diff, so once a PR touches `baas-cli/**` *every*
+  subsequent push to it launches another instance, including one that only edits an unrelated
+  workflow. Accepted (2026-09-20) — cents per push, and a measurement per revision is worth
+  having. `cancel-in-progress` stays `false` deliberately: cancelling mid-`baas run` can kill the
+  CLI before its shutdown hook fires, leaving the shell watchdog as the only termination layer,
+  which is the red-job-and-full-bill failure this design exists to remove. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
   JVM test (the JSON summary's shape is pinned against `printRunSummary`, and the wiring through
   `call()` only on a path that fails before AWS), and `jcstress` has no end-to-end coverage at all
   now that the old path is gone.
