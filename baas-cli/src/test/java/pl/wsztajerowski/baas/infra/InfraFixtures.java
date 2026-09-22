@@ -47,7 +47,12 @@ final class InfraFixtures {
 
     static final String ACCOUNT_ID = "123456789012";
     static final String REGION = "eu-central-1";
-    static final String PREFIX = "a1b2c3d4";
+    /**
+     * A realistic installation prefix, not an 8-character stand-in. {@code ${PREFIX}} appears
+     * thirteen times in the rendered policy, so measuring against a short prefix understated
+     * the real size by roughly a hundred characters.
+     */
+    static final String PREFIX = "baas-123456789012";
 
     static Map<String, Object> operatorPolicy() {
         return loadJson("/infra/operator-policy.json");

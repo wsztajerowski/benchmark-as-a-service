@@ -11,7 +11,7 @@
         "cloudformation:DescribeStacks",
         "cloudformation:UpdateStack"
       ],
-      "Resource": "arn:aws:cloudformation:${REGION}:${ACCOUNT_ID}:stack/baas-${PREFIX}/*"
+      "Resource": "arn:aws:cloudformation:${REGION}:${ACCOUNT_ID}:stack/${PREFIX}/*"
     },
     {
       "Sid": "CloudFormationValidateTemplate",
@@ -87,7 +87,7 @@
         "imagebuilder:UntagResource",
         "imagebuilder:Update*"
       ],
-      "Resource": "arn:aws:imagebuilder:${REGION}:${ACCOUNT_ID}:*/${PREFIX}-runner*"
+      "Resource": "arn:aws:imagebuilder:${REGION}:${ACCOUNT_ID}:*/${PREFIX}-*"
     },
     {
       "Sid": "ImageBuilderRead",
@@ -119,8 +119,8 @@
       "Effect": "Allow",
       "Action": "iam:PassRole",
       "Resource": [
-        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
-        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-image-build-role"
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-role-runner",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-role-image-build"
       ]
     },
     {
@@ -145,11 +145,11 @@
         "iam:UntagRole"
       ],
       "Resource": [
-        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-runner-role",
-        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-operator-role",
-        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-image-build-role",
-        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-runner-role",
-        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-image-build-role"
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-role-runner",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-role-operator",
+        "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-role-image-build",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-profile-runner",
+        "arn:aws:iam::${ACCOUNT_ID}:instance-profile/${PREFIX}-profile-image-build"
       ]
     },
     {
@@ -171,7 +171,7 @@
         "dynamodb:UntagResource",
         "dynamodb:ListTagsOfResource"
       ],
-      "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/baas-${PREFIX}-results"
+      "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${PREFIX}-results"
     },
     {
       "Sid": "S3WorkingBucketLifecycle",
@@ -190,8 +190,8 @@
         "s3:PutLifecycleConfiguration"
       ],
       "Resource": [
-        "arn:aws:s3:::baas-${PREFIX}",
-        "arn:aws:s3:::baas-${PREFIX}/*"
+        "arn:aws:s3:::${PREFIX}",
+        "arn:aws:s3:::${PREFIX}/*"
       ]
     }
   ]

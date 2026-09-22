@@ -11,6 +11,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.ImageBuilderService;
 import pl.wsztajerowski.baas.infra.RunnerImage;
@@ -143,6 +144,35 @@ public class RunCommand implements Callable<Integer> {
      * method's own contract calls correct in that case, so warning about it trained the reader to
      * ignore a warning that still matters on a laptop.
      */
+    /**
+     * The runner subnet and security group, read from the installation's stack outputs.
+     *
+     * <p>Not cached in {@code ~/.baas/config.yaml}: editing {@code RunnerSecurityGroup}'s
+     * {@code GroupDescription} replaces the security group and changes its id, and a stored copy
+     * then points at a group that no longer exists. Resolving here removes that failure rather
+     * than documenting it.
+     */
+    private static Map<String, String> resolveNetworking(AwsClientFactory factory, BaasConfig config) {
+        Map<String, String> outputs;
+        try (var cf = factory.cloudFormation()) {
+            outputs = new CloudFormationService(cf).getStackOutputs(config.stackName());
+        }
+        List<String> missing = new ArrayList<>();
+        for (String key : List.of("SubnetId", "SecurityGroupId")) {
+            String value = outputs.get(key);
+            if (value == null || value.isBlank()) {
+                missing.add(key);
+            }
+        }
+        if (!missing.isEmpty()) {
+            throw new IllegalStateException(
+                "Stack %s did not report %s. Run `baas admin setup`, or point this machine at a "
+                    .formatted(config.stackName(), String.join(", ", missing))
+                    + "deployed installation with `baas config sync --name <prefix>`.");
+        }
+        return outputs;
+    }
+
     static Optional<String> operatorCredentialsWarning(BaasConfig config, Map<String, String> environment) {
         if (config.getAws().getOperatorProfile() != null || hasAmbientCredentials(environment)) {
             return Optional.empty();
@@ -299,13 +329,13 @@ public class RunCommand implements Callable<Integer> {
         summaryRunId = runId;
         summaryResultPath = resultPath;
         logger.info("Run {} — results will land under s3://{}/{}",
-            runId, config.getAws().getBucket(), resultPath);
+            runId, config.bucket(), resultPath);
 
         // 4. Upload JARs into the run's own prefix, so one prefix holds the whole run.
         logger.info("Uploading benchmark JAR to S3...");
         String benchmarkJarKey = RunLayout.benchmarkJarKey(resolvedProject, runId);
         try (var s3 = factory.s3()) {
-            new S3UploadService(s3).upload(jarPath, config.getAws().getBucket(), benchmarkJarKey);
+            new S3UploadService(s3).upload(jarPath, config.bucket(), benchmarkJarKey);
         }
 
         // The instance's only runner-JAR source. A --runner-jar override stays per-run under the
@@ -315,12 +345,12 @@ public class RunCommand implements Callable<Integer> {
             logger.info("Uploading runner JAR to S3...");
             runnerJarS3Key = RunLayout.runnerJarOverrideKey(resolvedProject, runId);
             try (var s3 = factory.s3()) {
-                new S3UploadService(s3).upload(runnerJar, config.getAws().getBucket(), runnerJarS3Key);
+                new S3UploadService(s3).upload(runnerJar, config.bucket(), runnerJarS3Key);
             }
             logger.info("Runner JAR: {} (local override, not a pinned release)", runnerJar);
         } else {
             try (var s3 = factory.s3()) {
-                runnerJarS3Key = RunnerJarResolver.resolve(s3, config.getAws().getBucket(),
+                runnerJarS3Key = RunnerJarResolver.resolve(s3, config.bucket(),
                     BaasVersion.current(), config.getRunner().getSourceRepo());
             }
             // Which runner build a run executed is the first thing anyone comparing two results
@@ -333,7 +363,7 @@ public class RunCommand implements Callable<Integer> {
         Map<String, String> runnerTags =
             buildRunnerTags(benchmarkType, resolvedProject, resolvedCommit, resolvedBranch);
         String userData = new UserDataScriptBuilder().build(
-            config.getAws().getRegion(), config.getAws().getBucket(),
+            config.getAws().getRegion(), config.bucket(),
             benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
             resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
@@ -358,12 +388,17 @@ public class RunCommand implements Callable<Integer> {
             tags.putIfAbsent("imageVersion", runnerImage.imageVersion());
         }
 
+        // Resolved per run rather than cached in config: replacing RunnerSecurityGroup moves its
+        // id, and a stored copy then names a group that no longer exists. The operator role
+        // already holds cloudformation:DescribeStacks on its own stack, so this costs one call.
+        Map<String, String> networking = resolveNetworking(factory, config);
+
         String instanceId;
         try (var ec2 = factory.ec2()) {
             instanceId = new Ec2ProvisioningService(ec2).runInstance(
                 runnerImage.amiId(), resolvedInstanceType,
-                config.getAws().getSubnetId(), config.getAws().getSecurityGroupId(),
-                config.getAws().getRunnerInstanceProfileName(),
+                networking.get("SubnetId"), networking.get("SecurityGroupId"),
+                config.runnerInstanceProfile(),
                 userData, runId, tags);
         }
         summaryInstanceId = instanceId;
@@ -386,7 +421,7 @@ public class RunCommand implements Callable<Integer> {
                      String runId, String resultPath, int wallClockSeconds) throws InterruptedException {
         long startMs = System.currentTimeMillis();
         long timeoutMs = (long) wallClockSeconds * 1000;
-        String bucket = config.getAws().getBucket();
+        String bucket = config.bucket();
         String statusKey = resultPath + "/run-status";
         String logPath = "s3://" + bucket + "/" + resultPath + "/cloud-init-output.log";
 
@@ -464,7 +499,7 @@ public class RunCommand implements Callable<Integer> {
             logger.info("--no-database: the runner stored nothing, so there is no result to show.");
             return;
         }
-        String tableName = config.getAws().getResultsTable();
+        String tableName = config.resultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
             var rows = results.queryByRequestId(runId);
             reportRunResults(rows, runId, results::printTable);
@@ -593,16 +628,14 @@ public class RunCommand implements Callable<Integer> {
         if (noDatabase) {
             return Optional.empty();
         }
-        String table = config.getAws().getResultsTable();
-        if (table == null || table.isBlank()) {
+        if (config.getPrefix() == null || config.getPrefix().isBlank()) {
             throw new IllegalStateException("""
-                No results table configured, so this run has nowhere to store its measurements.
-                  Sync it from the stack:  baas config sync --core-stack-name %s
-                  Or discard the results:  baas run --no-database ...
-                Nothing was built or launched."""
-                .formatted(config.getAws().getCoreStackName()));
+                No installation is configured, so this run has nowhere to store its measurements.
+                  Adopt one:              baas config sync --name baas-<accountId>
+                  Or discard the results: baas run --no-database ...
+                Nothing was built or launched.""");
         }
-        return Optional.of(table);
+        return Optional.of(config.resultsTable());
     }
 
     /**

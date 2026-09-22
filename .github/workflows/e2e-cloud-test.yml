@@ -79,7 +79,7 @@ jobs:
           role-session-name: GitHubActions
 
       - name: Sync configuration from the deployed core stack
-        run: $BAAS config sync --core-stack-name "${{ vars.CORE_STACK_NAME }}"
+        run: $BAAS config sync --name "${{ vars.CORE_STACK_NAME }}"
 
       # --runner-jar is mandatory, not a convenience: a reactor build's version is
       # 0.0.0-semantically-released, which names no release, so `baas run` refuses to resolve a

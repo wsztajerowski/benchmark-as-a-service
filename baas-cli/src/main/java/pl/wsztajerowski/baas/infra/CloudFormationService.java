@@ -194,6 +194,20 @@ public class CloudFormationService {
             .orElse(Map.of());
     }
 
+    /**
+     * The parameters a deployed stack currently carries. {@code baas admin setup} compares the
+     * networking ones against what an invocation submits, so a change is refused before anything
+     * reaches CloudFormation rather than discovered as a replaced subnet afterwards.
+     */
+    public Map<String, String> getStackParameters(String stackName) {
+        return describeStack(stackName)
+            .map(stack -> stack.parameters().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    software.amazon.awssdk.services.cloudformation.model.Parameter::parameterKey,
+                    p -> p.parameterValue() == null ? "" : p.parameterValue())))
+            .orElseGet(Map::of);
+    }
+
     public boolean stackExists(String stackName) {
         return describeStack(stackName).isPresent();
     }

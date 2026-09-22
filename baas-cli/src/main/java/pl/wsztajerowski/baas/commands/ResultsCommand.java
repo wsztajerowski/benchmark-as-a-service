@@ -32,6 +32,17 @@ public class ResultsCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
+    /**
+     * Addresses another installation's results table for this invocation only, and persists
+     * nothing. This is how a retired installation's history stays readable after its stack is
+     * gone. Read-only by design: no command that writes measurements accepts it, so a machine
+     * cannot be left quietly recording new runs into an archive.
+     */
+    @Option(names = "--results-table",
+        description = "Read from this results table instead of the configured installation's. "
+            + "Not persisted.")
+    String resultsTableOverride;
+
     @Option(names = "--project", description = "Project partition to read. Defaults to the git repository name.")
     String project;
 
@@ -73,9 +84,11 @@ public class ResultsCommand implements Callable<Integer> {
             return 2;
         }
 
-        String tableName = config.getAws().getResultsTable();
-        if (tableName == null || tableName.isBlank()) {
-            logger.error("No results table in config. Run: baas config sync --core-stack-name <stack>");
+        String tableName;
+        try {
+            tableName = resultsTableOverride != null ? resultsTableOverride : config.resultsTable();
+        } catch (IllegalStateException noInstallation) {
+            logger.error("{}", noInstallation.getMessage());
             return 1;
         }
 

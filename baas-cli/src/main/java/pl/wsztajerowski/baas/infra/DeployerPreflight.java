@@ -91,8 +91,8 @@ public class DeployerPreflight {
     static Map<String, String> criticalActionsToResources(String accountId, String region, String prefix) {
         Map<String, String> actionToResource = new LinkedHashMap<>();
         actionToResource.put("cloudformation:CreateStack",
-            "arn:aws:cloudformation:%s:%s:stack/baas-%s/*".formatted(region, accountId, prefix));
-        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::baas-" + prefix);
+            "arn:aws:cloudformation:%s:%s:stack/%s/*".formatted(region, accountId, prefix));
+        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::" + prefix);
         // The runner AMI pointer, not the Mongo connection string this used to probe: since the
         // cutover, setup writes no Mongo parameter and the table name travels in user-data. The
         // AMI pointer is the one SSM write the deployer still performs (from `admin build-image`),
@@ -100,14 +100,14 @@ public class DeployerPreflight {
         actionToResource.put("ssm:PutParameter",
             "arn:aws:ssm:%s:%s:parameter/%s/runner/ami-id".formatted(region, accountId, prefix));
         actionToResource.put("iam:GetRole",
-            "arn:aws:iam::%s:role/%s-runner-role".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s-role-runner".formatted(accountId, prefix));
         actionToResource.put("iam:CreateRole",
-            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s-role-operator".formatted(accountId, prefix));
         // dynamodb:CreateTable is unconditioned and resource-scoped, same as the five above — a
         // deployer running with a stale attached policy previously passed preflight only to have
         // the real stack update fail partway on this action and roll back.
         actionToResource.put("dynamodb:CreateTable",
-            "arn:aws:dynamodb:%s:%s:table/baas-%s-results".formatted(region, accountId, prefix));
+            "arn:aws:dynamodb:%s:%s:table/%s-results".formatted(region, accountId, prefix));
         // Same lesson, same shape, and it cost a stuck stack to learn twice. Deploying a core
         // stack with federation parameters changes OperatorRole two ways, through two different
         // IAM APIs, and BOTH grants are newer than any policy attached before they existed:
@@ -121,9 +121,9 @@ public class DeployerPreflight {
         // state needs ContinueUpdateRollback and a human. Probe every action an update of this
         // role actually issues, not just the one that motivated the change.
         actionToResource.put("iam:UpdateAssumeRolePolicy",
-            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s-role-operator".formatted(accountId, prefix));
         actionToResource.put("iam:UpdateRole",
-            "arn:aws:iam::%s:role/%s-operator-role".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s-role-operator".formatted(accountId, prefix));
         return actionToResource;
     }
 

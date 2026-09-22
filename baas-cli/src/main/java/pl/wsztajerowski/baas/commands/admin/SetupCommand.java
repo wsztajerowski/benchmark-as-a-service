@@ -46,6 +46,7 @@ public class SetupCommand implements Callable<Integer> {
     @Option(names = "--aws-profile", description = "AWS CLI profile.")
     String awsProfile;
 
+
     @Option(names = "--use-existing-vpc", description = "Skip VPC/networking creation and use provided IDs.")
     boolean useExistingVpc;
 
@@ -115,13 +116,12 @@ public class SetupCommand implements Callable<Integer> {
             accountId = identity.account();
         }
         logger.debug("Caller ARN: {}", callerArn);
-        String resolvedPrefix = computePrefix(callerArn);
-        String resolvedStack = "baas-" + resolvedPrefix;
+        String resolvedPrefix = computePrefix(accountId);
+        String resolvedStack = resolvedPrefix;
 
         config.setPrefix(resolvedPrefix);
-        config.getAws().setCoreStackName(resolvedStack);
 
-        logger.info("Using prefix: {} (derived from caller ARN)", resolvedPrefix);
+        logger.info("Using installation: {} (derived from account {})", resolvedPrefix, accountId);
 
         if (useExistingVpc && (existingVpcId == null || existingSubnetId == null || existingSecurityGroupId == null)) {
             logger.error("--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id.");
@@ -137,6 +137,13 @@ public class SetupCommand implements Callable<Integer> {
 
         try {
             return deploy(factory, config, resolvedPrefix, resolvedStack);
+        } catch (IllegalStateException e) {
+            // A refused precondition — the networking-immutability check most of all. It is an
+            // expected outcome, so it exits 1 with its own message rather than surfacing through
+            // the generic handler, which invites the reader to go looking for a stack trace.
+            // Must precede the RuntimeException catch below: IllegalStateException is one.
+            logger.error(e.getMessage());
+            return 1;
         } catch (RuntimeException e) {
             if (!DeployerPreflight.isAccessDenied(e)) {
                 throw e;
@@ -181,10 +188,10 @@ public class SetupCommand implements Callable<Integer> {
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("ResourceNamePrefix", resolvedPrefix);
-        params.put("UseExistingVpc", Boolean.toString(useExistingVpc));
-        params.put("ExistingVpcId", existingVpcId != null ? existingVpcId : "");
-        params.put("ExistingSubnetId", existingSubnetId != null ? existingSubnetId : "");
-        params.put("ExistingSecurityGroupId", existingSecurityGroupId != null ? existingSecurityGroupId : "");
+        // Networking is sent only when this invocation names it. Sending it unconditionally is
+        // what let a plain `baas admin setup` rebuild a shared installation's networking; see
+        // networkingParameters().
+        params.putAll(networkingParameters());
         // The same rendering `baas admin build-image` submits. Letting the template's placeholder
         // default stand here would register a no-op component at the declared version, and Image
         // Builder would then refuse the real one at that same version — immutability, hit from a
@@ -198,8 +205,11 @@ public class SetupCommand implements Callable<Integer> {
         // actually happened instead. Both are checked, because fixing only the bucket then fails
         // again on the table with the same unhelpful message.
         try (var cf = factory.cloudFormation(); var s3 = factory.s3(); var ddb = factory.dynamoDb()) {
-            String bucketName = "baas-" + resolvedPrefix;
-            String tableName = "baas-" + resolvedPrefix + "-results";
+            // Derived once, by BaasConfig, like every other consumer. Composing "baas-" here a
+            // second time is how this asked for `baas-baas-<account>-results` — the namespace
+            // lives inside the prefix value now.
+            String bucketName = config.bucket();
+            String tableName = config.resultsTable();
             boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedStack);
 
             if (stackMissing && new S3UploadService(s3).bucketExists(bucketName)) {
@@ -228,6 +238,11 @@ public class SetupCommand implements Callable<Integer> {
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
             if (cloudFormation.stackExists(resolvedStack)) {
+                // Networking is fixed at creation. Checked before anything is submitted, so a
+                // refused update leaves the stack untouched rather than rolling back.
+                requireNetworkingUnchanged(
+                    networkingParameters(), cloudFormation.getStackParameters(resolvedStack));
+
                 // Only the parameters this command owns are sent; every other one — the three
                 // federation parameters above all — is carried forward with UsePreviousValue, so
                 // a setup run for an unrelated reason cannot silently revoke CI's access. Same
@@ -236,24 +251,22 @@ public class SetupCommand implements Callable<Integer> {
                 cloudFormation.updateStackParameters(resolvedStack, templateBody, params);
             } else {
                 // UsePreviousValue is rejected on stack creation and on any parameter with no
-                // previous value, so a first deploy sends explicit values — empty when no
-                // federation is wanted. Carry-forward governs updates only.
+                // previous value, so a first deploy sends explicit values — the ones this
+                // invocation named, or empty when it named none. Carry-forward governs updates
+                // only.
                 params.putAll(federationParametersForCreate());
                 cloudFormation.createOrUpdateStack(resolvedStack, templateBody, params);
             }
         }
 
-        // Read CF outputs and write to config
+        // Only the operator role ARN is read back, and only to print it. The bucket, results
+        // table and instance profile are derived from the prefix, and the subnet and security
+        // group are resolved from this stack each time they are needed — storing either kind is
+        // how a config file comes to name one installation while `prefix` names another.
         String operatorRoleArn;
         try (var cf = factory.cloudFormation()) {
-            var outputs = new CloudFormationService(cf).getStackOutputs(resolvedStack);
-            config.getAws().setBucket(outputs.getOrDefault("BucketName", ""));
-            config.getAws().setSubnetId(outputs.getOrDefault("SubnetId", ""));
-            config.getAws().setSecurityGroupId(outputs.getOrDefault("SecurityGroupId", ""));
-            config.getAws().setVpcId(outputs.getOrDefault("VpcId", ""));
-            config.getAws().setRunnerInstanceProfileName(outputs.getOrDefault("RunnerInstanceProfileName", ""));
-            config.getAws().setResultsTable(outputs.getOrDefault("ResultsTableName", ""));
-            operatorRoleArn = outputs.getOrDefault("OperatorRoleArn", "");
+            operatorRoleArn = new CloudFormationService(cf)
+                .getStackOutputs(resolvedStack).getOrDefault("OperatorRoleArn", "");
         }
 
         configService.save(config);
@@ -299,7 +312,7 @@ public class SetupCommand implements Callable<Integer> {
      */
     Map<String, String> federationParameters() {
         if (revokeGithubOidc) {
-            return federationParametersForCreate();
+            return noFederation();
         }
         if (githubOrg == null && githubRepos.isEmpty() && oidcProviderArn == null) {
             return Map.of();
@@ -310,8 +323,29 @@ public class SetupCommand implements Callable<Integer> {
             "GitHubRepo", subjectPatterns(githubOrg, githubRepos));
     }
 
-    /** All three empty: what a create with no federation, and what a revocation, both submit. */
-    private static Map<String, String> federationParametersForCreate() {
+    /**
+     * What a create submits: the federation values this invocation named, or all three empty when
+     * it named none.
+     *
+     * <p>A create cannot use {@code UsePreviousValue} — CloudFormation rejects it for a parameter
+     * with no previous value — so it has to send explicit values for all three. This used to send
+     * them unconditionally <em>empty</em>, which discarded the options the caller had just typed:
+     * {@code baas admin setup --github-org … --oidc-provider-arn …} against a fresh stack reported
+     * success and deployed an operator role with no federated principal, so CI could not assume
+     * it. The bug was invisible for as long as every federated installation happened to have been
+     * federated by an update rather than a create.
+     */
+    Map<String, String> federationParametersForCreate() {
+        Map<String, String> named = federationParameters();
+        return named.isEmpty() ? noFederation() : named;
+    }
+
+    /**
+     * All three submitted explicitly empty, which turns the template's {@code FederateGitHub}
+     * condition false. Held here rather than in either caller so the two cannot recurse into each
+     * other — they did, briefly, and the tests caught it as a StackOverflowError.
+     */
+    private static Map<String, String> noFederation() {
         return Map.of("GitHubOidcProviderArn", "", "GitHubOrg", "", "GitHubRepo", "");
     }
 
@@ -363,33 +397,69 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
-    static String computePrefix(String arn) throws Exception {
-        MessageDigest digest = MessageDigest.getInstance("SHA-256");
-        byte[] hash = digest.digest(arn.getBytes(StandardCharsets.UTF_8));
-        return base32Encode(hash).substring(0, 8).toLowerCase();
+    /**
+     * The installation's name stem: {@code baas-<accountId>}, plus the mode's suffix.
+     *
+     * <p>The whole name, including the {@code baas-} namespace, lives in this one value, so every
+     * resource is {@code <prefix>} or {@code <prefix>-<suffix>} and a reader who knows the prefix
+     * can predict every name. Nothing about the calling principal reaches it: an IAM user, an SSO
+     * session and a role-chained session on one account all resolve to the same installation. That
+     * is the point — the AMI and the results table are account-level assets, and a name that moved
+     * with the caller forked them silently rather than failing.
+     */
+    /** The four networking parameters, or empty when this invocation names none of them. */
+    Map<String, String> networkingParameters() {
+        if (!useExistingVpc && existingVpcId == null && existingSubnetId == null
+            && existingSecurityGroupId == null) {
+            return Map.of();
+        }
+        Map<String, String> networking = new LinkedHashMap<>();
+        networking.put("UseExistingVpc", Boolean.toString(useExistingVpc));
+        networking.put("ExistingVpcId", existingVpcId != null ? existingVpcId : "");
+        networking.put("ExistingSubnetId", existingSubnetId != null ? existingSubnetId : "");
+        networking.put("ExistingSecurityGroupId",
+            existingSecurityGroupId != null ? existingSecurityGroupId : "");
+        return networking;
     }
 
     /**
-     * RFC 4648 Base32 encoding (no padding).
+     * Refuses an update that would move the installation onto different networking.
+     *
+     * <p>Carrying the submitted values forward instead would close the same hole, but silently:
+     * the operator typed a flag and it would be discarded without a word. Refusing names the
+     * deployed value and the submitted one and submits nothing, so the operator can decide.
+     *
+     * <p>Replacing a subnet or security group under a running installation moves resource ids that
+     * other machines' configuration and in-flight runs are holding, which is why this is immutable
+     * rather than merely discouraged.
      */
-    private static String base32Encode(byte[] data) {
-        final String alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-        StringBuilder sb = new StringBuilder();
-        int buffer = 0;
-        int bitsLeft = 0;
-        for (byte b : data) {
-            buffer = (buffer << 8) | (b & 0xFF);
-            bitsLeft += 8;
-            while (bitsLeft >= 5) {
-                bitsLeft -= 5;
-                sb.append(alphabet.charAt((buffer >> bitsLeft) & 0x1F));
-            }
+    static void requireNetworkingUnchanged(Map<String, String> submitted,
+                                           Map<String, String> deployed) {
+        List<String> conflicts = submitted.entrySet().stream()
+            .filter(entry -> deployed.containsKey(entry.getKey()))
+            .filter(entry -> !entry.getValue().equals(deployed.get(entry.getKey())))
+            .map(entry -> "  %s: deployed %s, submitted %s".formatted(
+                entry.getKey(),
+                deployed.get(entry.getKey()).isEmpty() ? "(none)" : deployed.get(entry.getKey()),
+                entry.getValue().isEmpty() ? "(none)" : entry.getValue()))
+            .toList();
+        if (!conflicts.isEmpty()) {
+            throw new IllegalStateException("""
+                This installation is already deployed against different networking.
+                %s
+                Networking is fixed when an installation is created. Omit the networking options to
+                keep what is deployed, or tear down and recreate the installation to change it.
+                Nothing was submitted."""
+                .formatted(String.join("\n", conflicts)));
         }
-        if (bitsLeft > 0) {
-            buffer <<= (5 - bitsLeft);
-            sb.append(alphabet.charAt(buffer & 0x1F));
+    }
+
+    static String computePrefix(String accountId) {
+        if (accountId == null || !accountId.matches("\\d{12}")) {
+            throw new IllegalArgumentException(
+                "Expected a 12-digit AWS account id, got: " + accountId);
         }
-        return sb.toString();
+        return "baas-" + accountId;
     }
 
     private String loadTemplate() throws IOException {

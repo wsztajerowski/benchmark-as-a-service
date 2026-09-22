@@ -38,6 +38,7 @@ public class BuildImageCommand implements Callable<Integer> {
     @Option(names = "--aws-profile", description = "AWS CLI profile (deployer credentials).")
     String awsProfile;
 
+
     private final ConfigService configService = new ConfigService();
 
     @Override
@@ -45,7 +46,7 @@ public class BuildImageCommand implements Callable<Integer> {
         BaasConfig config = configService.load();
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
-        String prefix = config.getPrefix();
+        String prefix = config.requirePrefix();
         var renderer = new RunnerImageRenderer();
         var definition = renderer.definition();
         String imageVersion = definition.imageVersion();
@@ -66,7 +67,7 @@ public class BuildImageCommand implements Callable<Integer> {
         // holds. See RunCommand for the other half of that split.
         var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
 
-        String componentName = prefix + "-runner-toolchain";
+        String componentName = prefix + "-component-runner";
         try (var imageBuilderClient = factory.imageBuilder();
              var ec2 = factory.ec2();
              var ssm = factory.ssm()) {
@@ -83,15 +84,15 @@ public class BuildImageCommand implements Callable<Integer> {
             }
 
             logger.info("Registering runner image {} (parent {})...", imageVersion, parentAmiId);
-            updateStack(factory, config, renderer);
+            updateStack(factory, prefix, renderer);
 
             String pipelineArn;
             try (var cf = factory.cloudFormation()) {
-                var outputs = new CloudFormationService(cf).getStackOutputs(config.getAws().getCoreStackName());
+                var outputs = new CloudFormationService(cf).getStackOutputs(prefix);
                 pipelineArn = outputs.get("RunnerImagePipelineArn");
                 if (pipelineArn == null || pipelineArn.isEmpty()) {
                     logger.error("Stack {} has no RunnerImagePipelineArn output. Run `baas admin setup` first.",
-                        config.getAws().getCoreStackName());
+                        prefix);
                     return 1;
                 }
             }
@@ -116,11 +117,11 @@ public class BuildImageCommand implements Callable<Integer> {
      * <p>Only the three image parameters are sent; everything else — the networking choices in
      * particular — is carried forward from the deployed stack.
      */
-    private void updateStack(AwsClientFactory factory, BaasConfig config, RunnerImageRenderer renderer)
+    private void updateStack(AwsClientFactory factory, String stackName, RunnerImageRenderer renderer)
         throws IOException {
         try (var cf = factory.cloudFormation()) {
             new CloudFormationService(cf).updateStackParameters(
-                config.getAws().getCoreStackName(), loadTemplate(), renderer.stackParameters());
+                stackName, loadTemplate(), renderer.stackParameters());
         }
     }
 

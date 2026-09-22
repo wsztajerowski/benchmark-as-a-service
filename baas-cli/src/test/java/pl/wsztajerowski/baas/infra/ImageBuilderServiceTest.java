@@ -238,6 +238,32 @@ class ImageBuilderServiceTest {
         service().preflightVersion("a1b2c3d4-runner-toolchain", "1.0.0", component);
     }
 
+    /**
+     * Image Builder strips the trailing newline from a component document when it stores it, and
+     * {@code RunnerImageRenderer.renderComponent()} ends with one because its template is a Java
+     * text block. An exact comparison therefore reported "content differs" for content that was
+     * byte-identical apart from that newline — and it blocked every build on a fresh installation,
+     * because `baas admin setup` registers the component before `build-image` ever runs. Found
+     * against a live account, not in this suite.
+     */
+    @Test
+    void preflightIgnoresATrailingNewlineTheRegistryStrips() {
+        imageBuilder.registeredComponents.put("1.0.0", "name: baas-runner-toolchain\n# unchanged");
+
+        service().preflightVersion(
+            "a1b2c3d4-runner-toolchain", "1.0.0", "name: baas-runner-toolchain\n# unchanged\n");
+    }
+
+    /** Only trailing whitespace is forgiven — a real edit must still be caught. */
+    @Test
+    void preflightStillRejectsAnEditThatIsNotJustTrailingWhitespace() {
+        imageBuilder.registeredComponents.put("1.0.0", "name: baas-runner-toolchain\n# unchanged");
+
+        assertThatThrownBy(() -> service().preflightVersion(
+            "a1b2c3d4-runner-toolchain", "1.0.0", "name: baas-runner-toolchain\n# edited\n"))
+            .isInstanceOf(IllegalStateException.class);
+    }
+
     @Test
     void preflightAcceptsANewVersion() {
         imageBuilder.registeredComponents.put("1.0.0", "name: baas-runner-toolchain");

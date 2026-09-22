@@ -17,7 +17,9 @@ class CoreTemplateTest {
     void bucketIsNamedFromTheResourcePrefix() {
         Map<String, Object> bucket = InfraFixtures.properties(template, "S3MainBucket");
 
-        assertThat(bucket.get("BucketName")).isEqualTo("baas-${ResourceNamePrefix}");
+        // The `baas-` namespace lives inside the prefix value now, so the bucket is the bare
+        // stem. Composing it here again would produce `baas-baas-123456789012`.
+        assertThat(bucket.get("BucketName")).isEqualTo("${ResourceNamePrefix}");
     }
 
 /**

@@ -42,7 +42,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | **Fixed** |
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
-| 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | Open |
+| 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
 
 **Next up: S5.**
 
@@ -233,9 +233,15 @@ stack name the current templates never produce.
 older project layout — and stood in as the build's fallback JAR whenever `--benchmark-jar` was
 omitted. The whole key is deleted along with the build it fed: `--benchmark-jar` is now required,
 with no config-file substitute, so there is nothing left to go stale there. `coreStackName`'s
-default above is a separate instance of the same problem and is untouched by this change. Status
-stays **Open**: silent unknown keys, no schema version, and `coreStackName`'s stale default all
-remain.
+default above is a separate instance of the same problem and is untouched by this change.
+
+**Narrowed again by `account-derived-installation-naming`.** `aws.coreStackName` is deleted
+outright — the stack name and the installation prefix are the same string now — taking its
+`"baas-main"` default with it, and `prefix`'s own stale `"baas"` default is gone too. Two keys that
+were read by nothing but `config show` are deleted as well: `aws.vpcId`, and
+`benchmark.asyncProfilerVersion`, which reported `4.0` regardless of what the AMI actually held
+because the manifest's value comes from `asprof --version` on the instance. Status stays **Open**:
+silent unknown keys and the absent schema version remain.
 
 ## 11. A9 — `requestId` collides at second granularity · Low
 
@@ -290,7 +296,7 @@ rename cannot silently desync the schema from the infrastructure either.
 No bucket policy denying `aws:SecureTransport: false`. `ConfigService` creates `~/.baas` with
 default permissions; 0700 is free.
 
-## 15. A10 — the caller-ARN prefix is unnormalised · Med · Open
+## 15. A10 — the caller-ARN prefix is unnormalised · Med · FIXED
 
 `SetupCommand.computePrefix` hashes the raw ARN from `sts:GetCallerIdentity`. For an IAM user
 (`arn:aws:iam::123:user/alice`) that is stable. For an SSO or assumed-role identity the ARN is
@@ -304,7 +310,21 @@ Only `SetupCommand:76` and `DeployerPolicyCommand:54` derive the prefix; every o
 `baas admin deployer-policy` compounds it by rendering a policy for a prefix that does not match
 the user's existing stack.
 
-**Proposed fix:** normalise `assumed-role` ARNs to their role ARN
-(`arn:aws:sts::123:assumed-role/Role/session` → `arn:aws:iam::123:role/Role`) before hashing. This
-does not migrate anything: IAM-user ARNs hash exactly as before, so no existing prefix moves.
-Tracked as its own OpenSpec change, deferred.
+**Fixed** by `account-derived-installation-naming`, but not by the fix proposed below, and one
+premise above is wrong: the SSO ARN does **not** change per login. `AWSReservedSSO_<set>_<hex>` is
+minted when the permission set is provisioned into the account and does not rotate, and the session
+name is a stable identity-store attribute. The conclusion survives on five other triggers, none of
+which fails loudly: switching permission set, re-provisioning one, an explicit
+`--role-session-name`, an IAM-user-to-SSO migration, and two humans on one permission set.
+
+The proposed fix was **rejected**: normalising `assumed-role` ARNs to their role ARN
+(`arn:aws:sts::123:assumed-role/Role/session` → `arn:aws:iam::123:role/Role`) survives re-login and
+session-name variation, but still forks on a permission-set switch, still leaves the name
+underivable without local state, and still gives every identity its own runner AMI and results
+table. It also moves every SSO user's prefix, paying a full migration for a partial fix.
+
+What changed the trade-off is that the pinned AMI and the DynamoDB results table both arrived
+*after* this finding was written. Both are account-level assets that want exactly one instance, so
+a name that moves with the caller does not merely duplicate infrastructure — it silently produces
+incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived from
+`GetCallerIdentity().account()`, with nothing about the calling principal reaching it.

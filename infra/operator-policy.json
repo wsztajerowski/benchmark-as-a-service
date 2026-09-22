@@ -87,21 +87,21 @@
         "s3:ListBucket"
       ],
       "Resource": [
-        "arn:aws:s3:::baas-RESOURCE_PREFIX",
-        "arn:aws:s3:::baas-RESOURCE_PREFIX/*"
+        "arn:aws:s3:::RESOURCE_PREFIX",
+        "arn:aws:s3:::RESOURCE_PREFIX/*"
       ]
     },
     {
       "Sid": "PassRunnerRoleOnly",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": "arn:aws:iam::ACCOUNT_ID:role/RESOURCE_PREFIX-runner-role"
+      "Resource": "arn:aws:iam::ACCOUNT_ID:role/RESOURCE_PREFIX-role-runner"
     },
     {
       "Sid": "CloudFormationReadOwnStack",
       "Effect": "Allow",
       "Action": "cloudformation:DescribeStacks",
-      "Resource": "arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/baas-RESOURCE_PREFIX/*"
+      "Resource": "arn:aws:cloudformation:REGION:ACCOUNT_ID:stack/RESOURCE_PREFIX/*"
     },
     {
       "Sid": "DynamoDbResultsTableRead",
@@ -112,8 +112,8 @@
         "dynamodb:GetItem"
       ],
       "Resource": [
-        "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/baas-RESOURCE_PREFIX-results",
-        "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/baas-RESOURCE_PREFIX-results/index/*"
+        "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/RESOURCE_PREFIX-results",
+        "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/RESOURCE_PREFIX-results/index/*"
       ]
     }
   ]
