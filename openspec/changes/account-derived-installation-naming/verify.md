@@ -37,6 +37,7 @@ tests), full reactor `mvn -o clean verify` **BUILD SUCCESS**
 |---|---|
 | `baas admin setup` | `baas-381492019823` CREATE_COMPLETE in 3m35s |
 | `baas admin build-image` | `ami-05bbf52f9c50475b1`, image 1.2.0, ~11min, pointer `/baas-381492019823/runner/ami-id`; tags `baas-image-version`, `baas-parent-ami`, `project` all present |
+| CI end to end (PR #65) | all four checks pass; EC2 job 1m52s — OIDC federation, `config sync --name`, AMI resolution, run, terminate |
 | `baas run jmh-with-async` | run `20260921T143032906Z-acbd0d0f`, `status: completed`, exit 0, 1 measurement, instance `i-05eef6d06aee56010` self-terminated |
 | S3 layout | `runs/benchmark-as-a-service/<runId>/` with `run-status`, `cloud-init-output.log`, `environment.json`, `jmh-result.json`, `packages.txt`, `input/`, flamegraph + JFR |
 | `environment.json` before the benchmark | Yes — written 16:31:16, benchmark output 16:31:17 |
@@ -44,7 +45,7 @@ tests), full reactor `mvn -o clean verify` **BUILD SUCCESS**
 | Key encoding | `pk=RESULT#benchmark-as-a-service`, `sk=<class>#<method>#thrpt#<ts,3dp>#<runId>` |
 | One clock read | `createdAt` = `2026-09-21T14:30:32.906Z` = run id's instant |
 | Networking immutability | different values → exit 1 naming all four, nothing submitted; omitted → exit 0, carried forward |
-| Score | **11,238,813 ops/s** vs nearest pre-change **11,787,431** (−4.7%); recent cluster 8.6M–12.2M, history 6.74M–29.56M over 57 measurements. Inside the spread; no regression indicated |
+| Score | **11,238,813** (local) and **11,505,081** (CI, PR #65) vs nearest pre-change **11,787,431** — three points spanning 11.24M–11.79M against a recent cluster of 8.6M–12.2M and a history of 6.74M–29.56M over 57 measurements. No regression indicated; the −4.7% of the first pair does not survive the second sample |
 | Environment comparability | 2 of 21 fields differ (`cpuModel` 8275CL→8124M, `memoryTotalKb`) — the physical host EC2 assigned. jdk, kernel, OS, perf, awscli, async-profiler, imageVersion, both kernel tunables identical |
 
 ## Open warnings
@@ -57,8 +58,9 @@ tests), full reactor `mvn -o clean verify` **BUILD SUCCESS**
   every inline policy on the principal — but it is now a documented property of the by-hand
   procedure rather than an undiscovered trap. `infra/README.md` says to attach the second as
   customer-managed, and `baas admin deployer-policy --prefix` renders it.
-- **W3 — `baas config sync --name` was not run against a live installation.** Its required-option
-  and spec behaviour are tested; the adopt-and-verify path against real stack outputs is not.
+- ~~**W3 — `baas config sync --name` was not run against a live installation.**~~ **Closed.**
+  Exercised by CI on PR #65: a clean runner federated into the new operator role, ran
+  `baas config sync --name baas-381492019823` against real stack outputs, and completed a run.
 - **W4 — the stale-security-group failure is argued, not tested.** Resolving per run removes it by
   construction, but no test replaces a security group and asserts the run still works.
 - **W5 — teardown's retention messages have no test**, and they were rewritten in this change.
@@ -80,7 +82,12 @@ tests), full reactor `mvn -o clean verify` **BUILD SUCCESS**
 2. **Attaching the new policy revoked access to the old installation.** Confirmed by `AccessDenied`
    on `DescribeStacks` for `baas-3q7i7s65`. Teardown (8.5) and any rollback need the old policy
    re-attached first. Not anticipated in the migration plan.
-3. **Two bugs found only by going to AWS**, both fixed with regression tests:
+3. **Three bugs found only by going to AWS**, all fixed with regression tests:
+   - `SetupCommand` discarded the federation options on the **create** path, submitting all three
+     parameters empty. A fresh installation deployed an operator role with no federated principal,
+     reported success, and CI could not assume it. Invisible until now because every federated
+     installation so far was federated by an update. Fixed; the first fix recursed into a
+     `StackOverflowError`, which the existing revocation test caught.
    - `SetupCommand`'s retained-resource pre-check still composed `"baas-" + prefix`, probing
      `baas-baas-381492019823-results`. Now uses the single `BaasConfig` derivation. New test
      `grantsExactlyTheNamesTheConfigDerives` pins the policy against the config's names.
