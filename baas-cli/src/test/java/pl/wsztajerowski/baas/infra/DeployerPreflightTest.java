@@ -20,7 +20,7 @@ class DeployerPreflightTest {
             InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
 
         assertThat(actions).containsEntry("dynamodb:CreateTable",
-            "arn:aws:dynamodb:%s:%s:table/baas-%s-results"
+            "arn:aws:dynamodb:%s:%s:table/%s-results"
                 .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
     }
 
@@ -39,7 +39,7 @@ class DeployerPreflightTest {
             InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
 
         assertThat(actions).containsEntry("iam:UpdateAssumeRolePolicy",
-            "arn:aws:iam::%s:role/%s-operator-role"
+            "arn:aws:iam::%s:role/%s-role-operator"
                 .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
     }
 
@@ -57,7 +57,7 @@ class DeployerPreflightTest {
             InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
 
         assertThat(actions).containsEntry("iam:UpdateRole",
-            "arn:aws:iam::%s:role/%s-operator-role"
+            "arn:aws:iam::%s:role/%s-role-operator"
                 .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
     }
 

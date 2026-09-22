@@ -16,8 +16,8 @@ sequenceDiagram
     FS-->>SC: BaasConfig from ~/.baas/config.yaml
     Note over SC: apply --region / --aws-profile over config defaults
     SC->>STS: sts.getCallerIdentity()
-    STS-->>SC: caller ARN
-    Note over SC: prefix = lowercase(base32(sha256(arn)))[0:8]<br/>stackName = bucketName = "baas-" + prefix<br/>tableName = "baas-" + prefix + "-results"<br/>all FIXED by the caller identity, not user-selectable
+    STS-->>SC: account id
+    Note over SC: prefix = "baas-" + accountId + mode.suffix()<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results"<br/>Nothing about the CALLER reaches the name -- one installation<br/>per account, plus --mode dev. Not user-selectable.
     opt --use-existing-vpc set
         Note over SC: require --vpc-id + --subnet-id + --sg-id, else exit 1
     end

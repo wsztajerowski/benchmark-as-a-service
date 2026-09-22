@@ -29,8 +29,11 @@ public class TeardownCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Option(names = "--stack-name", description = "CloudFormation stack name to delete.")
+    @Option(names = "--stack-name",
+        description = "Installation to delete, as printed by `baas admin setup` "
+            + "(e.g. baas-123456789012). Defaults to this machine's configured installation.")
     String stackName;
+
 
     @Option(names = "--yes", description = "Skip interactive confirmation.")
     boolean yes;
@@ -43,9 +46,12 @@ public class TeardownCommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService.load();
-        String resolvedStack = stackName != null ? stackName : config.getAws().getCoreStackName();
 
         var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+
+        // An explicit --stack-name still wins: it is how a by-hand installation, or one deployed
+        // under the old caller-ARN naming, is reached.
+        String resolvedStack = stackName != null ? stackName : config.requirePrefix();
 
         // Gate 1: no active runs
         try (var ec2 = factory.ec2()) {
@@ -72,9 +78,13 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Empty + delete S3 bucket if requested. The stack declares DeletionPolicy: Retain,
         // so CloudFormation will not remove the bucket — teardown has to do it here.
+        // Derived from the installation being torn down, not from config: --stack-name may name
+        // a different installation than this machine is configured for.
+        String bucket = resolvedStack;
+        String resultsTable = resolvedStack + "-results";
+
         boolean bucketDeleted = false;
-        if (deleteBucket && config.getAws().getBucket() != null) {
-            String bucket = config.getAws().getBucket();
+        if (deleteBucket) {
             logger.info("Emptying S3 bucket: {}", bucket);
             try (var s3 = factory.s3()) {
                 var s3Service = new S3UploadService(s3);
@@ -97,24 +107,23 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Both retained resources are named, because a setup that trips over one and then the
         // other is two rounds of the same opaque CloudFormation error.
-        if (!bucketDeleted && config.getAws().getBucket() != null) {
+        if (!bucketDeleted) {
             logger.warn("""
                     S3 results bucket retained: {}
-                      Note: `baas admin setup` as this identity will fail while it exists —
-                      the bucket name comes from a hash of your caller ARN, so the next setup
-                      tries to create this same name. Delete it manually, or re-run teardown
-                      with --delete-bucket.""",
-                config.getAws().getBucket());
+                      The name is derived from this AWS account, so any later `baas admin setup`
+                      for the same installation asks for this same bucket and fails while it
+                      exists — whoever runs it, not just you. Keep the results by copying them
+                      out, then delete it manually or re-run teardown with --delete-bucket.""",
+                bucket);
         }
-        if (config.getAws().getResultsTable() != null && !config.getAws().getResultsTable().isBlank()) {
-            logger.warn("""
-                    DynamoDB results table retained: {}
-                      Benchmark history outlives the stack, so teardown never deletes it and
-                      there is no flag to. `baas admin setup` as this identity will fail while
-                      it exists; remove it with:
-                        aws dynamodb delete-table --table-name {}""",
-                config.getAws().getResultsTable(), config.getAws().getResultsTable());
-        }
+        logger.warn("""
+                DynamoDB results table retained: {}
+                  Benchmark history outlives the stack, so teardown never deletes it and there is
+                  no flag to. The name is derived from this AWS account, so a later
+                  `baas admin setup` for the same installation will fail while it exists.
+                  Read it any time with:  baas results --results-table {}
+                  Remove it with:         aws dynamodb delete-table --table-name {}""",
+            resultsTable, resultsTable, resultsTable);
         return 0;
     }
 }

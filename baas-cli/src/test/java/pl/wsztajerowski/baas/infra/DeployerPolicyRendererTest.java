@@ -12,7 +12,7 @@ class DeployerPolicyRendererTest {
 
     @Test
     void substitutesEveryPlaceholder() {
-        String rendered = renderer.render("123456789012", "eu-central-1", "a1b2c3d4");
+        String rendered = renderer.render("123456789012", "eu-central-1", "baas-123456789012");
 
         assertThat(rendered)
             .as("an unresolved placeholder would be attached verbatim and match nothing")
@@ -21,13 +21,13 @@ class DeployerPolicyRendererTest {
 
     @Test
     void namesTheCallersOwnResources() {
-        String rendered = renderer.render("123456789012", "eu-central-1", "a1b2c3d4");
+        String rendered = renderer.render("123456789012", "eu-central-1", "baas-123456789012");
 
         assertThat(rendered)
-            .contains("arn:aws:iam::123456789012:role/a1b2c3d4-runner-role")
-            .contains("arn:aws:s3:::baas-a1b2c3d4")
-            .contains("arn:aws:dynamodb:eu-central-1:123456789012:table/baas-a1b2c3d4-results")
-            .contains("arn:aws:ssm:eu-central-1:123456789012:parameter/a1b2c3d4/runner/ami-id");
+            .contains("arn:aws:iam::123456789012:role/baas-123456789012-role-runner")
+            .contains("arn:aws:s3:::baas-123456789012")
+            .contains("arn:aws:dynamodb:eu-central-1:123456789012:table/baas-123456789012-results")
+            .contains("arn:aws:ssm:eu-central-1:123456789012:parameter/baas-123456789012/runner/ami-id");
     }
 
     /**
@@ -37,7 +37,7 @@ class DeployerPolicyRendererTest {
      */
     @Test
     void noLongerNamesTheMongoConnectionString() {
-        String rendered = renderer.render("123456789012", "eu-central-1", "a1b2c3d4");
+        String rendered = renderer.render("123456789012", "eu-central-1", "baas-123456789012");
 
         assertThat(rendered).doesNotContain("mongo");
     }
@@ -52,5 +52,26 @@ class DeployerPolicyRendererTest {
             .as("the SDK exception is usually buried under a CloudFormation or CLI-level failure")
             .isTrue();
         assertThat(DeployerPreflight.isAccessDenied(new RuntimeException("unrelated"))).isFalse();
+    }
+
+    /**
+     * The policy must name exactly what {@code baas admin setup} asks AWS for. They drifted once:
+     * setup's retained-resource pre-check composed {@code "baas-" + prefix} a second time and
+     * probed {@code baas-baas-<account>-results}, which the policy did not grant and no unit test
+     * covered, so it surfaced only as an AccessDenied against a live account.
+     */
+    @Test
+    void grantsExactlyTheNamesTheConfigDerives() {
+        var config = new pl.wsztajerowski.baas.config.BaasConfig();
+        config.setPrefix("baas-123456789012");
+
+        String rendered = renderer.render("123456789012", "eu-central-1", config.getPrefix());
+
+        assertThat(rendered)
+            .contains("arn:aws:s3:::" + config.bucket() + "\"")
+            .contains("table/" + config.resultsTable() + "\"")
+            .contains("stack/" + config.stackName() + "/*")
+            .contains("parameter" + config.amiParameterPath())
+            .contains("instance-profile/" + config.runnerInstanceProfile());
     }
 }

@@ -42,26 +42,38 @@ public class ConfigShowSubcommand implements Callable<Integer> {
                 ? config.getAws().getOperatorProfile() + "  (run/results/config)"
                 : "<not set> — run: baas config set --operator-profile <name>").append('\n')
             .append("  region:                   ").append(config.getAws().getRegion()).append('\n')
-            .append("  coreStackName:            ").append(config.getAws().getCoreStackName()).append('\n')
-            .append("  bucket:                   ").append(config.getAws().getBucket()).append('\n')
-            .append("  resultsTable:             ").append(config.getAws().getResultsTable() != null
-                ? config.getAws().getResultsTable()
-                : "<not set> — run: baas config sync --core-stack-name " + config.getAws().getCoreStackName()).append('\n')
-            .append("  subnetId:                 ").append(config.getAws().getSubnetId()).append('\n')
-            .append("  securityGroupId:          ").append(config.getAws().getSecurityGroupId()).append('\n')
-            .append("  vpcId:                    ").append(config.getAws().getVpcId()).append('\n')
-            .append("  runnerInstanceProfile:    ").append(config.getAws().getRunnerInstanceProfileName()).append('\n')
+            .append("derived from prefix (not stored):\n")
+            .append("  stack:                    ").append(installation(config, BaasConfig::stackName)).append('\n')
+            .append("  bucket:                   ").append(installation(config, BaasConfig::bucket)).append('\n')
+            .append("  resultsTable:             ").append(installation(config, BaasConfig::resultsTable)).append('\n')
+            .append("  runnerInstanceProfile:    ").append(installation(config, BaasConfig::runnerInstanceProfile)).append('\n')
+            .append("  amiPointer:               ").append(installation(config, BaasConfig::amiParameterPath)).append('\n')
+            // subnetId and securityGroupId are deliberately absent: they are resolved from the
+            // stack on every run, so there is no local value to report and none to go stale.
             .append("ec2:\n")
             .append("  defaultInstanceType:      ").append(config.getEc2().getDefaultInstanceType()).append('\n')
             .append("  benchmarkTimeoutSeconds:  ").append(config.getEc2().getBenchmarkTimeoutSeconds()).append('\n')
             .append("  wallClockHardKillSeconds: ").append(config.getEc2().getWallClockHardKillSeconds()).append('\n')
-            .append("benchmark:\n")
-            .append("  asyncProfilerVersion:     ").append(config.getBenchmark().getAsyncProfilerVersion()).append('\n');
+            .append("runner:\n")
+            .append("  sourceRepo:               ").append(config.getRunner().getSourceRepo()).append('\n');
 
         // Every value above is local. `config show` makes no AWS call at all now that the masked
         // Mongo connection string — the one field that had to be read from SSM — is gone, so it
         // also has nothing to say about which credentials it would have used.
         logger.info("Current configuration:\n{}", dump);
         return 0;
+    }
+
+    /**
+     * A derived name, or the reason there isn't one. An unconfigured machine has no installation
+     * to derive from, and {@code config show} is exactly where an operator should learn that.
+     */
+    private static String installation(BaasConfig config,
+                                       java.util.function.Function<BaasConfig, String> name) {
+        try {
+            return name.apply(config);
+        } catch (IllegalStateException noInstallation) {
+            return "<no installation> — run: baas config sync --name baas-<accountId>";
+        }
     }
 }

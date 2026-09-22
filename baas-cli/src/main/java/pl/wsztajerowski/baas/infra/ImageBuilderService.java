@@ -135,7 +135,13 @@ public class ImageBuilderService {
      */
     public void preflightVersion(String componentName, String imageVersion, String renderedComponent) {
         registeredComponentData(componentName, imageVersion).ifPresent(registered -> {
-            if (!registered.equals(renderedComponent)) {
+            // stripTrailing, not equals: Image Builder drops the trailing newline when it stores a
+            // component document, and renderComponent() ends with one because its template is a
+            // Java text block. Comparing exactly reported "content differs" for content that was
+            // identical, and blocked every build on a fresh installation — `baas admin setup`
+            // registers the component, so `build-image` always finds a stored copy to compare
+            // against. Only trailing whitespace is forgiven; a real edit still fails.
+            if (!registered.stripTrailing().equals(renderedComponent.stripTrailing())) {
                 throw new IllegalStateException("""
                     Recipe version %s is already registered and its content differs.
                     Bump imageVersion in infra/runner-image.yaml.

@@ -13,7 +13,7 @@ sequenceDiagram
     RIR-->>BIC: imageVersion, parentAmiId, AWSTOE component document
     Note over BIC: fail fast if runner-image.yaml pins a parent AMI<br/>in a different region than the stack -- an AMI ID<br/>means nothing outside its own region
 
-    BIC->>IB: listComponents(owner=Self, filter name=<prefix>-runner-toolchain)
+    BIC->>IB: listComponents(owner=Self, filter name=<prefix>-component-runner)
     Note over BIC,IB: deliberately WITHOUT byName: that collapses every version into<br/>one row with no version field and an ARN ending in a literal x.x.x,<br/>so the version filter matches nothing and the preflight passes blind
     IB-->>BIC: component versions
     opt declared imageVersion already registered

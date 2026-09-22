@@ -122,7 +122,7 @@ revoking can lock a local operator out. The deployed stack's parameters are the 
 truth for what the trust policy says — `~/.baas/config.yaml` holds no copy:
 
 ```bash
-aws cloudformation describe-stacks --stack-name baas-PREFIX \
+aws cloudformation describe-stacks --stack-name PREFIX \
   --query 'Stacks[0].Parameters[?starts_with(ParameterKey, `GitHub`)]'
 ```
 
@@ -141,12 +141,17 @@ Required by `baas admin setup`, `baas admin build-image` and `baas admin teardow
 only to identities that provision, image or tear down the core stack — it should not be held as a
 standing policy for routine benchmark runs.
 
-**It is rendered per identity, not shared.** Every resource it names derives from the caller's
-account, region and ARN-hash prefix — `baas-<prefix>` for the bucket, `<prefix>-runner-role` for
-the role, `baas-<prefix>-results` for the table. [`deployer-policy.json`](./deployer-policy.json)
-is therefore a *template* carrying `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders, and
-must never be attached in that form. Two callers get two different policies, and neither can reach
-the other's stack, bucket, table or parameter.
+**It is rendered per installation, not shared.** Every resource it names derives from the
+account, the region and the installation prefix — `<prefix>` for the stack and bucket,
+`<prefix>-role-runner` for the role, `<prefix>-results` for the table.
+[`deployer-policy.json`](./deployer-policy.json) is therefore a *template* carrying
+`${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders, and must never be attached in that form.
+
+Note what changed: the prefix is `baas-<accountId>[-dev]`, so everyone on one account renders the
+*same* policy for the *same* installation. It is no longer per-caller, and it was never a
+multi-tenancy boundary — the deployer policy is effectively account admin (see CLAUDE.md's
+accepted risks). What it still does is keep an account's `shared` and `dev` installations apart,
+and keep one account out of another's.
 
 It covers the table's **lifecycle only** — `CreateTable`, `DeleteTable`, `UpdateTable`,
 `Describe*`, tagging — and deliberately not its data. A deployer cannot read or write measurements
@@ -178,7 +183,7 @@ Two grants look wrong and are not:
 - **`ImageBuilderRead` uses `Resource: "*"`.** Image Builder authorises read operations against the
   collection (`component/*`) even when the call names one specific ARN, so a prefix-scoped resource
   can never satisfy them. Everything that *acts* — create, delete, update, tag, start a build —
-  stays pinned to `<prefix>-runner*`.
+  stays pinned to `<prefix>-*`.
 - **`CloudFormationValidateTemplate` uses `Resource: "*"`.** The action parses a template body and
   reads no account state; AWS offers no resource-level permission for it. It is a separate
   statement so the stack-scoped `CloudFormation` grant stays scoped to one stack.
@@ -280,11 +285,15 @@ the deployer and the operator are different people — pull the stack's values i
 copying `config.yaml` by hand:
 
 ```bash
-baas config sync --core-stack-name baas-a1b2c3d4
+baas config sync --name baas-123456789012
 ```
 
-The stack name is printed by `baas admin setup`; the operator cannot derive it, because the
-prefix is a hash of the *deployer's* ARN.
+`--name` is required even though the prefix *is* derivable from the account, because a bare sync
+on a machine with no local state would adopt whichever installation the active credentials imply.
+In CI — a wrong federated role, or a leftover `AWS_PROFILE` — that binds the machine to another
+account's installation and fails much later, after something has been provisioned. `baas admin
+setup` prints the name; `baas config sync --name` adopts it. Use `--name baas-<accountId>-dev` to
+point a machine at the development installation.
 
 Every `baas admin setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
 ARN. [`operator-policy.json`](./operator-policy.json) is a static reference copy of the same
@@ -301,6 +310,68 @@ volume — and `ec2:InstanceType` is only populated for the instance. A single s
 carrying that condition would evaluate false for the other five and deny the whole call, so
 the instance-type constraint lives on an instance-scoped statement and the supporting
 resources get their own.
+
+## A second installation, for developing BaaS itself
+
+`baas admin setup` derives its name from the caller's AWS account and takes **no option to name a
+different one**: there is exactly one installation per account, and the CLI cannot be told
+otherwise. That is deliberate. A user of BaaS should never have to ask which installation they are
+on, and a development convenience has no business in the released command surface.
+
+Developing BaaS itself is the case that wants a second, throwaway installation — somewhere to
+exercise a template change or an image bake without disturbing the account's real one. It is a
+procedure, not a feature:
+
+```bash
+ACCT=$(aws sts get-caller-identity --query Account --output text --profile baas-admin)
+DEV="baas-${ACCT}-dev"
+
+# 1. Render and attach the deployer policy for that prefix. The policy is prefix-exact, so the
+#    account's own one grants nothing here. Needs an identity above the deployer.
+baas admin deployer-policy --prefix "$DEV" > /tmp/deployer-dev.json
+#    ...attach /tmp/deployer-dev.json as a CUSTOMER-MANAGED policy. It will not fit inline
+#    alongside the account's own: two rendered documents are ~8.5k characters against IAM's
+#    5120-character inline budget, which is shared across every inline policy on the principal.
+
+# 2. Deploy the core template directly. ResourceNamePrefix is an ordinary parameter.
+aws cloudformation deploy \
+  --template-file infra/cf-template-core.yaml \
+  --stack-name "$DEV" \
+  --parameter-overrides "ResourceNamePrefix=$DEV" \
+  --capabilities CAPABILITY_NAMED_IAM \
+  --profile baas-admin
+
+# 3. Point this machine at it. Everything downstream resolves from the configured prefix.
+baas config sync --name "$DEV"
+baas admin build-image        # renders the real component and updates the stack
+
+#    ...work...
+
+# 4. Tear it down, and go back to the account's own installation.
+baas admin teardown --stack-name "$DEV" --delete-bucket
+baas config sync --name "baas-${ACCT}"
+```
+
+Three things worth knowing before you use it:
+
+- **The template's `RunnerImageComponentData` default is a placeholder**, registered at the default
+  `RunnerImageVersion` of `1.0.0`. Step 3's `baas admin build-image` replaces it with the real
+  component at whatever `infra/runner-image.yaml` declares. This works only while those two
+  versions differ — if `runner-image.yaml` is ever set to `1.0.0`, the placeholder occupies that
+  version and Image Builder will refuse the real one, because components are immutable at a
+  version. Bump `imageVersion` before doing dev work at `1.0.0`.
+- **Teardown retains the bucket and the results table** unless you pass `--delete-bucket`, and
+  there is no flag for the table. A dev installation left half-removed will block the next deploy
+  of the same prefix with a CloudFormation error that never mentions which resource; delete
+  `$DEV` and `$DEV-results` by hand.
+- **It costs a second AMI snapshot** (~$0.20/month for 30 GB) for as long as it exists, and the
+  one-image rule only retires images the *same* installation replaced — so deregister the dev AMI
+  and delete its snapshot when you tear the installation down.
+
+If you would rather not manage the policy juggling, a **separate AWS account** gives the same
+isolation for free: account-derived naming distinguishes the two installations with no prefix
+games, `baas admin setup` works unmodified in both, and each account's deployer policy names only
+its own account.
 
 ## Client configuration beyond credentials — `runner.sourceRepo`
 

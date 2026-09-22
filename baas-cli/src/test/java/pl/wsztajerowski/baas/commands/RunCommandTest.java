@@ -64,29 +64,30 @@ class RunCommandTest {
      * misconfigured CLI is an error message rather than a paid instance and no data.
      */
     @Test
-    void refusesToRunWhenTheResultsTableIsUnresolvable() {
+    void refusesToRunWhenNoInstallationIsConfigured() {
         var config = configWithResultsTable(null);
 
         assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("baas config sync --core-stack-name baas-a1b2c3d4")
+            .hasMessageContaining("baas config sync --name")
             .hasMessageContaining("--no-database");
     }
 
     @Test
-    void treatsABlankResultsTableAsUnresolvable() {
-        var config = configWithResultsTable("   ");
+    void treatsABlankInstallationAsUnconfigured() {
+        var config = new BaasConfig();
+        config.setPrefix("   ");
 
         assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
             .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void resolvesTheConfiguredResultsTable() {
-        var config = configWithResultsTable("baas-a1b2c3d4-results");
+    void derivesTheResultsTableFromTheConfiguredInstallation() {
+        var config = configWithResultsTable("baas-123456789012-results");
 
         assertThat(RunCommand.resolveResultsTable(config, false))
-            .contains("baas-a1b2c3d4-results");
+            .contains("baas-123456789012-results");
     }
 
     /** Discarding results is legitimate, but it has to be asked for by name. */
@@ -96,10 +97,12 @@ class RunCommandTest {
             .isEmpty();
     }
 
+    /** The table is derived from the installation, so "no table" means "no installation". */
     private static BaasConfig configWithResultsTable(String table) {
         var config = new BaasConfig();
-        config.getAws().setCoreStackName("baas-a1b2c3d4");
-        config.getAws().setResultsTable(table);
+        if (table != null) {
+            config.setPrefix(table.replaceAll("-results$", ""));
+        }
         return config;
     }
 
@@ -460,9 +463,9 @@ class RunCommandTest {
      * fallback once the build is gone.
      */
     @Test
-    void theBenchmarkConfigNoLongerCarriesAJarPath() {
-        assertThat(BaasConfig.BenchmarkConfig.class.getDeclaredMethods())
-            .extracting(java.lang.reflect.Method::getName)
-            .doesNotContain("getJarPath", "setJarPath");
+    void theBenchmarkConfigSectionIsGoneEntirely() {
+        assertThat(BaasConfig.class.getDeclaredClasses())
+            .extracting(Class::getSimpleName)
+            .doesNotContain("BenchmarkConfig");
     }
 }

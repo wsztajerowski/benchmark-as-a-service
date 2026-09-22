@@ -75,7 +75,7 @@ class DeployerPolicyTest {
 
         assertThat((List<String>) statementWithSid("IAM").get("Resource"))
             .as("scoped to the same roles as the rest of the IAM statement, never Resource:*")
-            .contains("arn:aws:iam::%s:role/%s-operator-role"
+            .contains("arn:aws:iam::%s:role/%s-role-operator"
                 .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX))
             .noneMatch("*"::equals);
     }
@@ -83,7 +83,7 @@ class DeployerPolicyTest {
     @Test
     void cloudFormationAccessIsScopedToOneStack() {
         assertThat(statementWithSid("CloudFormation").get("Resource"))
-            .isEqualTo("arn:aws:cloudformation:%s:%s:stack/baas-%s/*"
+            .isEqualTo("arn:aws:cloudformation:%s:%s:stack/%s/*"
                 .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
     }
 
@@ -138,8 +138,8 @@ class DeployerPolicyTest {
         assertThat(InfraFixtures.resources(InfraFixtures.deployerPolicy()))
             .as("a prefix wildcard lets one deployer reach another's roles, parameters or bucket")
             .noneMatch(arn -> arn.contains("baas-*"))
-            .noneMatch(arn -> arn.contains("*-runner-role"))
-            .noneMatch(arn -> arn.contains("*-operator-role"))
+            .noneMatch(arn -> arn.contains("*-role-runner"))
+            .noneMatch(arn -> arn.contains("*-role-operator"))
             .noneMatch(arn -> arn.contains("parameter/*/"));
     }
 
@@ -230,7 +230,10 @@ class DeployerPolicyTest {
                 + "is the measurement environment for someone's results")
             .isNotEmpty()
             .doesNotContain("*")
-            .allMatch(arn -> arn.contains(InfraFixtures.PREFIX + "-runner"));
+            // The five Image Builder resources are now distinguishable by type
+            // (-component-runner, -recipe-runner, -pipeline-runner, ...), so the scope is the
+            // installation itself rather than a name fragment they happened to share.
+            .allMatch(arn -> arn.contains(InfraFixtures.PREFIX + "-"));
 
         assertThat((List<String>) statementWithSid("ImageBuilderRead").get("Action"))
             .as("the exception must stay read-only — nothing that acts belongs on Resource:*")
@@ -251,9 +254,9 @@ class DeployerPolicyTest {
             .as("EC2 gets the runner role, Image Builder gets the build role, and nothing else is "
                 + "passable — a widened PassRole is the escalation the credential split prevents")
             .containsExactlyInAnyOrder(
-                "arn:aws:iam::%s:role/%s-runner-role"
+                "arn:aws:iam::%s:role/%s-role-runner"
                     .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX),
-                "arn:aws:iam::%s:role/%s-image-build-role"
+                "arn:aws:iam::%s:role/%s-role-image-build"
                     .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
 
         assertThat(passRole)
@@ -275,10 +278,13 @@ class DeployerPolicyTest {
      * else is currently attached to that group, so the remaining reserve below the cap is
      * precautionary rather than protecting a known consumer.
      *
-     * <p>With the DynamoDB results-table statement and the two role-update grants
-     * ({@code iam:UpdateAssumeRolePolicy}, {@code iam:UpdateRole}), the policy renders to 4122
-     * non-whitespace characters — 486 spare under this 4608 budget, and 512 still reserved
-     * between this budget and the 5120 hard cap.
+     * <p>Measured against a realistic installation prefix ({@code baas-<accountId>}), not an
+     * eight-character stand-in: {@code ${PREFIX}} appears thirteen times, so a short fixture
+     * understated the real size by roughly a hundred characters. The policy renders to 4219
+     * non-whitespace characters for a shared installation and 4271 for a dev one — 389 spare under
+     * this 4608 budget, and 512 still reserved between this budget and the 5120 hard cap. Every
+     * character added to the prefix costs thirteen here, which is why the mode vocabulary is
+     * closed rather than a free-form name.
      */
     @Test
     void renderedPolicyLeavesRoomInAnInlinePolicyBudget() {
@@ -330,7 +336,7 @@ class DeployerPolicyTest {
                 + "the rendered template, so assert the resource names exactly this caller's table")
             .isNotEmpty()
             .allSatisfy(resource -> assertThat(resource)
-                .endsWith("table/baas-" + InfraFixtures.PREFIX + "-results"));
+                .endsWith("table/" + InfraFixtures.PREFIX + "-results"));
     }
 
     /**

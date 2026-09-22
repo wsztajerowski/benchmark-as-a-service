@@ -199,10 +199,58 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **`aws.operatorProfile` must not fall back to `aws.profile`.** That field holds deployer
   credentials; the fallback would silently hand day-to-day commands elevated rights. Don't
   "helpfully" add it.
-- **Stack and bucket names are derived from caller identity.** `sts:GetCallerIdentity` →
-  `prefix = lowercase(base32(sha256(arn)))[0:8]` → both are `baas-<prefix>`. Not user-selectable.
+- **Every resource name is `<prefix>` or `<prefix>-<type>-<name>`, and the prefix is
+  `baas-<accountId>[-dev]`.** One rule, no exceptions: the `baas-` namespace lives *inside* the
+  prefix value, so `ResourceNamePrefix` is the whole name stem and knowing it predicts every name
+  (`<prefix>` stack and bucket, `<prefix>-results`, `<prefix>-role-runner`,
+  `<prefix>-profile-runner`, `<prefix>-pipeline-runner`, `/<prefix>/runner/ami-id`). Composing
+  `baas-` again at a use site yields `baas-baas-123456789012`.
+  It is derived from `sts:GetCallerIdentity().account()` and **nothing about the calling
+  principal reaches it** — that is the point. It used to be
+  `lowercase(base32(sha256(callerArn)))[0:8]`, which moved when an SSO permission set was switched
+  or re-provisioned and differed per human on one account; a moved prefix did not fail, it deployed
+  a second complete installation beside the first (finding A10). The pinned AMI and the results
+  table are account-level assets, so a name that moved with the caller forked them silently.
+  **There is no option to name a different one** — not `--mode`, not `--prefix`. Exactly one
+  installation per account, and the CLI cannot be told otherwise, so a user never has to ask which
+  one they are on. Developing BaaS itself is the case that wants a second, throwaway installation;
+  that is a documented by-hand procedure (`infra/README.md`, *A second installation*), not a
+  feature, and it stays out of the released command surface. `baas admin deployer-policy --prefix`
+  renders a policy for such an installation; it prints and grants nothing.
   The bucket is `DeletionPolicy: Retain`, so a teardown that keeps it blocks the next setup with a
   CloudFormation error that never mentions S3 — `SetupCommand` pre-checks for that case explicitly.
+  Because the name is now account-derived rather than caller-derived, that block hits *whoever*
+  next runs setup, not only the identity that tore down.
+- **Networking is immutable once an installation exists.** `--use-existing-vpc` and its three
+  companions are honoured on create; on update, `SetupCommand` compares them against the deployed
+  values and refuses a difference before submitting anything. They used to be sent unconditionally,
+  so on a shared installation a teammate's plain `baas admin setup` submitted `UseExistingVpc=false`
+  and rebuilt the networking underneath everyone. Carrying them forward silently would close the
+  hole while discarding a flag the operator typed; refusing names both values instead.
+- **`~/.baas/config.yaml` stores credentials, region, `prefix` and preferences — nothing else.**
+  The bucket, results table and runner instance profile are *derived* from the prefix; the runner
+  subnet and security group are *resolved* from the stack's outputs on every run. Neither kind is
+  cached, because a stored name can point at one installation while `prefix` names another, and a
+  stored security-group id outlives the group when `GroupDescription` forces a replacement — the
+  failure that rule previously only documented. `aws.coreStackName` is gone (the stack name *is*
+  the prefix), as are `aws.vpcId` and `benchmark.asyncProfilerVersion`, both of which were read by
+  nothing but `config show`; the latter printed `4.0` regardless of what the AMI held.
+- **`baas config sync --name <prefix>` is required, though the prefix is derivable.** A bare sync
+  on a machine with no local state would adopt whatever installation the active credentials imply —
+  in CI, a wrong role or a leftover `AWS_PROFILE` binds the machine to another account's
+  installation and fails later, after provisioning. Setup derives and prints; sync adopts what it
+  is told. Read-only commands take `--results-table` (and `baas download` also `--bucket`) to reach
+  a retired installation's archive; no command that *writes* measurements accepts either.
+- **An account-shared installation makes two concurrent `baas admin build-image` runs reachable.**
+  The one-image invariant's ordering — repoint the pointer, then deregister the replaced AMI —
+  assumes a single builder, which per-identity naming supplied by accident. Two concurrent bakes
+  can have the second to finish deregister the AMI the first just published. Deliberately **not**
+  guarded; it needs its own change.
+- **A deployer policy is prefix-exact, so it covers one installation only.** Two rendered documents
+  are ~8.5k non-whitespace characters against IAM's 5120-character *inline* budget, which is shared
+  across every inline policy on the principal — so a by-hand second installation needs its policy
+  attached as customer-managed (6144 each), not inline alongside the first. The failure when you
+  forget is an opaque `AccessDenied` at `baas admin setup` or `build-image`.
 - **The installer installs released artifacts only, and the repository copy refuses.**
   `scripts/install.sh` carries `BAAS_VERSION_DEFAULT`, rewritten at release time by `release.yml`'s
   `prepareCmd` and never committed back. A checkout copy holds the placeholder and exits naming
@@ -403,7 +451,7 @@ deleted along with the workflows that read them.
 | Name | Source |
 |---|---|
 | `OPERATOR_ROLE_ARN` | Core stack output `OperatorRoleArn` — the role CI federates into directly |
-| `CORE_STACK_NAME` | The installation `baas admin setup` printed (e.g. `baas-3q7i7s65`); `baas config sync` reads it |
+| `CORE_STACK_NAME` | The installation `baas admin setup` printed (e.g. `baas-381492019823`); passed to `baas config sync --name` |
 | `AWS_REGION` | The installation's region |
 
 ## S3 result layout

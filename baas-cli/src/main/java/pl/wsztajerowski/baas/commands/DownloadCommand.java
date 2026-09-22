@@ -42,6 +42,22 @@ public class DownloadCommand implements Callable<Integer> {
             + "(e.g. main/jmh/20260819_090000) for a run stored before the unified layout.")
     String resultPath;
 
+    /**
+     * Addresses another installation's results table for this invocation only, and persists
+     * nothing. This is how a retired installation's history stays readable after its stack is
+     * gone. Read-only by design: no command that writes measurements accepts it, so a machine
+     * cannot be left quietly recording new runs into an archive.
+     */
+    @Option(names = "--results-table",
+        description = "Read from this results table instead of the configured installation's. "
+            + "Not persisted.")
+    String resultsTableOverride;
+
+    @Option(names = "--bucket",
+        description = "Read artifacts from this bucket instead of the configured installation's. "
+            + "Not persisted.")
+    String bucketOverride;
+
     @Option(names = {"-o", "--output-dir"},
         description = "Local directory to write into. Default: ./<last path segment>.")
     Path outputDir;
@@ -70,9 +86,11 @@ public class DownloadCommand implements Callable<Integer> {
         BaasConfig config = configService.load();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
-        String bucket = config.getAws().getBucket();
-        if (bucket == null || bucket.isBlank()) {
-            logger.error("No bucket in config. Run: baas config sync --core-stack-name <stack>");
+        String bucket;
+        try {
+            bucket = bucketOverride != null ? bucketOverride : config.bucket();
+        } catch (IllegalStateException noInstallation) {
+            logger.error("{}", noInstallation.getMessage());
             return 1;
         }
 
@@ -83,13 +101,16 @@ public class DownloadCommand implements Callable<Integer> {
         if (looksLikeRunId(resultPath)) {
             // Only the run-id branch needs the table; a literal path resolves without it, so this
             // is checked here rather than beside the bucket check above.
-            String table = config.getAws().getResultsTable();
-            if (tableUnresolvable(table)) {
+            String table;
+            try {
+                table = resultsTableOverride != null ? resultsTableOverride : config.resultsTable();
+            } catch (IllegalStateException noInstallation) {
                 logger.error("""
-                    No results table in config, so run id '{}' cannot be resolved to a path.
-                      Sync it from the stack:  baas config sync --core-stack-name {}
-                      Or pass the run's result path directly.
-                    Nothing was written.""", resultPath, config.getAws().getCoreStackName());
+                    No installation is configured, so run id '{}' cannot be resolved to a path.
+                      Adopt one:  baas config sync --name baas-<accountId>
+                      Or pass the run's result path directly, or name the table with
+                      --results-table.
+                    Nothing was written.""", resultPath);
                 return 1;
             }
             try (var results = new ResultsQueryService(factory.dynamoDb(), table)) {

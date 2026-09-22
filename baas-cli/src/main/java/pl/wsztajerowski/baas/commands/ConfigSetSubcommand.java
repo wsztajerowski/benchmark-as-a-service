@@ -32,9 +32,6 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     @Option(names = "--region", description = "AWS region.")
     String region;
 
-    @Option(names = "--bucket", description = "S3 bucket name.")
-    String bucket;
-
     @Option(names = "--instance-type", description = "Default EC2 instance type.")
     String instanceType;
 
@@ -44,11 +41,10 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     @Option(names = "--max-wall-clock", description = "Absolute wall-clock cap in seconds.")
     Integer wallClock;
 
-    @Option(names = "--prefix", description = "Resource name prefix.")
+    @Option(names = "--prefix",
+        description = "Installation this machine addresses, e.g. baas-123456789012. Prefer "
+            + "`baas config sync --name`, which checks the installation exists first.")
     String prefix;
-
-    @Option(names = "--stack-name", description = "CloudFormation stack name.")
-    String stackName;
 
     private final ConfigService configService = new ConfigService();
 
@@ -60,8 +56,6 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
         if (region != null) config.getAws().setRegion(region);
-        if (bucket != null) config.getAws().setBucket(bucket);
-        if (stackName != null) config.getAws().setCoreStackName(stackName);
         if (instanceType != null) config.getEc2().setDefaultInstanceType(instanceType);
         if (benchmarkTimeout != null) config.getEc2().setBenchmarkTimeoutSeconds(benchmarkTimeout);
         if (wallClock != null) config.getEc2().setWallClockHardKillSeconds(wallClock);

@@ -1,8 +1,15 @@
 Parameters:
   ResourceNamePrefix:
-    Description: Prefix for all resource names created by this stack.
+    # The installation's whole name stem, "baas-<accountId>" plus the mode's suffix — the `baas-`
+    # namespace lives inside this value rather than being composed at each use. Every resource here
+    # is therefore `${ResourceNamePrefix}` or `${ResourceNamePrefix}-<type>-<name>`, one rule with
+    # no exceptions, so knowing the prefix is enough to predict every name. The default is a
+    # placeholder that names nothing: `baas admin setup` always supplies the real value.
+    Description: >-
+      Installation name stem, e.g. baas-123456789012 or baas-123456789012-dev. Supplied by
+      `baas admin setup`; every resource name in this stack is derived from it.
     Type: String
-    Default: "baas"
+    Default: "baas-000000000000"
   UseExistingVpc:
     Description: Set to 'true' to skip networking creation and use existing IDs.
     Type: String
@@ -116,7 +123,7 @@ Resources:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
         - Key: Name
-          Value: !Sub ${ResourceNamePrefix}-public-subnet
+          Value: !Sub ${ResourceNamePrefix}-subnet-public
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
@@ -203,7 +210,7 @@ Resources:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
         - Key: Name
-          Value: !Sub ${ResourceNamePrefix}-runner-sg
+          Value: !Sub ${ResourceNamePrefix}-sg-runner
 
   # ─── S3 Bucket ────────────────────────────────────────────────────────────────
 
@@ -214,7 +221,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      BucketName: !Sub baas-${ResourceNamePrefix}
+      BucketName: !Sub ${ResourceNamePrefix}
       VersioningConfiguration:
         # Suspended, not Enabled. Results are write-once and a run id carries 32 bits of entropy,
         # so the overwrite versioning guarded against no longer has a mechanism — and suspension
@@ -265,7 +272,7 @@ Resources:
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
-      TableName: !Sub baas-${ResourceNamePrefix}-results
+      TableName: !Sub ${ResourceNamePrefix}-results
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: pk
@@ -299,7 +306,7 @@ Resources:
   RunnerRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${ResourceNamePrefix}-runner-role
+      RoleName: !Sub ${ResourceNamePrefix}-role-runner
       Path: "/"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -309,7 +316,7 @@ Resources:
               Service: ec2.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: !Sub ${ResourceNamePrefix}-runner-s3-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-runner-s3
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -320,9 +327,9 @@ Resources:
                   - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
-                  - !Sub 'arn:${AWS::Partition}:s3:::baas-${ResourceNamePrefix}'
-                  - !Sub 'arn:${AWS::Partition}:s3:::baas-${ResourceNamePrefix}/*'
-        - PolicyName: !Sub ${ResourceNamePrefix}-runner-ec2-terminate-policy
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ResourceNamePrefix}'
+                  - !Sub 'arn:${AWS::Partition}:s3:::${ResourceNamePrefix}/*'
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-runner-ec2-terminate
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -332,7 +339,7 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:ResourceTag/baas-role: benchmark-runner
-        - PolicyName: !Sub ${ResourceNamePrefix}-runner-dynamodb-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-runner-dynamodb
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -348,7 +355,7 @@ Resources:
   RunnerInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
-      InstanceProfileName: !Sub ${ResourceNamePrefix}-runner-role
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-profile-runner
       Path: /
       Roles:
         - !Ref RunnerRole
@@ -364,7 +371,7 @@ Resources:
   ImageBuildRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${ResourceNamePrefix}-image-build-role
+      RoleName: !Sub ${ResourceNamePrefix}-role-image-build
       Path: "/"
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -379,7 +386,7 @@ Resources:
         - !Sub arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore
         - !Sub arn:${AWS::Partition}:iam::aws:policy/EC2InstanceProfileForImageBuilder
       Policies:
-        - PolicyName: !Sub ${ResourceNamePrefix}-image-build-logs-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-image-build-logs
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -395,7 +402,7 @@ Resources:
   ImageBuildInstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
-      InstanceProfileName: !Sub ${ResourceNamePrefix}-image-build-role
+      InstanceProfileName: !Sub ${ResourceNamePrefix}-profile-image-build
       Path: /
       Roles:
         - !Ref ImageBuildRole
@@ -403,7 +410,7 @@ Resources:
   RunnerImageComponent:
     Type: AWS::ImageBuilder::Component
     Properties:
-      Name: !Sub ${ResourceNamePrefix}-runner-toolchain
+      Name: !Sub ${ResourceNamePrefix}-component-runner
       Description: Bakes the runner toolchain and kernel tunables declared in infra/runner-image.yaml.
       Platform: Linux
       # A Component is immutable at a given version, so changing Data without bumping
@@ -416,7 +423,7 @@ Resources:
   RunnerImageRecipe:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
-      Name: !Sub ${ResourceNamePrefix}-runner
+      Name: !Sub ${ResourceNamePrefix}-recipe-runner
       Version: !Ref RunnerImageVersion
       ParentImage: !Ref RunnerParentAmiId
       Components:
@@ -441,7 +448,7 @@ Resources:
   RunnerImageInfrastructure:
     Type: AWS::ImageBuilder::InfrastructureConfiguration
     Properties:
-      Name: !Sub ${ResourceNamePrefix}-runner-build
+      Name: !Sub ${ResourceNamePrefix}-infra-config-runner
       InstanceProfileName: !Ref ImageBuildInstanceProfile
       # The build host is not the measurement host — it only installs packages, so the
       # instance family it uses has no bearing on any benchmark score.
@@ -461,14 +468,14 @@ Resources:
   RunnerImageDistribution:
     Type: AWS::ImageBuilder::DistributionConfiguration
     Properties:
-      Name: !Sub ${ResourceNamePrefix}-runner
+      Name: !Sub ${ResourceNamePrefix}-dist-config-runner
       # Single region, matching the rest of the stack. The AMI tags are set here rather
       # than by the CLI afterwards so they land atomically with the image — `baas admin
       # image` reads them back as the image's identity.
       Distributions:
         - Region: !Ref AWS::Region
           AmiDistributionConfiguration:
-            Name: !Sub "${ResourceNamePrefix}-runner-{{ imagebuilder:buildDate }}"
+            Name: !Sub "${ResourceNamePrefix}-ami-runner-{{ imagebuilder:buildDate }}"
             AmiTags:
               project: !Sub ${ResourceNamePrefix}
               baas-role: runner-image
@@ -480,7 +487,7 @@ Resources:
   RunnerImagePipeline:
     Type: AWS::ImageBuilder::ImagePipeline
     Properties:
-      Name: !Sub ${ResourceNamePrefix}-runner
+      Name: !Sub ${ResourceNamePrefix}-pipeline-runner
       ImageRecipeArn: !GetAtt RunnerImageRecipe.Arn
       InfrastructureConfigurationArn: !GetAtt RunnerImageInfrastructure.Arn
       DistributionConfigurationArn: !GetAtt RunnerImageDistribution.Arn
@@ -505,7 +512,7 @@ Resources:
   OperatorRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub ${ResourceNamePrefix}-operator-role
+      RoleName: !Sub ${ResourceNamePrefix}-role-operator
       Path: "/"
       # Comfortably above the 7500 s wall-clock default (benchmark timeout 7200 + the 300 s
       # termination margin), and strictly above it rather than equal: `baas run` polls for the
@@ -538,7 +545,7 @@ Resources:
                   token.actions.githubusercontent.com:sub: !Ref GitHubRepo
             - !Ref AWS::NoValue
       Policies:
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-ec2-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-ec2
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -595,7 +602,7 @@ Resources:
                 Condition:
                   StringEquals:
                     aws:ResourceTag/baas-role: benchmark-runner
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-ssm-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-ssm
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -605,7 +612,7 @@ Resources:
               - Effect: Allow
                 Action: ssm:GetParameter
                 Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id"
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-s3-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-s3
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -618,14 +625,14 @@ Resources:
                 Resource:
                   - !GetAtt S3MainBucket.Arn
                   - !Sub "${S3MainBucket.Arn}/*"
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-passrole-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-passrole
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !GetAtt RunnerRole.Arn
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-cfn-read-policy
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-cfn-read
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -633,8 +640,8 @@ Resources:
               # populate config.yaml, not enough to mutate any stack.
               - Effect: Allow
                 Action: cloudformation:DescribeStacks
-                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/baas-${ResourceNamePrefix}/*"
-        - PolicyName: !Sub ${ResourceNamePrefix}-operator-dynamodb-policy
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${ResourceNamePrefix}/*"
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-dynamodb
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
@@ -677,7 +684,7 @@ Outputs:
   RunnerImagePipelineArn:
     Value: !GetAtt RunnerImagePipeline.Arn
   RunnerImageRecipeName:
-    Value: !Sub ${ResourceNamePrefix}-runner
+    Value: !Sub ${ResourceNamePrefix}-recipe-runner
   RunnerImageInfrastructureArn:
     Value: !GetAtt RunnerImageInfrastructure.Arn
   # Written by `baas admin build-image`, not by the stack — the AMI ID is not known until a

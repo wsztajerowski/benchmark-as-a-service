@@ -52,7 +52,7 @@ sequenceDiagram
     SSM-->>TD: deleted (or not found, ignored)
 
     opt bucket was retained
-        TD-->>User: warn: `baas admin setup` as this identity will FAIL while the bucket<br/>exists -- its name is a hash of your caller ARN, so the next setup asks<br/>for the same name. Delete it by hand or re-run with --delete-bucket.
+        TD-->>User: warn: a later `baas admin setup` for this installation will FAIL while<br/>the bucket exists -- its name derives from the ACCOUNT, so this hits whoever<br/>runs it next, not just you. Delete it by hand or re-run with --delete-bucket.
     end
     Note over TD: name BOTH retained resources -- a setup that trips over one<br/>and then the other is two rounds of the same opaque error
     TD-->>User: "S3 bucket retained" (unless --delete-bucket),<br/>"DynamoDB results table retained -- there is no flag to delete it --<br/>benchmark history outlives the stack" and exit 0

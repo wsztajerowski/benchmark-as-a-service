@@ -24,6 +24,7 @@ public class ImageCommand implements Callable<Integer> {
     @Option(names = "--aws-profile", description = "AWS CLI profile (deployer credentials).")
     String awsProfile;
 
+
     private final ConfigService configService = new ConfigService();
 
     @Override
@@ -33,7 +34,7 @@ public class ImageCommand implements Callable<Integer> {
 
         // Deployer credentials, consistent with every other `baas admin` subcommand.
         var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
-        String parameterName = "/" + config.getPrefix() + "/runner/ami-id";
+        String parameterName = config.amiParameterPath();
 
         try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
             var current = new ImageBuilderService(imageBuilder, ec2, ssm).currentImage(parameterName);
