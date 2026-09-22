@@ -93,23 +93,6 @@ day-to-day commands, and SHALL run under operator credentials.
 - **WHEN** `baas env diff` output is redirected to a file
 - **THEN** the payload contains no logger timestamp prefixes
 
-### Requirement: The results table is resolved from configuration, not a secret store
-`~/.baas/config.yaml` SHALL carry the results table name, populated from the core stack output by
-`baas admin setup` and `baas config sync`. `baas run` SHALL pass it into user-data directly, since the
-table name is not sensitive.
-
-#### Scenario: Setup records the table name
-- **WHEN** `baas admin setup` completes
-- **THEN** `config.yaml` holds the results table name from the stack output
-
-#### Scenario: Config sync populates the table name
-- **WHEN** `baas config sync --core-stack-name <name>` runs on a machine with no prior config
-- **THEN** the results table name is populated from that stack's outputs
-
-#### Scenario: Table name is carried in user-data
-- **WHEN** the user-data script is rendered
-- **THEN** it contains the table name and performs no parameter-store lookup for database configuration
-
 ### Requirement: User tags are passed through to the runner
 `baas run` SHALL forward every `--tag key=value` option into the user-data script as a runner argument,
 in addition to applying the EC2 instance tags it already applies. A tag applied only to the instance
@@ -189,11 +172,17 @@ resolved to the run's stored result path rather than reconstructed from its othe
 
 ### Requirement: Teardown reports what it retains
 `baas admin teardown` SHALL state, before the confirmation prompt, that the results table and the working
-bucket are retained by default, so an operator is not left believing that history was deleted.
+bucket are retained by default, so an operator is not left believing that history was deleted. Its
+messages SHALL describe the retained names as derived from the installation's AWS account, and SHALL
+NOT attribute them to the caller's identity.
 
 #### Scenario: Retention is stated before confirmation
 - **WHEN** `baas admin teardown` prompts for confirmation
 - **THEN** the prompt text names both the retained bucket and the retained results table
+
+#### Scenario: Retention message explains the name a re-setup will ask for
+- **WHEN** `baas admin teardown` completes having retained the bucket
+- **THEN** the message states that a later `baas admin setup` in the same account will request that same bucket name, and says how to keep or remove it
 
 ### Requirement: `baas run` consumes a pre-built benchmark JAR
 `baas run` SHALL NOT build the benchmark project. It SHALL require the benchmark JAR to be named
@@ -267,3 +256,33 @@ output holds the object alone.
 #### Scenario: Default output is unchanged
 - **WHEN** `baas run` is invoked without `--format`
 - **THEN** its human-readable progress reporting is unchanged and no JSON object is written
+
+### Requirement: Resource names the CLI needs are derived or resolved, not cached
+`~/.baas/config.yaml` SHALL store only what cannot be obtained from the installation itself: the
+credential settings, the region, the installation prefix, and the operator's own preferences. Names
+the composition rule determines — the working bucket, the results table and the runner instance
+profile — SHALL be derived from the prefix at use time. Identifiers AWS assigns, specifically the
+runner subnet and security group, SHALL be resolved from the installation's stack outputs at use
+time rather than cached, so that a replaced resource cannot leave a stale identifier behind.
+
+#### Scenario: A replaced security group does not strand the configuration
+- **WHEN** the runner security group is replaced by a stack update and its identifier changes, and `baas run` is invoked afterwards with no intervening configuration command
+- **THEN** the run uses the current security group identifier
+
+#### Scenario: Config carries no derivable names
+- **WHEN** `baas config show` reports the configuration after `baas config sync`
+- **THEN** no stored field holds the bucket name, the results table name or the runner instance profile name
+
+### Requirement: Read-only commands can address another installation's results table
+`baas results` and `baas download` SHALL accept `--results-table <name>`, addressing that table for
+the invocation only and persisting nothing. No command that writes measurements SHALL accept such an
+override, so an operator cannot leave a configuration pointed at an archive and silently record new
+runs into it.
+
+#### Scenario: Reading a retired installation's history
+- **WHEN** `baas results --results-table baas-3q7i7s65-results` runs on a machine configured for the current installation
+- **THEN** the retired table's measurements are reported and `~/.baas/config.yaml` is unchanged
+
+#### Scenario: The override is absent from the write path
+- **WHEN** `baas run --results-table other-table` or `baas config set --results-table other-table` is invoked
+- **THEN** picocli reports an unknown option error
