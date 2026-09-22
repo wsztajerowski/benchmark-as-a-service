@@ -58,7 +58,7 @@
 - [x] 8.1 Deploy the new installation with `baas admin setup`, supplying the same GitHub federation options the current stack carries (they are not carried forward onto a create), and verify the printed prefix is `baas-<accountId>`.
 - [x] 8.2 Run `baas admin build-image` and verify `/baas-<accountId>/runner/ami-id` names the new AMI and the AMI carries `baas-image-version` and `baas-parent-ami` tags.
 - [x] 8.3 Re-render and re-attach the deployer policy by hand before any live verification — it is an inline policy on an IAM group, not the customer-managed flow `infra/README.md` describes, and `dynamodb-results-store` was bitten by exactly this omission.
-- [ ] 8.4 Point CI at the new installation by updating the `CORE_STACK_NAME` variable, and verify `e2e-cloud-test.yml` passes on a `workflow_dispatch` run.
+- [x] 8.4 Point CI at the new installation by updating the `CORE_STACK_NAME` variable, and verify `e2e-cloud-test.yml` passes. Done: also updated `OPERATOR_ROLE_ARN`. Verified on PR #65 rather than `workflow_dispatch` — all four checks pass, the EC2 job in 1m52s, storing `20260922T094147856Z-4f518d23` at 11,505,081 ops/s with `source=ci`. Required fixing the create-path federation bug first; without it the new operator role had no federated principal and CI could not assume it.
 - [ ] 8.5 Tear down `baas-3q7i7s65` and verify its bucket and results table survive as the archive, reachable via `baas results --results-table baas-3q7i7s65-results`.
 - [ ] 8.6 Deregister the retired AMI and delete its snapshot by hand, and verify exactly one BaaS-owned snapshot remains — the one-image rule only retires images the same installation replaced, so this is not reclaimed automatically.
 
