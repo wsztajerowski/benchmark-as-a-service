@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
@@ -74,18 +76,24 @@ public class BaasApp implements Runnable {
     }
 
     /**
-     * A stack trace names SDK internals, not anything the user can act on. Print the message
-     * — which for stack failures carries the CloudFormation reason — and keep the trace behind
-     * BAAS_DEBUG for when the message genuinely is not enough.
+     * A stack trace names SDK internals, not anything the user can act on. Log the message
+     * — which for stack failures carries the CloudFormation reason — and keep the trace at debug,
+     * behind {@code -v}, for when the message genuinely is not enough.
+     *
+     * <p>The logger is looked up here, not held in a {@code static final} field: {@code BaasApp}
+     * is initialised before {@code main} runs {@link LoggingMixin#applyEarlyVerbosity}, and
+     * SimpleLogger pins a logger's level at construction, so a static one would never see
+     * {@code -v} and the trace would be unreachable.
      */
     private static int reportFailure(Exception ex, CommandLine commandLine,
                                      CommandLine.ParseResult parseResult) {
+        Logger logger = LoggerFactory.getLogger(BaasApp.class);
         String message = ex.getMessage() != null ? ex.getMessage() : ex.toString();
-        commandLine.getErr().println(commandLine.getColorScheme().errorText(message));
-        if (System.getenv("BAAS_DEBUG") != null) {
-            ex.printStackTrace(commandLine.getErr());
+        logger.error("{}", message);
+        if (logger.isDebugEnabled()) {
+            logger.debug("Stack trace:", ex);
         } else {
-            commandLine.getErr().println("(set BAAS_DEBUG=1 for the full stack trace)");
+            logger.info("(run with -v for the full stack trace)");
         }
         return commandLine.getCommandSpec().exitCodeOnExecutionException();
     }

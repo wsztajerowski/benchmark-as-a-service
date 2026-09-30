@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
@@ -18,6 +20,8 @@ import java.util.concurrent.Callable;
     description = "Report the runner image currently published for this account."
 )
 public class ImageCommand implements Callable<Integer> {
+
+    private static final Logger logger = LoggerFactory.getLogger(ImageCommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -40,9 +44,9 @@ public class ImageCommand implements Callable<Integer> {
             var current = new ImageBuilderService(imageBuilder, ec2, ssm).currentImage(parameterName);
 
             if (current.isEmpty()) {
-                // Command payload, so stdout rather than the logger — this is what the user asked
-                // for, not a diagnostic about producing it.
-                System.out.println("""
+                // Warn, not payload: an absent image means every `baas run` fails until one is
+                // built. Exit 0 still — the command answered the question it was asked.
+                logger.warn("""
                     No runner image has been built for this account.
                       Build one:  baas admin build-image
                     Until then `baas run` will fail before launching anything.""");
@@ -66,8 +70,7 @@ public class ImageCommand implements Callable<Integer> {
             // The declaration in the working tree is not necessarily what is deployed, and a diff
             // between them is the usual reason a result carries an unexpected imageVersion tag.
             if (image.imageVersion() != null && !declared.equals(image.imageVersion())) {
-                System.out.printf(
-                    "%ninfra/runner-image.yaml declares %s — run `baas admin build-image` to publish it.%n",
+                logger.warn("infra/runner-image.yaml declares {} — run `baas admin build-image` to publish it.",
                     declared);
             }
             return 0;

@@ -147,7 +147,6 @@ public class ResultsQueryService implements AutoCloseable {
                 String.format("%.3f", r.scoreError()),
                 r.scoreUnit() != null ? r.scoreUnit() : "");
         }
-        environmentWarning(rows).ifPresent(System.out::println);
     }
 
     /**
@@ -157,8 +156,11 @@ public class ResultsQueryService implements AutoCloseable {
      * <p>Reported, never filtered — dropping a row would hide the very thing worth knowing, and
      * the operator is the one who decides whether the difference matters. Rows carrying no tag at
      * all predate this change and are ignored rather than counted as a difference.
+     *
+     * <p>A diagnostic, not payload: {@code ResultsCommand} logs it for every format, so a
+     * {@code --format json} consumer is warned on stderr without the warning entering the JSON.
      */
-    static Optional<String> environmentWarning(List<ResultRow> rows) {
+    public static Optional<String> environmentWarning(List<ResultRow> rows) {
         var imageVersions = distinctTagValues(rows, ResultRow::imageVersion);
         var instanceTypes = distinctTagValues(rows, ResultRow::instanceType);
 
@@ -172,7 +174,6 @@ public class ResultsQueryService implements AutoCloseable {
         if (lines.isEmpty()) {
             return Optional.empty();
         }
-        lines.addFirst("");
         lines.add("They did not all measure the same environment. Compare two of them with:");
         lines.add("  baas env diff <resultPathA> <resultPathB>");
         return Optional.of(String.join(System.lineSeparator(), lines));

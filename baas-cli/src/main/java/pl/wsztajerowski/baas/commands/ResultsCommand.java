@@ -123,6 +123,7 @@ public class ResultsCommand implements Callable<Integer> {
                 case "csv" -> printCsv(rows);
                 default -> results.printTable(rows);
             }
+            ResultsQueryService.environmentWarning(rows).ifPresent(logger::warn);
         }
         return 0;
     }
