@@ -40,6 +40,7 @@ workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | **Reduced in surface** |
 | 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | **Fixed** |
 | 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | Open |
+| 12 | A12 | `--async-output-type=flamegraph,jfr` uploads empty flame graphs | Med | Open |
 
 ### How `cli-driven-ci-workflows` closed them
 
@@ -228,6 +229,35 @@ layout one.
 **Proposed fix:** parse `params` into the measurement and fold the resolved values into the sort
 key — the same argument that put `mode` there, for the same reason. Storing them only as a tag
 would make them queryable without fixing the overwrite, so the key change is the load-bearing half.
+
+---
+
+## 12. A12 — `--async-output-type=flamegraph,jfr` uploads empty flame graphs · Med
+
+Found by the 2026-09-30 end-to-end run of `lynx-journal` (`20260930T112913537Z-f719ff9f`). Every
+`flame-wall-forward.html`/`flame-wall-reverse.html` is ~8.7 KB and holds only the `all` root
+frame (`cpool = ['all']`), while the `jfr-wall.jfr` beside it has real data: 573,250
+`profiler.WallClockSample` events over 21 s for `journal_mpmc`. So the profiler ran on the baked
+image, and the tunables and upload worked; the flame graph was drawn from nothing.
+
+This is not new, and nothing reports it. Every `e2e-cloud-test.yml` run on 2026-09-21/22 uploaded
+the same 8,735/8,736-byte flame graphs next to 1.7 MB JFR files. The workflow's check only asks
+that a `flame-*.html` exists, so it passes on an empty one. `JmhWithAsyncProfilerSubcommandServiceIT`
+asks only for `flamegraph`, the combination that works, and checks file names, not contents.
+The option is passed straight to JMH's `AsyncProfiler` (`JmhWithAsyncProfilerSubcommand`
+`--async-output-type`), so users are exposed to this with any output list that includes `jfr`.
+
+**Likely cause, not verified:** when `jfr` is among the outputs, async-profiler records into the
+JFR file instead of its in-memory call-trace table, and JMH then dumps the other formats from
+that empty table. That fits the evidence but was not reproduced in isolation.
+
+**Nothing is lost:** a flame graph can be rebuilt from the uploaded JFR with async-profiler's
+`jfrconv`.
+
+**Proposed fix:** confirm the cause with a one-off `flamegraph`-only and `flamegraph,jfr` run.
+Then either (a) have the runner produce flame graphs from the JFR with `jfrconv` when both are
+asked for, or (b) reject the combination at option parsing. Either way, tighten the e2e check to
+require a frame beyond `all`, so an empty flame graph fails CI instead of passing it.
 
 ---
 
