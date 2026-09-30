@@ -200,9 +200,9 @@ public class ResultsCommand implements Callable<Integer> {
         for (ResultRow r : rows) {
             // Locale.ROOT for the same reason as printJson — a comma decimal separator turns one
             // CSV column into two.
-            System.out.printf(Locale.ROOT, "%s,%s,%s,%s,%.6f,%.6f,%s,%s,%s,%s%n",
+            System.out.printf(Locale.ROOT, "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
                 r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
-                r.score(), r.scoreError(), r.scoreUnit(), r.createdAt(),
+                csvNumber(r.score()), csvNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
                 r.imageVersion() != null ? r.imageVersion() : "",
                 r.instanceType() != null ? r.instanceType() : "");
         }
@@ -219,5 +219,10 @@ public class ResultsCommand implements Callable<Integer> {
      */
     private static String jsonNumber(double value) {
         return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "null";
+    }
+
+    /** The CSV counterpart of {@link #jsonNumber}: an unknown value is an empty field. */
+    private static String csvNumber(double value) {
+        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "";
     }
 }
