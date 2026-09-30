@@ -88,3 +88,12 @@ needs an interactive terminal…`, exit 2, nothing on stdout. The same query red
 Observed and **not** introduced here (identical on a `main` build under the same pty): the table's
 decimals follow the default locale (`3307897,585` under pl-PL) and the `…` truncation marker renders
 the same way on both builds; `±0,000` is PR #66's subject (W1).
+
+**7.5 (CI):** PR #68, all four checks green. `Benchmark on EC2 via baas run` (run 36782175389) passed
+in 1m45s. Its log carries 3 `Still running (…)… elapsed: Ns` lines, no status-line text and no
+`ESC[K`, so CI takes the non-interactive path unchanged.
+
+## Result
+
+24/24 tasks complete. W1 (merge with #66) is open by nature and is resolved by whichever PR merges
+second; W2 and W3 are closed. Ready for `/opsx:archive` once merged.

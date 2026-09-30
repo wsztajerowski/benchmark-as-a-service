@@ -86,10 +86,10 @@
       instance terminates. Record in `verify.md`.
 - [x] 7.4 `baas results --watch` on a terminal redraws in place; `baas results --watch | cat` is refused.
       Record in `verify.md`.
-- [ ] 7.5 Confirm `e2e-cloud-test.yml` passes on the PR with its log unchanged apart from timing.
+- [x] 7.5 Confirm `e2e-cloud-test.yml` passes on the PR with its log unchanged apart from timing.
 
 ## 8. Verify
 
-- [ ] 8.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
+- [x] 8.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
       requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation
       from design or tasks.
