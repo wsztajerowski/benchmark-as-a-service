@@ -4,9 +4,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.DeployerPolicyRenderer;
 
@@ -22,6 +25,8 @@ public class DeployerPolicyCommand implements Callable<Integer> {
     private static final Logger logger = LoggerFactory.getLogger(DeployerPolicyCommand.class);
 
     @Mixin LoggingMixin loggingMixin;
+
+    @Spec CommandSpec spec;
 
     /**
      * Replaces {@code --for-arn}. Every resource the policy names now derives from the account, the
@@ -65,8 +70,10 @@ public class DeployerPolicyCommand implements Callable<Integer> {
         String resolved = renderedPrefix(accountId);
         logger.info("Policy for installation {} (account {}). Attach it as a customer-managed "
             + "policy — see infra/README.md.", resolved, accountId);
-        // Payload, so stdout: `baas admin deployer-policy > policy.json` has to stay clean.
-        System.out.println(renderer.render(accountId, config.getAws().getRegion(), resolved));
+        // Payload, so the Console, never coloured: `baas admin deployer-policy > policy.json`
+        // has to stay clean.
+        Console.of(spec.commandLine().getOut())
+            .println(renderer.render(accountId, config.getAws().getRegion(), resolved));
         return 0;
     }
 

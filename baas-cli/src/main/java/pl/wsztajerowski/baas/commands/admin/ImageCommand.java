@@ -4,10 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.ImageBuilderService;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
@@ -24,6 +27,8 @@ public class ImageCommand implements Callable<Integer> {
     private static final Logger logger = LoggerFactory.getLogger(ImageCommand.class);
 
     @Mixin LoggingMixin loggingMixin;
+
+    @Spec CommandSpec spec;
 
     @Option(names = "--aws-profile", description = "AWS CLI profile (deployer credentials).")
     String awsProfile;
@@ -56,7 +61,7 @@ public class ImageCommand implements Callable<Integer> {
             var image = current.get();
             String declared = new RunnerImageRenderer().definition().imageVersion();
 
-            System.out.printf("""
+            Console.of(spec.commandLine().getOut()).printf("""
                 Runner image
                   Version:     %s
                   AMI:         %s

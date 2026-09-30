@@ -5,9 +5,12 @@ import pl.wsztajerowski.baas.BaasApp;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
+import pl.wsztajerowski.baas.console.Console;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -27,37 +30,32 @@ class RunCommandSummaryTest {
 
     private record Captured(String out, String err, int exitCode) {}
 
+    /**
+     * Standard output is picocli's writer, handed in; standard error is still swapped globally,
+     * because that is where SimpleLogger writes and it has no writer to hand in.
+     */
     private static Captured run(String... args) {
-        var out = new ByteArrayOutputStream();
+        var out = new StringWriter();
         var err = new ByteArrayOutputStream();
-        PrintStream originalOut = System.out;
         PrintStream originalErr = System.err;
         try {
-            System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
             // Driven through the real command tree, not a bare RunCommand: LoggingMixin's -v
             // setter casts mixee.root() to BaasApp, so a standalone RunCommand fails to parse -v
             // before the command ever runs.
             var app = new BaasApp();
-            int code = new CommandLine(app).execute(args);
-            return new Captured(out.toString(StandardCharsets.UTF_8),
-                err.toString(StandardCharsets.UTF_8), code);
+            int code = new CommandLine(app).setOut(new PrintWriter(out)).execute(args);
+            return new Captured(out.toString(), err.toString(StandardCharsets.UTF_8), code);
         } finally {
-            System.setOut(originalOut);
             System.setErr(originalErr);
         }
     }
 
     private static String printSummary(RunCommand command, int exitCode) {
-        var out = new ByteArrayOutputStream();
-        PrintStream original = System.out;
-        try {
-            System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
-            command.printRunSummary(exitCode);
-        } finally {
-            System.setOut(original);
-        }
-        return out.toString(StandardCharsets.UTF_8);
+        var out = new StringWriter();
+        command.console = Console.plain(new PrintWriter(out));
+        command.printRunSummary(exitCode);
+        return out.toString();
     }
 
     @Test
@@ -142,8 +140,7 @@ class RunCommandSummaryTest {
 
     /**
      * The defect a real CI run found. {@code showResults} prints the post-run table through
-     * {@code ResultsQueryService.printTable}, which writes to {@code System.out} — correctly, as a
-     * command payload. But the JSON summary is a payload on that same stream, so under
+     * {@code ResultsTable}, onto standard output — correctly, as a command payload. But the JSON summary is a payload on that same stream, so under
      * {@code --format json} the table landed first and {@code | jq} failed on the opening token.
      * The workflow read an empty run id and went on to query {@code --request-id ""}.
      *
@@ -160,19 +157,14 @@ class RunCommandSummaryTest {
         command.summaryInstanceId = "i-03c3ad558f45b388c";
 
         var printed = new java.util.concurrent.atomic.AtomicBoolean(false);
-        var out = new ByteArrayOutputStream();
-        PrintStream original = System.out;
-        try {
-            System.setOut(new PrintStream(out, true, StandardCharsets.UTF_8));
-            command.reportRunResults(java.util.List.of(), "20260920T161636923Z-08785de7",
-                rows -> printed.set(true));
-            command.printRunSummary(0);
-        } finally {
-            System.setOut(original);
-        }
+        var out = new StringWriter();
+        command.console = Console.plain(new PrintWriter(out));
+        command.reportRunResults(java.util.List.of(), "20260920T161636923Z-08785de7",
+            rows -> printed.set(true));
+        command.printRunSummary(0);
 
         assertThat(printed).as("the table must not be printed when the object owns stdout").isFalse();
-        String captured = out.toString(StandardCharsets.UTF_8).strip();
+        String captured = out.toString().strip();
         assertThat(captured.lines()).hasSize(1);
         assertThat(JSON.readTree(captured).get("runId").asText())
             .isEqualTo("20260920T161636923Z-08785de7");

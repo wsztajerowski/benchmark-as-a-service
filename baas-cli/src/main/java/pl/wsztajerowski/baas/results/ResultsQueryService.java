@@ -123,35 +123,9 @@ public class ResultsQueryService implements AutoCloseable {
         return rows;
     }
 
-    /** Command payload, so stdout rather than the logger — see {@code ResultsCommand#printJson}. */
-    public void printTable(List<ResultRow> rows) {
-        if (rows.isEmpty()) {
-            System.out.println("No results found.");
-            return;
-        }
-        // 28 is RunId.LENGTH. Truncating at 17 landed inside the old <type>-<date> prefix, which
-        // rendered distinct rows identically; a fixed-width id removes truncation as a question.
-        String fmt = "%-45s %-28s %-14s %-8s %14s %12s %-10s%n";
-        System.out.printf(fmt, "BENCHMARK", "REQUEST_ID", "TYPE", "MODE", "SCORE", "±ERROR", "UNIT");
-        System.out.println("-".repeat(141));
-        for (ResultRow r : rows) {
-            String shortName = r.benchmarkName().contains(".")
-                ? r.benchmarkName().substring(r.benchmarkName().lastIndexOf('.') + 1)
-                : r.benchmarkName();
-            System.out.printf(fmt,
-                truncate(shortName, 44),
-                r.requestId(),
-                truncate(r.benchmarkType(), 13),
-                r.mode() != null ? r.mode() : "",
-                String.format("%.3f", r.score()),
-                String.format("%.3f", r.scoreError()),
-                r.scoreUnit() != null ? r.scoreUnit() : "");
-        }
-    }
-
     /**
      * Tier 1 of the environment comparison: rows that disagree on {@code imageVersion} or
-     * {@code instanceType} are not comparable, and the numbers above give no hint of it.
+     * {@code instanceType} are not comparable, and the numbers in the table give no hint of it.
      *
      * <p>Reported, never filtered — dropping a row would hide the very thing worth knowing, and
      * the operator is the one who decides whether the difference matters. Rows carrying no tag at
@@ -185,11 +159,6 @@ public class ResultsQueryService implements AutoCloseable {
             .map(tag)
             .filter(value -> value != null && !value.isEmpty())
             .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
-    }
-
-    private static String truncate(String s, int max) {
-        if (s == null) return "";
-        return s.length() <= max ? s : s.substring(0, max - 1) + "…";
     }
 
     @Override

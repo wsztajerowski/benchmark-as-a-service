@@ -5,6 +5,8 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
 import picocli.CommandLine.ParseResult;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
 import pl.wsztajerowski.baas.commands.DownloadCommand;
@@ -58,6 +60,8 @@ public class BaasApp implements Runnable {
 
     @Mixin LoggingMixin loggingMixin;
 
+    @Spec CommandSpec spec;
+
     public static void main(String[] args) {
         // Must happen before the CommandLine is built — see LoggingMixin#applyEarlyVerbosity.
         LoggingMixin.applyEarlyVerbosity(args);
@@ -100,7 +104,8 @@ public class BaasApp implements Runnable {
 
     @Override
     public void run() {
-        // Help text is program output, not a log event — picocli renders and wraps it itself.
-        CommandLine.usage(this, System.out);
+        // Help text is program output, not a log event — picocli renders and wraps it itself, onto
+        // the same writer every other payload uses so the two cannot interleave out of order.
+        spec.commandLine().usage(spec.commandLine().getOut());
     }
 }

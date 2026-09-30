@@ -4,13 +4,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.results.ResultRow;
-import pl.wsztajerowski.baas.results.ResultsQueryService;
+import pl.wsztajerowski.baas.results.ResultsTable;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.Method;
-import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Locale;
@@ -23,20 +23,17 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class ResultsFormatTest {
 
-    private final ByteArrayOutputStream captured = new ByteArrayOutputStream();
-    private PrintStream originalOut;
+    private final StringWriter captured = new StringWriter();
+    private final Console console = Console.plain(new PrintWriter(captured));
     private Locale originalLocale;
 
     @BeforeEach
-    void redirect() {
-        originalOut = System.out;
+    void rememberLocale() {
         originalLocale = Locale.getDefault();
-        System.setOut(new PrintStream(captured, true, StandardCharsets.UTF_8));
     }
 
     @AfterEach
-    void restore() {
-        System.setOut(originalOut);
+    void restoreLocale() {
         Locale.setDefault(originalLocale);
     }
 
@@ -48,11 +45,12 @@ class ResultsFormatTest {
 
     private String render(String format, List<ResultRow> rows) throws Exception {
         var command = new ResultsCommand();
+        command.console = console;
         Method method = ResultsCommand.class.getDeclaredMethod(
             format.equals("json") ? "printJson" : "printCsv", List.class);
         method.setAccessible(true);
         method.invoke(command, rows);
-        return captured.toString(StandardCharsets.UTF_8);
+        return captured.toString();
     }
 
     /**
@@ -122,9 +120,9 @@ class ResultsFormatTest {
         var row = new ResultRow(runId, "com.example.MyBenchmark.run", "jmh", "thrpt",
             1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
 
-        new ResultsQueryService(null, null).printTable(List.of(row));
+        ResultsTable.print(console, List.of(row));
 
-        assertThat(captured.toString(StandardCharsets.UTF_8)).contains(runId);
+        assertThat(captured.toString()).contains(runId);
     }
 
     @Test
@@ -134,9 +132,9 @@ class ResultsFormatTest {
         var second = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.B.run", "jmh",
             "thrpt", 2.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
 
-        new ResultsQueryService(null, null).printTable(List.of(first, second));
+        ResultsTable.print(console, List.of(first, second));
 
-        String out = captured.toString(StandardCharsets.UTF_8);
+        String out = captured.toString();
         assertThat(out).contains("a3f9c21b").contains("b7e4d0f2");
     }
 }

@@ -4,12 +4,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.BaasVersion;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
@@ -24,6 +28,7 @@ import pl.wsztajerowski.baas.model.RunLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
+import pl.wsztajerowski.baas.results.ResultsTable;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -66,6 +71,17 @@ public class RunCommand implements Callable<Integer> {
     private static final List<String> VALID_TYPES = List.of("jmh", "jmh-with-async", "jmh-with-prof", "jcstress");
 
     @Mixin LoggingMixin loggingMixin;
+
+    @Spec CommandSpec spec;
+
+    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
+    Console console;
+
+    /**
+     * The poll loop's status line while one is shown. Volatile because the shutdown hook reads it
+     * from another thread to clear the line before logging the termination.
+     */
+    private volatile StatusLine statusLine;
 
     @Parameters(index = "0", paramLabel = "<type>",
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
@@ -407,6 +423,11 @@ public class RunCommand implements Callable<Integer> {
 
         // 7. Shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            // Cleared first, or the termination message would be drawn over by the status line.
+            var line = statusLine;
+            if (line != null) {
+                line.close();
+            }
             logger.info("Terminating instance {} ...", instanceId);
             try (var ec2 = factory.ec2()) {
                 new Ec2ProvisioningService(ec2).terminateInstance(instanceId);
@@ -428,7 +449,7 @@ public class RunCommand implements Callable<Integer> {
         // Built once, not per iteration: every client construction re-resolves the
         // profile, and with a role-assuming operator profile that means a fresh
         // sts:AssumeRole — hundreds of them over a long run.
-        try (var s3 = factory.s3(); var ec2 = factory.ec2()) {
+        try (var s3 = factory.s3(); var ec2 = factory.ec2(); var line = openStatusLine()) {
             var storage = new S3UploadService(s3);
             var provisioning = new Ec2ProvisioningService(ec2);
 
@@ -463,12 +484,51 @@ public class RunCommand implements Callable<Integer> {
                             + "far enough to upload it): {}", instanceId, state, logPath);
                         return 1;
                     }
-                    logger.info("Still running ({})... elapsed: {}s", state, elapsed);
+                    if (line != null) {
+                        line.update(statusText(state, elapsed, instanceId));
+                    } else {
+                        logger.info("Still running ({})... elapsed: {}s", state, elapsed);
+                    }
                 }
 
                 Thread.sleep(15_000);
             }
         }
+    }
+
+    /**
+     * A status line only on an interactive terminal and never under {@code --format json}: there
+     * standard output belongs to the summary object, and progress stays on the log lines CI reads.
+     * {@code null} otherwise, which the poll loop takes as "log as before".
+     */
+    StatusLine openStatusLine() {
+        if (jsonSummary()) {
+            return null;
+        }
+        statusLine = console().openStatusLine();
+        return statusLine;
+    }
+
+    /** Short enough never to wrap an 80-column terminal, so a redraw stays on one row. */
+    static String statusText(String state, long elapsedSeconds, String instanceId) {
+        return String.format(Locale.ROOT, "%s · %s elapsed · %s",
+            state, formatElapsed(elapsedSeconds), instanceId);
+    }
+
+    static String formatElapsed(long seconds) {
+        long h = seconds / 3600;
+        long m = seconds % 3600 / 60;
+        long s = seconds % 60;
+        return h > 0
+            ? String.format(Locale.ROOT, "%dh %02dm %02ds", h, m, s)
+            : String.format(Locale.ROOT, "%dm %02ds", m, s);
+    }
+
+    private Console console() {
+        if (console == null) {
+            console = Console.of(spec.commandLine().getOut());
+        }
+        return console;
     }
 
     /** Maps a run-status sentinel to an exit code, or empty while the run is still in flight. */
@@ -502,7 +562,7 @@ public class RunCommand implements Callable<Integer> {
         String tableName = config.resultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
             var rows = results.queryByRequestId(runId);
-            reportRunResults(rows, runId, results::printTable);
+            reportRunResults(rows, runId, r -> ResultsTable.print(console(), r));
         } catch (Exception e) {
             logger.warn("Could not fetch results from the results table: {}", e.getMessage());
         }
@@ -701,8 +761,8 @@ public class RunCommand implements Callable<Integer> {
     /**
      * The post-run summary, which under {@code --format json} must not be printed at all.
      *
-     * <p>{@code printTable} writes to {@code System.out} — deliberately, since a table is a
-     * command payload rather than a diagnostic. But so is the JSON summary, and two payloads on
+     * <p>The table goes to the {@link Console} — deliberately, since a table is a command
+     * payload rather than a diagnostic. But so is the JSON summary, and two payloads on
      * one stream is not a stream anyone can parse: the table lands first and
      * {@code baas run --format json | jq} fails on the very first token. Caught by a real CI run,
      * which read an empty run id and then queried {@code --request-id ""}.
@@ -725,7 +785,7 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * One object on {@code System.out}, following {@code ResultsCommand.printJson}'s rule exactly:
+     * One object on the {@link Console}, never coloured, following {@code ResultsCommand.printJson}'s rule exactly:
      * the payload goes to standard output and every diagnostic to the logger, so
      * {@code baas run --format json | jq} is not corrupted by a timestamped log line — including
      * under {@code -v}.
@@ -739,7 +799,7 @@ public class RunCommand implements Callable<Integer> {
      * comma-decimal locale would emit text that is not JSON, silently and only on some machines.
      */
     void printRunSummary(int exitCode) {
-        System.out.printf(Locale.ROOT,
+        console().printf(
             "{\"runId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
                 + "\"exitCode\":%d,\"instanceId\":%s}%n",
             jsonString(summaryRunId), jsonString(summaryProject), jsonString(summaryResultPath),

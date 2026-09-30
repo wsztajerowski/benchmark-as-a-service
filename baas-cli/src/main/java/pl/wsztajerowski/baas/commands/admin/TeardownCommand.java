@@ -4,10 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
@@ -28,6 +31,8 @@ public class TeardownCommand implements Callable<Integer> {
     private static final Logger logger = LoggerFactory.getLogger(TeardownCommand.class);
 
     @Mixin LoggingMixin loggingMixin;
+
+    @Spec CommandSpec spec;
 
     @Option(names = "--stack-name",
         description = "Installation to delete, as printed by `baas admin setup` "
@@ -67,8 +72,10 @@ public class TeardownCommand implements Callable<Integer> {
         // Gate 2: explicit confirmation
         if (!yes) {
             // Stays on stdout: an interactive prompt needs to sit on the same line as the
-            // cursor, and every logger line comes with a timestamp prefix and a newline.
-            System.out.print("Type the stack name to confirm deletion [" + resolvedStack + "]: ");
+            // cursor, and every logger line comes with a timestamp prefix and a newline. print,
+            // not println, and the Console flushes it — picocli's writer would otherwise hold it.
+            Console.of(spec.commandLine().getOut())
+                .print("Type the stack name to confirm deletion [" + resolvedStack + "]: ");
             String input = new Scanner(System.in).nextLine().trim();
             if (!resolvedStack.equals(input)) {
                 logger.info("Aborted.");

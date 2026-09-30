@@ -23,7 +23,7 @@ Picocli's `getOut()` is `new PrintWriter(new BufferedWriter(…), true)`: it flu
 `println`/`printf`/`format` and **not** on `print`. So a same-line prompt and a `\r` redraw each
 need an explicit flush.
 
-### Spike findings (JDK 25, macOS, run under a real pseudo-terminal)
+### Spike findings (JDK 25, macOS and Linux, run under a real pseudo-terminal)
 
 | Case | `System.console()` / `isTerminal()` | picocli `Ansi.AUTO` | stdout a terminal | stderr a terminal |
 |---|---|---|---|---|
@@ -40,6 +40,9 @@ Columns 3 and 4 were checked two ways, which agreed: a child `sh -c 'test -t N'`
 `/dev/fd/N` file type (`unix:mode`, and `unix:rdev` to tell `/dev/null` apart, about 40 ms). Separately,
 SimpleLogger resolves `System.err` on every write: after `System.setErr(wrapper)`, log lines went
 through the wrapper.
+
+Repeated on Linux (task 1.2: `eclipse-temurin:25-jdk`, JDK 25.0.4.1, under `script`): every row
+identical to macOS.
 
 What follows from this:
 - `System.console()` answers "is stdout a terminal?" correctly, but only errs towards *no* (the stdin
@@ -95,8 +98,12 @@ return a non-terminal `Console`. The guard costs nothing.
   dependency; the other relies on `unix:` attributes outside the public API and is unverified on
   Linux.
 - *Rejected: picocli `Ansi.AUTO`.* It says on for `TERM=dumb`, and `CLICOLOR_FORCE` makes it emit
-  escape sequences into pipes. That breaks the guarantee in the spec. The `Console` passes `Ansi.ON` or
-  `Ansi.OFF` explicitly and uses picocli only to render markup.
+  escape sequences into pipes. That breaks the guarantee in the spec.
+- *Rejected during implementation: picocli `Ansi.ON`/`OFF` markup for the styling itself.* Task 1.3
+  confirmed the explicit modes ignore the environment, so they would have worked. But markup
+  (`@|bold …|@`) parses the styled text, and a benchmark name or tag value containing `|@` would need
+  escaping. The `Console` writes the four SGR codes it needs (bold, faint, red, green) directly, which
+  is shorter than escaping the text.
 - *Rejected: JLine or Jansi.* A new dependency for what four environment and console checks already
   answer.
 

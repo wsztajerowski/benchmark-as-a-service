@@ -312,15 +312,26 @@ The watchdog is the only one that survives a deadlocked JVM.
   subcommand tree — before `execute()`. Delete the pre-scan and `-v` **silently stops** raising
   command-level logging. `benchmark-runner` is unaffected only because its loggers live in
   services, constructed later.
-- **Diagnostics go to the logger (stderr); command payloads stay on `System.out`.**
-  `ResultsCommand.printJson`/`printCsv`, `ResultsQueryService.printTable`, `RunCommand`'s JSON
-  summary, `ImageCommand`'s image details, `EnvDiffSubcommand`'s table, `DeployerPolicyCommand`,
-  the picocli usage renderers, and `TeardownCommand`'s confirmation prompt are deliberately not
-  migrated — a timestamp prefix on every line breaks `--format json | jq`, `--format csv > file`,
-  and the same-line prompt. The test is whether a redirect of stdout should keep the line: an
-  empty answer ("No results found.", "No differences.") is payload; the environment warning, both
-  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged — the environment
-  warning therefore reaches `--format json` users too, on stderr.
+- **Diagnostics go to the logger (stderr); command payloads go through `Console`, never
+  `System.out`.** `Console` wraps picocli's `getOut()`, which *buffers*, so a stray `System.out`
+  write elsewhere lands out of order with everything else — hence all-or-nothing, and no
+  `System.out` anywhere in `baas-cli` main code. Payload that must never be styled: JSON, CSV,
+  `RunCommand`'s JSON summary, `DeployerPolicyCommand`. A timestamp prefix on any of it breaks
+  `--format json | jq` and `--format csv > file`, which is why none of it is logged. The test for
+  which side a line belongs on is whether a redirect of stdout should keep it: an empty answer
+  ("No results found.", "No differences.") is payload; the environment warning, both
+  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged.
+- **Terminal effects happen only when `Console` says interactive: `System.console()` +
+  `isTerminal()` + `TERM != dumb`, decided once.** Every misdetection is a *no*, so the worst case
+  is today's plain output and never an escape sequence in a file. `NO_COLOR` drops colour.
+  picocli's `Ansi.AUTO` is deliberately not used — it colours `TERM=dumb`, and `CLICOLOR_FORCE`
+  makes it colour a pipe. Tables pad *then* colour (`console.Table`), so columns never move.
+- **`baas run`'s status line is on stdout, not stderr, on purpose.** Java cannot tell whether
+  stderr alone is a terminal (the `cli-console-output` spike: a child `test -t 2` or `/dev/fd/2`
+  can, at a cost), and a wrong guess writes `\r` into `2> run.log`. Gated by `System.console()`,
+  every wrong guess falls back to the log line instead. While shown, it swaps `System.err` for a
+  clear-write-redraw stream — SimpleLogger resolves `System.err` per write, which is what makes
+  that reach it — and the shutdown hook closes it *before* logging the termination.
 - **`printJson`/`printCsv` must format with `Locale.ROOT`.** Under a comma-decimal locale (pl-PL
   among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since

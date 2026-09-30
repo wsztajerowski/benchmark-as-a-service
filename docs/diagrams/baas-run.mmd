@@ -40,10 +40,15 @@ sequenceDiagram
     RC->>EC2: ec2.runInstances(amiId, instanceType, subnetId, sgId, instanceProfile, userData, tags)
     Note over EC2: min=1 max=1<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: baas-role=benchmark-runner
     EC2-->>RC: instanceId
-    Note over RC: register JVM shutdown hook<br/>ec2.terminateInstances(instanceId) on Ctrl+C
+    Note over RC: register JVM shutdown hook<br/>ec2.terminateInstances(instanceId) on Ctrl+C<br/>(clears the status line first, then logs the termination)
     loop poll every 15 seconds
         RC->>S3: s3.getObjectAsBytes(resultPath/run-status)
         S3-->>RC: completed or failed:N or absent -- sleep 15s and retry
+        alt interactive terminal and no --format json
+            RC-->>User: status line on STDOUT, redrawn in place:<br/>state · elapsed · instanceId (log lines scroll above it)
+        else redirected, piped, CI or --format json
+            RC-->>User: log line "Still running (state)... elapsed: Ns" on stderr, as before
+        end
     end
     Note over RC: --no-database: nothing was stored, so nothing to show.<br/>A benchmark that already ran is never reported as failed<br/>because the summary could not be fetched.
     RC->>DDB: Query on requestId-index (gsi1pk = runId)

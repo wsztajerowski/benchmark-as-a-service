@@ -4,14 +4,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
 import picocli.CommandLine.Parameters;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Table;
+import pl.wsztajerowski.baas.console.Table.Cell;
+import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.results.EnvironmentManifest;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 
@@ -34,6 +42,11 @@ public class EnvDiffSubcommand implements Callable<Integer> {
     private static final Logger logger = LoggerFactory.getLogger(EnvDiffSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
+
+    @Spec CommandSpec spec;
+
+    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
+    Console console;
 
     @Parameters(index = "0", paramLabel = "<resultPathA>", description = "First run's result path.")
     String resultPathA;
@@ -77,18 +90,36 @@ public class EnvDiffSubcommand implements Callable<Integer> {
 
         var differences = EnvironmentManifest.diff(a, b);
 
-        // Command payload, so stdout rather than the logger — a timestamp prefix on every line
-        // breaks redirecting this to a file, the same reasoning as ResultsCommand#printJson.
-        if (differences.isEmpty()) {
-            System.out.println("No differences. Both runs measured on the same environment.");
-            return 0;
-        }
-
-        System.out.printf("%-24s %-34s %-34s%n", "FIELD", shorten(resultPathA), shorten(resultPathB));
-        System.out.println("-".repeat(94));
-        differences.forEach((field, difference) -> System.out.printf("%-24s %-34s %-34s%n",
-            field, orAbsent(difference.left()), orAbsent(difference.right())));
+        printDiff(console(), differences);
         return 0;
+    }
+
+    /**
+     * Command payload, so the {@link Console} rather than the logger — a timestamp prefix on every
+     * line breaks redirecting this to a file, the same reasoning as ResultsCommand#printJson. The
+     * two runs' values are coloured apart when the terminal allows it.
+     */
+    void printDiff(Console out, Map<String, EnvironmentManifest.Difference> differences) {
+        if (differences.isEmpty()) {
+            out.println("No differences. Both runs measured on the same environment.");
+            return;
+        }
+        var table = new Table(out, 94, List.of(
+            Column.left("FIELD", 24),
+            Column.left(shorten(resultPathA), 34),
+            Column.left(shorten(resultPathB), 34)));
+        table.printHeader();
+        differences.forEach((field, difference) -> table.printRow(List.of(
+            Cell.plain(field),
+            new Cell(orAbsent(difference.left()), out::red),
+            new Cell(orAbsent(difference.right()), out::green))));
+    }
+
+    private Console console() {
+        if (console == null) {
+            console = Console.of(spec.commandLine().getOut());
+        }
+        return console;
     }
 
     private Optional<EnvironmentManifest> fetch(S3UploadService storage, String bucket, String resultPath) {

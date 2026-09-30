@@ -160,16 +160,11 @@ class ResultsQueryServiceIT {
         put(measurement("lynx-journal", "req-excluded", "selfTest",
             Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
 
-        var out = new java.io.ByteArrayOutputStream();
-        var original = System.out;
-        try {
-            System.setOut(new java.io.PrintStream(out, true, StandardCharsets.UTF_8));
-            service.printTable(service.queryByRequestId("req-excluded"));
-        } finally {
-            System.setOut(original);
-        }
+        var out = new java.io.StringWriter();
+        ResultsTable.print(pl.wsztajerowski.baas.console.Console.plain(new java.io.PrintWriter(out)),
+            service.queryByRequestId("req-excluded"));
 
-        assertThat(out.toString(StandardCharsets.UTF_8))
+        assertThat(out.toString())
             .doesNotContain("No results found.")
             .contains("selfTest")
             .contains("req-excluded");
