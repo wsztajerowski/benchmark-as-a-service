@@ -77,14 +77,14 @@
 
 ## 7. End-to-end verification (manual — no automated test covers the `baas run` path)
 
-- [ ] 7.1 On a real terminal: `baas run jmh -- <fixture>` shows one updating status line; a warning
+- [x] 7.1 On a real terminal: `baas run jmh -- <fixture>` shows one updating status line; a warning
       during the poll appears above it; the results table is coloured. Record the observation in
       `verify.md`.
-- [ ] 7.2 Same run with `> out.txt`, and with `--format json | jq .`: no escape sequence in either
+- [x] 7.2 Same run with `> out.txt`, and with `--format json | jq .`: no escape sequence in either
       (`grep -c $'\e' out.txt` is 0), progress via log lines. Record in `verify.md`.
-- [ ] 7.3 Ctrl+C during the status line: the line is cleared before "Terminating instance…" and the
+- [x] 7.3 Ctrl+C during the status line: the line is cleared before "Terminating instance…" and the
       instance terminates. Record in `verify.md`.
-- [ ] 7.4 `baas results --watch` on a terminal redraws in place; `baas results --watch | cat` is refused.
+- [x] 7.4 `baas results --watch` on a terminal redraws in place; `baas results --watch | cat` is refused.
       Record in `verify.md`.
 - [ ] 7.5 Confirm `e2e-cloud-test.yml` passes on the PR with its log unchanged apart from timing.
 

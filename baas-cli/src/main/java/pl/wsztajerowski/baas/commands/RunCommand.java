@@ -462,6 +462,9 @@ public class RunCommand implements Callable<Integer> {
 
                 Optional<String> status = storage.getObjectIfExists(bucket, statusKey);
                 if (status.isPresent()) {
+                    // The run is over: a line still saying "running" beside its results is wrong,
+                    // and would be redrawn under every row of the table printed next.
+                    closeIfOpen(line);
                     var exitCode = exitCodeFor(status.get().trim(), factory, config, runId, logPath);
                     if (exitCode.isPresent()) {
                         return exitCode.getAsInt();
@@ -473,6 +476,7 @@ public class RunCommand implements Callable<Integer> {
                         // poll landing in that window sees a dead instance and no status yet.
                         // Re-read once before reporting a successful run as a failure.
                         var lateStatus = storage.getObjectIfExists(bucket, statusKey);
+                        closeIfOpen(line);
                         if (lateStatus.isPresent()) {
                             var exitCode = exitCodeFor(lateStatus.get().trim(), factory, config, runId, logPath);
                             if (exitCode.isPresent()) {
@@ -507,6 +511,12 @@ public class RunCommand implements Callable<Integer> {
         }
         statusLine = console().openStatusLine();
         return statusLine;
+    }
+
+    private static void closeIfOpen(StatusLine line) {
+        if (line != null) {
+            line.close();
+        }
     }
 
     /** Short enough never to wrap an 80-column terminal, so a redraw stays on one row. */
