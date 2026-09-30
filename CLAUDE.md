@@ -313,10 +313,14 @@ The watchdog is the only one that survives a deadlocked JVM.
   command-level logging. `benchmark-runner` is unaffected only because its loggers live in
   services, constructed later.
 - **Diagnostics go to the logger (stderr); command payloads stay on `System.out`.**
-  `ResultsCommand.printJson`/`printCsv`, `ResultsQueryService.printTable`, `ImageCommand`,
-  `EnvDiffSubcommand`'s table, the picocli usage renderers, and `TeardownCommand`'s confirmation
-  prompt are deliberately not migrated — a timestamp prefix on every line breaks
-  `--format json | jq`, `--format csv > file`, and the same-line prompt.
+  `ResultsCommand.printJson`/`printCsv`, `ResultsQueryService.printTable`, `RunCommand`'s JSON
+  summary, `ImageCommand`'s image details, `EnvDiffSubcommand`'s table, `DeployerPolicyCommand`,
+  the picocli usage renderers, and `TeardownCommand`'s confirmation prompt are deliberately not
+  migrated — a timestamp prefix on every line breaks `--format json | jq`, `--format csv > file`,
+  and the same-line prompt. The test is whether a redirect of stdout should keep the line: an
+  empty answer ("No results found.", "No differences.") is payload; the environment warning, both
+  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged — the environment
+  warning therefore reaches `--format json` users too, on stderr.
 - **`printJson`/`printCsv` must format with `Locale.ROOT`.** Under a comma-decimal locale (pl-PL
   among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
