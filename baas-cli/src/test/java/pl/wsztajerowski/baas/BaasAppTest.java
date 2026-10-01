@@ -77,7 +77,9 @@ class BaasAppTest {
 
         assertThat(usage)
             .contains("Put -- before the benchmark parameters")
-            .contains("baas run jmh -- MyBenchmark");
+            .contains("jmh -- MyBenchmark")
+            .as("the example must run as written: --project is required unless derivation is enabled")
+            .contains("--benchmark-jar target/b.jar --project my-bench");
     }
 
     /** The -- separator has to survive into the forwarded parameter list, not be consumed. */
