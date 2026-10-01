@@ -65,29 +65,6 @@ identifier and its measurements' timestamps cannot disagree.
 - **WHEN** `baas run` launches a run and the instance's clock differs from the launching machine's
 - **THEN** every stored measurement's `createdAt` is the launching machine's instant
 
-### Requirement: `project` is derived from the git repository name
-`baas run` SHALL derive `project` from the name of the git repository it is invoked in, resolving the
-main repository rather than a linked worktree directory, and SHALL accept a `--project` option
-overriding it. A measurement SHALL NOT be written when `project` cannot be resolved. The runner SHALL
-reject an unresolved `project` outright rather than substituting a placeholder value.
-
-#### Scenario: Project defaults to the repository name
-- **WHEN** `baas run` is invoked inside a repository named `lynx-journal` with no `--project`
-- **THEN** the stored measurement has `pk = RESULT#lynx-journal`
-
-#### Scenario: Explicit override wins
-- **WHEN** `--project other-name` is given
-- **THEN** the stored measurement has `pk = RESULT#other-name`
-
-#### Scenario: A linked worktree is attributed to its repository
-- **WHEN** `baas run` is invoked from a linked worktree of the `lynx-journal` repository with no
-  `--project`
-- **THEN** the stored measurement has `pk = RESULT#lynx-journal`, not the worktree directory's name
-
-#### Scenario: The runner refuses an unresolved project
-- **WHEN** `benchmark-runner` is invoked with no project value and no `project` tag
-- **THEN** it exits non-zero rather than storing a measurement under a placeholder project
-
 ### Requirement: Items hold only the queryable summary
 A measurement item SHALL contain the attributes needed to filter results and render output: benchmark
 name, benchmark type, mode, score, score error, score unit, `createdAt`, `requestId`, `tags`,
@@ -112,7 +89,8 @@ The runner SHALL record `project`, `type`, `jdk`, `cpuModel`, `cpuArch`, `instan
 measurement for which they are supplied, and SHALL omit them otherwise rather than storing a
 placeholder value standing in for an unknown one. These key names SHALL be defined once as constants
 in the shared model module and used by both the runner and the CLI. `branch` and `source` SHALL be
-caller-supplied, like `project` and `commit`, rather than machine-observed. `source` SHALL identify
+caller-supplied, like `project` and `commit`, rather than machine-observed. `commit` and `branch` SHALL be
+supplied only as caller tags; `baas run` SHALL NOT derive them. `source` SHALL identify
 how the run was triggered; `baas run` SHALL derive it as `ci` when it detects a continuous-integration
 environment and `local` otherwise, and an explicitly supplied value SHALL win over the derived one.
 Tag keys outside the vocabulary SHALL be permitted, and a query naming an unknown key SHALL produce a
@@ -124,15 +102,15 @@ warning rather than silently returning nothing.
   that run's `environment.json`
 
 #### Scenario: Branch is recorded as a tag
-- **WHEN** a run is launched from a git branch
+- **WHEN** a run is launched with `--tag branch=main`
 - **THEN** its stored measurement carries a `branch` tag, and that tag is usable as a filter
 
 #### Scenario: An unsupplied commit or branch is absent, not a placeholder
-- **WHEN** a run is launched with no resolvable commit and no resolvable branch
+- **WHEN** a run is launched with no `commit` and no `branch` tag
 - **THEN** its stored measurement carries neither key, and no stored value stands in for them
 
 #### Scenario: Unknown tag key warns
-- **WHEN** `baas results --tag jvm=21` is queried and no measurement uses the key `jvm`
+- **WHEN** `baas results --project p --tag jvm=21` is queried and no measurement uses the key `jvm`
 - **THEN** the command reports that `jvm` is not a known tag key and lists the known keys
 
 #### Scenario: Custom tags are stored and queryable
@@ -261,3 +239,22 @@ SHALL be a hard failure before any benchmark is executed.
 #### Scenario: Explicit opt-in discards results
 - **WHEN** the runner is invoked with `--no-database`
 - **THEN** the benchmark runs, no store write is attempted, and the run reports success
+
+### Requirement: `project` is supplied explicitly or derived from the benchmark JAR's repository
+`baas run` SHALL take `project` from `--project`, or — only when `git.resolveProject` is enabled — from
+the name of the git repository containing the benchmark JAR, resolving the main repository rather than a
+linked worktree directory. A measurement SHALL NOT be written when `project` cannot be resolved. The
+runner SHALL reject an unresolved `project` outright rather than substituting a placeholder value.
+
+#### Scenario: Explicit project is stored
+- **WHEN** `--project lynx-journal` is given
+- **THEN** the stored measurement has `pk = RESULT#lynx-journal`
+
+#### Scenario: Derived from the JAR's repository when enabled
+- **WHEN** `git.resolveProject` is `true`, no `--project` is given, and the JAR lies inside the
+  `lynx-journal` repository or one of its linked worktrees
+- **THEN** the stored measurement has `pk = RESULT#lynx-journal`
+
+#### Scenario: The runner refuses an unresolved project
+- **WHEN** `benchmark-runner` is invoked with no project value and no `project` tag
+- **THEN** it exits non-zero rather than storing a measurement under a placeholder project

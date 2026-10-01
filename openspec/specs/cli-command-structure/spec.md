@@ -69,18 +69,6 @@ SHALL name `baas admin build-image`.
 - **WHEN** the pointer resolves to an AMI that has been deregistered
 - **THEN** the command exits non-zero without launching an instance
 
-### Requirement: `baas run` accepts an explicit AMI override
-`baas run --ami-id <id>` SHALL launch from the given AMI instead of the pointer, failing when that AMI
-does not exist. There SHALL be no version-selection option, because exactly one image is maintained.
-
-#### Scenario: Explicit AMI override wins
-- **WHEN** `--ami-id ami-abc123` is given and that AMI exists
-- **THEN** the instance is launched from it regardless of the pointer value
-
-#### Scenario: Override naming a missing AMI fails before provisioning
-- **WHEN** `--ami-id ami-missing` is given and no such AMI exists
-- **THEN** the command exits non-zero and no instance is launched
-
 ### Requirement: `baas env diff` compares two runs' environments
 `baas env diff <resultPathA> <resultPathB>` SHALL be available as a top-level command, alongside the other
 day-to-day commands, and SHALL run under operator credentials.
@@ -106,24 +94,6 @@ SHALL NOT be considered forwarded.
 - **WHEN** user-data is rendered
 - **THEN** it still forwards `imageVersion` and `instanceType` observed on the instance
 
-### Requirement: The project is derived, with an override
-`baas run` SHALL derive the `project` value from the current git repository's name and SHALL accept
-`--project <name>` to override it. Derivation SHALL resolve the main repository, so that a run launched
-from a linked worktree is attributed to the repository rather than to the worktree directory. When
-neither is available the command SHALL fail before provisioning.
-
-#### Scenario: Derived project is used
-- **WHEN** `baas run` is invoked inside a git repository with no `--project`
-- **THEN** the repository name is forwarded as the `project` tag
-
-#### Scenario: A linked worktree resolves to its repository
-- **WHEN** `baas run` is invoked from a linked worktree with no `--project`
-- **THEN** the repository's name is forwarded, not the worktree directory's name
-
-#### Scenario: Unresolvable project fails before provisioning
-- **WHEN** `baas run` is invoked outside a git repository with no `--project`
-- **THEN** the command exits non-zero and no EC2 instance is launched
-
 ### Requirement: Discarding results requires an explicit flag on the run path
 `baas run` SHALL expose a `--no-database` pass-through that selects the no-op store on the runner.
 Without it, an unresolvable table name SHALL fail before any instance is launched.
@@ -138,20 +108,35 @@ Without it, an unresolvable table name SHALL fail before any instance is launche
 
 ### Requirement: Results filters cover the supported query patterns
 `baas results` SHALL accept `--request-id`, `--benchmark-name`, `--tag <key>=<value>` (repeatable),
-`--living-branches`, `--project` and `--limit`. `--request-id` SHALL be mutually exclusive with the other
-filters, and an invalid combination SHALL fail with a message naming the supported forms.
+`--project`, `--all-projects`, `--all-runs`, `--group-by` and `--limit`. `--request-id` SHALL be mutually
+exclusive with every option that selects rows — `--project`, `--all-projects`, `--benchmark-name` and
+`--tag` — because one run is already narrower than any of them and a disagreeing selector would be
+ignored silently. `--project` and `--all-projects` SHALL be mutually exclusive with each other. An
+invalid combination SHALL fail with a message naming the conflicting option.
 
 #### Scenario: Tag filter is accepted
-- **WHEN** `baas results --tag jdk=25.0.4` is invoked
+- **WHEN** `baas results --project p --tag jdk=25.0.4` is invoked
 - **THEN** matching rows are returned
 
 #### Scenario: Conflicting filters are rejected
 - **WHEN** both `--tag branch=main` and `--request-id abc` are given
 - **THEN** the command exits non-zero explaining that `--request-id` cannot be combined with other filters
 
+#### Scenario: A run lookup does not take a project
+- **WHEN** both `--request-id abc` and `--project p` are given
+- **THEN** the command exits non-zero naming `--project`, and issues no query
+
+#### Scenario: One project and every project are exclusive
+- **WHEN** both `--project p` and `--all-projects` are given
+- **THEN** the command exits non-zero naming both options
+
 #### Scenario: Limit bounds the output
 - **WHEN** `--limit 5` is given and more rows match
 - **THEN** at most five rows are returned
+
+#### Scenario: Removed options are rejected
+- **WHEN** `baas results --living-branches` or `baas results --all` is invoked
+- **THEN** picocli reports an unknown option error
 
 ### Requirement: A command downloads a run's S3 artifacts
 The CLI SHALL provide a command taking either a run identifier or a literal S3 result path, plus a
@@ -207,28 +192,6 @@ does not exist. The failure message SHALL name the option that supplies it.
 - **WHEN** `baas run` is invoked from a directory containing a buildable project
 - **THEN** no build tool is invoked, and the run uses only the named JAR
 
-### Requirement: `commit` and `branch` are derived, with overrides, and omitted when unknown
-`baas run` SHALL derive the `commit` and `branch` values from the current git repository and SHALL
-accept `--commit <value>` and `--branch <value>` to override them. When a value is neither supplied
-nor derivable, the corresponding tag SHALL be omitted from the run entirely; the command SHALL NOT
-substitute a placeholder value, and SHALL NOT fail.
-
-#### Scenario: Derived values are forwarded
-- **WHEN** `baas run` is invoked inside a git repository with neither option given
-- **THEN** the repository's current commit and branch are forwarded as the `commit` and `branch` tags
-
-#### Scenario: Explicit values win over derivation
-- **WHEN** `--commit` or `--branch` is given inside a git repository
-- **THEN** the supplied value is forwarded and the derived one is not
-
-#### Scenario: An unresolvable value is omitted, not invented
-- **WHEN** `baas run` is invoked outside a git repository with neither option given
-- **THEN** the run proceeds, and its stored measurement carries no `commit` and no `branch` tag
-
-#### Scenario: No placeholder value reaches the stored result
-- **WHEN** a run's commit or branch cannot be resolved
-- **THEN** no tag is stored whose value stands in for the unknown value
-
 ### Requirement: `baas run` can report its outcome as a machine-readable object
 `baas run` SHALL accept a `--format json` option that writes a single summary object to standard
 output, carrying at least the run identifier, the project, the run's S3 result path, the outcome, the
@@ -278,16 +241,120 @@ time rather than cached, so that a replaced resource cannot leave a stale identi
 - **WHEN** `baas config show` reports the configuration after `baas config sync`
 - **THEN** no stored field holds the bucket name, the results table name or the runner instance profile name
 
-### Requirement: Read-only commands can address another installation's results table
-`baas results` and `baas download` SHALL accept `--results-table <name>`, addressing that table for
-the invocation only and persisting nothing. No command that writes measurements SHALL accept such an
-override, so an operator cannot leave a configuration pointed at an archive and silently record new
-runs into it.
+### Requirement: Every command accepts an alternative configuration file
+Every `baas` command SHALL accept `--config-path <file>`, naming the configuration file the invocation
+reads and writes in place of `~/.baas/config.yaml`. The option SHALL be accepted before or after the
+subcommand name. When `--config-path` names a file that does not exist, a command that only reads
+configuration SHALL fail naming the path, and `baas config sync`, `baas config set` and `baas admin setup`
+SHALL create it. Without the option, behaviour on a missing `~/.baas/config.yaml` is unchanged. No command
+SHALL accept a per-invocation override of the results table or the working bucket: addressing another
+installation means naming that installation's configuration file.
 
 #### Scenario: Reading a retired installation's history
-- **WHEN** `baas results --results-table baas-3q7i7s65-results` runs on a machine configured for the current installation
-- **THEN** the retired table's measurements are reported and `~/.baas/config.yaml` is unchanged
+- **WHEN** `baas results --config-path ~/.baas/retired.yaml --project lynx-journal` runs, and that file
+  names a retired installation's prefix
+- **THEN** that installation's measurements are reported, and `~/.baas/config.yaml` is neither read nor
+  changed
 
-#### Scenario: The override is absent from the write path
-- **WHEN** `baas run --results-table other-table` or `baas config set --results-table other-table` is invoked
+#### Scenario: A second configuration is created by sync
+- **WHEN** `baas config sync --name baas-123456789012-dev --config-path ~/.baas/dev.yaml` runs and the
+  file does not exist
+- **THEN** `~/.baas/dev.yaml` is written with that prefix, and `~/.baas/config.yaml` is unchanged
+
+#### Scenario: A mistyped path fails rather than reading nothing
+- **WHEN** `baas results --config-path ~/.baas/nope.yaml` runs and the file does not exist
+- **THEN** the command exits non-zero naming `~/.baas/nope.yaml`, and issues no AWS call
+
+#### Scenario: The option is inherited on either side of the subcommand
+- **WHEN** `baas --config-path f.yaml results` and `baas results --config-path f.yaml` are each invoked
+- **THEN** both read `f.yaml`
+
+#### Scenario: Table and bucket overrides are gone
+- **WHEN** `baas results --results-table t`, `baas download --results-table t` or
+  `baas download --bucket b` is invoked
+- **THEN** picocli reports an unknown option error
+
+### Requirement: Git is consulted only when the operator enables it
+The configuration SHALL carry a `git.resolveProject` preference, `false` by default and set with
+`baas config set --git-resolve-project <true|false>`. When it is `false`, no command SHALL invoke git. When it is `true`, git SHALL be
+consulted only to derive a project name, as the `baas run` and `baas results` project requirements
+specify; it SHALL NOT be consulted for `branch` or `commit`.
+
+#### Scenario: A fresh configuration does not use git
+- **WHEN** `baas run` or `baas results` is invoked with a configuration that does not set
+  `git.resolveProject`
+- **THEN** no git process is started
+
+#### Scenario: The preference is set from the CLI
+- **WHEN** `baas config set --git-resolve-project true` is invoked
+- **THEN** the configuration file records the preference, and `baas config show` reports it
+
+### Requirement: The project is explicit unless derivation is enabled
+`baas run` SHALL require `--project <name>` unless `git.resolveProject` is `true`. When it is `true` and
+`--project` is absent, the project SHALL be the name of the git repository that contains the
+`--benchmark-jar` file, resolving the main repository rather than a linked worktree directory. The
+directory the command is invoked from SHALL NOT influence the project. When no project can be
+determined the command SHALL fail before provisioning, naming `--project`.
+
+#### Scenario: Project is required by default
+- **WHEN** `baas run --benchmark-jar target/b.jar jmh -- MyBenchmark` is invoked with
+  `git.resolveProject` unset
+- **THEN** the command exits non-zero naming `--project`, and no EC2 instance is launched
+
+#### Scenario: Derived from the JAR's repository, not the working directory
+- **WHEN** `git.resolveProject` is `true` and `baas run --benchmark-jar ~/src/lynx-journal/target/b.jar`
+  is invoked from inside a different repository
+- **THEN** `lynx-journal` is forwarded as the `project` tag
+
+#### Scenario: A linked worktree resolves to its repository
+- **WHEN** `git.resolveProject` is `true` and the benchmark JAR lies inside a linked worktree
+- **THEN** the repository's name is forwarded, not the worktree directory's name
+
+#### Scenario: A JAR outside any repository fails before provisioning
+- **WHEN** `git.resolveProject` is `true`, `--project` is absent and the JAR is not inside a git
+  repository
+- **THEN** the command exits non-zero naming `--project`, and no EC2 instance is launched
+
+#### Scenario: An explicit project wins
+- **WHEN** `--project other-name` is given with `git.resolveProject` `true`
+- **THEN** `other-name` is forwarded and git is not consulted
+
+### Requirement: `commit` and `branch` are caller-supplied tags, omitted when absent
+`baas run` SHALL record `commit` and `branch` only when supplied as `--tag commit=<value>` and
+`--tag branch=<value>`. It SHALL NOT derive either from git, SHALL NOT offer dedicated options for
+them, and SHALL NOT substitute a placeholder value when one is absent.
+
+#### Scenario: Supplied values are forwarded
+- **WHEN** `baas run --tag branch=main --tag commit=3f2a9c1 …` is invoked
+- **THEN** the runner invocation carries both tags
+
+#### Scenario: Nothing is derived
+- **WHEN** `baas run` is invoked inside a git repository with neither tag given
+- **THEN** the stored measurement carries no `commit` and no `branch` tag
+
+#### Scenario: Dedicated options are gone
+- **WHEN** `baas run --branch main …` or `baas run --commit abc …` is invoked
+- **THEN** picocli reports an unknown option error
+
+### Requirement: The watchdog fires a fixed margin after the benchmark timeout
+`baas run` SHALL accept `--watchdog-margin <seconds>`, defaulting to the configuration's
+`ec2.watchdogMarginSeconds`, itself defaulting to 300 and set with `baas config set --watchdog-margin`. The instance's self-termination watchdog SHALL
+fire `timeout + margin` seconds after launch, and the CLI SHALL stop polling at the same bound. A margin
+below 60 SHALL be rejected before provisioning. There SHALL be no option or configuration key setting an
+absolute wall-clock bound.
+
+#### Scenario: Default bound is unchanged
+- **WHEN** `baas run` is invoked with the default timeout of 7200 and no margin given
+- **THEN** the rendered watchdog delay is 7500 seconds
+
+#### Scenario: Margin is added to an explicit timeout
+- **WHEN** `baas run --timeout 1000 --watchdog-margin 120 …` is invoked
+- **THEN** the rendered watchdog delay is 1120 seconds, and the CLI's poll cap is 1120 seconds
+
+#### Scenario: A too-small margin is refused
+- **WHEN** `baas run --watchdog-margin 10 …` is invoked
+- **THEN** the command exits non-zero naming the 60-second minimum, and no EC2 instance is launched
+
+#### Scenario: The absolute option is gone
+- **WHEN** `baas run --max-wall-clock 9000 …` or `baas config set --max-wall-clock 9000` is invoked
 - **THEN** picocli reports an unknown option error
