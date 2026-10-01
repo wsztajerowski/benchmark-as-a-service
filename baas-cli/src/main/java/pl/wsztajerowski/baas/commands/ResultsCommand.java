@@ -19,6 +19,8 @@ import pl.wsztajerowski.baas.results.ResultsQueryService;
 import pl.wsztajerowski.baas.results.ResultsTable;
 
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.time.LocalTime;
@@ -51,6 +53,10 @@ public class ResultsCommand implements Callable<Integer> {
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
+
+    /** The frame on screen, reprinted on the normal screen when {@code --watch} ends. */
+    private String lastFrame;
+    private boolean onAlternateScreen;
 
     /**
      * Addresses another installation's results table for this invocation only, and persists
@@ -188,26 +194,54 @@ public class ResultsCommand implements Callable<Integer> {
         return null;
     }
 
-    /** Runs until interrupted (Ctrl+C); the last frame stays on screen. */
+    /**
+     * Runs until interrupted (Ctrl+C), on the alternate screen. Leaving it restores the normal
+     * screen and reprints the last frame there, so the result outlives the command. Left in a
+     * {@code finally} for a failed query — its error must be logged on the normal screen, not lost
+     * with the alternate one — and in a shutdown hook for Ctrl+C. {@link #leaveWatch} is
+     * idempotent, so both firing is harmless.
+     */
     private void watch(ResultsQueryService results) throws InterruptedException {
         var time = DateTimeFormatter.ofPattern("HH:mm:ss");
-        while (true) {
-            var notes = new ArrayList<String>();
-            List<ResultRow> rows = fetch(results, notes::add, notes::add);
-            ResultsQueryService.environmentWarning(rows).ifPresent(notes::add);
-            printFrame(rows, notes, LocalTime.now().format(time));
-            Thread.sleep(WATCH_INTERVAL.toMillis());
+        enterWatch();
+        Runtime.getRuntime().addShutdownHook(new Thread(this::leaveWatch));
+        try {
+            while (true) {
+                var notes = new ArrayList<String>();
+                List<ResultRow> rows = fetch(results, notes::add, notes::add);
+                ResultsQueryService.environmentWarning(rows).ifPresent(notes::add);
+                printFrame(rows, notes, LocalTime.now().format(time));
+                Thread.sleep(WATCH_INTERVAL.toMillis());
+            }
+        } finally {
+            leaveWatch();
+        }
+    }
+
+    synchronized void enterWatch() {
+        console().enterAlternateScreen();
+        onAlternateScreen = true;
+    }
+
+    synchronized void leaveWatch() {
+        if (!onAlternateScreen) {
+            return;
+        }
+        onAlternateScreen = false;
+        console().leaveAlternateScreen();
+        if (lastFrame != null) {
+            console().print(lastFrame);
         }
     }
 
     /**
-     * One {@code --watch} frame: clear, header, table, then the notes that would otherwise be
-     * logged — in the frame, because logging them would repeat the same text every refresh and
-     * scroll the table away.
+     * One {@code --watch} frame: header, table, then the notes that would otherwise be logged —
+     * in the frame, because logging them would repeat the same text every refresh and scroll the
+     * table away. Rendered to a string first, so the same text can be reprinted on exit.
      */
-    void printFrame(List<ResultRow> rows, List<String> notes, String refreshedAt) {
-        var out = console();
-        out.clearScreen();
+    synchronized void printFrame(List<ResultRow> rows, List<String> notes, String refreshedAt) {
+        var frame = new StringWriter();
+        var out = console().renderingTo(new PrintWriter(frame));
         out.println(out.faint("Every " + WATCH_INTERVAL.toSeconds() + "s · refreshed " + refreshedAt
             + " · Ctrl+C to stop"));
         out.println("");
@@ -216,6 +250,8 @@ public class ResultsCommand implements Callable<Integer> {
             out.println("");
             out.println(note);
         }
+        lastFrame = frame.toString();
+        console().showFrame(lastFrame);
     }
 
     private Console console() {

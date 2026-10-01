@@ -161,6 +161,31 @@ class ConsoleOutputTest {
         assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
     }
 
+    /**
+     * The defect a real terminal showed: clearing the normal screen scrolled it, and each frame was
+     * drawn at the bottom of a screen-high gap. Frames now go to the alternate screen, and leaving
+     * it reprints the last frame on the normal one — once, however many times leave is called.
+     */
+    @Test
+    void watchDrawsOnTheAlternateScreenAndLeavesTheLastFrameBehind() {
+        var out = new StringWriter();
+        var command = new ResultsCommand();
+        command.console = Console.withFlags(new PrintWriter(out), true, false);
+
+        command.enterWatch();
+        command.printFrame(List.of(row("r1", "1.0.0")), List.of(), "12:00:00");
+        command.printFrame(List.of(row("r2", "1.0.0")), List.of(), "12:00:30");
+        command.leaveWatch();
+        command.leaveWatch();
+
+        String screen = out.toString();
+        String leave = ESC + "[?1049l";
+        assertThat(screen).startsWith(ESC + "[?1049h" + ESC + "[H" + ESC + "[2J");
+        assertThat(screen.split(java.util.regex.Pattern.quote(leave), -1)).hasSize(2);
+        String afterLeave = screen.substring(screen.indexOf(leave) + leave.length());
+        assertThat(afterLeave).contains("refreshed 12:00:30", "r2").doesNotContain("r1").doesNotContain(ESC + "[2J");
+    }
+
     // --- status line gating ----------------------------------------------------------------
 
     /** CI's path: no terminal, so no status line — the poll loop keeps its "Still running" log line. */

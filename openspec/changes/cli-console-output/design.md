@@ -139,21 +139,30 @@ Not interactive, or `--format json`: the status line is never created, and the e
   stdout gated by `System.console()`, every wrong guess falls back to today's log lines. The cost is
   that `baas run --format json > r.json` shows log lines, not the live line.
 
-### `--watch` clears the screen per frame, at a fixed 30-second interval
+### `--watch` draws on the alternate screen, at a fixed 30-second interval
 
 Each refresh runs the same queries and filters as one plain invocation, builds a frame (a header line
 with the time of the refresh and "Ctrl+C to stop", the table, then row-derived warnings), and writes
-`ESC[H ESC[2J` (cursor home, clear screen) followed by the frame. The row-derived warnings are the
-environment warning, the unknown-tag warning and the `--limit` note, which are logged in non-watch
-mode.
+`ESC[H ESC[2J` followed by the frame — on the **alternate screen** (`ESC[?1049h`), the buffer
+`watch(1)`, `top` and `less` use. The row-derived warnings are the environment warning, the
+unknown-tag warning and the `--limit` note, which are logged in non-watch mode.
+
+Leaving it (`ESC[?1049l`) restores the normal screen as it was, and the last frame is reprinted there,
+so the result outlives the command. Leaving happens in a `finally` (a failed query's error must be
+logged on the normal screen, not lost with the alternate one) and in a shutdown hook (Ctrl+C); it is
+idempotent.
 
 The interval is fixed at 30 s: a run lands minutes apart, and one partition `Query` per refresh is
 negligible on-demand read cost. Refusal happens in validation, before any AWS client is built. A query
 failure ends the command the same way it ends a plain `baas results`.
 
+- *Rejected after use: clearing the normal screen.* The first implementation wrote `ESC[H ESC[2J`
+  to the normal screen. On a real terminal each frame was drawn at the bottom of a screen-high gap:
+  terminals that implement `ESC[2J` by scrolling the old content into scrollback leave the cursor
+  below it. A pty recording counts the escapes correctly and cannot show the placement, so only a
+  human at a terminal saw it (verify.md W4).
 - *Rejected: cursor-up by the previous frame's height.* A frame taller than the terminal scrolls, and
-  cursor-up then overwrites the wrong lines. Clearing the screen has no such failure, and it is how
-  `watch(1)` behaves.
+  cursor-up then overwrites the wrong lines. A clear on the alternate screen has no such failure.
 - *Rejected: logging row-derived warnings on each refresh.* They would scroll the frame every 30 s,
   and repeat the same text indefinitely.
 - *Rejected: an `--interval` option.* Nobody has asked for one, and it can be added later without

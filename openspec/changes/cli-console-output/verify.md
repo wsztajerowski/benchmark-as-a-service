@@ -93,6 +93,19 @@ the same way on both builds; `±0,000` is PR #66's subject (W1).
 in 1m45s. Its log carries 3 `Still running (…)… elapsed: Ns` lines, no status-line text and no
 `ESC[K`, so CI takes the non-interactive path unchanged.
 
+## After review on a real terminal — 2026-10-01
+
+- **W4 — `--watch` frames drawn at the bottom of the screen** — **fixed**. Reported from a real
+  terminal (screenshot): every frame sat under a screen-high gap. `ESC[H ESC[2J` on the *normal*
+  screen is not portable — terminals that implement the clear by scrolling into scrollback leave
+  the cursor below the blank area. 7.4's pty recording counted the escapes and could not see
+  placement, which is why it passed. `--watch` now draws on the alternate screen (`ESC[?1049h`,
+  as `watch`/`top`/`less` do), and on exit leaves it and reprints the last frame on the normal
+  screen. Pty check: `ESC[?1049h → ESC[H ESC[2J → refreshed 11:17:38 → ESC[H ESC[2J → refreshed
+  11:18:08 → ^C → ESC[?1049l → refreshed 11:18:08`, exit 130. Pinned by
+  `ConsoleOutputTest.watchDrawsOnTheAlternateScreenAndLeavesTheLastFrameBehind`. Placement itself
+  still needs the human check it got the first time.
+
 ## Result
 
 24/24 tasks complete. W1 (merge with #66) is open by nature and is resolved by whichever PR merges

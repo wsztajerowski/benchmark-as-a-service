@@ -67,10 +67,11 @@ class ConsoleTest {
     }
 
     @Test
-    void clearingTheScreenOfAPipeIsABug() {
+    void screenControlOnAPipeIsABug() {
         var console = console(false, Map.of());
 
-        assertThatThrownBy(console::clearScreen).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(console::enterAlternateScreen).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> console.showFrame("x")).isInstanceOf(IllegalStateException.class);
     }
 
     /** printf is Locale.ROOT, whatever the default: a comma decimal would corrupt JSON and CSV. */

@@ -100,12 +100,33 @@ public final class Console {
         return sgr("32", text);
     }
 
-    /** Clears the screen and homes the cursor. Only meaningful, and only allowed, when interactive. */
-    public void clearScreen() {
-        if (!interactive) {
-            throw new IllegalStateException("clearScreen on a non-interactive console");
-        }
-        write(ESC + "H" + ESC + "2J");
+    /**
+     * Switches to the terminal's alternate screen, the one {@code watch}, {@code top} and
+     * {@code less} draw on. Clearing the normal screen is not portable: several terminals implement
+     * {@code ESC[2J} by scrolling the old content into scrollback and leave the cursor below it, so
+     * each frame landed at the bottom of a screen-high gap. On the alternate screen a clear stays in
+     * place and home is the top row.
+     */
+    public void enterAlternateScreen() {
+        requireInteractive("enterAlternateScreen");
+        write(ESC + "?1049h");
+    }
+
+    /** Back to the normal screen, exactly as it was before {@link #enterAlternateScreen()}. */
+    public void leaveAlternateScreen() {
+        requireInteractive("leaveAlternateScreen");
+        write(ESC + "?1049l");
+    }
+
+    /** Replaces the whole (alternate) screen with {@code frame}, drawn from the top row. */
+    public void showFrame(String frame) {
+        requireInteractive("showFrame");
+        write(ESC + "H" + ESC + "2J" + frame);
+    }
+
+    /** The same flags writing elsewhere — for rendering a frame to a string before showing it. */
+    public Console renderingTo(PrintWriter target) {
+        return new Console(target, interactive, colour);
     }
 
     /**
@@ -142,6 +163,12 @@ public final class Console {
     void raw(String text) {
         out.print(text);
         out.flush();
+    }
+
+    private void requireInteractive(String operation) {
+        if (!interactive) {
+            throw new IllegalStateException(operation + " on a non-interactive console");
+        }
     }
 
     private String sgr(String code, String text) {
