@@ -48,8 +48,9 @@ CLI cannot pass CI. `benchmark-runner.yml`, `exec-single-benchmark.yml`, `start-
 `stop-ec2-runner.yml` and the `act` harness under `.github/test/` are deleted; the consumer
 contract is *install the CLI*, not *call our reusable workflow*.
 
-Sequence diagrams for the main CLI commands: [`docs/diagrams/`](docs/diagrams/) (Mermaid sources,
-no checked-in SVGs — update the `.mmd` when a command changes). Design rationale and open risks:
+Sequence diagrams for the main CLI commands and the C4 views: [`docs/diagrams/`](docs/diagrams/) (Mermaid sources,
+no checked-in SVGs — update the `.mmd` when a command changes; `mmdc` rejects a `;` in sequence-diagram text, it
+ends the statement). State graph and gap list: [`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md). Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
@@ -368,8 +369,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   now that the old path is gone.
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
-  table if you want one. The local act E2E additionally needs `/baas/mongo/connection-string` as a
-  SecureString, since the GHA path it exercises still writes to Mongo.
+  table if you want one.
 - **`scripts/install.sh` is the one script CI does invoke.** `release.yml`'s `prepareCmd` `sed`s the
   released version into it and publishes it as a release asset, but `install-test.yml` never installs
   that asset: it builds a fixture release in the job (`BAAS_BASE_URL: file://…/fixture`) and runs

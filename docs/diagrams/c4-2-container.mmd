@@ -1,0 +1,34 @@
+C4Container
+    title BaaS — Containers (level 2)
+
+    Person(author, "Benchmark author / CI job", "Operator credentials: a profile assuming OperatorRole, or OIDC in CI")
+    Person(admin, "Installation admin", "Deployer credentials (aws.profile)")
+
+    System_Boundary(local, "Operator machine (laptop or GitHub-hosted runner)") {
+        Container(cli, "baas CLI", "Java 25, picocli, AWS SDK v2", "One fat JAR. Bundles the core template, the deployer policy template and runner-image.yaml.")
+        ContainerDb(config, "~/.baas/config.yaml", "YAML", "Credentials profile names, region, prefix, preferences. Nothing derivable or resolvable.")
+    }
+
+    System_Boundary(install, "Installation <prefix> = baas-<accountId>, one per account") {
+        Container(stack, "Core stack", "CloudFormation", "Networking, bucket, table, RunnerRole, OperatorRole, Image Builder pipeline")
+        ContainerDb(bucket, "Run bucket <prefix>", "S3, Retain, versioning suspended", "runs/<project>/<runId>/…, releases/<v>/benchmark-runner.jar, image-builds/")
+        ContainerDb(table, "Results table <prefix>-results", "DynamoDB on-demand, Retain", "One item per measurement; GSI requestId-index")
+        ContainerDb(pointer, "AMI pointer", "SSM parameter /<prefix>/runner/ami-id", "Written by build-image only; NOT a stack resource")
+        Container(pipeline, "Runner image pipeline", "EC2 Image Builder", "Bakes JDK, perf, async-profiler, kernel tunables into one AMI")
+        Container(runner, "Runner instance", "EC2 from the baked AMI; user-data + benchmark-runner.jar", "Writes environment.json, runs the benchmark under timeout, uploads, writes run-status, self-terminates")
+    }
+
+    Rel(author, cli, "run / results / download / env diff")
+    Rel(admin, cli, "admin setup / build-image / image / teardown")
+    Rel(cli, config, "Reads; setup, config set and config sync write")
+    Rel(cli, stack, "Deploys / updates / deletes (deployer); DescribeStacks for outputs (operator)")
+    Rel(cli, pipeline, "build-image: StartImagePipelineExecution, waits")
+    Rel(cli, pointer, "build-image writes; run reads")
+    Rel(cli, bucket, "Uploads JARs, seeds releases/, polls run-status, downloads artifacts")
+    Rel(cli, runner, "RunInstances, DescribeInstances, TerminateInstances (shutdown hook)")
+    Rel(cli, table, "Query / Scan (results, download <runId>)")
+    Rel(runner, bucket, "Fetches JARs; uploads output, environment.json, jmh-result.json, run-status")
+    Rel(runner, table, "PutItem per measurement")
+    Rel(pipeline, bucket, "Build logs under image-builds/")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

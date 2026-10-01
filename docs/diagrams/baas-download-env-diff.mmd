@@ -1,0 +1,43 @@
+sequenceDiagram
+    actor User as Operator or CI job
+    participant DL as DownloadCommand
+    participant ED as EnvDiffSubcommand
+    participant DDB as DynamoDB<br/>requestId-index
+    participant S3 as S3 bucket <prefix>
+    participant FS as Local directory
+
+    rect rgb(240, 248, 255)
+        Note over User,FS: baas download <runId|resultPath> [-o dir]
+        User->>DL: baas download 20260820T174432812Z-a3f9c21b
+        alt argument matches the run-id shape
+            DL->>DDB: resultPathForRun(id)
+            alt no item (also: a run that failed before storing anything)
+                DL-->>User: "No run found", exit 1 -- nothing written
+            end
+            DDB-->>DL: stored resultPath (old runs keep their old path)
+        else anything else is taken as a literal result path
+            Note over DL: runs/<project>/<runId> or a pre-unified-layout path
+        end
+        DL->>S3: ListObjectsV2(prefix/)
+        alt empty
+            DL-->>User: "No artifacts found", exit 1 -- nothing written
+        end
+        loop each key, input/ JARs included
+            DL->>S3: GetObject
+            DL->>FS: write under -o, default ./<last path segment>
+        end
+    end
+
+    rect rgb(245, 255, 245)
+        Note over User,FS: baas env diff <resultPathA> <resultPathB> -- result PATHS only, no run ids
+        User->>ED: baas env diff runs/p/<idA> runs/p/<idB>
+        ED->>S3: GetObject <A>/environment.json
+        ED->>S3: GetObject <B>/environment.json
+        alt either missing
+            ED-->>User: error naming the key, exit 1
+        end
+        opt schemaVersion differs
+            ED-->>User: warn (stderr)
+        end
+        ED-->>User: "No differences." or FIELD / A / B table on stdout
+    end
