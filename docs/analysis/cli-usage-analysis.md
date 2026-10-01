@@ -223,7 +223,10 @@ instances, plus `--terminate <id>`, is the smaller answer if U3 is ever worth cl
 ## 7. Open questions for the walkthrough
 
 These are deliberately not decided here:
-- U1: should teardown retire the image unconditionally, or behind a flag like `--delete-bucket`?
+- ~~U1: should teardown retire the image unconditionally, or behind a flag like `--delete-bucket`?~~
+  **Decided 2026-10-01: unconditionally.** The image is cheap to rebuild and git is its archive, while
+  a surviving pointer is what lets a later setup run on an inherited image unnoticed. To be
+  implemented as its own OpenSpec change.
 - U3: is a run listing worth a command, given the watchdog bound?
 - U11: is a second security group worth a stack replacement of nothing (new resource only)?
 
