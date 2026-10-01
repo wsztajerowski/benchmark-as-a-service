@@ -116,6 +116,12 @@ class ResultsProjectSelectionTest {
         assertThat(command(true, null, "--project", "p", "--all-projects").call()).isEqualTo(2);
     }
 
+    /** One run is narrower than any project; a mismatched project would be ignored silently. */
+    @Test
+    void aRunLookupCannotBeCombinedWithAProject() throws Exception {
+        assertThat(command(true, null, "--request-id", "r", "--project", "p").call()).isEqualTo(2);
+    }
+
     @Test
     void aRunLookupCannotBeCombinedWithEveryProject() throws Exception {
         assertThat(command(true, null, "--request-id", "r", "--all-projects").call()).isEqualTo(2);

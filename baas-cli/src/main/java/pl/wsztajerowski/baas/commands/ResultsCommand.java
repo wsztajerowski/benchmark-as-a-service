@@ -279,12 +279,15 @@ public class ResultsCommand implements Callable<Integer> {
 
     /**
      * {@code --request-id} reads a different index and returns one run whole; combining it with a
-     * filter would silently ignore the filter, which reads as the filter being broken.
+     * filter would silently ignore the filter, which reads as the filter being broken. A project is
+     * refused too: one run is already narrower than any project, and a project that disagreed with
+     * the run's own would be ignored without a word.
      */
     private String requestIdConflict() {
         if (requestId == null) {
             return null;
         }
+        if (project != null) return "--project";
         if (benchmarkName != null) return "--benchmark-name";
         if (tags != null && !tags.isEmpty()) return "--tag";
         if (allProjects) return "--all-projects";
