@@ -65,7 +65,9 @@ Paths are under `baas-cli/src/`; `T:` names the covering test class.
 - **W2 — design drift, corrected.** design.md described the picker's `Scan` as projecting `pk` and the
   exclusion tag and filtering client-side; the code filters server-side and projects `project`. design.md
   now describes the implementation and says why. No code change.
-- **W3 — help footers show `baas run` without `--project`.** `BaasApp.java:46` and `RunCommand.java:59-60`
+- **W3 — help footers showed `baas run` without `--project`. Resolved:** both footers now carry
+  `--benchmark-jar … --project …`, and `baas run --help` names `--git-resolve-project`; every rendered line
+  stays under 80 columns. Original finding: `BaasApp.java:46` and `RunCommand.java:59-60`
   print examples that now fail on a fresh configuration (they already lacked the required
   `--benchmark-jar`). *Recommendation:* add `--benchmark-jar … --project …` to the examples, or trim them to
   the `--` rule they exist to show.

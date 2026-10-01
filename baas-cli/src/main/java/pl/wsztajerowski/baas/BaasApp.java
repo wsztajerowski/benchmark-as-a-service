@@ -43,7 +43,8 @@ import java.nio.file.Path;
         "  baas admin setup                       # deploy the stack",
         "  baas admin build-image                 # bake the runner AMI (~15 min)",
         "  baas config set --operator-profile <p> # day-to-day credentials",
-        "  baas run jmh -- MyBenchmark -f 1       # note the -- separator",
+        "  baas run --benchmark-jar target/b.jar --project my-bench \\",
+        "    jmh -- MyBenchmark -f 1              # note the -- separator",
         "",
         "See infra/README.md for the one-time IAM step."
     }
