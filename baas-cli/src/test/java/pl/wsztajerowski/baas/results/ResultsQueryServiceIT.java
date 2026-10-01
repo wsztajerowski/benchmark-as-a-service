@@ -26,14 +26,15 @@ import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Covers the two access paths against a real DynamoDB: the project partition and the request-ID
- * index. Both are exercised end to end through {@code MeasurementItemMapper}, so a key-encoding
+ * Covers every access path against a real DynamoDB: the project partition, the request-ID index,
+ * and the two scans (every project, and the picker's project list). Both are exercised end to end through {@code MeasurementItemMapper}, so a key-encoding
  * mistake shows up as a missing row here rather than in production.
  */
 @Testcontainers(disabledWithoutDocker = true)
@@ -201,6 +202,71 @@ class ResultsQueryServiceIT {
         assertThat(rows).singleElement()
             .extracting(ResultRow::benchmarkName)
             .isEqualTo("com.example.Bench.kept");
+    }
+
+    /** {@code --all-runs}: the sweep keeps excluded rows, and the request still validates. */
+    @Test
+    void aSweepIncludingExcludedRowsReturnsThem() {
+        put(measurement("lynx-journal", "req-1", "kept", Map.of()));
+        put(measurement("lynx-journal", "req-2", "excluded",
+            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+
+        assertThat(service.queryProject("lynx-journal", true))
+            .extracting(ResultRow::benchmarkName)
+            .containsExactlyInAnyOrder("com.example.Bench.kept", "com.example.Bench.excluded");
+    }
+
+    @Test
+    void everyProjectIsOneScanThatStillDropsExcludedRows() {
+        put(measurement("lynx-journal", "req-1", "one", Map.of()));
+        put(measurement("other-project", "req-2", "two", Map.of()));
+        put(measurement("other-project", "req-3", "excluded",
+            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+
+        assertThat(service.scanAllProjects(false))
+            .extracting(ResultRow::project)
+            .containsExactlyInAnyOrder("lynx-journal", "other-project");
+        assertThat(service.scanAllProjects(true)).hasSize(3);
+    }
+
+    /**
+     * A project whose every row is excluded would open onto an empty table, so the picker leaves it
+     * out. The fixture project CI writes to is exactly that.
+     */
+    @Test
+    void thePickerListsOnlyProjectsWithAVisibleRow() {
+        put(measurement("b-fixture", "req-1", "selfTest",
+            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+        put(measurement("c-real", "req-2", "one", Map.of()));
+        put(measurement("a-real", "req-3", "one", Map.of()));
+        put(measurement("a-real", "req-4", "two", Map.of()));
+
+        assertThat(service.listVisibleProjects()).containsExactly("a-real", "c-real");
+    }
+
+    /**
+     * A Scan page stops at 1 MB whatever matches, and the filter applies after that budget — so a
+     * page can come back empty or short with more behind it. More than a page of rows proves both
+     * scan paths read to exhaustion.
+     */
+    @Test
+    void bothScansReadPastTheFirstPage() {
+        String padding = "x".repeat(1000);
+        var batch = new java.util.ArrayList<software.amazon.awssdk.services.dynamodb.model.WriteRequest>();
+        for (int i = 0; i < 1500; i++) {
+            var item = MeasurementItemMapper.toItem(measurement("noise", "req-" + i, "m" + i,
+                Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true", "padding", padding)));
+            batch.add(software.amazon.awssdk.services.dynamodb.model.WriteRequest.builder()
+                .putRequest(r -> r.item(item)).build());
+            if (batch.size() == 25) {
+                client.batchWriteItem(r -> r.requestItems(Map.of(tableName, List.copyOf(batch))));
+                batch.clear();
+            }
+        }
+        put(measurement("visible", "req-v", "one", Map.of()));
+
+        assertThat(service.scanAllProjects(true)).hasSize(1501);
+        assertThat(service.listVisibleProjects()).containsExactly("visible");
     }
 
     @Test

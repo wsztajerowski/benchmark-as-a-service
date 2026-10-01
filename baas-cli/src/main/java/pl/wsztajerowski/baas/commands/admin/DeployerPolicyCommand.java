@@ -7,6 +7,7 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
@@ -50,12 +51,14 @@ public class DeployerPolicyCommand implements Callable<Integer> {
             + "baas-<accountId> — e.g. a by-hand development installation.")
     String prefix;
 
-    private final ConfigService configService = new ConfigService();
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() {
         var renderer = new DeployerPolicyRenderer();
-        var config = configService.load();
+        var config = configService().load();
         var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
 
         String accountId;

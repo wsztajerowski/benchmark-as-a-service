@@ -50,6 +50,12 @@ jobs:
       BENCHMARK_TYPE: jmh-with-async
       BENCHMARK_CLASS: Incrementing_Synchronized
       BAAS: java -jar baas-cli/target/baas-cli.jar
+      # Named, never derived: `baas run` consults git for none of these unless git.resolveProject
+      # is enabled, and this job deliberately leaves it off. The PR's head commit, not the merge
+      # commit GitHub checks out, because that is the revision a reader would look up.
+      PROJECT: ${{ github.event.repository.name }}
+      RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
+      RUN_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Checkout repository
@@ -70,9 +76,9 @@ jobs:
         with:
           # Federates straight into the operator role. No intermediate role: a role-chained
           # session is capped at 60 minutes by STS whatever MaxSessionDuration says, and this run
-          # can last up to the 7500 s wall-clock cap. A session expiring mid-poll would kill the
-          # polling AND the CLI's shutdown hook, leaving the shell watchdog to terminate — a red
-          # job with a good measurement and a full EC2 bill.
+          # can last up to the 7500 s watchdog bound (timeout + margin). A session expiring
+          # mid-poll would kill the polling AND the CLI's shutdown hook, leaving the shell watchdog
+          # to terminate — a red job with a good measurement and a full EC2 bill.
           role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 9000
@@ -100,6 +106,9 @@ jobs:
           status=0
           $BAAS run "$BENCHMARK_TYPE" \
             --format json \
+            --project "$PROJECT" \
+            --tag branch="$RUN_BRANCH" \
+            --tag commit="$RUN_COMMIT" \
             --runner-jar benchmark-runner/target/benchmark-runner.jar \
             --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
             --tag exclude_from_results=true \
@@ -135,26 +144,31 @@ jobs:
             | tee measurements.json
           test "$(jq 'length' measurements.json)" -gt 0
 
+      # source=ci is asserted from the stored tag map, which `--format json` now carries whole.
       - name: The measurements carry the tags this job asked for and the instance observed
         run: |
           test "$(jq -r '.[0].imageVersion // "null"' measurements.json)" != "null"
           test "$(jq -r '.[0].instanceType // "null"' measurements.json)" != "null"
+          test "$(jq -r '.[0].tags.project' measurements.json)" = "$PROJECT"
+          test "$(jq -r '.[0].tags.branch' measurements.json)" = "$RUN_BRANCH"
+          test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
+          test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
 
-      # Deliberately not asserted here: source=ci. `baas results --format json` projects score
-      # columns plus imageVersion/instanceType, not the whole tag map, and --request-id refuses to
-      # combine with --tag (the filter would be silently ignored) — while the project sweep that
-      # does take --tag is exactly what this run is excluded from. Asserting it would mean
-      # re-implementing a DynamoDB query in shell, which is the class of thing this workflow
-      # exists to stop doing. The derivation is unit-tested in RunCommandTest, including that the
-      # tag reaches the rendered user-data, and the stored value is checked by hand in tasks 6.5.
-
-      # Excluded from the project sweep, present under its own id: the two halves of the
-      # exclusion contract, asserted against each other.
+      # Excluded from the project sweep, present under its own id and under --all-runs: the halves
+      # of the exclusion contract, asserted against each other. The sweep groups by commit — a tag
+      # only this run carries — so best-per-group selection cannot be what hides it: if exclusion
+      # broke, this run would be its group's only row and would surface.
       - name: The excluded run is absent from the project sweep
         run: |
-          $BAAS results --project "${{ steps.run.outputs.project }}" --all --format json > sweep.json
+          $BAAS results --project "$PROJECT" --group-by commit --format json > sweep.json
           test "$(jq --arg id "${{ steps.run.outputs.run_id }}" \
             '[.[] | select(.requestId == $id)] | length' sweep.json)" -eq 0
+
+      - name: The excluded run is present when every run is asked for
+        run: |
+          $BAAS results --project "$PROJECT" --all-runs --format json > every-run.json
+          test "$(jq --arg id "${{ steps.run.outputs.run_id }}" \
+            '[.[] | select(.requestId == $id)] | length' every-run.json)" -gt 0
 
       - name: The image-dependent artifacts reached the run's own prefix
         run: |

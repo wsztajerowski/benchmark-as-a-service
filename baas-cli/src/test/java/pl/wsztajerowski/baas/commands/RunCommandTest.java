@@ -110,8 +110,10 @@ class RunCommandTest {
     void buildsTheDerivedTagsAlongsideCallerTags() {
         var command = new RunCommand();
         command.extraTags.put("experiment", "gc-tuning");
+        command.extraTags.put("commit", "abc123");
+        command.extraTags.put("branch", "main");
 
-        var tags = command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main");
+        var tags = command.buildRunnerTags("jmh", "lynx-journal");
 
         assertThat(tags)
             .containsEntry("project", "lynx-journal")
@@ -126,7 +128,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("project", "explicit");
 
-        assertThat(command.buildRunnerTags("jmh", "derived", "abc123", "main"))
+        assertThat(command.buildRunnerTags("jmh", "derived"))
             .containsEntry("project", "explicit");
     }
 
@@ -138,8 +140,9 @@ class RunCommandTest {
     @Test
     void tagsTheBranchNowThatThePathNoLongerCarriesIt() {
         var command = new RunCommand();
+        command.extraTags.put("branch", "main");
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal"))
             .containsEntry("branch", "main");
     }
 
@@ -190,7 +193,7 @@ class RunCommandTest {
     void aLaptopRunIsTaggedLocal() {
         var command = new RunCommand();
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main", Map.of()))
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal", Map.of()))
             .containsEntry("source", "local");
     }
 
@@ -198,7 +201,7 @@ class RunCommandTest {
     void aContinuousIntegrationRunIsTaggedCi() {
         var command = new RunCommand();
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal",
             Map.of("CI", "true", "GITHUB_ACTIONS", "true")))
             .containsEntry("source", "ci");
     }
@@ -213,7 +216,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("source", "nightly");
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal",
             Map.of("CI", "true")))
             .containsEntry("source", "nightly");
     }
@@ -223,7 +226,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("source", "nightly");
 
-        assertThatCode(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+        assertThatCode(() -> command.buildRunnerTags("jmh", "lynx-journal",
             Map.of()))
             .doesNotThrowAnyException();
     }
@@ -236,7 +239,7 @@ class RunCommandTest {
     void ciSetToFalseIsNotContinuousIntegration() {
         var command = new RunCommand();
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main",
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal",
             Map.of("CI", "false")))
             .containsEntry("source", "local");
     }
@@ -246,7 +249,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("branch", "explicit");
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal"))
             .containsEntry("branch", "explicit");
     }
 
@@ -261,7 +264,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("jdk", "8");
 
-        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("jdk")
             .as("the error must list every reserved key, not just the one that collided")
@@ -282,7 +285,7 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("type", "jcstress");
 
-        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("type");
     }
@@ -293,108 +296,130 @@ class RunCommandTest {
         var command = new RunCommand();
         command.extraTags.put("commit", "deadbeef");
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", "main"))
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal"))
             .containsEntry("commit", "deadbeef");
     }
 
     /**
      * `commit=unknown` is the same junk as the RESULT#unknown partition the runner now refuses:
-     * a non-answer wearing a value's clothing, in the only query surface the tool has.
+     * a non-answer wearing a value's clothing, in the only query surface the tool has. Nothing is
+     * derived any more, so an untagged run simply carries neither key — even inside a repository.
      */
     @Test
-    void omitsAnUnresolvableCommitRatherThanRecordingUnknown() {
+    void neitherCommitNorBranchIsDerivedWhenTheCallerSuppliesNone() {
         var command = new RunCommand();
 
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", null, "main"))
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal"))
             .doesNotContainKey("commit")
-            .containsEntry("branch", "main");
-    }
-
-    @Test
-    void omitsAnUnresolvableBranchRatherThanRecordingUnknown() {
-        var command = new RunCommand();
-
-        assertThat(command.buildRunnerTags("jmh", "lynx-journal", "abc123", null))
-            .doesNotContainKey("branch")
-            .containsEntry("commit", "abc123");
+            .doesNotContainKey("branch");
     }
 
     @Test
     void aRunOutsideARepositoryStillCarriesItsProjectAndType() {
         var command = new RunCommand();
 
-        assertThat(command.buildRunnerTags("jmh", "explicit-project", null, null))
+        assertThat(command.buildRunnerTags("jmh", "explicit-project"))
             .containsEntry("project", "explicit-project")
             .containsEntry("type", "jmh")
             .doesNotContainKey("commit")
             .doesNotContainKey("branch");
     }
 
-    /** --branch and --project had dedicated options; commit was overridable only via --tag. */
+    /**
+     * --branch and --commit duplicated --tag once git stopped supplying them; --ami-id could only name
+     * an image outside the one-image invariant; --max-wall-clock could be set below --timeout.
+     */
     @Test
-    void acceptsADedicatedCommitOption() {
+    void theRemovedOptionsAreUnknown() {
+        for (String option : new String[]{"--branch", "--commit", "--ami-id", "--max-wall-clock"}) {
+            var parser = new picocli.CommandLine(new RunCommand());
+
+            assertThatThrownBy(() -> parser.parseArgs("--benchmark-jar", "b.jar", option, "x", "jmh"))
+                .as(option)
+                .isInstanceOf(picocli.CommandLine.UnmatchedArgumentException.class);
+        }
+    }
+
+    // ─── project resolution ──────────────────────────────────────────────────────
+
+    @Test
+    void theProjectIsRequiredWhenGitDerivationIsOff() {
         var command = new RunCommand();
+        command.benchmarkJar = Path.of("target/b.jar");
 
-        new picocli.CommandLine(command)
-            .parseArgs("--benchmark-jar", "b.jar", "--commit", "deadbeef", "jmh");
+        assertThatThrownBy(() -> command.resolveProject(new BaasConfig()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("--project")
+            .hasMessageContaining("--git-resolve-project");
+    }
 
-        assertThat(command.commit).isEqualTo("deadbeef");
+    @Test
+    void anExplicitProjectWinsWithoutConsultingGit(@TempDir Path notARepo) {
+        var command = new RunCommand();
+        command.project = "explicit";
+        command.benchmarkJar = notARepo.resolve("b.jar");
+
+        assertThat(command.resolveProject(gitDerivation(true))).isEqualTo("explicit");
     }
 
     /**
-     * call() itself can't run in a unit test — it needs a real BaasConfig, AWS credentials, and
-     * a published runner image — so this pins the one piece that IS reachable without any of
-     * that: resolveProject() genuinely throws (not a mock standing in for one) when run outside
-     * a git repository and no --project was given. {@code notARepo} is a fresh JUnit @TempDir,
-     * which is never inside a git working tree.
+     * The JAR is what is measured; the shell's directory is incidental. The test runs from inside
+     * this repository, so a working-directory lookup would answer this repository's name instead.
      */
     @Test
-    void resolveProjectThrowsOutsideAGitRepository(@TempDir Path notARepo) {
+    void derivesTheProjectFromTheRepositoryHoldingTheJarNotTheWorkingDirectory(@TempDir Path parent)
+        throws Exception {
+        Path repo = parent.resolve("lynx-journal");
+        Path target = repo.resolve("target");
+        java.nio.file.Files.createDirectories(target);
+        new ProcessBuilder("git", "init", "-q").directory(repo.toFile()).start().waitFor();
         var command = new RunCommand();
+        command.benchmarkJar = target.resolve("b.jar");
 
-        assertThatThrownBy(() -> command.resolveProject(notARepo))
+        assertThat(command.resolveProject(gitDerivation(true))).isEqualTo("lynx-journal");
+    }
+
+    /**
+     * call() itself can't run in a unit test — it needs AWS credentials and a published runner
+     * image — so this pins the reachable piece: resolveProject() genuinely throws (not a mock
+     * standing in for one) for a JAR outside any repository. {@code notARepo} is a fresh JUnit
+     * @TempDir, which is never inside a git working tree.
+     */
+    @Test
+    void aJarOutsideAnyRepositoryFailsNamingTheProjectOption(@TempDir Path notARepo) {
+        var command = new RunCommand();
+        command.benchmarkJar = notARepo.resolve("b.jar");
+
+        assertThatThrownBy(() -> command.resolveProject(gitDerivation(true)))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("--project");
     }
 
-    /**
-     * The previous implementation merged git's stderr into the captured output and never checked
-     * the exit code, so outside a git repository it returned the literal
-     * {@code "fatal: not a git repository (or any of the parent directories): .git"} as if it were
-     * a branch name, and {@code buildRunnerTags} then stored that text as the {@code branch} tag —
-     * worse than the {@code "unknown"} placeholder this change removed. {@code currentGitBranch}
-     * must now report absence, exactly like {@code currentGitCommit} already does via the same
-     * exit-code-checked {@link #gitOutput(Path, String...)} seam.
-     */
-    @Test
-    void aGitFailureYieldsNoBranchRatherThanTheErrorText(@TempDir Path notARepo) {
-        var command = new RunCommand();
-
-        assertThat(command.currentGitBranch(notARepo)).isNull();
+    private static BaasConfig gitDerivation(boolean enabled) {
+        var config = new BaasConfig();
+        config.getGit().setResolveProject(enabled);
+        return config;
     }
 
-    /**
-     * An explicit {@code --commit ""} or {@code --branch ""} is a value the caller supplied, so the
-     * naive {@code field != null} check treats it as present and stores an empty-string tag — a
-     * placeholder standing in for an unknown value, the same defect class as {@code "unknown"}.
-     * {@code resolveProject} already blank-checks {@code --project}; {@code resolveBranch} and
-     * {@code resolveCommit} must do the same and fall through to derivation, which here (outside a
-     * git repository) yields absence rather than the empty string that was explicitly passed.
-     */
-    @Test
-    void aBlankExplicitBranchIsTreatedAsAbsentRatherThanStoredEmpty(@TempDir Path notARepo) {
-        var command = new RunCommand();
-        command.branch = "";
+    // ─── watchdog bound ──────────────────────────────────────────────────────────
 
-        assertThat(command.resolveBranch(notARepo)).isNull();
+    @Test
+    void theDefaultWatchdogBoundIsUnchanged() {
+        assertThat(RunCommand.watchdogBound(7200, BaasConfig.DEFAULT_WATCHDOG_MARGIN_SECONDS))
+            .isEqualTo(7500);
     }
 
     @Test
-    void aBlankExplicitCommitIsTreatedAsAbsentRatherThanStoredEmpty(@TempDir Path notARepo) {
-        var command = new RunCommand();
-        command.commit = "";
+    void theMarginIsAddedToTheTimeout() {
+        assertThat(RunCommand.watchdogBound(1000, 120)).isEqualTo(1120);
+    }
 
-        assertThat(command.resolveCommit(notARepo)).isNull();
+    /** Below the floor the watchdog could kill the instance before run-status is written. */
+    @Test
+    void aMarginBelowTheFloorIsRefused() {
+        assertThatThrownBy(() -> RunCommand.watchdogBound(7200, 10))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("60");
     }
 
     /**

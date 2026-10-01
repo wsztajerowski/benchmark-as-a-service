@@ -118,4 +118,39 @@ class BaasConfigYamlTest {
 
         assertThat(readBack.getRunner().getSourceRepo()).isEqualTo("acme/baas-fork");
     }
+
+    /** Off by default: git is consulted only when the operator opts in. */
+    @Test
+    void gitDerivationIsOffByDefault() {
+        assertThat(new BaasConfig().getGit().isResolveProject()).isFalse();
+    }
+
+    @Test
+    void roundTripsTheGitAndWatchdogPreferences() throws Exception {
+        BaasConfig original = new BaasConfig();
+        original.getGit().setResolveProject(true);
+        original.getEc2().setWatchdogMarginSeconds(120);
+
+        BaasConfig readBack = yaml.readValue(yaml.writeValueAsString(original), BaasConfig.class);
+
+        assertThat(readBack.getGit().isResolveProject()).isTrue();
+        assertThat(readBack.getEc2().getWatchdogMarginSeconds()).isEqualTo(120);
+    }
+
+    /**
+     * A file written before the margin replaced the absolute bound still loads, and the default
+     * margin applies — the old key cannot leave the watchdog below the benchmark timeout.
+     */
+    @Test
+    void aLeftoverAbsoluteWallClockKeyIsIgnored() throws Exception {
+        BaasConfig config = yaml.readValue("""
+            prefix: "baas-123456789012"
+            ec2:
+              benchmarkTimeoutSeconds: 10000
+              wallClockHardKillSeconds: 7500
+            """, BaasConfig.class);
+
+        assertThat(config.getEc2().getWatchdogMarginSeconds())
+            .isEqualTo(BaasConfig.DEFAULT_WATCHDOG_MARGIN_SECONDS);
+    }
 }

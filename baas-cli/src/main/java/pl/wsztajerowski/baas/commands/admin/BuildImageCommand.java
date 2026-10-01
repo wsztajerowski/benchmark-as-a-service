@@ -4,7 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -38,12 +41,15 @@ public class BuildImageCommand implements Callable<Integer> {
     @Option(names = "--aws-profile", description = "AWS CLI profile (deployer credentials).")
     String awsProfile;
 
+    @Spec CommandSpec spec;
 
-    private final ConfigService configService = new ConfigService();
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() throws Exception {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().load();
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
         String prefix = config.requirePrefix();

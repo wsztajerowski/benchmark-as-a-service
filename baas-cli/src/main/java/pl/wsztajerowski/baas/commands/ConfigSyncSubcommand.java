@@ -4,7 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
+import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -40,11 +43,15 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             + "(e.g. baas-123456789012, or baas-123456789012-dev).")
     String name;
 
-    private final ConfigService configService = new ConfigService();
+    @Spec CommandSpec spec;
+
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().loadOrEmpty();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
         var factory = new AwsClientFactory(
@@ -72,14 +79,14 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         }
 
         config.setPrefix(name);
-        configService.save(config);
+        configService().save(config);
 
         logger.info("""
             Adopted installation {}.
               Config: {}
               Bucket: {}
               Table:  {}""",
-            name, configService.configFilePath(), config.bucket(), config.resultsTable());
+            name, configService().configFilePath(), config.bucket(), config.resultsTable());
         return 0;
     }
 }

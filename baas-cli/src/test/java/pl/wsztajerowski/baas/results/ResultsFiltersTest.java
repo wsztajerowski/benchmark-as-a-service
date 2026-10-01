@@ -52,31 +52,6 @@ class ResultsFiltersTest {
     }
 
     @Test
-    void livingBranchesKeepsRowsWhoseBranchStillExists() {
-        var alive = row("A.run", Map.of("branch", "main"));
-        var dead = row("B.run", Map.of("branch", "deleted-feature"));
-
-        assertThat(ResultsFilters.byLivingBranches(List.of(alive, dead), List.of("main")))
-            .containsExactly(alive);
-    }
-
-    @Test
-    void livingBranchesKeepsRowsCarryingNoBranchTag() {
-        var untagged = row("A.run", Map.of());
-
-        assertThat(ResultsFilters.byLivingBranches(List.of(untagged), List.of("main")))
-            .as("the branch tag is optional; dropping untagged rows would delete pre-change history")
-            .containsExactly(untagged);
-    }
-
-    @Test
-    void livingBranchesIsANoOpWhenGitReportsNothing() {
-        var rows = List.of(row("A.run", Map.of("branch", "main")));
-
-        assertThat(ResultsFilters.byLivingBranches(rows, List.of())).isEqualTo(rows);
-    }
-
-    @Test
     void warnsWhenAnUnknownTagKeyMatchesNothing() {
         var rows = List.of(row("A.run", Map.of("branch", "main")));
 

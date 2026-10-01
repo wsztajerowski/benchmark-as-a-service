@@ -19,11 +19,23 @@ public record ResultRow(
     double scoreError,
     String scoreUnit,
     String createdAt,
-    Map<String, String> tags
+    Map<String, String> tags,
+    String project
 ) {
 
     public ResultRow {
         tags = tags == null ? Map.of() : Map.copyOf(tags);
+    }
+
+    /**
+     * Without the stored partition's project: falls back to the {@code project} tag, which every
+     * measurement the runner wrote carries. For rows built by hand, mostly in tests.
+     */
+    public ResultRow(String requestId, String benchmarkName, String benchmarkType, String mode,
+                     double score, double scoreError, String scoreUnit, String createdAt,
+                     Map<String, String> tags) {
+        this(requestId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
+            tags, tags == null ? null : tags.get(TagKeys.PROJECT));
     }
 
     public static ResultRow from(StoredMeasurement measurement) {
@@ -36,7 +48,8 @@ public record ResultRow(
             measurement.scoreError() == null ? 0 : measurement.scoreError(),
             measurement.scoreUnit() == null ? "" : measurement.scoreUnit(),
             measurement.createdAt() == null ? "" : measurement.createdAt().toString(),
-            measurement.tags());
+            measurement.tags(),
+            measurement.project());
     }
 
     /**
@@ -53,6 +66,11 @@ public record ResultRow(
 
     public String tag(String key) {
         return tags.get(key);
+    }
+
+    /** Tagged {@code exclude_from_results=true}: hidden from sweeps, shown faint under {@code --all-runs}. */
+    public boolean excluded() {
+        return ResultsQueryService.EXCLUDED_VALUE.equals(tags.get(ResultsQueryService.EXCLUDE_FROM_RESULTS));
     }
 
     /**

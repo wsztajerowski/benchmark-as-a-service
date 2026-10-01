@@ -30,7 +30,7 @@ class RunnerImageResolutionTest {
 
     @Test
     void aMissingPointerResolvesToNothing() {
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX, null))
+        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX))
             .as("with no image built, `baas run` must stop before provisioning anything")
             .isEmpty();
         assertThat(calls).isEmpty();
@@ -41,7 +41,7 @@ class RunnerImageResolutionTest {
     void aPointerNamingADeregisteredAmiResolvesToNothing() {
         ssm.parameters.put(POINTER, "ami-gone");
 
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX, null)).isEmpty();
+        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX)).isEmpty();
     }
 
     @Test
@@ -49,32 +49,11 @@ class RunnerImageResolutionTest {
         ssm.parameters.put(POINTER, "ami-current");
         ec2.images.put("ami-current", tagged("ami-current", "1.2.0"));
 
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX, null))
+        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX))
             .hasValueSatisfying(image -> {
                 assertThat(image.amiId()).isEqualTo("ami-current");
                 assertThat(image.imageVersion()).isEqualTo("1.2.0");
             });
-    }
-
-    @Test
-    void anOverrideNamingAMissingAmiResolvesToNothing() {
-        ssm.parameters.put(POINTER, "ami-current");
-        ec2.images.put("ami-current", tagged("ami-current", "1.2.0"));
-
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX, "ami-missing"))
-            .as("an override that does not exist must fail locally, not as InvalidAMIID.NotFound "
-                + "after RunInstances has been billed")
-            .isEmpty();
-    }
-
-    @Test
-    void anExistingOverrideWinsOverThePointer() {
-        ssm.parameters.put(POINTER, "ami-current");
-        ec2.images.put("ami-current", tagged("ami-current", "1.2.0"));
-        ec2.images.put("ami-override", tagged("ami-override", "0.9.0"));
-
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX, "ami-override"))
-            .hasValueSatisfying(image -> assertThat(image.amiId()).isEqualTo("ami-override"));
     }
 
     private static Image tagged(String amiId, String version) {

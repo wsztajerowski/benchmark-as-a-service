@@ -8,6 +8,7 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -45,7 +46,6 @@ public class SetupCommand implements Callable<Integer> {
 
     @Option(names = "--aws-profile", description = "AWS CLI profile.")
     String awsProfile;
-
 
     @Option(names = "--use-existing-vpc", description = "Skip VPC/networking creation and use provided IDs.")
     boolean useExistingVpc;
@@ -93,14 +93,16 @@ public class SetupCommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    private final ConfigService configService = new ConfigService();
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() throws Exception {
         // Before anything is loaded, resolved or deployed.
         validateFederationOptions();
 
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().loadOrEmpty();
         if (region != null) config.getAws().setRegion(region);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
@@ -269,8 +271,8 @@ public class SetupCommand implements Callable<Integer> {
                 .getStackOutputs(resolvedStack).getOrDefault("OperatorRoleArn", "");
         }
 
-        configService.save(config);
-        logger.info("Configuration written to {}", configService.configFilePath());
+        configService().save(config);
+        logger.info("Configuration written to {}", configService().configFilePath());
 
         if (!operatorRoleArn.isEmpty()) {
             logger.info("""

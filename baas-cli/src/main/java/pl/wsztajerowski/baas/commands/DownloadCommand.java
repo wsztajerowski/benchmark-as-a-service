@@ -4,8 +4,11 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
+import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -42,27 +45,12 @@ public class DownloadCommand implements Callable<Integer> {
             + "(e.g. main/jmh/20260819_090000) for a run stored before the unified layout.")
     String resultPath;
 
-    /**
-     * Addresses another installation's results table for this invocation only, and persists
-     * nothing. This is how a retired installation's history stays readable after its stack is
-     * gone. Read-only by design: no command that writes measurements accepts it, so a machine
-     * cannot be left quietly recording new runs into an archive.
-     */
-    @Option(names = "--results-table",
-        description = "Read from this results table instead of the configured installation's. "
-            + "Not persisted.")
-    String resultsTableOverride;
-
-    @Option(names = "--bucket",
-        description = "Read artifacts from this bucket instead of the configured installation's. "
-            + "Not persisted.")
-    String bucketOverride;
+    // No --results-table or --bucket: another installation is reached by naming its configuration
+    // with the inherited --config-path, which addresses the whole installation at once.
 
     @Option(names = {"-o", "--output-dir"},
         description = "Local directory to write into. Default: ./<last path segment>.")
     Path outputDir;
-
-    private final ConfigService configService = new ConfigService();
 
     private static final Pattern RUN_ID = Pattern.compile("\\d{8}T\\d{9}Z-[0-9a-f]{8}");
 
@@ -81,14 +69,20 @@ public class DownloadCommand implements Callable<Integer> {
         return table == null || table.isBlank();
     }
 
+    @Spec CommandSpec spec;
+
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
+
     @Override
     public Integer call() {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().load();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
         String bucket;
         try {
-            bucket = bucketOverride != null ? bucketOverride : config.bucket();
+            bucket = config.bucket();
         } catch (IllegalStateException noInstallation) {
             logger.error("{}", noInstallation.getMessage());
             return 1;
@@ -103,13 +97,13 @@ public class DownloadCommand implements Callable<Integer> {
             // is checked here rather than beside the bucket check above.
             String table;
             try {
-                table = resultsTableOverride != null ? resultsTableOverride : config.resultsTable();
+                table = config.resultsTable();
             } catch (IllegalStateException noInstallation) {
                 logger.error("""
                     No installation is configured, so run id '{}' cannot be resolved to a path.
                       Adopt one:  baas config sync --name baas-<accountId>
-                      Or pass the run's result path directly, or name the table with
-                      --results-table.
+                      Or pass the run's result path directly, or name another installation's
+                      configuration with --config-path.
                     Nothing was written.""", resultPath);
                 return 1;
             }

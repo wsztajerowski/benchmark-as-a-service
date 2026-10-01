@@ -7,6 +7,7 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Parameters;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -54,11 +55,13 @@ public class EnvDiffSubcommand implements Callable<Integer> {
     @Parameters(index = "1", paramLabel = "<resultPathB>", description = "Second run's result path.")
     String resultPathB;
 
-    private final ConfigService configService = new ConfigService();
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().load();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
         // Read-only, day-to-day: operator credentials, like `run` and `results`.

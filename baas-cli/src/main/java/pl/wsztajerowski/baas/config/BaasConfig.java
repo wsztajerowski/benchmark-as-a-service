@@ -30,6 +30,7 @@ public class BaasConfig {
     private AwsConfig aws = new AwsConfig();
     private Ec2Config ec2 = new Ec2Config();
     private RunnerConfig runner = new RunnerConfig();
+    private GitConfig git = new GitConfig();
 
     public String getPrefix() { return prefix; }
     public void setPrefix(String prefix) { this.prefix = prefix; }
@@ -42,6 +43,9 @@ public class BaasConfig {
 
     public RunnerConfig getRunner() { return runner; }
     public void setRunner(RunnerConfig runner) { this.runner = runner; }
+
+    public GitConfig getGit() { return git; }
+    public void setGit(GitConfig git) { this.git = git; }
 
     // ─── Derived names ──────────────────────────────────────────────────────────
     // One rule: <prefix>, or <prefix>-<type>-<name>. Knowing the prefix is enough to predict
@@ -103,7 +107,7 @@ public class BaasConfig {
     public static class Ec2Config {
         private String defaultInstanceType = "c5.2xlarge";
         private int benchmarkTimeoutSeconds = 7200;
-        private int wallClockHardKillSeconds = 7500;
+        private int watchdogMarginSeconds = DEFAULT_WATCHDOG_MARGIN_SECONDS;
 
         public String getDefaultInstanceType() { return defaultInstanceType; }
         public void setDefaultInstanceType(String t) { this.defaultInstanceType = t; }
@@ -111,8 +115,34 @@ public class BaasConfig {
         public int getBenchmarkTimeoutSeconds() { return benchmarkTimeoutSeconds; }
         public void setBenchmarkTimeoutSeconds(int s) { this.benchmarkTimeoutSeconds = s; }
 
-        public int getWallClockHardKillSeconds() { return wallClockHardKillSeconds; }
-        public void setWallClockHardKillSeconds(int s) { this.wallClockHardKillSeconds = s; }
+        /**
+         * Added to the benchmark timeout, never an absolute bound: an absolute one could be left
+         * below a raised timeout, and the watchdog then killed a benchmark still inside its budget.
+         * A leftover {@code wallClockHardKillSeconds} key is ignored as unknown, so old files load.
+         */
+        public int getWatchdogMarginSeconds() { return watchdogMarginSeconds; }
+        public void setWatchdogMarginSeconds(int s) { this.watchdogMarginSeconds = s; }
+    }
+
+    public static final int DEFAULT_WATCHDOG_MARGIN_SECONDS = 300;
+
+    /**
+     * The watchdog counts from launch, the benchmark timeout from JVM start, so the margin has to
+     * cover boot plus the final upload. Below this the watchdog can terminate the instance before
+     * {@code run-status} is written, and the run looks like it vanished.
+     */
+    public static final int MIN_WATCHDOG_MARGIN_SECONDS = 60;
+
+    /**
+     * Off by default: git is consulted only when the operator opts in, and then only for the
+     * project name — {@code baas run} from the benchmark JAR's repository, {@code baas results}
+     * from the working directory's. {@code branch} and {@code commit} are never derived.
+     */
+    public static class GitConfig {
+        private boolean resolveProject;
+
+        public boolean isResolveProject() { return resolveProject; }
+        public void setResolveProject(boolean resolveProject) { this.resolveProject = resolveProject; }
     }
 
     /**

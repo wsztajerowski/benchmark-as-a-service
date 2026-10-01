@@ -44,24 +44,6 @@ public final class ResultsFilters {
     }
 
     /**
-     * Keeps rows whose {@code branch} tag names a branch still present in the repository. A row
-     * with no {@code branch} tag is kept: the tag is optional, and dropping untagged rows would
-     * make this filter silently delete all pre-change history. An empty branch list is a no-op for
-     * the same reason — it means git told us nothing, not that nothing is alive.
-     */
-    public static List<ResultRow> byLivingBranches(List<ResultRow> rows, List<String> livingBranches) {
-        if (livingBranches == null || livingBranches.isEmpty()) {
-            return rows;
-        }
-        return rows.stream()
-            .filter(row -> {
-                String branch = row.tag(BRANCH);
-                return branch == null || livingBranches.contains(branch);
-            })
-            .toList();
-    }
-
-    /**
      * Warns when a {@code --tag} key is outside the known vocabulary AND no returned row carries
      * it. Both conditions matter: a custom key that some row does carry is a legitimate filter, and
      * a known key matching nothing is an ordinary empty result. It is the combination — an unknown

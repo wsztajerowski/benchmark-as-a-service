@@ -7,6 +7,7 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -33,12 +34,13 @@ public class ImageCommand implements Callable<Integer> {
     @Option(names = "--aws-profile", description = "AWS CLI profile (deployer credentials).")
     String awsProfile;
 
-
-    private final ConfigService configService = new ConfigService();
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().load();
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
         // Deployer credentials, consistent with every other `baas admin` subcommand.

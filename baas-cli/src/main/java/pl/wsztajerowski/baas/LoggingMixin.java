@@ -27,7 +27,22 @@ public class LoggingMixin {
         // We want to store the verbosity value in a single, central place,
         // so we find the top-level command,
         // and store the verbosity level on our top-level command's LoggingMixin.
-        ((BaasApp) mixee.root().userObject()).loggingMixin.verbose = verbose;
+        if (mixee.root().userObject() instanceof BaasApp app) {
+            app.loggingMixin.verbose = verbose;
+        } else {
+            this.verbose = verbose; // a command parsed on its own, outside the baas tree (tests)
+        }
+    }
+
+    /**
+     * Whether {@code -v} was given anywhere on the command line. Read from the top-level command,
+     * where {@link #setVerbose} stores it — this instance's own field is set only outside the tree.
+     */
+    public boolean verbose() {
+        if (mixee != null && mixee.root().userObject() instanceof BaasApp app && app.loggingMixin != this) {
+            return app.loggingMixin.verbose;
+        }
+        return verbose;
     }
 
     /**
