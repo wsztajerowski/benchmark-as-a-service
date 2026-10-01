@@ -195,4 +195,12 @@ class ResultsProjectSelectionTest {
         assertThat(out).contains("Choose a project").contains("\u001b[?1049h");
         assertThat(out.indexOf("Choose a project")).isLessThan(out.indexOf("\u001b[?1049h"));
     }
+
+    /** Refused before the configuration is read, so no installation or credentials are needed. */
+    @Test
+    void anUnknownFormatIsRefusedRatherThanReadAsTheTable() {
+        int exit = new CommandLine(new ResultsCommand()).execute("--project", "p", "--format", "xml");
+
+        assertThat(exit).isEqualTo(2);
+    }
 }

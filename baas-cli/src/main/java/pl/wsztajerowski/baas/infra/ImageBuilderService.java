@@ -239,7 +239,7 @@ public class ImageBuilderService {
         return readPointer(parameterName).flatMap(this::describeImage);
     }
 
-    /** Empty when the AMI does not exist — which is how {@code baas run --ami-id} validates it. */
+    /** Empty when the AMI does not exist — which is how {@code baas run} refuses a dangling pointer. */
     public Optional<RunnerImage> describeImage(String amiId) {
         try {
             return ec2.describeImages(r -> r.imageIds(amiId)).images().stream()
@@ -255,7 +255,12 @@ public class ImageBuilderService {
                 });
         } catch (Ec2Exception e) {
             // A pointer naming a deregistered AMI is InvalidAMIID.NotFound, which is a normal
-            // state to report — not an error to propagate.
+            // state to report — not an error to propagate. Nothing else is: a denied describe
+            // reported as "no image" sends the operator to rebuild an image that is there.
+            String code = e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : null;
+            if (code == null || !code.startsWith("InvalidAMIID")) {
+                throw e;
+            }
             logger.debug("Cannot describe {}: {}", amiId, e.getMessage());
             return Optional.empty();
         }

@@ -105,8 +105,15 @@ public class ResultsCommand implements Callable<Integer> {
         return BaasApp.configService(spec);
     }
 
+    /** Every other value used to fall through to the table, so a typo looked like a success. */
+    static final List<String> FORMATS = List.of("table", "json", "csv");
+
     @Override
     public Integer call() throws InterruptedException {
+        if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
+            logger.error("Unknown --format '{}'. Valid: {}.", format, String.join(", ", FORMATS));
+            return 2;
+        }
         // Before the config is even read: a refused --watch must not reach AWS.
         String watchRefusal = watchRefusal();
         if (watchRefusal != null) {

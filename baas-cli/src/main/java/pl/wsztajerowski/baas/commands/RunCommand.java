@@ -149,17 +149,6 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * Package-private overload taking the environment explicitly, so a test does not read the real
-     * one.
-     *
-     * <p>Silent when credentials already arrive from the environment. The warning's own advice —
-     * {@code baas config set --operator-profile} — is not merely redundant there but wrong: in
-     * continuous integration the credentials come from an OIDC federation the job performed, and
-     * there is no profile to name. Falling through to the default credential chain is what the
-     * method's own contract calls correct in that case, so warning about it trained the reader to
-     * ignore a warning that still matters on a laptop.
-     */
-    /**
      * The runner subnet and security group, read from the installation's stack outputs.
      *
      * <p>Not cached in {@code ~/.baas/config.yaml}: editing {@code RunnerSecurityGroup}'s
@@ -188,6 +177,17 @@ public class RunCommand implements Callable<Integer> {
         return outputs;
     }
 
+    /**
+     * Package-private overload taking the environment explicitly, so a test does not read the real
+     * one.
+     *
+     * <p>Silent when credentials already arrive from the environment. The warning's own advice —
+     * {@code baas config set --operator-profile} — is not merely redundant there but wrong: in
+     * continuous integration the credentials come from an OIDC federation the job performed, and
+     * there is no profile to name. Falling through to the default credential chain is what the
+     * method's own contract calls correct in that case, so warning about it trained the reader to
+     * ignore a warning that still matters on a laptop.
+     */
     static Optional<String> operatorCredentialsWarning(BaasConfig config, Map<String, String> environment) {
         if (config.getAws().getOperatorProfile() != null || hasAmbientCredentials(environment)) {
             return Optional.empty();
@@ -257,6 +257,12 @@ public class RunCommand implements Callable<Integer> {
     }
 
     private Integer execute() throws Exception {
+        // Anything but json used to mean text, so `--format jsno` silently printed no summary
+        // for a pipeline expecting one.
+        if (format != null && !"text".equalsIgnoreCase(format) && !jsonSummary()) {
+            logger.error("Unknown --format '{}'. Valid: text, json.", format);
+            return 2;
+        }
         if (!VALID_TYPES.contains(benchmarkType)) {
             logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
             return 1;
@@ -384,8 +390,8 @@ public class RunCommand implements Callable<Integer> {
 
         // 6. Launch instance. These are EC2 *instance* tags — console visibility and the
         //    `baas-role` scoping that RunnerRole's TerminateInstances condition depends on. They
-        //    are NOT what `baas results` reads: ResultsQueryService reads
-        //    benchmarkMetadata.tags, which is populated only by the runner's own --tag options,
+        //    are NOT what `baas results` reads: ResultsQueryService reads the item's top-level
+        //    tags map, which is populated only by the runner's own --tag options,
         //    emitted by UserDataScriptBuilder from the values observed on the instance. Tagging
         //    the instance instead is how every stored result ended up with a null imageVersion
         //    once already; the tier-1 comparison then silently never fires. Don't treat the two
@@ -600,11 +606,6 @@ public class RunCommand implements Callable<Integer> {
         return derived;
     }
 
-    /**
-     * The one place the watchdog bound is computed. It feeds both the instance's self-termination
-     * delay and this CLI's poll cap, so the two cannot drift, and being relative it can never fall
-     * below the benchmark's own timeout.
-     */
     /** The benchmark timeout and the watchdog bound — which is also the CLI's poll cap. */
     record Timings(int timeoutSeconds, int watchdogSeconds) {}
 
@@ -616,6 +617,11 @@ public class RunCommand implements Callable<Integer> {
         return new Timings(timeout, watchdogBound(timeout, margin));
     }
 
+    /**
+     * The one place the watchdog bound is computed. It feeds both the instance's self-termination
+     * delay and this CLI's poll cap, so the two cannot drift, and being relative it can never fall
+     * below the benchmark's own timeout.
+     */
     static int watchdogBound(int timeoutSeconds, int marginSeconds) {
         if (marginSeconds < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
             throw new IllegalArgumentException(

@@ -106,10 +106,14 @@ public class Ec2ProvisioningService {
         }
     }
 
+    /**
+     * Pending counts as live: a run launched seconds before a teardown is still booting, and
+     * deleting the stack then pulls its role, subnet and bucket out from under it.
+     */
     public List<String> listRunningBenchmarkInstances() {
         var response = ec2.describeInstances(r -> r.filters(
             Filter.builder().name("tag:baas-role").values("benchmark-runner").build(),
-            Filter.builder().name("instance-state-name").values("running").build()
+            Filter.builder().name("instance-state-name").values("pending", "running").build()
         ));
         return response.reservations().stream()
             .flatMap(res -> res.instances().stream())

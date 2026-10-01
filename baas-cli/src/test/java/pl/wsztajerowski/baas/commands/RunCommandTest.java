@@ -340,6 +340,15 @@ class RunCommandTest {
         }
     }
 
+    /** Exit 2, the usage-error code, before the unreleased-build check that would exit 1. */
+    @Test
+    void anUnknownFormatIsRefusedRatherThanReadAsText() {
+        int exit = new picocli.CommandLine(new RunCommand())
+            .execute("--benchmark-jar", "b.jar", "--format", "jsno", "jmh");
+
+        assertThat(exit).isEqualTo(2);
+    }
+
     // ─── project resolution ──────────────────────────────────────────────────────
 
     @Test

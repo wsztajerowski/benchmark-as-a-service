@@ -165,6 +165,20 @@ class ImageBuilderServiceTest {
         assertThat(service().currentImage(POINTER)).isEmpty();
     }
 
+    /**
+     * Only a missing AMI means "no image". A denied describe used to be reported as one too, which
+     * sends the operator off to rebuild an image that exists when the fix is a permission.
+     */
+    @Test
+    void aDeniedDescribeIsAnErrorNotAMissingImage() {
+        ssm.parameters.put(POINTER, NEW_AMI);
+        ec2.describeImagesErrorCode = "UnauthorizedOperation";
+
+        assertThatThrownBy(() -> service().currentImage(POINTER))
+            .isInstanceOf(software.amazon.awssdk.services.ec2.model.Ec2Exception.class)
+            .hasMessageContaining("UnauthorizedOperation");
+    }
+
     @Test
     void preflightRejectsAStaleVersionBeforeAnyBuildStarts() {
         imageBuilder.registeredComponents.put("1.0.0", "name: baas-runner-toolchain\n# as published");

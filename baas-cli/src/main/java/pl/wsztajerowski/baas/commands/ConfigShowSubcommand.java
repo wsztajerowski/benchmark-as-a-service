@@ -1,7 +1,5 @@
 package pl.wsztajerowski.baas.commands;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
@@ -10,6 +8,7 @@ import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.console.Console;
 
 import java.util.concurrent.Callable;
 
@@ -19,8 +18,6 @@ import java.util.concurrent.Callable;
     description = "Show current configuration."
 )
 public class ConfigShowSubcommand implements Callable<Integer> {
-
-    private static final Logger logger = LoggerFactory.getLogger(ConfigShowSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -38,14 +35,16 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         // Every value above is local. `config show` makes no AWS call at all now that the masked
         // Mongo connection string — the one field that had to be read from SSM — is gone, so it
         // also has nothing to say about which credentials it would have used.
-        logger.info("Current configuration:\n{}", dump);
+        //
+        // Payload, so the Console: `baas config show > config.txt` has to keep it. It used to be
+        // one logger event, which landed on stderr behind a timestamp and left the file empty.
+        Console.of(spec.commandLine().getOut()).print(dump);
         return 0;
     }
 
-    /** Split out from {@link #call()} so what it reports is testable without capturing the logger. */
+    /** Split out from {@link #call()} so what it reports is testable without capturing standard output. */
     static String render(BaasConfig config, java.nio.file.Path configFile) {
-        // Accumulated and logged as one event rather than a line at a time: SimpleLogger prefixes
-        // every call with a timestamp, which would break the column alignment this dump relies on.
+        // Accumulated and written in one piece, so the columns line up whatever writes it.
         return new StringBuilder()
             .append("Config file: ").append(configFile).append('\n')
             .append("prefix:      ").append(config.getPrefix()).append('\n')
