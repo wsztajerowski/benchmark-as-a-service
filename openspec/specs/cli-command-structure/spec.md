@@ -254,8 +254,13 @@ output holds the object alone.
   diagnostics appear on standard error
 
 #### Scenario: Default output is unchanged
-- **WHEN** `baas run` is invoked without `--format`
+- **WHEN** `baas run` is invoked without `--format` and without a console
 - **THEN** its human-readable progress reporting is unchanged and no JSON object is written
+
+#### Scenario: Default output shows a live status line when interactive
+- **WHEN** `baas run` is invoked without `--format` on an interactive terminal
+- **THEN** polling progress is shown as a live status line, as the `cli-console-output` capability
+  specifies, and no JSON object is written
 
 ### Requirement: Resource names the CLI needs are derived or resolved, not cached
 `~/.baas/config.yaml` SHALL store only what cannot be obtained from the installation itself: the
