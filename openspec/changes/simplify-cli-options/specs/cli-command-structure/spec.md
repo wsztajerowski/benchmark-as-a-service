@@ -125,8 +125,10 @@ absolute wall-clock bound.
 ### Requirement: Results filters cover the supported query patterns
 `baas results` SHALL accept `--request-id`, `--benchmark-name`, `--tag <key>=<value>` (repeatable),
 `--project`, `--all-projects`, `--all-runs`, `--group-by` and `--limit`. `--request-id` SHALL be mutually
-exclusive with the other filters, `--project` and `--all-projects` SHALL be mutually exclusive with each
-other, and an invalid combination SHALL fail with a message naming the supported forms.
+exclusive with every option that selects rows — `--project`, `--all-projects`, `--benchmark-name` and
+`--tag` — because one run is already narrower than any of them and a disagreeing selector would be
+ignored silently. `--project` and `--all-projects` SHALL be mutually exclusive with each other. An
+invalid combination SHALL fail with a message naming the conflicting option.
 
 #### Scenario: Tag filter is accepted
 - **WHEN** `baas results --project p --tag jdk=25.0.4` is invoked
@@ -135,6 +137,10 @@ other, and an invalid combination SHALL fail with a message naming the supported
 #### Scenario: Conflicting filters are rejected
 - **WHEN** both `--tag branch=main` and `--request-id abc` are given
 - **THEN** the command exits non-zero explaining that `--request-id` cannot be combined with other filters
+
+#### Scenario: A run lookup does not take a project
+- **WHEN** both `--request-id abc` and `--project p` are given
+- **THEN** the command exits non-zero naming `--project`, and issues no query
 
 #### Scenario: One project and every project are exclusive
 - **WHEN** both `--project p` and `--all-projects` are given

@@ -212,7 +212,7 @@ groups by `(project, benchmark, branch)` and keeps the best score in each group.
 | `--all-projects` | Every project, with a PROJECT column. Reads the whole table |
 | `--tag key=value` | Repeatable; repeated tags must **all** match |
 | `--benchmark-name <regex>` | Match on the benchmark name |
-| `--request-id <id>` | Every measurement of one run. Cannot be combined with the others |
+| `--request-id <id>` | Every measurement of one run. Cannot be combined with `--project`, `--all-projects`, `--benchmark-name` or `--tag` |
 | `--group-by <tag>` | Group by something other than `branch` |
 | `--all-runs` | Every measurement, not just the best per group — including excluded runs, shown faint |
 | `--limit <n>`, `--format json\|csv` | Bound and reshape the output |
