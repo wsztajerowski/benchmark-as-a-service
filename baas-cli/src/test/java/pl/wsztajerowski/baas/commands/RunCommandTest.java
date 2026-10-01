@@ -493,4 +493,49 @@ class RunCommandTest {
             .extracting(Class::getSimpleName)
             .doesNotContain("BenchmarkConfig");
     }
+
+    // ─── timings: flags over configuration, bound always derived ───────────────────
+
+    @Test
+    void theConfiguredMarginAppliesWhenNoFlagIsGiven() {
+        var config = new BaasConfig();
+        config.getEc2().setBenchmarkTimeoutSeconds(1000);
+        config.getEc2().setWatchdogMarginSeconds(120);
+
+        assertThat(new RunCommand().resolveTimings(config))
+            .isEqualTo(new RunCommand.Timings(1000, 1120));
+    }
+
+    /**
+     * The case the absolute wall clock got wrong: a raised timeout with the margin left at its
+     * default still ends up with the watchdog after the benchmark's own timeout.
+     */
+    @Test
+    void aRaisedConfiguredTimeoutCarriesTheWatchdogWithIt() {
+        var config = new BaasConfig();
+        config.getEc2().setBenchmarkTimeoutSeconds(10_000);
+
+        assertThat(new RunCommand().resolveTimings(config).watchdogSeconds()).isEqualTo(10_300);
+    }
+
+    @Test
+    void flagsWinOverConfiguration() {
+        var config = new BaasConfig();
+        config.getEc2().setWatchdogMarginSeconds(900);
+        var command = new RunCommand();
+        command.timeoutSeconds = 600;
+        command.watchdogMarginSeconds = 60;
+
+        assertThat(command.resolveTimings(config)).isEqualTo(new RunCommand.Timings(600, 660));
+    }
+
+    /** A hand-edited config below the floor is refused like the flag is. */
+    @Test
+    void aConfiguredMarginBelowTheFloorIsRefused() {
+        var config = new BaasConfig();
+        config.getEc2().setWatchdogMarginSeconds(5);
+
+        assertThatThrownBy(() -> new RunCommand().resolveTimings(config))
+            .isInstanceOf(IllegalArgumentException.class);
+    }
 }

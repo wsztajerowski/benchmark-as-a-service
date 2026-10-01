@@ -49,33 +49,37 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         return BaasApp.configService(spec);
     }
 
+    /** The named stack's outputs, empty when it does not exist. Overridden by tests, which have no stack. */
+    java.util.Map<String, String> stackOutputs(BaasConfig config) {
+        var factory = new AwsClientFactory(
+            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+        try (var cf = factory.cloudFormation()) {
+            return new CloudFormationService(cf).getStackOutputs(name);
+        }
+    }
+
     @Override
     public Integer call() {
         BaasConfig config = configService().loadOrEmpty();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
-        var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
-
         // The stack is read to prove the installation exists, not to harvest values from it.
         // Everything the CLI needs is either derived from the prefix or resolved from this same
         // stack at the moment it is used, so copying outputs into the file would only create a
         // second, staler source of truth.
-        try (var cf = factory.cloudFormation()) {
-            var outputs = new CloudFormationService(cf).getStackOutputs(name);
-            if (outputs.isEmpty()) {
-                logger.error("""
-                        No installation named '{}' in {}.
-                          List them:  aws cloudformation describe-stacks --query \
-                    'Stacks[?starts_with(StackName, `baas-`)].StackName'
-                          Or create one: baas admin setup""",
-                    name, config.getAws().getRegion());
-                return 1;
-            }
-            if (!outputs.containsKey("ResultsTableName")) {
-                logger.warn("Stack '{}' reports no ResultsTableName output — it may predate this "
-                    + "version of the core template. `baas results` will fail until it is updated.", name);
-            }
+        var outputs = stackOutputs(config);
+        if (outputs.isEmpty()) {
+            logger.error("""
+                    No installation named '{}' in {}.
+                      List them:  aws cloudformation describe-stacks --query \
+                'Stacks[?starts_with(StackName, `baas-`)].StackName'
+                      Or create one: baas admin setup""",
+                name, config.getAws().getRegion());
+            return 1;
+        }
+        if (!outputs.containsKey("ResultsTableName")) {
+            logger.warn("Stack '{}' reports no ResultsTableName output — it may predate this "
+                + "version of the core template. `baas results` will fail until it is updated.", name);
         }
 
         config.setPrefix(name);

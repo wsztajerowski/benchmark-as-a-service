@@ -287,10 +287,9 @@ public class RunCommand implements Callable<Integer> {
         // and the upload: a run that cannot say where its measurements go is going to fail anyway.
         String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
-        int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
-        int resolvedMargin = watchdogMarginSeconds != null
-            ? watchdogMarginSeconds : config.getEc2().getWatchdogMarginSeconds();
-        int resolvedWallClock = watchdogBound(resolvedTimeout, resolvedMargin);
+        Timings timings = resolveTimings(config);
+        int resolvedTimeout = timings.timeoutSeconds();
+        int resolvedWallClock = timings.watchdogSeconds();
         logger.debug("Resolved run parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedProject, benchmarkParams);
 
@@ -606,6 +605,17 @@ public class RunCommand implements Callable<Integer> {
      * delay and this CLI's poll cap, so the two cannot drift, and being relative it can never fall
      * below the benchmark's own timeout.
      */
+    /** The benchmark timeout and the watchdog bound — which is also the CLI's poll cap. */
+    record Timings(int timeoutSeconds, int watchdogSeconds) {}
+
+    /** Flags over configuration, for both values; the bound always derived, never taken as given. */
+    Timings resolveTimings(BaasConfig config) {
+        int timeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
+        int margin = watchdogMarginSeconds != null
+            ? watchdogMarginSeconds : config.getEc2().getWatchdogMarginSeconds();
+        return new Timings(timeout, watchdogBound(timeout, margin));
+    }
+
     static int watchdogBound(int timeoutSeconds, int marginSeconds) {
         if (marginSeconds < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
             throw new IllegalArgumentException(

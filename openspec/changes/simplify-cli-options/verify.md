@@ -71,7 +71,14 @@ Paths are under `baas-cli/src/`; `T:` names the covering test class.
   print examples that now fail on a fresh configuration (they already lacked the required
   `--benchmark-jar`). *Recommendation:* add `--benchmark-jar … --project …` to the examples, or trim them to
   the `--` rule they exist to show.
-- **W4 — scenarios without an automated test.** `config sync --config-path` creating a second file (needs a
+- **W4 — scenarios without an automated test. Resolved:** each now has one, through a small seam rather than
+  AWS — `ConfigSyncSubcommand.stackOutputs` (T: `ConfigSyncSubcommandTest.syncWritesTheNamedFileAndLeavesTheDefaultAlone`,
+  `aMissingStackWritesNothing`, driven through the real tree with `--config-path`); `ConfigShowSubcommand.render`
+  (T: `ConfigShowSubcommandTest`); `RunCommand.resolveTimings`, the one value both user-data and `poll` receive
+  (T: four `RunCommandTest` cases, incl. a raised config timeout carrying the watchdog with it);
+  `ResultsCommand.openResults` (T: `ResultsProjectSelectionTest.underWatchTheProjectIsChosenBeforeTheAlternateScreen`).
+  The Linux TTY was probed in `eclipse-temurin:25-jdk` under `script`: console present on a TTY, absent with stdin
+  redirected or stdout piped, `readLine()` returns the typed answer — same as macOS. Original finding: `config sync --config-path` creating a second file (needs a
   live stack); `config show` printing `git.resolveProject`; the CLI poll cap equalling the watchdog bound;
   the `--watch` prompt preceding the alternate screen; the picker on a Linux TTY. Each is a few lines of
   wiring; none is on a path a regression would hide silently except the poll cap, which 8.3's paid run
