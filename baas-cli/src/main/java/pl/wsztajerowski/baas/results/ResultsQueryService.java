@@ -143,8 +143,8 @@ public class ResultsQueryService implements AutoCloseable {
                 r.requestId(),
                 truncate(r.benchmarkType(), 13),
                 r.mode() != null ? r.mode() : "",
-                String.format("%.3f", r.score()),
-                String.format("%.3f", r.scoreError()),
+                tableNumber(r.score()),
+                tableNumber(r.scoreError()),
                 r.scoreUnit() != null ? r.scoreUnit() : "");
         }
     }
@@ -185,6 +185,11 @@ public class ResultsQueryService implements AutoCloseable {
             .map(tag)
             .filter(value -> value != null && !value.isEmpty())
             .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
+    }
+
+    /** Non-finite means unknown (see {@link ResultRow#from}); {@code NaN} in a table reads as a bug. */
+    private static String tableNumber(double value) {
+        return Double.isFinite(value) ? String.format("%.3f", value) : "n/a";
     }
 
     private static String truncate(String s, int max) {

@@ -43,6 +43,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
 | 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
+| 16 | D4 | `baas results` reads an absent score error as `±0.000` | Low | **Fixed** |
 
 **Next up: S5.**
 
@@ -328,3 +329,25 @@ What changed the trade-off is that the pinned AMI and the DynamoDB results table
 a name that moves with the caller does not merely duplicate infrastructure — it silently produces
 incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived from
 `GetCallerIdentity().account()`, with nothing about the calling principal reaching it.
+
+---
+
+## 16. D4 — `baas results` reads an absent score error as `±0.000` · Low · FIXED
+
+Found by the 2026-09-30 end-to-end run of `lynx-journal` (`20260930T112913537Z-f719ff9f`,
+`-f 1 -wi 2 -i 2`). JMH reports `scoreError: NaN` for any run under three iterations, and
+`MeasurementItemMapper.toItem` correctly leaves a non-finite value out of the item, since
+DynamoDB's `N` rejects NaN. `ResultRow.from` then read the absent value back as `0`, so the
+table printed `±0.000` and `--format json` printed `"scoreError":0.000000`, both claiming a
+perfectly precise measurement. The CSV did the same.
+
+`printJson` already turned a non-finite value into `null`, and `ResultsFormatTest` pinned that.
+The test built its `ResultRow` with a literal NaN, though, and the only path that runs in
+practice (absent in the store → `ResultRow.from`) never produced one. So the rule in CLAUDE.md
+held in the test and failed on every real `-i 1`/`-i 2` run. `score` had the same `null → 0`
+fallback; an absent score is not reachable from JMH output today, but it now gets the same
+treatment.
+
+**Fixed:** `ResultRow.from` maps an absent `score`/`scoreError` to NaN, and each renderer shows
+its own "unknown": `null` in JSON, an empty field in CSV, `n/a` in the table. `ResultRowTest`
+covers the `from` path itself, which the earlier test skipped.

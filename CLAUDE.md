@@ -166,9 +166,10 @@ The watchdog is the only one that survives a deadlocked JVM.
   results back into two trees is the split this design removed.
 - **`baas run` reads the clock once per run.** That instant names the prefix and travels to the
   runner as `--created-at`, so the id's timestamp and the stored `createdAt` are the same value
-  rather than two that happen to be close. The instance's clock never reaches the record. CI mints
-  its id in bash and must pass the same instant, or the property holds for `baas run` and quietly
-  fails there.
+  rather than two that happen to be close. The instance's clock never reaches the record. No caller
+  can supply an id, CI included: `e2e-cloud-test.yml` reads `runId` from the `--format json`
+  summary, and a caller wanting a handle of its own uses a `--tag`. An option to pass one in would
+  reopen the gap between the id's instant and `createdAt`.
 - **The instance contacts no host outside the account.** Its only runner-JAR source is
   `releases/<version>/benchmark-runner.jar` in the bucket, seeded by the CLI. Restoring a
   network fetch reintroduces both the drift — two runs a week apart executing different runner

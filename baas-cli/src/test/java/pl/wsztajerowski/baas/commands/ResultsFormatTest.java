@@ -86,6 +86,27 @@ class ResultsFormatTest {
         assertThat(parsed.get(0).get("score").asDouble()).isEqualTo(1000.0);
     }
 
+    /** An unknown value is an empty CSV field — the literal {@code NaN} is not a number to most readers. */
+    @Test
+    void nonFiniteScoreErrorBecomesAnEmptyCsvField() throws Exception {
+        String csv = render("csv", List.of(row(1000.0, Double.NaN)));
+        var header = List.of(csv.strip().lines().toList().getFirst().split(",", -1));
+        var fields = csv.strip().lines().toList().get(1).split(",", -1);
+
+        assertThat(fields[header.indexOf("scoreError")]).isEmpty();
+        assertThat(fields[header.indexOf("score")]).isEqualTo("1000.000000");
+    }
+
+    /** {@code ±0.000} would claim a perfectly precise measurement; the error is simply unknown. */
+    @Test
+    void nonFiniteScoreErrorRendersAsUnknownInTheTable() {
+        new ResultsQueryService(null, null).printTable(List.of(row(1000.0, Double.NaN)));
+
+        String dataLine = captured.toString(StandardCharsets.UTF_8).lines()
+            .filter(l -> l.startsWith("run ")).findFirst().orElseThrow();
+        assertThat(dataLine).contains("n/a").doesNotContain("NaN");
+    }
+
     @Test
     void csvKeepsOneColumnPerFieldUnderACommaDecimalLocale() throws Exception {
         Locale.setDefault(Locale.forLanguageTag("pl-PL"));

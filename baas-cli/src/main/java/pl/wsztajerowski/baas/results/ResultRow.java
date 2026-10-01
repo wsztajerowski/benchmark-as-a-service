@@ -26,14 +26,20 @@ public record ResultRow(
         tags = tags == null ? Map.of() : Map.copyOf(tags);
     }
 
+    /**
+     * An absent score or score error becomes NaN, never 0. The store leaves non-finite values out
+     * of the item, and JMH reports a NaN error for any run under three iterations; reading that
+     * back as 0 renders {@code ±0.000}, a claim of perfect precision. Each renderer turns NaN into
+     * its own "unknown".
+     */
     public static ResultRow from(StoredMeasurement measurement) {
         return new ResultRow(
             measurement.requestId(),
             benchmarkNameOf(measurement),
             measurement.tags().getOrDefault(TagKeys.TYPE, ""),
             measurement.mode(),
-            measurement.score() == null ? 0 : measurement.score(),
-            measurement.scoreError() == null ? 0 : measurement.scoreError(),
+            measurement.score() == null ? Double.NaN : measurement.score(),
+            measurement.scoreError() == null ? Double.NaN : measurement.scoreError(),
             measurement.scoreUnit() == null ? "" : measurement.scoreUnit(),
             measurement.createdAt() == null ? "" : measurement.createdAt().toString(),
             measurement.tags());
