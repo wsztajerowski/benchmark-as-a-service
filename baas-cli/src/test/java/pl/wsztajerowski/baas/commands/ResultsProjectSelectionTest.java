@@ -1,5 +1,9 @@
 package pl.wsztajerowski.baas.commands;
 
+import java.nio.file.Path;
+import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.BaasApp;
+import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.config.BaasConfig;
@@ -136,5 +140,59 @@ class ResultsProjectSelectionTest {
                 .as(option)
                 .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
         }
+    }
+
+    // ─── --watch: the prompt comes before the alternate screen ────────────────────
+
+    /**
+     * A prompt drawn on the alternate screen would vanish when --watch leaves it, and the answer
+     * typed there would scroll away with it. The query is made to fail on the first refresh so the
+     * otherwise endless loop ends, leaving exactly what reached the screen before and after.
+     */
+    @Test
+    void underWatchTheProjectIsChosenBeforeTheAlternateScreen(@TempDir Path dir) {
+        Path config = dir.resolve("c.yaml");
+        var stored = new BaasConfig();
+        stored.setPrefix("baas-123456789012");
+        ConfigService.at(config).save(stored);
+
+        var screen = new StringWriter();
+        CommandLine.IFactory defaults = CommandLine.defaultFactory();
+        CommandLine.IFactory factory = new CommandLine.IFactory() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public <K> K create(Class<K> cls) throws Exception {
+                if (cls != ResultsCommand.class) {
+                    return defaults.create(cls);
+                }
+                var command = new ResultsCommand() {
+                    @Override
+                    ResultsQueryService openResults(BaasConfig c, String table) {
+                        return new ResultsQueryService(null, table) {
+                            @Override
+                            public List<String> listVisibleProjects() {
+                                return List.of("lynx-journal");
+                            }
+
+                            @Override
+                            public List<pl.wsztajerowski.baas.results.ResultRow> queryProject(String p, boolean all) {
+                                throw new IllegalStateException("first refresh reached");
+                            }
+                        };
+                    }
+                };
+                command.console = Console.withFlags(new PrintWriter(screen, true), true, false);
+                command.answerReader = () -> "1";
+                return (K) command;
+            }
+        };
+
+        new CommandLine(new BaasApp(), factory)
+            .setErr(new PrintWriter(new StringWriter()))
+            .execute("--config-path", config.toString(), "results", "--watch");
+
+        String out = screen.toString();
+        assertThat(out).contains("Choose a project").contains("\u001b[?1049h");
+        assertThat(out.indexOf("Choose a project")).isLessThan(out.indexOf("\u001b[?1049h"));
     }
 }

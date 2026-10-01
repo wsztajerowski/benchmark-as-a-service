@@ -20,8 +20,8 @@
   `RunCommand`, `DownloadCommand`, `EnvDiffSubcommand`, `admin/DeployerPolicyCommand`,
   `admin/TeardownCommand`, `admin/ImageCommand`, `admin/BuildImageCommand`, `admin/SetupCommand` (12).
 - 1.4 JDK 25 under a pty (`script`): both TTY → console non-null, `isTerminal()` true; stdin
-  `< /dev/null` → null; stdout `| cat` → null; `readLine()` returned the typed `2`. Verified on macOS
-  only — Linux is left to manual check 8.4.
+  `< /dev/null` → null; stdout `| cat` → null; `readLine()` returned the typed `2`. Verified on macOS;
+  later repeated on Linux (`eclipse-temurin:25-jdk`, JDK 25.0.4) with identical results (verify.md W4).
 
 ## 2. Configuration path and preferences
 

@@ -135,10 +135,7 @@ public class ResultsCommand implements Callable<Integer> {
             return 1;
         }
 
-        var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
-
-        try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
+        try (var results = openResults(config, tableName)) {
             // Once, before --watch enters the alternate screen: a prompt cannot be answered there.
             if (requestId == null && !allProjects) {
                 Optional<String> chosen = resolveProject(config, results);
@@ -160,6 +157,13 @@ public class ResultsCommand implements Callable<Integer> {
             ResultsQueryService.environmentWarning(rows).ifPresent(logger::warn);
         }
         return 0;
+    }
+
+    /** The query service for the configured table. Overridden by tests, which have no table. */
+    ResultsQueryService openResults(BaasConfig config, String tableName) {
+        var factory = new AwsClientFactory(
+            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+        return new ResultsQueryService(factory.dynamoDb(), tableName);
     }
 
     /**

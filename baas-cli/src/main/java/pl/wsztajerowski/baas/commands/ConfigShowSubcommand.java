@@ -33,11 +33,21 @@ public class ConfigShowSubcommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService().load();
+        String dump = render(config, configService().configFilePath());
 
+        // Every value above is local. `config show` makes no AWS call at all now that the masked
+        // Mongo connection string — the one field that had to be read from SSM — is gone, so it
+        // also has nothing to say about which credentials it would have used.
+        logger.info("Current configuration:\n{}", dump);
+        return 0;
+    }
+
+    /** Split out from {@link #call()} so what it reports is testable without capturing the logger. */
+    static String render(BaasConfig config, java.nio.file.Path configFile) {
         // Accumulated and logged as one event rather than a line at a time: SimpleLogger prefixes
         // every call with a timestamp, which would break the column alignment this dump relies on.
-        var dump = new StringBuilder()
-            .append("Config file: ").append(configService().configFilePath()).append('\n')
+        return new StringBuilder()
+            .append("Config file: ").append(configFile).append('\n')
             .append("prefix:      ").append(config.getPrefix()).append('\n')
             .append("aws:\n")
             .append("  profile:                  ").append(config.getAws().getProfile())
@@ -64,13 +74,8 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("git:\n")
             .append("  resolveProject:           ").append(config.getGit().isResolveProject()).append('\n')
             .append("runner:\n")
-            .append("  sourceRepo:               ").append(config.getRunner().getSourceRepo()).append('\n');
-
-        // Every value above is local. `config show` makes no AWS call at all now that the masked
-        // Mongo connection string — the one field that had to be read from SSM — is gone, so it
-        // also has nothing to say about which credentials it would have used.
-        logger.info("Current configuration:\n{}", dump);
-        return 0;
+            .append("  sourceRepo:               ").append(config.getRunner().getSourceRepo()).append('\n')
+            .toString();
     }
 
     /**
