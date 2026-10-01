@@ -27,6 +27,8 @@ class FakeEc2 implements Ec2Client {
 
     final Map<String, Image> images = new LinkedHashMap<>();
     final List<String> calls;
+    /** When set, describeImages fails with this error code instead of answering. */
+    String describeImagesErrorCode;
 
     FakeEc2(List<String> calls) {
         this.calls = calls;
@@ -38,6 +40,12 @@ class FakeEc2 implements Ec2Client {
 
     @Override
     public DescribeImagesResponse describeImages(DescribeImagesRequest request) {
+        if (describeImagesErrorCode != null) {
+            throw (Ec2Exception) Ec2Exception.builder()
+                .message(describeImagesErrorCode)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode(describeImagesErrorCode).build())
+                .build();
+        }
         var found = request.imageIds().stream().filter(images::containsKey).map(images::get).toList();
         if (found.isEmpty()) {
             // What EC2 actually returns for a deregistered AMI, and the case `baas run` must

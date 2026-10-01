@@ -201,7 +201,7 @@ public class SetupCommand implements Callable<Integer> {
         params.putAll(new RunnerImageRenderer().stackParameters());
 
         // The bucket and the results table are both declared DeletionPolicy: Retain, so deleting
-        // the stack leaves them behind — and the prefix is a hash of the caller ARN, so the next
+        // the stack leaves them behind — and the prefix is derived from the account, so the next
         // setup asks for those exact names again and CloudFormation refuses with an opaque
         // "Validation failed with 1 error(s)" that never mentions which resource. Say what
         // actually happened instead. Both are checked, because fixing only the bucket then fails
@@ -218,7 +218,7 @@ public class SetupCommand implements Callable<Integer> {
                 logger.error("""
                         Bucket {} already exists, but stack {} does not.
                           A previous teardown retained it — the stack cannot recreate a bucket
-                          that is already there, and the name is fixed by your caller ARN.
+                          that is already there, and the name is fixed by this AWS account.
                           Keep the old results:  aws s3 sync s3://{} ./backup
                           Then remove it:        aws s3 rb s3://{} --force""",
                     bucketName, resolvedStack, bucketName, bucketName);
@@ -299,10 +299,6 @@ public class SetupCommand implements Callable<Integer> {
         return 0;
     }
 
-    /**
-     * Derives a short, deterministic, lowercase prefix from the caller's ARN:
-     * {@code prefix = lowercase(base32(sha256(arn)))[0:8]}
-     */
     /**
      * The federation parameters this invocation names, or empty when it names none. An empty map
      * on the update path means "carry the deployed values forward".
@@ -399,16 +395,6 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
-    /**
-     * The installation's name stem: {@code baas-<accountId>}, plus the mode's suffix.
-     *
-     * <p>The whole name, including the {@code baas-} namespace, lives in this one value, so every
-     * resource is {@code <prefix>} or {@code <prefix>-<suffix>} and a reader who knows the prefix
-     * can predict every name. Nothing about the calling principal reaches it: an IAM user, an SSO
-     * session and a role-chained session on one account all resolve to the same installation. That
-     * is the point — the AMI and the results table are account-level assets, and a name that moved
-     * with the caller forked them silently rather than failing.
-     */
     /** The four networking parameters, or empty when this invocation names none of them. */
     Map<String, String> networkingParameters() {
         if (!useExistingVpc && existingVpcId == null && existingSubnetId == null
@@ -456,6 +442,16 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
+    /**
+     * The installation's name stem: {@code baas-<accountId>}. There is no option to name another.
+     *
+     * <p>The whole name, including the {@code baas-} namespace, lives in this one value, so every
+     * resource is {@code <prefix>} or {@code <prefix>-<suffix>} and a reader who knows the prefix
+     * can predict every name. Nothing about the calling principal reaches it: an IAM user, an SSO
+     * session and a role-chained session on one account all resolve to the same installation. That
+     * is the point — the AMI and the results table are account-level assets, and a name that moved
+     * with the caller forked them silently rather than failing.
+     */
     static String computePrefix(String accountId) {
         if (accountId == null || !accountId.matches("\\d{12}")) {
             throw new IllegalArgumentException(

@@ -40,12 +40,7 @@ public class CloudFormationService {
         Optional<Stack> existing = describeStack(stackName);
 
         if (existing.isPresent()) {
-            StackStatus status = existing.get().stackStatus();
-            if (status == StackStatus.ROLLBACK_COMPLETE) {
-                throw new IllegalStateException(
-                    "Stack '" + stackName + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
-                    "Delete it first with: baas admin teardown --stack-name " + stackName + " --yes");
-            }
+            requireUpdatable(existing.get());
             try {
                 cf.updateStack(UpdateStackRequest.builder()
                     .stackName(stackName)
@@ -92,6 +87,9 @@ public class CloudFormationService {
     public void updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
             "Stack '" + stackName + "' does not exist. Run `baas admin setup` first."));
+        // Here, not only in createOrUpdateStack: setup sends every existing stack down this path,
+        // so a failed first create reached CloudFormation's own rejection instead of this advice.
+        requireUpdatable(stack);
 
         var keys = new java.util.LinkedHashSet<String>();
         stack.parameters().forEach(parameter -> keys.add(parameter.parameterKey()));
@@ -125,6 +123,15 @@ public class CloudFormationService {
             throw e;
         }
         logger.info("Stack {} updated successfully.", stackName);
+    }
+
+    /** A create that rolled back leaves a stack CloudFormation refuses to update; only deletion clears it. */
+    private static void requireUpdatable(Stack stack) {
+        if (stack.stackStatus() == StackStatus.ROLLBACK_COMPLETE) {
+            throw new IllegalStateException(
+                "Stack '" + stack.stackName() + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
+                "Delete it first with: baas admin teardown --stack-name " + stack.stackName() + " --yes");
+        }
     }
 
     public void deleteStack(String stackName) {
