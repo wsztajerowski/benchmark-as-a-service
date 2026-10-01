@@ -18,14 +18,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TableTest {
 
     private static final String ESC = "\u001b";
-    private static final String OLD_RESULTS_FORMAT = "%-45s %-28s %-14s %-8s %14s %12s %-10s%n";
+    // The printf the table replaced, minus the ±ERROR column that left the table.
+    private static final String OLD_RESULTS_FORMAT = "%-45s %-28s %-14s %-8s %14s %-10s%n";
 
     private static final List<ResultRow> ROWS = List.of(
         new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.MyBenchmark.measure", "jmh",
             "thrpt", 8234.123456, 12.3456, "ops/s", "2026-08-20T17:44:32.812Z", Map.of()),
         new ResultRow("20260820T174432812Z-b7e4d0f2",
             "com.example.AVeryLongBenchmarkClassName.aMethodNameThatWillNotFitTheColumn", "jmh-with-async-profiler",
-            null, 1.0, Double.NaN, null, "2026-08-20T17:44:32.812Z", Map.of()));
+            null, Double.NaN, Double.NaN, null, "2026-08-20T17:44:32.812Z", Map.of()));
 
     private static String render(boolean colour) {
         var out = new StringWriter();
@@ -37,19 +38,65 @@ class TableTest {
         return text.replaceAll(ESC + "\\[[0-9;]*m", "");
     }
 
-    /** The output the removed {@code ResultsQueryService.printTable} produced, reproduced here. */
+    /** The output the removed {@code ResultsQueryService.printTable} produced, less ±ERROR. */
     @Test
     void thePlainResultsTableIsByteIdenticalToTheOldPrintf() {
         String expected = String.format(OLD_RESULTS_FORMAT,
-                "BENCHMARK", "REQUEST_ID", "TYPE", "MODE", "SCORE", "±ERROR", "UNIT")
-            + "-".repeat(141) + System.lineSeparator()
+                "BENCHMARK", "REQUEST_ID", "TYPE", "MODE", "SCORE", "UNIT")
+            + "-".repeat(128) + System.lineSeparator()
             + String.format(OLD_RESULTS_FORMAT, "measure", "20260820T174432812Z-a3f9c21b", "jmh",
-                "thrpt", String.format("%.3f", 8234.123456), String.format("%.3f", 12.3456), "ops/s")
+                "thrpt", String.format("%.3f", 8234.123456), "ops/s")
             + String.format(OLD_RESULTS_FORMAT, "aMethodNameThatWillNotFitTheColumn",
                 "20260820T174432812Z-b7e4d0f2", "jmh-with-asy…", "",
-                String.format("%.3f", 1.0), String.format("%.3f", Double.NaN), "");
+                String.format("%.3f", Double.NaN), "");
 
         assertThat(render(false)).isEqualTo(expected);
+    }
+
+    @Test
+    void theScoreErrorIsNotAColumn() {
+        assertThat(render(false).lines().findFirst().orElseThrow()).doesNotContain("ERROR");
+    }
+
+    @Test
+    void aProjectColumnLeadsOnlyWhenAskedFor() {
+        var out = new StringWriter();
+        ResultsTable.print(Console.plain(new PrintWriter(out)), List.of(row("lynx-journal", Map.of())), true, false);
+
+        assertThat(out.toString().lines().findFirst().orElseThrow()).startsWith("PROJECT ");
+        assertThat(out.toString().lines().toList().get(2)).startsWith("lynx-journal ");
+        assertThat(render(false).lines().findFirst().orElseThrow()).doesNotContain("PROJECT");
+    }
+
+    @Test
+    void tagLinesFollowEachRowOnlyWhenAskedFor() {
+        var rows = List.of(row("p", Map.of("jdk", "25.0.4", "branch", "main")));
+        var withTags = new StringWriter();
+        var without = new StringWriter();
+        ResultsTable.print(Console.plain(new PrintWriter(withTags)), rows, false, true);
+        ResultsTable.print(Console.plain(new PrintWriter(without)), rows, false, false);
+
+        assertThat(withTags.toString().lines().toList().get(3)).isEqualTo("    branch=main  jdk=25.0.4");
+        assertThat(without.toString().lines()).hasSize(3);
+    }
+
+    /** Shown only under --all-runs; faint, so it reads as set aside — and still aligned. */
+    @Test
+    void anExcludedRowIsFaintAndStillAligned() {
+        var rows = List.of(row("p", Map.of("exclude_from_results", "true")), row("p", Map.of()));
+        var coloured = new StringWriter();
+        var plain = new StringWriter();
+        ResultsTable.print(Console.withFlags(new PrintWriter(coloured), true, true), rows, true, false);
+        ResultsTable.print(Console.plain(new PrintWriter(plain)), rows, true, false);
+
+        assertThat(coloured.toString().lines().toList().get(2)).startsWith(ESC + "[2m");
+        assertThat(coloured.toString().lines().toList().get(3)).doesNotContain(ESC + "[2m");
+        assertThat(strip(coloured.toString())).isEqualTo(plain.toString());
+    }
+
+    private static ResultRow row(String project, Map<String, String> tags) {
+        return new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.Bench.run", "jmh", "thrpt",
+            1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", tags, project);
     }
 
     @Test

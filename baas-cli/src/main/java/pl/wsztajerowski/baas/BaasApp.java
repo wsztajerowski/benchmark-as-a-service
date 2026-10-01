@@ -6,6 +6,8 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.ScopeType;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.ParseResult;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
@@ -14,6 +16,9 @@ import pl.wsztajerowski.baas.commands.EnvCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
 import pl.wsztajerowski.baas.commands.admin.AdminCommand;
+import pl.wsztajerowski.baas.config.ConfigService;
+
+import java.nio.file.Path;
 
 @Command(
     name = "baas",
@@ -61,6 +66,28 @@ public class BaasApp implements Runnable {
     @Mixin LoggingMixin loggingMixin;
 
     @Spec CommandSpec spec;
+
+    /**
+     * Inherited, so it parses on either side of any subcommand — and picocli writes every copy back
+     * to this one field, which is why commands read it from the root rather than declaring their own.
+     * It replaced the per-command {@code --results-table}/{@code --bucket} overrides: addressing
+     * another installation means naming its configuration, not one of its resources.
+     */
+    @Option(names = "--config-path", scope = ScopeType.INHERIT, paramLabel = "<file>",
+        description = "Configuration file to use instead of ~/.baas/config.yaml.")
+    Path configPath;
+
+    /**
+     * The configuration a command should use. Resolved at call time, never in a field initialiser:
+     * fields are initialised while picocli builds the command tree, before {@code --config-path} is
+     * parsed. A command constructed outside a {@code BaasApp} tree (a unit test) gets the default.
+     */
+    public static ConfigService configService(CommandSpec spec) {
+        if (spec != null && spec.root().userObject() instanceof BaasApp app) {
+            return ConfigService.at(app.configPath);
+        }
+        return new ConfigService();
+    }
 
     public static void main(String[] args) {
         // Must happen before the CommandLine is built — see LoggingMixin#applyEarlyVerbosity.

@@ -8,6 +8,7 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.BaasVersion;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
@@ -30,6 +31,7 @@ import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 import pl.wsztajerowski.baas.results.ResultsTable;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -105,40 +107,32 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--timeout", description = "Benchmark process timeout in seconds.")
     Integer timeoutSeconds;
 
-    @Option(names = "--max-wall-clock", description = "Absolute wall-clock cap in seconds.")
-    Integer wallClockSeconds;
+    @Option(names = "--watchdog-margin",
+        description = "Seconds the self-termination watchdog waits beyond --timeout (overrides config "
+            + "default; minimum " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS + ").")
+    Integer watchdogMarginSeconds;
 
     @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
-        + "the EC2 instance. Rejected for machine-observed keys (imageVersion, instanceType, jdk, cpuModel, "
-        + "cpuArch, type) — those are captured on the instance so a result's tags can't disagree with its "
-        + "own environment.json.")
+        + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
+        + "machine-observed keys (imageVersion, instanceType, jdk, cpuModel, cpuArch, type) — those are "
+        + "captured on the instance so a result's tags can't disagree with its own environment.json.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
-    @Option(names = "--branch", description = "Branch recorded as the run's branch tag (defaults to the current git branch).")
-    String branch;
-
-    @Option(names = "--commit",
-        description = "Commit recorded as the run's commit tag (defaults to the current git commit).")
-    String commit;
-
-    @Option(names = "--project", description = "Project name for the results partition (defaults to the git repository name).")
+    @Option(names = "--project", description = "Project name for the results partition. Required unless "
+        + "git.resolveProject is enabled, which derives it from the repository holding --benchmark-jar.")
     String project;
 
     @Option(names = "--no-database", description = "Discard measurements instead of storing them. "
         + "Explicit opt-in: without it, an unresolvable results table fails before provisioning.")
     boolean noDatabase;
 
-    // No --image-version: exactly one image is maintained, so there is nothing to select between.
-    @Option(names = "--ami-id", description = "Launch from this AMI instead of the published runner image.")
-    String amiIdOverride;
-
+    // No --image-version and no --ami-id: exactly one image is maintained, so there is nothing to
+    // select between, and an override could only name an image whose results are not comparable.
     @Option(names = "--format", defaultValue = "text",
         description = "Run summary format: text (default) or json. json writes one object to "
             + "standard output — on the failure path too, which is when the run id is most "
             + "needed — while diagnostics stay on standard error.")
     String format;
-
-    private final ConfigService configService = new ConfigService();
 
     /**
      * `run`/`results`/`config show` are meant to run under BaasCliOperatorRole. When no
@@ -150,8 +144,8 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * Package-private overload taking the environment explicitly, for the same testability reason
-     * as {@link #resolveCommit(Path)}.
+     * Package-private overload taking the environment explicitly, so a test does not read the real
+     * one.
      *
      * <p>Silent when credentials already arrive from the environment. The warning's own advice —
      * {@code baas config set --operator-profile} — is not merely redundant there but wrong: in
@@ -218,11 +212,8 @@ public class RunCommand implements Callable<Integer> {
      * inventing one would mean two provisioning paths whose results are silently incomparable.
      * Resolution happens before the JAR upload so a missing image costs nothing.
      */
-    public static Optional<RunnerImage> resolveRunnerImage(
-        ImageBuilderService images, String prefix, String amiIdOverride) {
-        return amiIdOverride != null
-            ? images.describeImage(amiIdOverride)
-            : images.currentImage("/" + prefix + "/runner/ami-id");
+    public static Optional<RunnerImage> resolveRunnerImage(ImageBuilderService images, String prefix) {
+        return images.currentImage("/" + prefix + "/runner/ami-id");
     }
 
     /**
@@ -237,6 +228,10 @@ public class RunCommand implements Callable<Integer> {
 
     boolean jsonSummary() {
         return "json".equalsIgnoreCase(format);
+    }
+
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
     }
 
     @Override
@@ -274,25 +269,25 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
+        BaasConfig config = configService().load();
+
         // Resolved before any AWS call — the runner-image lookup and the S3 upload both come later
         // in this method, and neither should run for a request that is going to fail anyway because
         // it can't be attributed to a project. resolveProject() throws IllegalStateException with a
-        // message naming --project when this isn't a git repository and none was passed.
-        String resolvedProject = resolveProject();
+        // message naming --project when none was passed and none can be derived.
+        String resolvedProject = resolveProject(config);
         summaryProject = resolvedProject;
 
-        BaasConfig config = configService.load();
         // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
         // and the upload: a run that cannot say where its measurements go is going to fail anyway.
         String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         int resolvedTimeout = timeoutSeconds != null ? timeoutSeconds : config.getEc2().getBenchmarkTimeoutSeconds();
-        int resolvedWallClock = wallClockSeconds != null ? wallClockSeconds
-            : (timeoutSeconds != null ? timeoutSeconds + 300 : config.getEc2().getWallClockHardKillSeconds());
-        String resolvedBranch = resolveBranch();
-        String resolvedCommit = resolveCommit();
-        logger.debug("Resolved run parameters: instanceType={}, timeout={}s, wallClock={}s, branch={}, project={}, params={}",
-            resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedBranch, resolvedProject, benchmarkParams);
+        int resolvedMargin = watchdogMarginSeconds != null
+            ? watchdogMarginSeconds : config.getEc2().getWatchdogMarginSeconds();
+        int resolvedWallClock = watchdogBound(resolvedTimeout, resolvedMargin);
+        logger.debug("Resolved run parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
+            resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedProject, benchmarkParams);
 
         operatorCredentialsWarning(config).ifPresent(logger::warn);
         var factory = new AwsClientFactory(
@@ -314,20 +309,15 @@ public class RunCommand implements Callable<Integer> {
         RunnerImage runnerImage;
         try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
             var resolved = resolveRunnerImage(
-                new ImageBuilderService(imageBuilder, ec2, ssm), config.getPrefix(), amiIdOverride);
+                new ImageBuilderService(imageBuilder, ec2, ssm), config.getPrefix());
 
             if (resolved.isEmpty()) {
-                if (amiIdOverride != null) {
-                    logger.error("AMI {} does not exist in {}. Nothing was launched.",
-                        amiIdOverride, config.getAws().getRegion());
-                } else {
-                    logger.error("""
-                            No runner image is published for this account ({}).
-                              Build one:  baas admin build-image
-                            Nothing was launched — the runner boots from a purpose-built AMI and \
-                            there is no boot-time install path.""",
-                        config.getAws().getRegion());
-                }
+                logger.error("""
+                        No runner image is published for this account ({}).
+                          Build one:  baas admin build-image
+                        Nothing was launched — the runner boots from a purpose-built AMI and \
+                        there is no boot-time install path.""",
+                    config.getAws().getRegion());
                 return 1;
             }
             runnerImage = resolved.get();
@@ -377,7 +367,7 @@ public class RunCommand implements Callable<Integer> {
 
         // 5. Build user-data
         Map<String, String> runnerTags =
-            buildRunnerTags(benchmarkType, resolvedProject, resolvedCommit, resolvedBranch);
+            buildRunnerTags(benchmarkType, resolvedProject);
         String userData = new UserDataScriptBuilder().build(
             config.getAws().getRegion(), config.bucket(),
             benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
@@ -578,97 +568,47 @@ public class RunCommand implements Callable<Integer> {
         }
     }
 
-    private String currentGitBranch() {
-        return currentGitBranch(Path.of(".").toAbsolutePath().normalize());
-    }
-
-    /**
-     * Package-private overload for the same testability reason as {@link #resolveProject(Path)}.
-     *
-     * <p>Routed through {@link #gitOutput(Path, String...)} — which is {@link GitProject#gitOutput}
-     * underneath and checks the subprocess exit code — rather than a hand-rolled
-     * {@code ProcessBuilder} with {@code redirectErrorStream(true)}. The previous implementation
-     * merged stderr into the captured output and never inspected the exit code, so outside a git
-     * repository it returned {@code "fatal: not a git repository (or any of the parent
-     * directories): .git"} as if it were a branch name — worse than the {@code "unknown"} this
-     * change replaced, since a git error message would have landed in the only query surface the
-     * tool has. {@link #currentGitCommit(Path)} already got this for free; the two are now
-     * symmetric.
-     */
-    String currentGitBranch(Path workingDir) {
-        String branch = gitOutput(workingDir, "git", "rev-parse", "--abbrev-ref", "HEAD");
-        return branch != null && !branch.isBlank() ? branch : null;
-    }
-
     /** Shared with {@code baas results}, which must resolve the same partition. */
     static String projectFromToplevel(String toplevel) {
         return GitProject.fromToplevel(toplevel);
     }
 
-    private String gitOutput(String... args) {
-        return gitOutput(Path.of(".").toAbsolutePath().normalize(), args);
-    }
-
     /**
-     * Package-private overload taking an explicit working directory. Real callers always go
-     * through the no-arg overload above; this one exists so
-     * {@link #resolveProject(Path)}'s "not a git repository" throw can be exercised by a real
-     * git invocation in a test, without needing to leave this repository (which is always a git
-     * repo at test time).
+     * {@code --project}, else — only when the operator enabled {@code git.resolveProject} — the
+     * repository holding the benchmark JAR. Anchored on the JAR, not the working directory: the JAR
+     * is what is being measured, and the shell's directory is incidental. {@code branch} and
+     * {@code commit} are deliberately not derived at all; they arrive as {@code --tag}s or not at all.
      */
-    String gitOutput(Path workingDir, String... args) {
-        return GitProject.gitOutput(workingDir, args);
-    }
-
-    private String resolveProject() {
-        return resolveProject(Path.of(".").toAbsolutePath().normalize());
-    }
-
-    /** Package-private overload for the same testability reason as {@link #gitOutput(Path, String...)}. */
-    String resolveProject(Path workingDir) {
+    String resolveProject(BaasConfig config) {
         if (project != null && !project.isBlank()) return project;
-        String derived = GitProject.repositoryName(workingDir);
+        if (!config.getGit().isResolveProject()) {
+            throw new IllegalStateException(
+                "No project named. Pass --project <name>, or let baas derive it from the benchmark "
+                    + "JAR's git repository: baas config set --git-resolve-project true");
+        }
+        Path jarDir = benchmarkJar.toAbsolutePath().normalize().getParent();
+        String derived = jarDir != null && Files.isDirectory(jarDir) ? GitProject.repositoryName(jarDir) : null;
         if (derived == null) {
             throw new IllegalStateException(
-                "Cannot determine the project name: not inside a git repository. Pass --project <name>.");
+                "Cannot determine the project name: " + benchmarkJar + " is not inside a git repository. "
+                    + "Pass --project <name>.");
         }
         return derived;
     }
 
-    private String currentGitCommit() {
-        return currentGitCommit(Path.of(".").toAbsolutePath().normalize());
-    }
-
-    /** Package-private overload for the same testability reason as {@link #resolveProject(Path)}. */
-    String currentGitCommit(Path workingDir) {
-        String commit = gitOutput(workingDir, "git", "rev-parse", "HEAD");
-        return commit != null && !commit.isBlank() ? commit : null;
-    }
-
-    private String resolveBranch() {
-        return resolveBranch(Path.of(".").toAbsolutePath().normalize());
-    }
-
     /**
-     * Package-private overload for the same testability reason as {@link #resolveProject(Path)}.
-     *
-     * <p>An explicit {@code --branch ""} is blank-checked the same way {@link #resolveProject}
-     * blank-checks {@code --project}: a blank override is treated as not supplied and falls through
-     * to derivation, rather than being stored as an empty-string tag. An empty string is a
-     * placeholder standing in for an unknown value, same as the {@code "unknown"} this change
-     * already removed.
+     * The one place the watchdog bound is computed. It feeds both the instance's self-termination
+     * delay and this CLI's poll cap, so the two cannot drift, and being relative it can never fall
+     * below the benchmark's own timeout.
      */
-    String resolveBranch(Path workingDir) {
-        return (branch != null && !branch.isBlank()) ? branch : currentGitBranch(workingDir);
-    }
-
-    private String resolveCommit() {
-        return resolveCommit(Path.of(".").toAbsolutePath().normalize());
-    }
-
-    /** Package-private overload for the same testability reason as {@link #resolveBranch(Path)}. */
-    String resolveCommit(Path workingDir) {
-        return (commit != null && !commit.isBlank()) ? commit : currentGitCommit(workingDir);
+    static int watchdogBound(int timeoutSeconds, int marginSeconds) {
+        if (marginSeconds < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
+            throw new IllegalArgumentException(
+                "The watchdog margin must be at least " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS
+                    + " seconds, to cover boot and the final upload; got " + marginSeconds
+                    + ". Nothing was launched.");
+        }
+        return timeoutSeconds + marginSeconds;
     }
 
     /**
@@ -714,17 +654,16 @@ public class RunCommand implements Callable<Integer> {
      * a {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or
      * allowed to override — a silently discarded tag is its own surprise.
      */
-    Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit, String branch) {
-        return buildRunnerTags(benchmarkType, project, commit, branch, System.getenv());
+    Map<String, String> buildRunnerTags(String benchmarkType, String project) {
+        return buildRunnerTags(benchmarkType, project, System.getenv());
     }
 
     /**
      * Package-private overload taking the environment explicitly, for the same testability reason
-     * as {@link #resolveCommit(Path)} — {@code source} is derived from it, and a test that read the
+     * as {@link #operatorCredentialsWarning(BaasConfig, Map)} — {@code source} is derived from it, and a test that read the
      * real environment would say {@code local} on a laptop and {@code ci} in CI.
      */
-    Map<String, String> buildRunnerTags(String benchmarkType, String project, String commit,
-                                        String branch, Map<String, String> environment) {
+    Map<String, String> buildRunnerTags(String benchmarkType, String project, Map<String, String> environment) {
         List<String> collided = RESERVED_TAG_KEYS.stream().filter(extraTags::containsKey).toList();
         if (!collided.isEmpty()) {
             throw new IllegalArgumentException(
@@ -733,18 +672,13 @@ public class RunCommand implements Callable<Integer> {
                     + " observed on the instance (or derived from the benchmark type), and a "
                     + "caller override would let a result's tags disagree with its own "
                     + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
-                    + ". --project, --commit and --branch remain overridable.");
+                    + ". project, commit, branch and source remain caller-settable.");
         }
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put(TagKeys.PROJECT, project);
-        // An unresolvable commit or branch is absent, not "unknown". A placeholder value is
-        // indistinguishable from a real one at query time, which is how RESULT#unknown grew.
-        if (commit != null) {
-            tags.put(TagKeys.COMMIT, commit);
-        }
-        if (branch != null) {
-            tags.put(TagKeys.BRANCH, branch);
-        }
+        // commit and branch come only from the caller's --tag. Absent stays absent, never
+        // "unknown": a placeholder value is indistinguishable from a real one at query time, which
+        // is how RESULT#unknown grew.
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.put(TagKeys.SOURCE, deriveSource(environment));
         tags.putAll(extraTags);

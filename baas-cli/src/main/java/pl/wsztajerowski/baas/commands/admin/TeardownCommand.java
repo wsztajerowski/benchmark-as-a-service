@@ -7,6 +7,7 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -16,6 +17,7 @@ import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.Callable;
@@ -39,18 +41,19 @@ public class TeardownCommand implements Callable<Integer> {
             + "(e.g. baas-123456789012). Defaults to this machine's configured installation.")
     String stackName;
 
-
     @Option(names = "--yes", description = "Skip interactive confirmation.")
     boolean yes;
 
     @Option(names = "--delete-bucket", description = "Empty and delete the S3 results bucket (default: retain).")
     boolean deleteBucket;
 
-    private final ConfigService configService = new ConfigService();
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().load();
 
         var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
 
@@ -123,14 +126,24 @@ public class TeardownCommand implements Callable<Integer> {
                       out, then delete it manually or re-run teardown with --delete-bucket.""",
                 bucket);
         }
-        logger.warn("""
-                DynamoDB results table retained: {}
-                  Benchmark history outlives the stack, so teardown never deletes it and there is
-                  no flag to. The name is derived from this AWS account, so a later
-                  `baas admin setup` for the same installation will fail while it exists.
-                  Read it any time with:  baas results --results-table {}
-                  Remove it with:         aws dynamodb delete-table --table-name {}""",
-            resultsTable, resultsTable, resultsTable);
+        logger.warn("{}", retainedTableNotice(resultsTable, configService().configFilePath()));
         return 0;
+    }
+
+    /**
+     * Teardown leaves the configuration file alone, so it still names the installation and a plain
+     * {@code baas results} keeps reading the retained table. Elsewhere, the same file reaches it
+     * through {@code --config-path} — the only way to address another installation now that the
+     * per-command {@code --results-table} override is gone.
+     */
+    static String retainedTableNotice(String resultsTable, Path configFile) {
+        return """
+            DynamoDB results table retained: %1$s
+              Benchmark history outlives the stack, so teardown never deletes it and there is
+              no flag to. The name is derived from this AWS account, so a later
+              `baas admin setup` for the same installation will fail while it exists.
+              Read it any time with:  baas results --all-projects
+              %2$s still names it; keep a copy to read it elsewhere with --config-path.
+              Remove it with:         aws dynamodb delete-table --table-name %1$s""".formatted(resultsTable, configFile);
     }
 }

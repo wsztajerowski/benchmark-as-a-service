@@ -101,8 +101,8 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   carried credentials. A table name carries none — access comes from `RunnerRole`, not from knowing
   the name — so fetching it at boot would buy nothing and cost a round trip on every run. Don't
   "restore" the SSM indirection.
-- **`baas run` forwards `project`, `branch`, `commit` and every `--tag` to the *runner*, not just to
-  the instance.** They reach the item's top-level `tags` map, which is the only query surface `baas results`
+- **`baas run` forwards `project` and every `--tag` — `branch` and `commit` included — to the
+  *runner*, not just to the instance.** They reach the item's top-level `tags` map, which is the only query surface `baas results`
   has. A caller `--tag` for a machine-observed key (`imageVersion`, `instanceType`, `jdk`,
   `cpuModel`, `cpuArch`, `type`) is rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
@@ -111,7 +111,12 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
 The watchdog is the only one that survives a deadlocked JVM.
 
 1. Shell watchdog (`UserDataScriptBuilder`) — `sleep N && ec2:TerminateInstances`, fires
-   `timeout + 300 s` after launch
+   `timeout + margin` after launch (`--watchdog-margin` / `ec2.watchdogMarginSeconds`, default 300,
+   floor 60). Relative by construction: the absolute `--max-wall-clock` it replaced could be left
+   below a raised timeout, so the watchdog killed a benchmark still inside its own budget. The floor
+   is there because the watchdog counts from launch and `timeout` from JVM start — below it the
+   instance can die before `run-status` is written. `RunCommand.watchdogBound` is the one place the
+   bound is computed; it is also the CLI's poll cap
 2. Process `timeout` around `java -jar benchmark-runner.jar`
 3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C
 
@@ -239,8 +244,11 @@ The watchdog is the only one that survives a deadlocked JVM.
   on a machine with no local state would adopt whatever installation the active credentials imply —
   in CI, a wrong role or a leftover `AWS_PROFILE` binds the machine to another account's
   installation and fails later, after provisioning. Setup derives and prints; sync adopts what it
-  is told. Read-only commands take `--results-table` (and `baas download` also `--bucket`) to reach
-  a retired installation's archive; no command that *writes* measurements accepts either.
+  is told. Another installation — a retired one's archive included — is reached by naming its
+  configuration with the inherited `--config-path`, never by a per-command `--results-table` or
+  `--bucket`, which are gone: an override of one resource could aim a command at one installation's
+  table while its configuration named another. `config sync` verifies the stack exists, so a
+  torn-down installation is read through a kept copy of its config, or one written by hand.
 - **An account-shared installation makes two concurrent `baas admin build-image` runs reachable.**
   The one-image invariant's ordering — repoint the pointer, then deregister the replaced AMI —
   assumes a single builder, which per-identity naming supplied by accident. Two concurrent bakes
@@ -257,10 +265,17 @@ The watchdog is the only one that survives a deadlocked JVM.
   `--version`, the same no-fallback stance `RunCommand` takes on an unreleased build. `--update`
   never installs anything itself: it resolves the newest release and re-executes *that release's*
   installer, so the script installing version X is always version X's own.
-- **`commit` and `branch` are absent when unresolved, never `"unknown"`.** A placeholder value is
-  indistinguishable from a real one at query time — the same non-answer wearing a value's clothing
-  that produced `RESULT#unknown` (below). Tags are the entire query surface, so a fake value there
-  is worse than a missing one.
+- **`commit` and `branch` are absent unless the caller tags them, never `"unknown"`.** A placeholder
+  value is indistinguishable from a real one at query time — the same non-answer wearing a value's
+  clothing that produced `RESULT#unknown` (below). Tags are the entire query surface, so a fake value
+  there is worse than a missing one. They are never derived: only `--tag branch=… --tag commit=…`
+  supplies them.
+- **Git is consulted only when `git.resolveProject` is on, and only for `project`.** Off by default
+  (`baas config set --git-resolve-project true`). `baas run` then derives the project from the
+  repository **holding `--benchmark-jar`** — never the working directory, which is incidental to
+  what is measured — and `baas results` from the working directory's repository, skipping its
+  project picker. A derived default that applied without being asked is what made the same command
+  record or read a different partition depending on where it was typed.
 
 ## What isn't there, and what fails silently
 
@@ -515,7 +530,7 @@ non-passing tests, so per-test items would cover failures alone). No derived ind
 
 | | |
 |---|---|
-| `pk` | `RESULT#<project>` — `project` is the git repo name unless `--project` overrides it |
+| `pk` | `RESULT#<project>` — `--project`, or the benchmark JAR's git repository when `git.resolveProject` is on |
 | `sk` | `<class>#<method>#<mode>#<timestamp>#<requestId>`, or `JCSTRESS#<timestamp>#<requestId>` |
 | GSI `requestId-index` | `gsi1pk` = request ID; the one access path that is not a project sweep |
 
@@ -540,16 +555,19 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `commit`, `branch`, `source` | `baas run`. `type` is reserved like the observed keys; `project`, `commit`, `branch` and `source` are caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
-| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side; it is a convention, not a field |
+| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys; `project` and `source` are caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
+| Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
+| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--all-runs` (shown faint) and `--request-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
 
 `branch` used to survive only as a segment of the result path and was stored nowhere. The unified
 prefix drops that segment, so what the path stopped carrying the tags now carry — which is the
 whole point of tags being the query surface.
 
 Unknown keys pass through — `baas results` warns only when a `--tag` names a key no row carries.
-Grouping keeps the highest score per `(benchmark, <group-tag>)`, group tag defaulting to `branch`,
-and rows carrying no group tag are bucketed rather than dropped.
+Grouping keeps the highest score per `(project, benchmark, <group-tag>)`, group tag defaulting to
+`branch`, and rows carrying no group tag are bucketed rather than dropped. Project is in the key
+because `--all-projects` can put two projects' identically named benchmarks side by side.
+`--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
 
 The retired `benchmark_overview.sh` also hard-coded `tags.project: 'lynx-journal'`. `baas results`
 has no such filter, which explains row-count differences against historical output — and migrated
@@ -574,7 +592,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 |---|---|
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
 
-| Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + 300 s`. Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
+| Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + margin` (300 s by default). Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
 | ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |

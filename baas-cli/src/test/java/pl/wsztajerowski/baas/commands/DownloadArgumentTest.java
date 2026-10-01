@@ -62,45 +62,18 @@ class DownloadArgumentTest {
     // ─── Reading another installation's results ─────────────────────────────────
 
     /**
-     * Retiring an installation leaves its bucket and results table behind as a read-only archive.
-     * Without an override they would be write-once, read-never: `config set` has no such option,
-     * and `config sync` cannot help once the old stack is deleted, because it reads stack outputs.
+     * The per-command table and bucket overrides gave way to the inherited --config-path, which
+     * names a whole installation. No command — read or write — declares either any more, so none can
+     * be aimed at one installation's table while its configuration names another.
      */
     @Test
-    void downloadAcceptsAResultsTableOverride() {
-        var command = new DownloadCommand();
-        new CommandLine(command).parseArgs("--results-table", "baas-3q7i7s65-results", "some-run-id");
-
-        assertThat(command.resultsTableOverride).isEqualTo("baas-3q7i7s65-results");
-    }
-
-    @Test
-    void downloadAcceptsABucketOverride() {
-        var command = new DownloadCommand();
-        new CommandLine(command).parseArgs("--bucket", "baas-3q7i7s65", "some-run-id");
-
-        assertThat(command.bucketOverride).isEqualTo("baas-3q7i7s65");
-    }
-
-    @Test
-    void resultsAcceptsAResultsTableOverride() {
-        var command = new ResultsCommand();
-        new CommandLine(command).parseArgs("--results-table", "baas-3q7i7s65-results");
-
-        assertThat(command.resultsTableOverride).isEqualTo("baas-3q7i7s65-results");
-    }
-
-    /**
-     * Deliberately absent from every path that writes. Persisting or honouring it there would let
-     * an operator leave a machine pointed at an archive and quietly record new runs into it.
-     */
-    @Test
-    void noWritePathDeclaresAResultsTableOverride() {
-        // Asserted on the option spec rather than by parsing: `baas run` has its own required
-        // options, so picocli would report one of those first and the test would pass for the
-        // wrong reason.
-        assertThat(optionNames(new RunCommand())).doesNotContain("--results-table");
-        assertThat(optionNames(new ConfigSetSubcommand())).doesNotContain("--results-table");
+    void noCommandDeclaresATableOrBucketOverride() {
+        for (Object command : new Object[]{
+            new DownloadCommand(), new ResultsCommand(), new RunCommand(), new ConfigSetSubcommand()}) {
+            assertThat(optionNames(command))
+                .as(command.getClass().getSimpleName())
+                .doesNotContain("--results-table", "--bucket");
+        }
     }
 
     private static java.util.List<String> optionNames(Object command) {

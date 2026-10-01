@@ -137,4 +137,34 @@ class ResultsFormatTest {
         String out = captured.toString();
         assertThat(out).contains("a3f9c21b").contains("b7e4d0f2");
     }
+
+    /** Tag values are free-form: quotes, backslashes and control characters must still parse. */
+    @Test
+    void jsonCarriesEveryTagAndKeepsTheScoreError() throws Exception {
+        var tagged = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
+            1.0, 0.25, "ops/s", "2026-08-12T21:36:13Z",
+            Map.of("branch", "main", "note", "say \"hi\" \\ tab\there"));
+
+        var parsed = new ObjectMapper().readTree(render("json", List.of(tagged)));
+
+        assertThat(parsed.get(0).get("scoreError").asDouble()).isEqualTo(0.25);
+        assertThat(parsed.get(0).get("tags").get("branch").asText()).isEqualTo("main");
+        assertThat(parsed.get(0).get("tags").get("note").asText()).isEqualTo("say \"hi\" \\ tab\there");
+    }
+
+    /** The first CSV field that can carry a comma, a semicolon or a quote — always quoted. */
+    @Test
+    void csvQuotesTheTagsColumn() throws Exception {
+        Locale.setDefault(Locale.forLanguageTag("pl-PL"));
+        var tagged = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
+            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z",
+            Map.of("note", "a,b;\"c\"", "branch", "main"));
+
+        var lines = render("csv", List.of(tagged)).strip().lines().toList();
+
+        assertThat(lines.getFirst()).endsWith(",scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags");
+        assertThat(lines.get(1))
+            .contains("1.500000,0.250000")
+            .endsWith(",\"branch=main;note=a,b;\"\"c\"\"\"");
+    }
 }

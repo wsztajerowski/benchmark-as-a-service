@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -21,16 +24,20 @@ public class ConfigShowSubcommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    private final ConfigService configService = new ConfigService();
+    @Spec CommandSpec spec;
+
+    private ConfigService configService() {
+        return BaasApp.configService(spec);
+    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService.load();
+        BaasConfig config = configService().load();
 
         // Accumulated and logged as one event rather than a line at a time: SimpleLogger prefixes
         // every call with a timestamp, which would break the column alignment this dump relies on.
         var dump = new StringBuilder()
-            .append("Config file: ").append(configService.configFilePath()).append('\n')
+            .append("Config file: ").append(configService().configFilePath()).append('\n')
             .append("prefix:      ").append(config.getPrefix()).append('\n')
             .append("aws:\n")
             .append("  profile:                  ").append(config.getAws().getProfile())
@@ -53,7 +60,9 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("ec2:\n")
             .append("  defaultInstanceType:      ").append(config.getEc2().getDefaultInstanceType()).append('\n')
             .append("  benchmarkTimeoutSeconds:  ").append(config.getEc2().getBenchmarkTimeoutSeconds()).append('\n')
-            .append("  wallClockHardKillSeconds: ").append(config.getEc2().getWallClockHardKillSeconds()).append('\n')
+            .append("  watchdogMarginSeconds:    ").append(config.getEc2().getWatchdogMarginSeconds()).append('\n')
+            .append("git:\n")
+            .append("  resolveProject:           ").append(config.getGit().isResolveProject()).append('\n')
             .append("runner:\n")
             .append("  sourceRepo:               ").append(config.getRunner().getSourceRepo()).append('\n');
 

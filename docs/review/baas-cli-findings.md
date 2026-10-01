@@ -167,6 +167,10 @@ retired script lost early runs. `--all` opts out of grouping, `--limit` bounds t
 the doc claimed. Unit tests cover grouping and best-score selection, including the same benchmark
 under two group values.
 
+*Later (`simplify-cli-options`):* `--all` is now `--all-runs` and also lifts the exclusion filter;
+`--living-branches` is removed; grouping keys on `(project, benchmark, <group-tag>)`. The fix above
+still holds — read the option names in it as historical.
+
 ## 8. A8 — `yum update -y` on every boot · Med · **Fixed**
 
 `UserDataScriptBuilder` line ~29 unpins the OS between runs of a benchmarking tool, so a kernel or

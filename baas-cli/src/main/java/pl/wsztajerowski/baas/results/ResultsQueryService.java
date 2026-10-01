@@ -5,19 +5,23 @@ import pl.wsztajerowski.baas.model.ResultKeys;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
+import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.TreeSet;
 
 /**
- * Reads measurements from the results table. Two access paths and no more: one {@code Query} on the
- * project partition, and one on the request-ID index. Every other filter is applied to the rows
+ * Reads measurements from the results table. One project is one {@code Query} on its partition, one
+ * run is one {@code Query} on the request-ID index, and every other filter is applied to the rows
  * those return.
  *
- * <p>Never issues a {@code Scan}. The operator role is not granted one, so an accidental scan fails
- * with an access error rather than quietly billing a full-table read.
+ * <p>A {@code Scan} is issued only where every partition is genuinely needed — listing projects for
+ * the picker, and {@code --all-projects} — because no index spans projects. It is billed by data read,
+ * so it costs what the table weighs, and it grows with history; a named project never pays it.
  */
 public class ResultsQueryService implements AutoCloseable {
 
@@ -32,7 +36,9 @@ public class ResultsQueryService implements AutoCloseable {
         "attribute_not_exists(#tags) OR attribute_not_exists(#tags.#excluded) OR #tags.#excluded <> :excluded";
 
     private static final String TAGS_ATTRIBUTE = "tags";
+    private static final String PROJECT_ATTRIBUTE = "project";
     static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
+    static final String EXCLUDED_VALUE = "true";
 
     private final DynamoDbClient client;
     private final String tableName;
@@ -42,20 +48,83 @@ public class ResultsQueryService implements AutoCloseable {
         this.tableName = tableName;
     }
 
-    /** The single access path for everything except {@code --request-id}. */
+    /** One project's sweep, without its excluded rows. */
     public List<ResultRow> queryProject(String project) {
-        return runQuery(QueryRequest.builder()
+        return queryProject(project, false);
+    }
+
+    /**
+     * One project's sweep. {@code includeExcluded} is {@code --all-runs}. When it drops the filter
+     * it drops the filter's names and values too: DynamoDB rejects a request carrying an expression
+     * name or value no expression uses (see {@link #queryByRequestId}).
+     */
+    public List<ResultRow> queryProject(String project, boolean includeExcluded) {
+        var names = new HashMap<String, String>(Map.of("#pk", MeasurementItemMapper.PK));
+        var values = new HashMap<String, AttributeValue>(
+            Map.of(":pk", AttributeValue.fromS(ResultKeys.partitionKey(project))));
+        var request = QueryRequest.builder()
             .tableName(tableName)
-            .keyConditionExpression("#pk = :pk")
-            .expressionAttributeNames(Map.of(
-                "#pk", MeasurementItemMapper.PK,
-                "#tags", TAGS_ATTRIBUTE,
-                "#excluded", EXCLUDE_FROM_RESULTS))
-            .expressionAttributeValues(Map.of(
-                ":pk", AttributeValue.fromS(ResultKeys.partitionKey(project)),
-                ":excluded", AttributeValue.fromS("true")))
+            .keyConditionExpression("#pk = :pk");
+        if (!includeExcluded) {
+            addExcludeFilter(names, values);
+            request.filterExpression(EXCLUDE_FILTER);
+        }
+        return runQuery(request.expressionAttributeNames(names).expressionAttributeValues(values).build());
+    }
+
+    /** Every project's measurements: {@code --all-projects}. One paginated {@code Scan}. */
+    public List<ResultRow> scanAllProjects(boolean includeExcluded) {
+        var request = ScanRequest.builder().tableName(tableName);
+        if (!includeExcluded) {
+            var names = new HashMap<String, String>();
+            var values = new HashMap<String, AttributeValue>();
+            addExcludeFilter(names, values);
+            request.filterExpression(EXCLUDE_FILTER).expressionAttributeNames(names).expressionAttributeValues(values);
+        }
+        List<ResultRow> rows = new ArrayList<>();
+        for (var page : client.scanPaginator(request.build())) {
+            for (Map<String, AttributeValue> item : page.items()) {
+                rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * Projects holding at least one measurement not tagged for exclusion, sorted — what the project
+     * picker offers. A project whose every row is excluded (a fixture project CI writes to) would
+     * open onto an empty table, so it is left out; {@code --project <name> --all-runs} still reaches it.
+     *
+     * <p>Projects only the two attributes the decision needs. That trims the response, not the bill:
+     * a {@code Scan} is charged for the items it reads, whatever it returns.
+     */
+    public List<String> listVisibleProjects() {
+        var names = new HashMap<String, String>(Map.of("#project", PROJECT_ATTRIBUTE));
+        var values = new HashMap<String, AttributeValue>();
+        addExcludeFilter(names, values);
+        var request = ScanRequest.builder()
+            .tableName(tableName)
+            .projectionExpression("#project")
             .filterExpression(EXCLUDE_FILTER)
-            .build());
+            .expressionAttributeNames(names)
+            .expressionAttributeValues(values)
+            .build();
+        var projects = new TreeSet<String>();
+        for (var page : client.scanPaginator(request)) {
+            for (Map<String, AttributeValue> item : page.items()) {
+                AttributeValue project = item.get(PROJECT_ATTRIBUTE);
+                if (project != null && project.s() != null && !project.s().isBlank()) {
+                    projects.add(project.s());
+                }
+            }
+        }
+        return List.copyOf(projects);
+    }
+
+    private static void addExcludeFilter(Map<String, String> names, Map<String, AttributeValue> values) {
+        names.put("#tags", TAGS_ATTRIBUTE);
+        names.put("#excluded", EXCLUDE_FROM_RESULTS);
+        values.put(":excluded", AttributeValue.fromS(EXCLUDED_VALUE));
     }
 
     /**

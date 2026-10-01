@@ -140,15 +140,21 @@ flags when your working tree declares a version you haven't built yet.
 
 ```bash
 mvn package
-baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 3
+baas run --benchmark-jar target/benchmarks.jar --project my-benchmarks \
+  --tag branch=main --tag commit=$(git rev-parse HEAD) jmh -- MyBenchmark -f 1 -wi 1 -i 3
 ```
 
-`commit`, `branch` and the default `--project` are still derived from the working directory's git
-repository, so run this from **your benchmark project's** checkout even though nothing gets built
-there. Because the JAR is now named explicitly, a JAR built elsewhere can end up tagged with a
-commit it didn't come from — pass `--commit` / `--branch` to override the derived values when that
-matters. Outside a git repository, `commit` and `branch` are simply omitted from the stored tags,
-never recorded as `"unknown"`.
+Nothing is read from the directory you run this in. `--project` is required, and `branch` and
+`commit` are recorded only when you pass them as tags — absent otherwise, never `"unknown"`. To
+have the project derived instead, opt in once:
+
+```bash
+baas config set --git-resolve-project true
+```
+
+`baas run` then names the project after the git repository that **contains the benchmark JAR** —
+not the directory you typed the command in — and `baas results` uses the current directory's
+repository instead of asking. `branch` and `commit` are never derived either way.
 
 Types: `jmh`, `jmh-with-async` (async-profiler flame graphs), `jmh-with-prof` (JMH's own
 profilers), `jcstress`.
@@ -162,17 +168,17 @@ profilers), `jcstress`.
 >   jmh -- MyBenchmark -f 1 -wi 1 -i 3
 > ```
 
-Useful options: `--benchmark-jar` (required), `--runner-jar`, `--ami-id`, `--instance-type`,
-`--timeout`, `--max-wall-clock`, `--tag key=value`, `--commit`, `--branch`, `--project`,
-`--no-database`.
+Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--instance-type`,
+`--timeout`, `--watchdog-margin`, `--tag key=value`, `--no-database`.
 
-> **`--project` defaults to the current git repository's directory name** and composes the results
-> partition key, as well as being recorded as a tag. Outside a git repository, `baas run`
-> hard-fails before any upload unless `--project <name>` is passed explicitly.
+> **`--watchdog-margin` is added to `--timeout`, not a bound of its own.** The instance terminates
+> itself `timeout + margin` seconds after launch (default margin 300, minimum 60), and the CLI stops
+> polling at the same moment — so the watchdog can never fire while the benchmark is still inside
+> its own timeout.
 
 > **Tags are how you find a result later.** `--tag key=value` is repeatable and reaches the stored
-> measurement, not just the EC2 instance. `project`, `commit`, `branch` and `type` are added for
-> you, and the instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
+> measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and the
+> instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
 > `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
 > values the run's own `environment.json` records, so the two can never disagree.
 
@@ -188,25 +194,31 @@ must come before the `--` separator, or it is passed to the benchmark instead.
 ### 5. Read results
 
 ```bash
-baas results
+baas results --project my-benchmarks
 ```
 
-Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | ±ERROR | UNIT`, reading the table directly.
+Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | UNIT`, reading the table directly. With `-v`,
+each row is followed by an indented line carrying all of its tags. JSON and CSV always carry the
+tags, and the score error the table leaves out.
 
-By default it reads the partition for the current git repository, drops rows tagged
-`exclude_from_results=true`, groups by `(benchmark, branch)` and keeps the best score in each
-group. Filters:
+Without `--project`, a terminal offers a numbered list of the projects that hold results (with
+`git.resolveProject` enabled, the current directory's repository is used instead); a pipe or
+`--format json|csv` gets an error listing them. It drops rows tagged `exclude_from_results=true`,
+groups by `(project, benchmark, branch)` and keeps the best score in each group. Filters:
 
 | | |
 |---|---|
-| `--project <name>` | Read a different project's partition |
+| `--project <name>` | Read that project's partition |
+| `--all-projects` | Every project, with a PROJECT column. Reads the whole table |
 | `--tag key=value` | Repeatable; repeated tags must **all** match |
 | `--benchmark-name <regex>` | Match on the benchmark name |
-| `--living-branches` | Only branches that still exist in the local repo |
 | `--request-id <id>` | Every measurement of one run. Cannot be combined with the others |
 | `--group-by <tag>` | Group by something other than `branch` |
-| `--all` | Every measurement, not just the best per group |
+| `--all-runs` | Every measurement, not just the best per group — including excluded runs, shown faint |
 | `--limit <n>`, `--format json\|csv` | Bound and reshape the output |
+
+Every command takes `--config-path <file>` to use a configuration other than `~/.baas/config.yaml` —
+the way to read another installation, such as a torn-down one whose table was retained.
 
 ### 6. Fetch everything a run produced
 

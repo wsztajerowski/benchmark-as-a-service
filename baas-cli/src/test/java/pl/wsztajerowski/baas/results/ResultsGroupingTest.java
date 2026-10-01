@@ -101,4 +101,29 @@ class ResultsGroupingTest {
 
         assertThat(ResultsGrouping.bestPerGroup(rows, "jdk")).hasSize(2);
     }
+
+    /** Under --all-projects two projects can share a benchmark name; neither may absorb the other. */
+    @Test
+    void twoProjectsNeverShareAGroup() {
+        var rows = List.of(
+            new ResultRow("r1", "com.example.Bench.run", "jmh", "thrpt", 100.0, 1.0, "ops/s", "t",
+                Map.of(ResultsFilters.BRANCH, "main"), "lynx-journal"),
+            new ResultRow("r2", "com.example.Bench.run", "jmh", "thrpt", 300.0, 1.0, "ops/s", "t",
+                Map.of(ResultsFilters.BRANCH, "main"), "other-project"));
+
+        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH))
+            .extracting(ResultRow::project)
+            .containsExactlyInAnyOrder("lynx-journal", "other-project");
+    }
+
+    @Test
+    void displaySortsByProjectBeforeBenchmark() {
+        var rows = List.of(
+            new ResultRow("r1", "a.A.run", "jmh", "thrpt", 1.0, 1.0, "ops/s", "t", Map.of(), "zeta"),
+            new ResultRow("r2", "z.Z.run", "jmh", "thrpt", 1.0, 1.0, "ops/s", "t", Map.of(), "alpha"));
+
+        assertThat(ResultsGrouping.sortedForDisplay(rows))
+            .extracting(ResultRow::project)
+            .containsExactly("alpha", "zeta");
+    }
 }
