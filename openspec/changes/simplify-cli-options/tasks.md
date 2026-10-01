@@ -60,7 +60,7 @@
 
 ## 7. CI and documentation
 
-- [ ] 7.1 `e2e-cloud-test.yml`: pass `--project`, `--tag branch=${{ github.head_ref || github.ref_name }}`, `--tag commit=${{ github.sha }}`; assert `project`, `branch`, `commit` and `source=ci` from `.tags` in `baas results --request-id --format json`; remove the comment explaining why `source=ci` could not be asserted; verify with `actionlint` and a green run on this PR
+- [x] 7.1 `e2e-cloud-test.yml`: pass `--project`, `--tag branch=${{ github.head_ref || github.ref_name }}`, `--tag commit=${{ github.sha }}`; assert `project`, `branch`, `commit` and `source=ci` from `.tags` in `baas results --request-id --format json`; remove the comment explaining why `source=ci` could not be asserted; verify with `actionlint` and a green run on this PR
 - [x] 7.2 README: option tables for `run` and `results`, the `--commit`/`--branch` paragraph, the `--ami-id`/`--max-wall-clock` mentions; verify `grep -nE -- '--(ami-id|max-wall-clock|living-branches|results-table|branch |commit )' README.md` returns only intended hits
 - [x] 7.3 Update `docs/diagrams/baas-run.mmd` (option list, no `--ami-id`) and any results diagram; verify the Mermaid source renders
 - [x] 7.4 CLAUDE.md: replace *Read-only commands take `--results-table`* with `--config-path`; state the watchdog bound as `timeout + watchdogMarginSeconds` (floor 60); record that git is consulted only under `git.resolveProject`, JAR-anchored for `run`; note `--all-runs` includes excluded rows; verify by re-reading the edited sections
@@ -77,7 +77,7 @@
 
 ## 9. Verify
 
-- [ ] 9.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
+- [x] 9.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
 
 **Section 8 findings (2026-10-01):**
 - 8.1 Full reactor `mvn verify` with `ASYNC_PATH` exported: **red in `benchmark-runner`**, which this change does

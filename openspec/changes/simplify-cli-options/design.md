@@ -95,9 +95,11 @@ There is no second BaaS image to name. Its spec requirement is removed rather th
 
 ### Projects are listed with a `Scan`, not with a registry item or an index
 
-The picker and `--all-projects` both need every partition. A `Scan` with
-`ProjectionExpression` on `pk` and `tags.exclude_from_results` collects the distinct projects holding a
-non-excluded row, client-side. `--all-projects` is a full-item `Scan` with the same server-side
+The picker and `--all-projects` both need every partition. The picker's `Scan` applies the partition
+query's exclusion filter server-side and projects only the item's top-level `project` attribute; the
+distinct values are collected client-side. (As implemented — the first draft projected `pk` and the
+exclusion tag and filtered client-side; filtering server-side reuses the one filter expression and
+returns less, and the bill is the same either way since a `Scan` is charged for what it reads.) `--all-projects` is a full-item `Scan` with the same server-side
 exclusion filter used by the partition query (dropped under `--all-runs`), paginated to exhaustion like
 `runQuery`.
 
