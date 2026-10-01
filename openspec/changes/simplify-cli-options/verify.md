@@ -6,7 +6,7 @@ Run 2026-10-01 against commit `5d30b93` (PR #69) plus the design correction note
 
 | Dimension    | Status |
 |--------------|--------|
-| Completeness | 35/36 tasks (8.1 open, environmental — see W5); 21 requirements across 6 capability deltas, all implemented |
+| Completeness | 36/36 tasks; 21 requirements across 6 capability deltas, all implemented |
 | Correctness  | 21/21 requirements traced to code; 4 scenarios without an automated test (W4) |
 | Coherence    | Design followed; one drift corrected in design.md (W2); one spec over-statement (W1) |
 
@@ -83,7 +83,10 @@ Paths are under `baas-cli/src/`; `T:` names the covering test class.
   the `--watch` prompt preceding the alternate screen; the picker on a Linux TTY. Each is a few lines of
   wiring; none is on a path a regression would hide silently except the poll cap, which 8.3's paid run
   exercised end to end.
-- **W5 — reactor `verify` red in `benchmark-runner` (task 8.1, open).** Seven Mongo Testcontainers ITs fail
+- **W5 — reactor `verify` red in `benchmark-runner`. Resolved, environmental:** the Docker Desktop VM disk was
+  full, so `mongo:7.0.5` exited (`No space left on device` on `/data/db/journal`) right after Testcontainers'
+  readiness check passed. After freeing space the full reactor `verify` with `ASYNC_PATH` is green, including the
+  Mongo contract IT and the async-profiler IT (tasks.md 8.1). Original finding: Seven Mongo Testcontainers ITs fail
   with `Connection refused` on the mapped port; that module is untouched by this change. Until it is green
   the async-profiler IT is not proven locally by this change — CI's e2e run, which exercises async-profiler on
   the real image, is green.

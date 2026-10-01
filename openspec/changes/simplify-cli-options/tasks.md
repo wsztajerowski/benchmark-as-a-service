@@ -68,7 +68,7 @@
 
 ## 8. End-to-end verification (manual — no automated test covers the `baas run` path)
 
-- [ ] 8.1 Full reactor `mvn verify` with `ASYNC_PATH` exported; record the result
+- [x] 8.1 Full reactor `mvn verify` with `ASYNC_PATH` exported; record the result
 - [x] 8.2 `baas run --project fake-jmh-benchmarks --tag branch=… --tag commit=… --tag exclude_from_results=true jmh …` against the real installation; confirm the stored tags and that the instance terminated
 - [x] 8.3 Same run with `--timeout 600 --watchdog-margin 60`; confirm the rendered user-data (`-v`) carries 660 and the run completes
 - [x] 8.4 `baas results` interactively: picker lists only projects with visible rows, tip shown, choice works; `baas results | cat` fails listing projects; `--all-projects`, `--all-runs`, `-v` tag lines, excluded rows faint
@@ -83,8 +83,13 @@
 - 8.1 Full reactor `mvn verify` with `ASYNC_PATH` exported: **red in `benchmark-runner`**, which this change does
   not touch (`git status` clean there). All 7 errors are `MongoTimeoutException … Connection refused` on the
   Testcontainers-mapped Mongo port (`MongoResultsStoreContractIT` ×3, the four `*SubcommandServiceIT`s, which
-  fail at their Mongo store write). Environmental, not caused by this change, and left open: the box stays
-  unticked until the reactor is green. `mvn -pl baas-model,baas-cli verify` is green: 53 + 404 unit tests, 24 ITs.
+  fail at their Mongo store write).
+  **Root cause:** the Docker Desktop VM disk was full (`/dev/vda1` 59G, 57G used, 0 free). `mongo:7.0.5` started,
+  failed `create_directory /data/db/journal: No space left on device`, and exited 100 ~2 s later — after
+  Testcontainers' wait strategy had already passed, hence `Connection refused` rather than a start failure.
+  Freed ~43 GB (unused images 29 GB, anonymous volumes 9.4 GB, build cache 5.2 GB; named volumes kept) → 20% used.
+  **Rerun green:** full reactor `mvn verify` with `ASYNC_PATH` exported — model 53, runner 36 + 15 ITs (incl.
+  `MongoResultsStoreContractIT` 3/3 and `JmhWithAsyncProfilerSubcommandServiceIT` run, not skipped), CLI 413 + 24 ITs.
 - 8.4 Against the real table: `baas results | cat` fails listing `lynx-journal` only (`benchmark-as-a-service` holds
   only excluded rows, so the picker omits it); under a pty the picker printed the numbered list and the
   `--git-resolve-project` tip, accepted `1`, and `-v` printed the key-sorted tag line under each row;
