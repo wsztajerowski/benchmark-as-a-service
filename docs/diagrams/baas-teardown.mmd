@@ -4,15 +4,14 @@ sequenceDiagram
     participant EC2 as AWS EC2
     participant S3 as AWS S3
     participant CF as AWS CloudFormation
-    participant SSM as AWS SSM
 
-    Note over User,SSM: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack only. The CI stack and the results table are untouched.
+    Note over User,CF: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack only. The CI stack and the results table are untouched,<br/>and so is everything build-image created outside the stack: the AMI pointer<br/>/<prefix>/runner/ami-id, the AMI and its 30 GB snapshot.
     User->>TD: baas admin teardown [--stack-name] [--yes] [--delete-bucket]
-    Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else aws.coreStackName from config
+    Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else the configured prefix (the stack IS the prefix)
 
     rect rgb(255, 235, 235)
         Note over TD,EC2: Gate 1 -- never tear down under a live run
-        TD->>EC2: describeInstances(tag baas-role=benchmark-runner, state=running)
+        TD->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
         EC2-->>TD: instance IDs
         alt running runner instances found
             TD-->>User: abort, list the instance IDs, exit 1
@@ -48,8 +47,7 @@ sequenceDiagram
     end
     CF-->>TD: status = DELETE_COMPLETE
 
-    Note over SSM: ParameterNotFoundException is<br/>silently swallowed if absent
-    SSM-->>TD: deleted (or not found, ignored)
+    Note over TD: NOT touched: the SSM AMI pointer, the AMI and its snapshot (built by<br/>Image Builder outside the stack), and the Image Builder image record.<br/>Their survival was observed in the 2026-10-01 lifecycle test -- a later setup + run<br/>would then resolve the old pointer and launch the old AMI with no build-image.
 
     opt bucket was retained
         TD-->>User: warn: a later `baas admin setup` for this installation will FAIL while<br/>the bucket exists -- its name derives from the ACCOUNT, so this hits whoever<br/>runs it next, not just you. Delete it by hand or re-run with --delete-bucket.

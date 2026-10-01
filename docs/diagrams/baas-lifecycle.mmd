@@ -1,0 +1,66 @@
+sequenceDiagram
+    autonumber
+    actor IA as Account IAM admin
+    actor Adm as Installation admin<br/>(deployer creds)
+    actor Op as Benchmark author<br/>(operator creds)
+    participant CLI as baas CLI
+    participant CFG as ~/.baas/config.yaml
+    participant AWS as AWS account
+
+    Note over IA,AWS: The whole life of one installation, from an empty account to an empty account.<br/>Commands in brackets are not baas commands — the CLI cannot do them.
+
+    rect rgb(240, 240, 255)
+        Note over IA,AWS: 0. One-time IAM
+        Adm->>CLI: baas admin deployer-policy [--for-account]
+        CLI->>AWS: sts:GetCallerIdentity (skipped with --for-account)
+        CLI-->>Adm: rendered policy JSON on stdout
+        Adm->>IA: hand over the JSON
+        IA->>AWS: [attach as customer-managed policy]
+        opt CI federation wanted
+            IA->>AWS: [deploy cf-template-ci.yaml, or reuse the account's GitHub OIDC provider]
+        end
+    end
+
+    rect rgb(240, 255, 240)
+        Note over IA,AWS: 1. Install
+        Adm->>CLI: baas admin setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
+        CLI->>AWS: preflight (SimulatePrincipalPolicy), retained bucket/table check
+        CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
+        CLI->>CFG: write prefix, aws.profile, aws.region
+        CLI-->>Adm: OperatorRole ARN + "Nobody can assume it yet" + next: build-image
+        Adm->>CLI: baas admin build-image
+        CLI->>AWS: preflight version, UpdateStack (image params), StartImagePipelineExecution
+        CLI->>AWS: wait (~15 min), tag AMI, PutParameter /<prefix>/runner/ami-id, retire previous AMI
+        Adm->>CLI: baas admin image
+        CLI-->>Adm: version, AMI, parent, built-at, pointer
+    end
+
+    rect rgb(255, 250, 235)
+        Note over IA,AWS: 2. Onboard an operator machine
+        Op->>AWS: [grant sts:AssumeRole on <prefix>-role-operator -- add role_arn profile to ~/.aws/config]
+        Op->>CLI: baas config sync --name baas-<accountId>
+        CLI->>AWS: DescribeStacks (proves it exists)
+        CLI->>CFG: write prefix
+        Op->>CLI: baas config set --operator-profile p [--region] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--git-resolve-project]
+        CLI->>CFG: write
+    end
+
+    rect rgb(255, 240, 240)
+        Note over IA,AWS: 3. Measure (repeatable, see baas-run.mmd)
+        Op->>CLI: baas run --benchmark-jar b.jar --project p [--tag k=v]… jmh -- Bench -f 1
+        CLI->>AWS: upload, RunInstances, poll run-status
+        CLI-->>Op: run id + result table
+        Op->>CLI: baas results [--project p | --all-projects | --request-id id]
+        Op->>CLI: baas download <runId>
+        Op->>CLI: baas env diff runs/p/<idA> runs/p/<idB>
+    end
+
+    rect rgb(245, 245, 245)
+        Note over IA,AWS: 4. Retire
+        Adm->>CLI: baas admin teardown [--delete-bucket] [--yes]
+        CLI->>AWS: refuse if a runner is pending/running -- DeleteStack, wait
+        CLI-->>Adm: warns: table retained (bucket too, without --delete-bucket)
+        Note over Adm,AWS: Left behind, and invisible to the CLI: the results table,<br/>/<prefix>/runner/ami-id, the AMI and its snapshot, the Image Builder image record
+        Adm->>AWS: [aws dynamodb delete-table, ssm delete-parameter,<br/>ec2 deregister-image, ec2 delete-snapshot]
+        Note over CFG: config.yaml still names the prefix: results keeps reading the retained table,<br/>download and env diff fail once the bucket is gone, run gets past the surviving<br/>AMI pointer and fails at the upload (bucket gone) or the stack-output lookup
+    end

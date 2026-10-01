@@ -328,7 +328,9 @@ measurements requires `--no-database`.
 
 Design rationale, the invariants the runner depends on, and the open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
-Call-level sequence diagrams: [`docs/diagrams/`](docs/diagrams/).
+Call-level sequence diagrams and C4 views (`c4-*.mmd`): [`docs/diagrams/`](docs/diagrams/). The
+command surface, state graph and known gaps:
+[`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md).
 
 ## Permissions
 
@@ -458,19 +460,14 @@ there says why.
 
 ## E2E test
 
-See [`.github/test/README.md`](.github/test/README.md). Requires `act`, Docker Compose, LocalStack,
-the AWS CLI, and `mongosh`.
+[`e2e-cloud-test.yml`](.github/workflows/e2e-cloud-test.yml) is the end-to-end test: one
+`ubuntu-latest` job federates into the operator role and drives `baas run` against the real
+installation ([`docs/diagrams/baas-ci-e2e.mmd`](docs/diagrams/baas-ci-e2e.mmd)). It provisions a
+paid instance, so it runs on path-filtered pull requests and on demand:
 
 ```bash
-/bin/bash .github/test/exec-single-benchmark-e2e-test.sh
+gh workflow run e2e-cloud-test.yml
 ```
 
-`docker-compose.yaml` does not create the `/baas/mongo/connection-string` parameter that
-`exec-single-benchmark.yml` requires, so add it first:
-
-```bash
-aws --endpoint-url=http://localhost:4566 --profile localstack ssm put-parameter \
-  --name /baas/mongo/connection-string \
-  --value "mongodb://host.docker.internal:27017/local_test" \
-  --type SecureString
-```
+The only no-cost way to exercise the runner is `./jmh-with-profiler.sh` or `./jmh-with-async.sh`
+against LocalStack. The `act` harness and its `/baas/mongo/connection-string` parameter are gone.

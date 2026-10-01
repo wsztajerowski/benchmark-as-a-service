@@ -43,6 +43,22 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
 | 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
+| 16 | U1 | Teardown leaves the AMI pointer, AMI, snapshot and image record — and a later setup inherits them | Med | Open |
+| 17 | U3 | A run whose CLI died is invisible: no `baas` command lists or stops it | Med | Open |
+| 18 | U5 | Region is never read from the environment; CI is right only because `AWS_REGION` equals the default | Med | Open |
+| 19 | U11 | Runner shares the image builder's security group, so its 80/443 internet egress is unenforced policy | Med | Open |
+| 20 | U2 | No CLI path from teardown residue to an empty account; the deployer cannot even list the residue | Low | Open |
+| 21 | U4 | `env diff` takes result paths only; a run id fails with a misleading reason | Low | Open |
+| 22 | U6 | `--aws-profile` on three of five admin commands, persisted by one | Low | Open |
+| 23 | U7 | `config set --prefix` adopts an installation without the check `config sync` exists for | Low | Open |
+| 24 | U9 | `run` uploads the benchmark JAR before checking the stack exists | Low | Open |
+| 25 | U10 | `admin image` demands deployer credentials for a read the operator role can do | Low | Open |
+| 26 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | Open |
+| 27 | F1 | `config show` wrote its payload to stderr | Low | **Fixed** |
+| 28 | F2 | `--format` unvalidated on `run` and `results` | Low | **Fixed** |
+| 29 | F3 | Teardown gate ignored `pending` runners | Low | **Fixed** |
+| 30 | F4 | `ROLLBACK_COMPLETE` refusal unreachable from setup | Low | **Fixed** |
+| 31 | F5 | Denied `DescribeImages` reported as "no image" | Low | **Fixed** |
 
 **Next up: S5.**
 
@@ -332,3 +348,14 @@ What changed the trade-off is that the pinned AMI and the DynamoDB results table
 a name that moves with the caller does not merely duplicate infrastructure — it silently produces
 incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived from
 `GetCallerIdentity().account()`, with nothing about the calling principal reaching it.
+
+---
+
+## 16–31. CLI usage analysis (U*, F*) · 2026-10-01
+
+Found by the command-surface review and paid lifecycle test in
+[`docs/analysis/cli-usage-analysis.md`](../analysis/cli-usage-analysis.md), which holds each
+entry's evidence, the state graphs that locate it, and the proposed simplification. The table
+above lists the actionable ones; U8, U13, U14 and U15 are informational and live only there.
+F1–F5 were fixed on the `cli-usage-analysis` branch with a test each.
+

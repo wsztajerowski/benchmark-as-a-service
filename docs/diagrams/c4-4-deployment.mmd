@@ -1,0 +1,35 @@
+C4Deployment
+    title BaaS — Deployment
+
+    Deployment_Node(laptop, "Developer laptop", "macOS / Linux, JDK 25") {
+        Container(cliL, "baas CLI", "installed by scripts/install.sh", "~/.baas/config.yaml; deployer + operator profiles in ~/.aws/config")
+    }
+
+    Deployment_Node(ghHosted, "GitHub-hosted runner", "ubuntu-latest") {
+        Container(cliCi, "baas CLI", "reactor build", "Fresh config per job via config sync; OIDC credentials, no profile")
+    }
+
+    Deployment_Node(iam, "AWS IAM (account-global)", "") {
+        Container(roles, "Roles", "IAM", "<prefix>-role-operator (9000 s, root + optional GitHub OIDC trust), <prefix>-role-runner, image-build role")
+        Container(oidc, "GitHub OIDC provider", "cf-template-ci.yaml, by hand", "One per issuer per account")
+    }
+
+    Deployment_Node(region, "AWS region (default eu-central-1)", "one installation: baas-<accountId>") {
+        Container(cfStack, "Core stack <prefix>", "CloudFormation", "")
+        ContainerDb(s3, "Bucket <prefix>", "S3", "Retain")
+        ContainerDb(ddb, "Table <prefix>-results", "DynamoDB", "Retain")
+        ContainerDb(ssm, "/<prefix>/runner/ami-id", "SSM", "outside the stack")
+        Container(ami, "Runner AMI + 30 GB snapshot", "EC2", "outside the stack; one at a time")
+        Deployment_Node(subnet, "Public subnet 10.0.1.0/24 (or existing)", "S3 + DynamoDB gateway endpoints; SG egress 443/80 only") {
+            Container(runnerI, "Runner instance", "c5/c6i/c7i/m5/m6i/m7i, 30 GB gp3", "Lives timeout + margin at most")
+            Container(buildI, "Image build instance", "c5.large", "Same subnet and security group as the runner")
+        }
+    }
+
+    Rel(cliL, cfStack, "admin commands", "HTTPS")
+    Rel(cliL, runnerI, "run: launch / poll / terminate", "EC2 API")
+    Rel(cliCi, roles, "AssumeRoleWithWebIdentity", "STS")
+    Rel(cliCi, runnerI, "run", "EC2 API")
+    Rel(runnerI, s3, "artifacts", "gateway endpoint")
+    Rel(runnerI, ddb, "measurements", "gateway endpoint")
+    Rel(buildI, ami, "baked into")

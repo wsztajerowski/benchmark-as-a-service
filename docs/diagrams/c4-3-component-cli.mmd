@@ -1,0 +1,41 @@
+C4Component
+    title baas CLI — Components (level 3)
+
+    Container_Boundary(cli, "baas-cli.jar") {
+        Component(app, "BaasApp + LoggingMixin", "picocli root", "--config-path (inherited), -v pre-scan, failure reporting")
+
+        Component(adminCmds, "admin commands", "SetupCommand, BuildImageCommand, ImageCommand, TeardownCommand, DeployerPolicyCommand", "Deployer credentials (aws.profile)")
+        Component(configCmds, "config commands", "ConfigSet / ConfigShow / ConfigSync", "Local file; sync proves the stack exists")
+        Component(runCmd, "RunCommand", "picocli", "Preconditions, run naming, upload, launch, poll, JSON summary, shutdown hook")
+        Component(queryCmds, "read commands", "ResultsCommand, DownloadCommand, EnvDiffSubcommand", "Operator credentials, read-only")
+
+        Component(cfg, "ConfigService / BaasConfig", "Jackson YAML", "Stores prefix; derives bucket, table, profile, pointer names")
+        Component(infra, "infra services", "CloudFormationService, Ec2ProvisioningService, ImageBuilderService, S3UploadService, SsmService, ResultsTableService", "Thin AWS SDK wrappers")
+        Component(render, "Renderers", "RunnerImageRenderer, DeployerPolicyRenderer, UserDataScriptBuilder", "Turn bundled templates into stack parameters, IAM JSON, user-data")
+        Component(jar, "RunnerJarResolver", "HTTP + SHA-256", "Seeds releases/<v>/benchmark-runner.jar once, from GitHub Releases")
+        Component(results, "results package", "ResultsQueryService, Filters, Grouping, ResultsTable, EnvironmentManifest", "Query, best-per-group, table/JSON/CSV, manifest diff")
+        Component(console, "Console / StatusLine / Table", "stdout only", "Payload path; colour and redraw only when interactive")
+    }
+
+    Container_Boundary(model, "baas-model.jar (shared with the runner)") {
+        Component(keys, "RunId, RunLayout, ResultKeys, TagKeys, MeasurementItemMapper", "plain Java", "The only builders of S3 prefixes, DynamoDB keys and the tag vocabulary")
+    }
+
+    Rel(app, adminCmds, "dispatches")
+    Rel(app, configCmds, "dispatches")
+    Rel(app, runCmd, "dispatches")
+    Rel(app, queryCmds, "dispatches")
+    Rel(adminCmds, render, "uses")
+    Rel(adminCmds, infra, "uses")
+    Rel(runCmd, render, "user-data")
+    Rel(runCmd, jar, "pinned runner")
+    Rel(runCmd, infra, "uses")
+    Rel(runCmd, results, "post-run table")
+    Rel(runCmd, keys, "run id, prefix, reserved tags")
+    Rel(queryCmds, results, "uses")
+    Rel(results, keys, "key decoding")
+    Rel(configCmds, cfg, "read/write")
+    Rel(runCmd, console, "summary, status line")
+    Rel(queryCmds, console, "payload")
+
+    UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")

@@ -1,0 +1,26 @@
+sequenceDiagram
+    actor User as Operator or CI job
+    participant CS as ConfigSyncSubcommand
+    participant CFG as config file<br/>(~/.baas/config.yaml or --config-path)
+    participant CF as AWS CloudFormation
+
+    Note over User,CF: baas config sync --name <prefix> -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>--name is required although derivable: a bare sync would adopt whatever<br/>installation the active credentials imply.
+    User->>CS: baas [--config-path f] config sync --name baas-123456789012
+    CS->>CFG: loadOrEmpty() -- a missing file is an empty config
+    Note over CS: region = aws.region from the file, default eu-central-1.<br/>AWS_REGION / AWS_DEFAULT_REGION are NOT consulted, and sync has no --region:<br/>a CI job on another region's installation needs `config set --region` first.
+    opt no aws.operatorProfile and no ambient credentials
+        CS-->>User: warn: using the default credential chain
+    end
+    CS->>CF: DescribeStacks(<prefix>) with operator credentials
+    alt stack absent
+        CF-->>CS: does not exist
+        CS-->>User: "No installation named ..." + how to list / create -- exit 1, file untouched
+    else stack present
+        CF-->>CS: outputs
+        opt no ResultsTableName output
+            CS-->>User: warn: stack predates the results table
+        end
+        Note over CS: Outputs are read to prove existence only -- nothing is copied.<br/>Bucket, table, profile, pointer are derived from the prefix --<br/>subnet + security group are resolved per run.
+        CS->>CFG: set prefix, save
+        CS-->>User: Adopted <prefix> -- bucket, table -- exit 0
+    end

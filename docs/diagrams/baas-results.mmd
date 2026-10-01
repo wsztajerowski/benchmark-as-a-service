@@ -1,0 +1,56 @@
+sequenceDiagram
+    actor User as Operator or CI job
+    participant RC as ResultsCommand
+    participant CFG as config file
+    participant Git as git (working directory)
+    participant DDB as DynamoDB<br/><prefix>-results
+    participant Out as stdout (Console)
+
+    User->>RC: baas results [--project p | --all-projects | --request-id id]<br/>[--benchmark-name re] [--tag k=v]… [--group-by tag] [--all-runs]<br/>[--limit n] [--format table|json|csv] [--watch]
+
+    rect rgb(255, 235, 235)
+        Note over RC: Usage checks, before config or AWS -- exit 2
+        RC->>RC: --format not table/json/csv?
+        RC->>RC: --watch with a non-table format, or without a terminal?
+        RC->>RC: --request-id with --project / --benchmark-name / --tag / --all-projects?
+        RC->>RC: --project with --all-projects?
+    end
+
+    RC->>CFG: load() -- table = <prefix>-results, or exit 1 "No installation"
+
+    alt --request-id id
+        RC->>DDB: Query requestId-index (gsi1pk = id) -- no exclusion filter
+    else --all-projects
+        RC->>DDB: Scan (exclude_from_results filtered unless --all-runs)
+    else project-scoped
+        alt --project p
+            Note over RC: p
+        else git.resolveProject = true and cwd is in a repository
+            RC->>Git: repository name of cwd
+        else otherwise
+            RC->>DDB: Scan for visible projects
+            alt none
+                RC-->>User: error, exit 1
+            else no terminal, or format is json/csv
+                RC-->>User: error listing projects, exit 1
+            else interactive
+                RC->>Out: numbered picker
+                User-->>RC: a number (anything else: refuse, exit 1)
+            end
+        end
+        RC->>DDB: Query pk = RESULT#<project>
+    end
+
+    Note over RC: Unless --request-id: filter by name regex and tags (warn on a tag no row carries),<br/>then keep the best score per (project, benchmark, group-by tag) unless --all-runs.<br/>Sort, then cut to --limit.
+    alt --watch
+        loop every 30 s until Ctrl+C (alternate screen)
+            RC->>DDB: same query
+            RC->>Out: redraw frame
+        end
+        RC->>Out: reprint last frame on the normal screen
+    else once
+        RC->>Out: table (tags only with -v) | JSON array | CSV
+        opt rows from different imageVersion / instanceType
+            RC-->>User: environment warning (stderr)
+        end
+    end

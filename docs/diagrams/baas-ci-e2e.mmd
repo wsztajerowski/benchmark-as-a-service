@@ -1,0 +1,31 @@
+sequenceDiagram
+    participant GH as GitHub (pull_request paths / workflow_dispatch)
+    participant Job as e2e-cloud-test job<br/>ubuntu-latest
+    participant STS as AWS STS
+    participant CLI as baas CLI<br/>(reactor build)
+    participant AWS as Installation
+
+    GH->>Job: trigger (one at a time per ref, never cancelled mid-run)
+    Job->>Job: mvn clean package -DskipTests
+    Job->>STS: AssumeRoleWithWebIdentity(vars.OPERATOR_ROLE_ARN, 9000 s)
+    STS-->>Job: operator credentials in the environment (no profile)
+    Job->>CLI: config sync --name vars.CORE_STACK_NAME
+    Note over Job,CLI: Region comes from the fresh config's default (eu-central-1),<br/>not from vars.AWS_REGION -- correct today only because they match
+    CLI->>AWS: DescribeStacks
+    Job->>CLI: run jmh-with-async --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
+    CLI->>AWS: upload, launch, poll (see baas-run.mmd)
+    CLI-->>Job: one JSON object on stdout, success or failure
+    Job->>Job: GITHUB_OUTPUT run_id, result_path, project
+    Job->>CLI: results --request-id <id> --format json
+    Note over Job: asserts imageVersion, instanceType, project, branch, commit, source=ci
+    Job->>CLI: results --project <repo> --group-by commit --format json
+    Note over Job: asserts the excluded run is absent
+    Job->>CLI: results --project <repo> --all-runs --format json
+    Note over Job: asserts it is present
+    Job->>CLI: download <run_id> -o ./artifacts
+    Note over Job: asserts environment.json, jmh-result.json, run-status, output, flamegraph, JFR
+    opt failure and a result_path was reported
+        Job->>CLI: download <result_path> -o ./failed (by PATH: a failed run has no index entry)
+        Job->>Job: print cloud-init-output.log
+    end
+    Job->>GH: upload ./artifacts

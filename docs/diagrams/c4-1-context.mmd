@@ -1,0 +1,23 @@
+C4Context
+    title BaaS — System Context (level 1)
+
+    Person(author, "Benchmark author", "Builds a JMH/JCStress JAR, runs it on a clean EC2 instance, compares results. Holds operator credentials.")
+    Person(admin, "Installation admin", "Deploys, re-bakes and tears down the account's one installation. Holds deployer credentials.")
+    Person(iamAdmin, "Account IAM admin", "Attaches the rendered deployer policy; deploys cf-template-ci.yaml (the OIDC provider) by hand.")
+
+    System(baas, "Benchmark as a Service", "baas CLI plus one per-account cloud installation: throwaway runners, results table, run artifacts.")
+
+    System_Ext(gha, "GitHub Actions", "e2e-cloud-test.yml: federates into OperatorRole via OIDC and calls baas run.")
+    System_Ext(ghReleases, "GitHub Releases", "baas-cli.jar, benchmark-runner.jar + .sha256, install.sh.")
+    System_Ext(aws, "AWS platform", "IAM/STS, CloudFormation, EC2, Image Builder, S3, DynamoDB, SSM in one account and region.")
+    System_Ext(upstream, "Package sources", "AL2023 dnf repos and the async-profiler release — reached only by the image build, never by a run.")
+
+    Rel(author, baas, "baas run / results / download / env diff / config")
+    Rel(admin, baas, "baas admin setup / build-image / image / teardown")
+    Rel(iamAdmin, aws, "Attaches BaasCliDeployerPolicy; deploys the GitHub OIDC provider")
+    Rel(gha, baas, "Runs the reactor-built CLI with --runner-jar")
+    Rel(baas, ghReleases, "Fetches the version-pinned runner JAR once per version (laptop side, checksum-verified)")
+    Rel(baas, aws, "Provisions and uses the installation")
+    Rel(aws, upstream, "Image Builder build instance installs the pinned toolchain")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")
