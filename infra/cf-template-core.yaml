@@ -370,11 +370,27 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # Measurements only: a runner can put items in RESULT#<project> partitions and
+              # nowhere else, so it cannot forge a run item.
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
                   - dynamodb:BatchWriteItem
                 Resource: !GetAtt ResultsTable.Arn
+                Condition:
+                  ForAllValues:StringLike:
+                    dynamodb:LeadingKeys:
+                      - "RESULT#*"
+              # Its own run's status, written by user-data's run_status. UpdateItem only, and
+              # only in the single RUN partition — no Put, so it can never create a run item
+              # (user-data's writes are also conditioned on attribute_exists(pk)).
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt ResultsTable.Arn
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys:
+                      - RUN
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -687,6 +703,16 @@ Resources:
                 Resource:
                   - !GetAtt ResultsTable.Arn
                   - !Sub "${ResultsTable.Arn}/index/*"
+              # The operator's only write on the table, granted deliberately: `baas run`
+              # reserves, confirms and cancels its run item. Restricted to the RUN partition,
+              # so measurements stay read-only to the operator.
+              - Effect: Allow
+                Action: dynamodb:UpdateItem
+                Resource: !GetAtt ResultsTable.Arn
+                Condition:
+                  ForAllValues:StringEquals:
+                    dynamodb:LeadingKeys:
+                      - RUN
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
