@@ -104,3 +104,7 @@ credentials for `RunnerRole`, which only the instance profile holds.
   `UserDataScriptBuilderTest.retrySettingsApplyToTheStatusCommandOnly` checks for
   `AWS_MAX_ATTEMPTS=3`, `--cli-connect-timeout 5` and `--cli-read-timeout 10`, which give 45 s
   against the 60 s floor. The other three outcomes run against the stub.
+- **D4, the duration column.** The spec asked for a duration. An ended run's end time is not
+  recorded, because the instance writes no timestamp by design (so that "the instance's clock never
+  reaches the record" holds). The column became ELAPSED, shown for runs in flight and `—` otherwise.
+  A SOURCE column was added, per explore decision 12. The spec was updated.

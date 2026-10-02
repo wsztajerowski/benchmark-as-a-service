@@ -603,7 +603,7 @@ public class RunCommand implements Callable<Integer> {
             state, formatElapsed(elapsedSeconds), instanceId);
     }
 
-    static String formatElapsed(long seconds) {
+    public static String formatElapsed(long seconds) {
         long h = seconds / 3600;
         long m = seconds % 3600 / 60;
         long s = seconds % 60;
