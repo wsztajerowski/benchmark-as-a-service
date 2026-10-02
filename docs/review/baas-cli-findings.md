@@ -61,6 +61,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 31 | F5 | Denied `DescribeImages` reported as "no image" | Low | **Fixed** |
 | 32 | U16 | `--tag project=…` duplicated the instance's `project` tag and failed `RunInstances` | Low | **Fixed** |
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
+| 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
 **Next up: S5.**
 
@@ -353,7 +354,7 @@ incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived f
 
 ---
 
-## 16–33. CLI usage analysis (U*, F*) · 2026-10-01
+## 16–34. CLI usage analysis (U*, F*) · 2026-10-01
 
 Found by the command-surface review and paid lifecycle test in
 [`docs/analysis/cli-usage-analysis.md`](../analysis/cli-usage-analysis.md), which holds each

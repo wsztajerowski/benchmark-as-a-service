@@ -119,6 +119,14 @@ move benchmark numbers (`perf_event_paranoid`, `kptr_restrict`, transparent huge
 That file is the only place a tool version is written down, and `git log -p` on it is the image
 history.
 
+**The definition is bundled into the CLI when it is built**, and `build-image` bakes that bundled
+copy — it reads no file from disk. An installed `baas` therefore bakes the image its release
+shipped with, and editing a `runner-image.yaml` next to it changes nothing. Changing the image
+today means editing `infra/runner-image.yaml` in a checkout of this repository, rebuilding the CLI
+(`mvn package`), and running `baas admin build-image` from that build. Letting an installed CLI
+bake a definition you supply is not built yet (finding U20 in
+[`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md)).
+
 Changing a version is a one-line edit **plus** a bump of `imageVersion` in the same file. Image
 Builder components are immutable at a given version, so `baas admin build-image` checks that up
 front and refuses to start a build the stack would reject 15 minutes later:
@@ -131,7 +139,7 @@ Bump imageVersion in infra/runner-image.yaml.
 Exactly one image exists at a time. A successful build publishes the new AMI to
 `/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a run launched during
 a build never resolves a deleted AMI. `baas admin image` reports what is currently published, and
-flags when your working tree declares a version you haven't built yet.
+flags when the definition bundled in the CLI you are running declares a version that isn't built yet.
 
 ### 4. Run a benchmark
 
