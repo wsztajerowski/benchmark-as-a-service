@@ -224,40 +224,36 @@ public class UserDataScriptBuilder {
 
         String script = "#!/bin/bash\n" +
             "# No set -e — errors handled explicitly so watchdog always starts\n" +
-            "export AWS_REGION='" + region + "'\n" +
-            "export S3_BUCKET='" + bucket + "'\n" +
-            "export BENCHMARK_TYPE='" + benchmarkType + "'\n" +
-            "export REQUEST_ID='" + requestId + "'\n" +
-            "export RESULT_PATH='" + resultPath + "'\n" +
+            export("AWS_REGION", region) +
+            export("S3_BUCKET", bucket) +
+            export("BENCHMARK_TYPE", benchmarkType) +
+            export("REQUEST_ID", requestId) +
+            export("RESULT_PATH", resultPath) +
             // One clock read per run: this instant named the run's prefix and is what the runner
             // stores as createdAt, so the two cannot disagree. The instance's own clock is not
             // consulted.
-            "export CREATED_AT='" + createdAt + "'\n" +
-            "export BENCHMARK_JAR_S3_KEY='" + nullToEmpty(benchmarkJarS3Key) + "'\n" +
+            export("CREATED_AT", createdAt) +
+            export("BENCHMARK_JAR_S3_KEY", benchmarkJarS3Key) +
             // Only the manifest reads these two; the runner receives them as --tag instead, since
             // benchmarkMetadata.tags is the query surface baas results has.
-            "export PROJECT_NAME='" + shellSingleQuote(nullToEmpty(project(runnerTags))) + "'\n" +
-            "export BRANCH_NAME='" + shellSingleQuote(nullToEmpty(branch(runnerTags))) + "'\n" +
-            "export BENCHMARK_TIMEOUT='" + benchmarkTimeoutSeconds + "'\n" +
-            "export WALL_CLOCK_HARD_KILL='" + wallClockHardKillSeconds + "'\n" +
-            "export MANIFEST_SCHEMA_VERSION='" + MANIFEST_SCHEMA_VERSION + "'\n" +
+            export("PROJECT_NAME", project(runnerTags)) +
+            export("BRANCH_NAME", branch(runnerTags)) +
+            export("BENCHMARK_TIMEOUT", benchmarkTimeoutSeconds) +
+            export("WALL_CLOCK_HARD_KILL", wallClockHardKillSeconds) +
+            export("MANIFEST_SCHEMA_VERSION", MANIFEST_SCHEMA_VERSION) +
             // Recorded so a result can be traced to the image that produced it even if the
             // pointer has since moved on. /etc/baas-image-version, baked in, wins when present.
-            "export IMAGE_VERSION='" + nullToEmpty(imageVersion) + "'\n" +
-            "export AMI_ID='" + nullToEmpty(amiId) + "'\n" +
-            "export RUNNER_JAR_S3_KEY='" + nullToEmpty(runnerJarS3Key) + "'\n" +
-            "export RESULTS_TABLE='" + nullToEmpty(resultsTableName) + "'\n" +
-            "export NO_DATABASE='" + noDatabase + "'\n" +
-            "export BENCHMARK_PARAMETERS='" + params.replace("'", "'\\''") + "'\n" +
-            "export RUNNER_TAGS='" + tagArgs.replace("'", "'\\''") + "'\n" +
+            export("IMAGE_VERSION", imageVersion) +
+            export("AMI_ID", amiId) +
+            export("RUNNER_JAR_S3_KEY", runnerJarS3Key) +
+            export("RESULTS_TABLE", resultsTableName) +
+            export("NO_DATABASE", noDatabase) +
+            export("BENCHMARK_PARAMETERS", params) +
+            export("RUNNER_TAGS", tagArgs) +
             "\n" +
             SCRIPT_BODY;
 
         return Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
-    }
-
-    private static String nullToEmpty(String value) {
-        return value != null ? value : "";
     }
 
     private static String project(Map<String, String> runnerTags) {
@@ -269,11 +265,15 @@ public class UserDataScriptBuilder {
     }
 
     /**
-     * Closes a single-quoted shell string, emits a literal quote and reopens it — the only way a
-     * {@code '} survives inside {@code export X='…'}, and a branch name may well contain one.
+     * The one way a value enters the script. Every export goes through it, machine-generated or
+     * not: an unclosed quote on any line makes bash reject the whole script before the watchdog
+     * starts, so a value that is safe today only by provenance is one rename away from orphaning a
+     * paid instance. A {@code '} survives by closing the quote, emitting an escaped quote and
+     * reopening it; null exports as empty.
      */
-    private static String shellSingleQuote(String value) {
-        return value.replace("'", "'\\''");
+    private static String export(String name, Object value) {
+        String text = value != null ? value.toString() : "";
+        return "export " + name + "='" + text.replace("'", "'\\''") + "'\n";
     }
 
     /**

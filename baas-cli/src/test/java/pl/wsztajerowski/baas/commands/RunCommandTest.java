@@ -5,6 +5,7 @@ import org.junit.jupiter.api.io.TempDir;
 import pl.wsztajerowski.baas.config.BaasConfig;
 
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -50,6 +51,45 @@ class RunCommandTest {
     void anAbsentCommonDirYieldsNothingToDeriveFrom() {
         assertThat(GitProject.fromCommonDir(null)).isNull();
         assertThat(GitProject.fromCommonDir("  ")).isNull();
+    }
+
+    /**
+     * The project lands unescaped in an S3 prefix and a DynamoDB partition, and on a user-data
+     * line. The allowed set is GitHub's own, so any repository's name is accepted as it stands.
+     */
+    @Test
+    void acceptsEveryCharacterAGitHubRepositoryNameMayHold() {
+        for (String name : List.of("benchmark-as-a-service", "lynx_journal", "node.js", ".github",
+            "Repo-2.0_rc", "a")) {
+            assertThat(RunCommand.requireValidProject(name, "--project")).isEqualTo(name);
+        }
+    }
+
+    @Test
+    void refusesAProjectNameNoGitHubRepositoryCouldHave() {
+        for (String name : List.of("it's", "my bench", "x$(id)", "owner/repo", "a;b", "zażółć")) {
+            assertThatThrownBy(() -> RunCommand.requireValidProject(name, "--project"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("'" + name + "'")
+                .hasMessageContaining("--project");
+        }
+    }
+
+    @Test
+    void anExplicitProjectIsCheckedBeforeAnythingElseRuns() {
+        var command = new RunCommand();
+        command.project = "it's";
+
+        assertThatThrownBy(() -> command.resolveProject(new BaasConfig()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("--project");
+    }
+
+    /** A clone into a directory GitHub would not name is the derived case; the way out is a flag. */
+    @Test
+    void aDerivedNameThatFailsTheCheckPointsAtTheFlag() {
+        assertThatThrownBy(() -> RunCommand.requireValidProject("my bench", "The benchmark JAR's repository directory"))
+            .hasMessageContaining("Pass --project <name>.");
     }
 
     @Test

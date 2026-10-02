@@ -300,7 +300,10 @@ specify; it SHALL NOT be consulted for `branch` or `commit`.
 `--project` is absent, the project SHALL be the name of the git repository that contains the
 `--benchmark-jar` file, resolving the main repository rather than a linked worktree directory. The
 directory the command is invoked from SHALL NOT influence the project. When no project can be
-determined the command SHALL fail before provisioning, naming `--project`.
+determined the command SHALL fail before provisioning, naming `--project`. The project, explicit or
+derived, SHALL consist only of the characters GitHub allows in a repository name — ASCII letters,
+digits, `.`, `_` and `-` — and any other name SHALL fail before provisioning, naming the offending
+value.
 
 #### Scenario: Project is required by default
 - **WHEN** `baas run --benchmark-jar target/b.jar jmh -- MyBenchmark` is invoked with
@@ -320,6 +323,14 @@ determined the command SHALL fail before provisioning, naming `--project`.
 - **WHEN** `git.resolveProject` is `true`, `--project` is absent and the JAR is not inside a git
   repository
 - **THEN** the command exits non-zero naming `--project`, and no EC2 instance is launched
+
+#### Scenario: Any GitHub repository name is a valid project
+- **WHEN** `--project node.js` or `--project .github` is given, or derivation yields such a name
+- **THEN** it is forwarded unchanged
+
+#### Scenario: A name no GitHub repository could have fails before provisioning
+- **WHEN** `--project "it's"` is given, or derivation yields a directory name containing a space
+- **THEN** the command exits non-zero quoting the name, and no EC2 instance is launched
 
 #### Scenario: An explicit project wins
 - **WHEN** `--project other-name` is given with `git.resolveProject` `true`

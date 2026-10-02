@@ -43,6 +43,7 @@ import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
+import java.util.regex.Pattern;
 
 @Command(
     name = "run",
@@ -291,7 +292,8 @@ public class RunCommand implements Callable<Integer> {
         // Resolved before any AWS call — the runner-image lookup and the S3 upload both come later
         // in this method, and neither should run for a request that is going to fail anyway because
         // it can't be attributed to a project. resolveProject() throws IllegalStateException with a
-        // message naming --project when none was passed and none can be derived.
+        // message naming --project when none was passed and none can be derived, or when the name
+        // holds a character a GitHub repository name cannot.
         String resolvedProject = resolveProject(config);
         summaryProject = resolvedProject;
 
@@ -600,7 +602,7 @@ public class RunCommand implements Callable<Integer> {
      * {@code commit} are deliberately not derived at all; they arrive as {@code --tag}s or not at all.
      */
     String resolveProject(BaasConfig config) {
-        if (project != null && !project.isBlank()) return project;
+        if (project != null && !project.isBlank()) return requireValidProject(project, "--project");
         if (!config.getGit().isResolveProject()) {
             throw new IllegalStateException(
                 "No project named. Pass --project <name>, or let baas derive it from the benchmark "
@@ -613,7 +615,21 @@ public class RunCommand implements Callable<Integer> {
                 "Cannot determine the project name: " + benchmarkJar + " is not inside a git repository. "
                     + "Pass --project <name>.");
         }
-        return derived;
+        return requireValidProject(derived, "The benchmark JAR's repository directory");
+    }
+
+    /**
+     * The characters GitHub allows in a repository name, so any repository's name passes. The
+     * project names an S3 prefix, a DynamoDB partition and a line of the instance's user-data;
+     * anything wider is a typo here and a parse failure there, the latter before the watchdog runs.
+     */
+    static final Pattern PROJECT_NAME = Pattern.compile("[A-Za-z0-9._-]+");
+
+    static String requireValidProject(String name, String source) {
+        if (PROJECT_NAME.matcher(name).matches()) return name;
+        throw new IllegalStateException(source + " gives project name '" + name + "', which may "
+            + "contain only letters, digits, '.', '_' and '-'."
+            + (source.startsWith("--") ? "" : " Pass --project <name>."));
     }
 
     /** The benchmark timeout and the watchdog bound — which is also the CLI's poll cap. */

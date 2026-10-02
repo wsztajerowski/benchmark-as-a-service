@@ -29,7 +29,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | # | ID | Finding | Sev | Status |
 |---|-----|---------|-----|--------|
 | 1 | S4 | Deployer policy is an escalation primitive | High | **Partly fixed / partly accepted** |
-| 2 | S5 | User-data built by concatenation, one value of eleven escaped | Med | Open |
+| 2 | S5 | User-data built by concatenation, one value of eleven escaped | Med | **Fixed** |
 | 3 | S6 | `eval` on benchmark parameters | Med | Open |
 | 4 | S7 | `RunnerRole` can delete the entire results history | Med | **Partly fixed** |
 | 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Open |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: S5.**
+**Next up: S6.**
 
 ---
 
@@ -107,7 +107,7 @@ naming a *specific* user ARN grants `sts:AssumeRole` without an identity-based a
 `:root`, which delegates to identity policies). If that turns out to be false, the escalation is
 harder than described and the acceptance is on even safer ground.
 
-## 2. S5 — user-data built by string concatenation · Med
+## 2. S5 — user-data built by string concatenation · FIXED
 
 `UserDataScriptBuilder.build()` wraps every value in single quotes but only
 `BENCHMARK_PARAMETERS` gets `'` → `'\''` escaping. `RESULT_PATH` derives from the git branch, and
@@ -124,6 +124,22 @@ three new values are machine-generated (an `ami-` id, a semver from a repo file,
 and none is attacker-influenced, so the exploitable input is unchanged: `RESULT_PATH` via the
 branch name. Fixing this should still be a single helper applied to the whole block rather than
 per-value patching.
+
+**Fixed (2026-10-02).** By the time of the fix the branch had left the path (the unified run
+layout) and `PROJECT_NAME`, `BRANCH_NAME`, `BENCHMARK_PARAMETERS` and `RUNNER_TAGS` were escaped,
+but the project still reached `RESULT_PATH` and `BENCHMARK_JAR_S3_KEY` raw. The sharper
+consequence was not injection — whoever passes `--project` already owns the instance — but a
+stray `'` leaving bash unable to parse the script at all, *before* the watchdog, so only the CLI's
+poll cap would terminate the instance. Two parts:
+
+- Every export goes through one `UserDataScriptBuilder.export` helper, machine-generated values
+  included; `everyExportedValueSurvivesAQuoteAsLiteralText` feeds a quote into every value and has
+  bash run the block.
+- `baas run` refuses a project outside `[A-Za-z0-9._-]+`, explicit or git-derived, before any AWS
+  call. That is exactly GitHub's repository-name alphabet, so no repository is rejected; a clone
+  into a directory GitHub would not name is told to pass `--project`.
+
+The `eval` second parse of `BENCHMARK_PARAMETERS` is S6 and is untouched.
 
 ## 3. S6 — `eval` on benchmark parameters · Med
 
