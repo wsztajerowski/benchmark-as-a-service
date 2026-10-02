@@ -285,7 +285,7 @@ class ResultsQueryServiceIT {
         String project, String requestId, String method, Map<String, String> tags) {
         return new StoredMeasurement(
             project, requestId, Instant.parse("2026-08-19T09:00:00.000Z"), MeasurementKind.JMH,
-            "com.example.Bench", method, "thrpt", 1234.5, 1.0, "ops/s",
+            "com.example.Bench", method, "thrpt", Map.of(), 1234.5, 1.0, "ops/s",
             Map.of(), null, tags,
             "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json", null);
     }

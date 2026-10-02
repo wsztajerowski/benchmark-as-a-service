@@ -24,6 +24,8 @@ public record JmhResult(
     Long measurementIterations,
     String measurementTime,
     Long measurementBatchSize,
+    /** The resolved {@code @Param} values; JMH omits the object for a benchmark without any. */
+    Map<String, String> params,
     Metric primaryMetric,
     Map<String, Metric> secondaryMetrics) {
 }

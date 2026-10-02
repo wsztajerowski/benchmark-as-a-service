@@ -34,6 +34,7 @@ public final class MeasurementItemMapper {
     static final String BENCHMARK_CLASS = "benchmarkClass";
     static final String BENCHMARK_METHOD = "benchmarkMethod";
     static final String MODE = "mode";
+    static final String PARAMS = "params";
     static final String SCORE = "score";
     static final String SCORE_ERROR = "scoreError";
     static final String SCORE_UNIT = "scoreUnit";
@@ -108,6 +109,9 @@ public final class MeasurementItemMapper {
         if (!secondaryMetrics.isEmpty()) {
             item.put(SECONDARY_METRICS, AttributeValue.fromM(secondaryMetrics));
         }
+        if (!m.params().isEmpty()) {
+            item.put(PARAMS, stringMap(m.params()));
+        }
         if (!m.tags().isEmpty()) {
             item.put(TAGS, AttributeValue.fromM(
                 m.tags().entrySet().stream()
@@ -136,6 +140,7 @@ public final class MeasurementItemMapper {
             str(item, BENCHMARK_CLASS),
             str(item, BENCHMARK_METHOD),
             str(item, MODE),
+            stringMapFrom(item, PARAMS),
             dbl(item, SCORE),
             dbl(item, SCORE_ERROR),
             str(item, SCORE_UNIT),

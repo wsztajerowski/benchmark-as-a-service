@@ -44,8 +44,8 @@ public final class ResultsTable {
 
     /**
      * @param withProject a leading PROJECT column, for {@code --all-projects}
-     * @param withTags    an indented line under each row carrying every tag, for {@code -v}; outside
-     *                    the column grid, so it cannot move a column
+     * @param withTags    indented lines under each row, for {@code -v}: the row's params, then every
+     *                    tag. Outside the column grid, so however many there are, no column moves
      */
     public static void print(Console console, List<ResultRow> rows, boolean withProject, boolean withTags) {
         if (rows.isEmpty()) {
@@ -76,13 +76,16 @@ public final class ResultsTable {
             cells.add(number(console, r.score(), rowStyle));
             cells.add(new Cell(r.scoreUnit() != null ? r.scoreUnit() : "", rowStyle));
             table.printRow(cells);
+            if (withTags && !r.params().isEmpty()) {
+                console.println("    " + console.faint("params  " + tagLine(r.params())));
+            }
             if (withTags && !r.tags().isEmpty()) {
-                console.println("    " + console.faint(tagLine(r.tags())));
+                console.println("    " + console.faint("tags    " + tagLine(r.tags())));
             }
         }
     }
 
-    /** Sorted by key so two rows' lines can be compared by eye. */
+    /** Sorted by key so two rows' lines can be compared by eye. Used for params and tags alike. */
     static String tagLine(Map<String, String> tags) {
         return new TreeMap<>(tags).entrySet().stream()
             .map(e -> e.getKey() + "=" + e.getValue())

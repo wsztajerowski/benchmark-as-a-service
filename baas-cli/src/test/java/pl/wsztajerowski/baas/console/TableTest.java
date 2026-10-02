@@ -76,8 +76,30 @@ class TableTest {
         ResultsTable.print(Console.plain(new PrintWriter(withTags)), rows, false, true);
         ResultsTable.print(Console.plain(new PrintWriter(without)), rows, false, false);
 
-        assertThat(withTags.toString().lines().toList().get(3)).isEqualTo("    branch=main  jdk=25.0.4");
+        assertThat(withTags.toString().lines().toList().get(3)).isEqualTo("    tags    branch=main  jdk=25.0.4");
         assertThat(without.toString().lines()).hasSize(3);
+    }
+
+    /**
+     * Review A11: params go under the row with -v, not into the BENCHMARK column — a sweep can
+     * declare many, and the column would have no room for them. Params first, then tags, each
+     * labelled so a row with only one kind cannot be misread.
+     */
+    @Test
+    void aSweepVariantShowsALabelledParamsLineAboveItsTags() {
+        var variant = new ResultRow("20260820T174432812Z-a3f9c21b", "com.acme.MapLookup.get", "jmh", "thrpt",
+            1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of("branch", "main"), "p",
+            Map.of("size", "10", "impl", "hash"));
+        var verbose = new StringWriter();
+        var plain = new StringWriter();
+        ResultsTable.print(Console.plain(new PrintWriter(verbose)), List.of(variant), false, true);
+        ResultsTable.print(Console.plain(new PrintWriter(plain)), List.of(variant), false, false);
+
+        var lines = verbose.toString().lines().toList();
+        assertThat(lines.get(2)).startsWith("get ");
+        assertThat(lines.get(3)).isEqualTo("    params  impl=hash  size=10");
+        assertThat(lines.get(4)).isEqualTo("    tags    branch=main");
+        assertThat(plain.toString()).doesNotContain("impl=hash");
     }
 
     /** Shown only under --all-runs; faint, so it reads as set aside — and still aligned. */

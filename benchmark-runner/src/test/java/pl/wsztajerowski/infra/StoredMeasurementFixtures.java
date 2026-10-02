@@ -11,6 +11,11 @@ final class StoredMeasurementFixtures {
     private StoredMeasurementFixtures() {}
 
     static StoredMeasurement jmh(String method) {
+        return jmh(method, Map.of(), 1234.5);
+    }
+
+    /** One variant of a {@code @Param} sweep: same run, method and mode, its own params and score. */
+    static StoredMeasurement jmh(String method, Map<String, String> params, double score) {
         return new StoredMeasurement(
             "lynx-journal",
             "jmh-20260819_090000",
@@ -19,7 +24,8 @@ final class StoredMeasurementFixtures {
             "pl.wsztajerowski.fake.Incrementing_Synchronized",
             method,
             "thrpt",
-            1234.5,
+            params,
+            score,
             67.8,
             "ops/s",
             Map.of(),

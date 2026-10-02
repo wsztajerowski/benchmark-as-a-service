@@ -3,6 +3,9 @@ package pl.wsztajerowski.baas.model;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 
 /**
  * The only place a DynamoDB key is constructed. Encoding a key by hand anywhere else is how a
@@ -37,11 +40,29 @@ public final class ResultKeys {
         if (measurement.kind() == MeasurementKind.JCSTRESS) {
             return JCSTRESS_SK_PREFIX + timestamp + SEPARATOR + measurement.requestId();
         }
-        return measurement.benchmarkClass()
+        String key = measurement.benchmarkClass()
             + SEPARATOR + measurement.benchmarkMethod()
             + SEPARATOR + modeOrEmpty(measurement.mode())
             + SEPARATOR + timestamp
             + SEPARATOR + measurement.requestId();
+        // A @Param sweep's variants share every field above — one run, one timestamp — so without
+        // this they collide: BatchWriteItem rejects the whole batch, and across batches the last
+        // variant silently overwrites the rest. Appended, and only when present, rather than a
+        // fixed field like mode: every key written before params were stored stays byte-identical,
+        // and nothing parses a key, so a trailing optional field costs nothing to read.
+        return measurement.params().isEmpty() ? key : key + SEPARATOR + formatParams(measurement.params());
+    }
+
+    /**
+     * {@code k=v} pairs sorted by key, joined by {@code ,} — one canonical text per combination,
+     * shared by the sort key and by {@code baas results}' grouping. A value containing {@code ,}
+     * or {@code =} could in principle alias another combination; the result would be a rejected
+     * duplicate key, loud rather than wrong, so it is not escaped.
+     */
+    public static String formatParams(Map<String, String> params) {
+        return new TreeMap<>(params).entrySet().stream()
+            .map(e -> e.getKey() + "=" + e.getValue())
+            .collect(Collectors.joining(","));
     }
 
     public static String requestIndexPartitionKey(String requestId) {

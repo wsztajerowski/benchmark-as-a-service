@@ -162,9 +162,37 @@ class ResultsFormatTest {
 
         var lines = render("csv", List.of(tagged)).strip().lines().toList();
 
-        assertThat(lines.getFirst()).endsWith(",scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags");
+        assertThat(lines.getFirst()).endsWith(",scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags,params");
         assertThat(lines.get(1))
             .contains("1.500000,0.250000")
-            .endsWith(",\"branch=main;note=a,b;\"\"c\"\"\"");
+            .endsWith(",\"branch=main;note=a,b;\"\"c\"\"\",\"\"");
+    }
+
+    /** Review A11: a sweep's variant is told apart by its params, in both machine formats. */
+    @Test
+    void jsonAndCsvCarryTheParamsOfASweepVariant() throws Exception {
+        var variant = new ResultRow("jmh-1", "com.acme.MapLookup.get", "jmh", "thrpt",
+            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z", Map.of("branch", "main"), "lynx-journal",
+            Map.of("size", "10", "impl", "hash"));
+
+        var parsed = new ObjectMapper().readTree(render("json", List.of(variant)));
+        assertThat(parsed.get(0).get("params").get("impl").asText()).isEqualTo("hash");
+        assertThat(parsed.get(0).get("params").get("size").asText()).isEqualTo("10");
+        assertThat(parsed.get(0).get("benchmarkName").asText())
+            .as("the name stays plain, so existing jq filters keep matching")
+            .isEqualTo("com.acme.MapLookup.get");
+
+        // render() appends to one captured buffer, so the CSV row is the last line, not the second.
+        assertThat(render("csv", List.of(variant)).strip().lines().toList().getLast())
+            .endsWith(",\"branch=main\",\"impl=hash;size=10\"");
+    }
+
+    @Test
+    void jsonGivesABenchmarkWithoutParamsAnEmptyObject() throws Exception {
+        var plain = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
+            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z", Map.of());
+
+        var parsed = new ObjectMapper().readTree(render("json", List.of(plain)));
+        assertThat(parsed.get(0).get("params").isEmpty()).isTrue();
     }
 }

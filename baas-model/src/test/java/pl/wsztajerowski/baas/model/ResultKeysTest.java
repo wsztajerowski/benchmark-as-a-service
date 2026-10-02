@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,6 +27,31 @@ class ResultKeysTest {
                 + "#jmh-20260817_220706");
     }
 
+    /** Review A11: each variant of a @Param sweep needs its own key, or the batch is rejected. */
+    @Test
+    void aSweepVariantAppendsItsParamsSortedByName() {
+        var variant = StoredMeasurementFixtures.jmh(Map.of("size", "10", "impl", "hash"));
+
+        assertThat(ResultKeys.sortKey(variant)).isEqualTo(
+            ResultKeys.sortKey(StoredMeasurementFixtures.jmh()) + "#impl=hash,size=10");
+    }
+
+    @Test
+    void variantsDifferingInOneParamGetDistinctKeys() {
+        assertThat(ResultKeys.sortKey(StoredMeasurementFixtures.jmh(Map.of("impl", "hash", "size", "10"))))
+            .isNotEqualTo(ResultKeys.sortKey(StoredMeasurementFixtures.jmh(Map.of("impl", "tree", "size", "10"))));
+    }
+
+    /**
+     * The request-id index is queried by run id alone and need not be unique, so params stay out
+     * of it; the item's own params attribute tells the variants apart.
+     */
+    @Test
+    void theRequestIndexSortKeyIgnoresParams() {
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jmh(Map.of("size", "10"))))
+            .isEqualTo(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jmh()));
+    }
+
     /**
      * The Mongo store this replaces keyed on (requestId, benchmarkName, benchmarkType) where
      * benchmarkType is the JMH mode — so `-bm thrpt,avgt` in one run produces two results whose
@@ -40,6 +66,7 @@ class ResultKeysTest {
         var withoutMode = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), null,
+            Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
             original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
@@ -75,6 +102,7 @@ class ResultKeysTest {
         var withoutMode = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), null,
+            Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
             original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
