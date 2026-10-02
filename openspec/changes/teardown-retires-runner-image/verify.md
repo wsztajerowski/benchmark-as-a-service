@@ -10,9 +10,9 @@ Verified 2026-10-02 at `8e789d6` plus the task-5 run, against proposal.md, desig
 |---|---|
 | Completeness | 16/16 tasks (this record is 6.1); 2/2 requirements implemented |
 | Correctness | 9/9 scenarios covered: 6 by unit tests, 3 only by the manual run of section 5 |
-| Coherence | Design followed; one log line reads wrongly in the teardown context (W1) |
+| Coherence | Design followed |
 
-No critical issues. Five warnings below.
+No critical issues. Five warnings below; W1, W2 and W4 fixed after verification, W3 and W5 remain.
 
 ## Requirement → code → test
 
@@ -20,7 +20,7 @@ No critical issues. Five warnings below.
 |---|---|---|---|
 | **Teardown safety gates** | | | |
 | Abort when a run is in flight | `TeardownCommand.java:67` (gate 1) | — (pre-existing behaviour) | W2 |
-| Abort when a run is still booting (`pending`) | `Ec2ProvisioningService.java:125` | Live only: 2026-10-01 the gate named a runner 6 s after launch | W2 |
+| Abort when a run is still booting (`pending`) | `Ec2ProvisioningService.java:125` | `Ec2ProvisioningServiceTest.theTeardownGateCountsBootingRunnersAsLive`; live 2026-10-01 (named a runner 6 s after launch) | — (W2 fixed) |
 | Both gates before anything is deleted | `TeardownCommand.java:67`, `:76`, before `:116` and `:125` | Live only: task 5.2 log order | W3 |
 | Bucket retained unless explicitly deleted | `TeardownCommand` `deleteBucket` branch (unchanged) | — (pre-existing) | — |
 | **Teardown retires the runner image** | `ImageBuilderService.retireInstallation` (`:253`), `deleteImageRecords` (`:293`); called at `TeardownCommand.java:125` after `deleteStack` at `:116` | | |
@@ -28,29 +28,31 @@ No critical issues. Five warnings below.
 | A later setup cannot inherit the image | pointer deleted at `:278` | Live 5.3: `baas run` refused "No runner image is published", nothing uploaded | W3 |
 | Nothing to retire | `readPointer` empty → skip | `noPointerIsNotAnErrorAndTheRecordsStillGo` | — |
 | The pointer names an AMI already gone | `describeImage(amiId).isPresent()` at `:265` | `aPointerNamingAnAmiThatIsAlreadyGoneIsStillDeleted` | — |
-| A failed retirement is reported, not fatal | per-step `SdkException` catches; `TeardownCommand` warns and returns 0 | `aFailedDeregisterIsALeftoverAndThePointerAndRecordsStillGo`; `TeardownNoticeTest.theImageNoticesSayWhatWasRetiredOrWhatIsLeft` | W4 |
+| A failed retirement is reported, not fatal | per-step `SdkException` catches; `retire` returns failed snapshots; `TeardownCommand` warns and returns 0 | `aFailedDeregisterIsALeftoverAndThePointerAndRecordsStillGo`; `aSnapshotThatCannotBeDeletedIsALeftover`; `TeardownNoticeTest.theImageNoticesSayWhatWasRetiredOrWhatIsLeft` | — (W4 fixed) |
 | Another installation's image | `resolveInstallation` (`:149`), `pointerPath`/`recipeName` (`:158`) | `TeardownNoticeTest.theImageRetiredIsTheTornDownInstallations`; the record-isolation assertion in the first retirement test | — |
 | Records over several pages | SDK paginators | `recordsSpreadOverSeveralPagesAreAllDeleted` | — |
 
 ## Warnings
 
-- **W1 — "Retiring replaced image" during a teardown.** `retire` logs "Retiring replaced image
+- **W1 — FIXED. "Retiring replaced image" during a teardown.** `retire` logs "Retiring replaced image
   ami-…", which reads wrongly when nothing replaced it (task 5.2 log). It was left as is because
   task 2.3 required `retire` to stay unchanged. Fix: a neutral "Retiring image" in a later change;
-  it touches `build-image`'s log only cosmetically.
-- **W2 — the `pending` filter has no unit test.** The gate's state filter is checked only by a
+  it touches `build-image`'s log only cosmetically. *Fixed:* `retire` now logs "Retiring image", with a comment saying why.
+- **W2 — FIXED. The `pending` filter had no unit test.** The gate's state filter is checked only by a
   live run. `Ec2ProvisioningService.listRunningBenchmarkInstances` is untested because no fake
   covers `describeInstances` filters. Fix: a capturing EC2 double asserting the filter values,
-  the same shape as `Ec2ProvisioningServiceTest`.
+  the same shape as `Ec2ProvisioningServiceTest`. *Fixed:* `theTeardownGateCountsBootingRunnersAsLive` pins both filters.
 - **W3 — `TeardownCommand.call()`'s ordering is verified only manually.** Gates, then bucket,
   then stack, then image: no JVM test drives `call()`, since every step needs AWS. The same gap
   the CLAUDE.md note records for `RunCommand.call()`. Task 5 is the evidence: its log shows the
   order, and its residue checks show the effect.
-- **W4 — a snapshot that fails to delete is logged but not returned as a leftover.** `retire`
+- **W4 — FIXED. A snapshot that failed to delete was logged but not returned as a leftover.** `retire`
   warns per snapshot, as before, but `retireInstallation`'s returned list does not include it, so
   teardown's closing notice can still say the snapshots were retired when one was not. The
-  warning naming the snapshot does appear just above it. Fix together with W1 by having `retire`
-  return its failures.
+  warning naming the snapshot does appear just above it. *Fixed:* `retire` returns the snapshots it
+  could not delete; `retireInstallation` reports each as a leftover with its `aws ec2 delete-snapshot`
+  command, and `build-image`'s caller ignores the list, so its behaviour is unchanged. Note this
+  relaxes task 2.3's "`retire` unchanged" by one return value and one log string, deliberately.
 - **W5 — the old caller-ARN installation's Image Builder records remain.** Three
   `3q7i7s65-runner` image versions survive in the account: they are outside this deployer's
   `${PREFIX}-*` scope, the same reason that installation's component could not be deleted on
@@ -81,4 +83,6 @@ No critical issues. Five warnings below.
 
 ## Assessment
 
-No critical issues; five warnings, none blocking. Ready for archive.
+No critical issues. W1, W2 and W4 fixed (444 tests pass); W3 (ordering verified only by the paid
+run) and W5 (another installation's records, outside the deployer's scope) remain and are inherent.
+Ready for archive.

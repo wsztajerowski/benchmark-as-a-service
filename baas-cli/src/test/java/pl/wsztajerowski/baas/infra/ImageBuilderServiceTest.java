@@ -404,4 +404,16 @@ class ImageBuilderServiceTest {
         assertThat(imageBuilder.deletedImages).hasSize(9);
         assertThat(remaining(imageBuilder.imageRecords)).isZero();
     }
+
+    /** W4: teardown's closing notice must not claim a snapshot it left behind. */
+    @Test
+    void aSnapshotThatCannotBeDeletedIsALeftover() {
+        ssm.parameters.put(POINTER, NEW_AMI);
+        ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-stuck"));
+        ec2.deleteSnapshotErrorCode = "InvalidSnapshot.InUse";
+
+        assertThat(service().retireInstallation(POINTER, RECIPE)).singleElement().asString()
+            .contains("snap-stuck", NEW_AMI, "aws ec2 delete-snapshot --snapshot-id snap-stuck");
+        assertThat(ssm.parameters).doesNotContainKey(POINTER);
+    }
 }
