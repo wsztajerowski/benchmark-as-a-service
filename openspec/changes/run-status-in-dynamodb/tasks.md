@@ -2,7 +2,7 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm `dynamodb:LeadingKeys` evaluates as designed for each action, using
+- [x] 1.1 Confirm `dynamodb:LeadingKeys` evaluates as designed for each action, using
   `aws iam simulate-custom-policy` with the rendered `RunnerRole` and `OperatorRole` statements and
   context entries for `dynamodb:LeadingKeys`. Expected results:
   - `UpdateItem` is allowed for `RUN` and denied for `RESULT#x`;
@@ -29,7 +29,7 @@
   Update `infra/operator-policy.json` to match. Verify with `CoreTemplateTest` cases pinning both
   conditions and the absence of any delete action, the existing reference-copy sync test, and a
   check that the deployer policy is unchanged.
-- [ ] 2.2 Build the CLI from the branch, then **stop and ask the user** to run
+- [x] 2.2 Build the CLI from the branch, then **stop and ask the user** to run
   `java -jar baas-cli/target/baas-cli.jar admin setup`. Record the stack update's result. Do not push
   any commit from section 3 onward before this is done: CI on the PR runs the PR's CLI against the
   shared installation and needs these grants. Today's CLIs and runners are unaffected by the update.
@@ -238,7 +238,7 @@
   `baas download <runId>` fetches it.
 - [ ] 13.6 With a run in flight, run `baas admin teardown` and verify the refusal names the run id
   and `baas runs terminate`. Abort before confirming.
-- [ ] 13.7 As the operator, try `aws dynamodb update-item` on a `RESULT#` key and `put-item` on a
+- [x] 13.7 As the operator, try `aws dynamodb update-item` on a `RESULT#` key and `put-item` on a
   `RUN` key. Verify both return AccessDenied. LocalStack does not enforce IAM, so this live check is
   the only one for the deny scenarios.
 - [ ] 13.8 Confirm that an older CLI fails as the proposal states (`results --all-projects`) and that
