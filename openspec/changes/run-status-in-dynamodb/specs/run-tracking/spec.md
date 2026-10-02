@@ -165,8 +165,10 @@ none are, it SHALL report the run as vanished, naming the boot log's location, a
 When `baas run` stops a run that is still in flight, it SHALL record `cancelled` on interrupt, or
 `timed-out` when its poll cap is reached, and then terminate the instance. `baas runs terminate` SHALL
 record `cancelled` and terminate. The status write SHALL be bounded by a short timeout, and the
-instance SHALL be terminated whether or not the write succeeded. When the poll finds a terminal status
-that this CLI did not write, `baas run` SHALL still terminate the instance if it is pending or running.
+instance SHALL be terminated whether or not the write succeeded. When the poll finds a `cancelled` or
+`timed-out` that this CLI did not write, `baas run` SHALL still terminate the instance if it is pending or
+running. A `completed` or `failed:<n>` is written by the instance itself, which terminates on its own
+after uploading its boot log, so the CLI SHALL NOT terminate it.
 
 #### Scenario: Interrupt cancels the run
 - **WHEN** the operator presses Ctrl+C while the benchmark is running

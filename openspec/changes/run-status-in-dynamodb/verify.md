@@ -93,3 +93,14 @@ credentials for `RunnerRole`, which only the instance profile holds.
   (6 errors in `ResultsQueryServiceIT`). It was replaced by `attribute_exists(#kind)`, since `kind`
   is on every measurement and on no run item. `MeasurementItemMapper.KIND` became public for it.
   design.md and tasks.md were corrected.
+- **D2, terminating on a terminal status the CLI did not write.** The spec said any such status. That
+  would include `completed` and `failed:<n>`, which the instance writes moments before uploading its
+  boot log and terminating itself, and terminating it from the CLI could cut that upload off (the
+  hazard the old shutdown-hook comment recorded). It was narrowed to `cancelled` and `timed-out` in
+  the spec and the design. Pinned by `RunSessionTest.aCancellationFromElsewhereStillTerminatesALiveInstance`
+  and `completionExitsZero`.
+- **D3, task 6.3's "hang" case.** A stub `aws` cannot exercise the AWS CLI's own connect and read
+  timeouts, so the bound is asserted instead:
+  `UserDataScriptBuilderTest.retrySettingsApplyToTheStatusCommandOnly` checks for
+  `AWS_MAX_ATTEMPTS=3`, `--cli-connect-timeout 5` and `--cli-read-timeout 10`, which give 45 s
+  against the 60 s floor. The other three outcomes run against the stub.

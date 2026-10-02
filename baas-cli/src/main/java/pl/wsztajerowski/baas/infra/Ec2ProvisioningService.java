@@ -2,13 +2,17 @@ package pl.wsztajerowski.baas.infra;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import pl.wsztajerowski.baas.runs.RunSession;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
-public class Ec2ProvisioningService {
+public class Ec2ProvisioningService implements RunSession.Instances {
+
+    static final String REQUEST_ID_TAG = "baas-request-id";
 
     private static final Logger logger = LoggerFactory.getLogger(Ec2ProvisioningService.class);
 
@@ -31,7 +35,7 @@ public class Ec2ProvisioningService {
         return List.of(
             Tag.builder().key("project").value("baas").build(),
             Tag.builder().key("baas-role").value("benchmark-runner").build(),
-            Tag.builder().key("baas-request-id").value(requestId).build());
+            Tag.builder().key(REQUEST_ID_TAG).value(requestId).build());
     }
 
     public String runInstance(String amiId, String instanceType, String subnetId,
@@ -78,16 +82,6 @@ public class Ec2ProvisioningService {
         return response.instances().getFirst().instanceId();
     }
 
-    public void terminateInstance(String instanceId) {
-        try {
-            ec2.terminateInstances(TerminateInstancesRequest.builder()
-                .instanceIds(instanceId)
-                .build());
-        } catch (Exception e) {
-            logger.warn("Failed to terminate instance {}: {}", instanceId, e.getMessage());
-        }
-    }
-
     private boolean describeFailureReported = false;
 
     /**
@@ -115,18 +109,61 @@ public class Ec2ProvisioningService {
         }
     }
 
+    /** A runner instance that is pending or running, and the run it belongs to. */
+    public record LiveRunner(String instanceId, String state, String runId) {}
+
     /**
      * Pending counts as live: a run launched seconds before a teardown is still booting, and
      * deleting the stack then pulls its role, subnet and bucket out from under it.
+     *
+     * <p>The run id comes from the {@code baas-request-id} tag, which {@code RunInstances} applies
+     * in the same call that creates the instance, so every runner carries it. Reading it here is
+     * what lets teardown name runs without any access to the results table, and lets
+     * {@code baas runs list} resolve every run's liveness with this one call however many runs
+     * vanished before.
      */
-    public List<String> listRunningBenchmarkInstances() {
-        var response = ec2.describeInstances(r -> r.filters(
-            Filter.builder().name("tag:baas-role").values("benchmark-runner").build(),
-            Filter.builder().name("instance-state-name").values("pending", "running").build()
-        ));
-        return response.reservations().stream()
+    public List<LiveRunner> listRunningBenchmarkInstances() {
+        return ec2.describeInstancesPaginator(r -> r.filters(
+                Filter.builder().name("tag:baas-role").values("benchmark-runner").build(),
+                Filter.builder().name("instance-state-name").values("pending", "running").build()))
+            .reservations().stream()
             .flatMap(res -> res.instances().stream())
-            .map(i -> i.instanceId())
+            .map(i -> new LiveRunner(i.instanceId(), i.state().nameAsString(), tag(i, REQUEST_ID_TAG)))
             .toList();
+    }
+
+    @Override
+    public String state(String instanceId) {
+        return instanceState(instanceId);
+    }
+
+    /** The pending or running instance of one run, found by its {@code baas-request-id} tag. */
+    @Override
+    public Optional<String> findLive(String runId) {
+        return ec2.describeInstancesPaginator(r -> r.filters(
+                Filter.builder().name("tag:" + REQUEST_ID_TAG).values(runId).build(),
+                Filter.builder().name("instance-state-name").values("pending", "running").build()))
+            .reservations().stream()
+            .flatMap(res -> res.instances().stream())
+            .map(Instance::instanceId)
+            .findFirst();
+    }
+
+    /**
+     * Throws when the request fails. {@link RunSession} decides whether that is fatal: it is for
+     * {@code baas runs terminate}, which must not report success over a live instance, and is
+     * logged for the shutdown hook, where nothing is left to handle it.
+     */
+    @Override
+    public void terminate(String instanceId) {
+        ec2.terminateInstances(TerminateInstancesRequest.builder().instanceIds(instanceId).build());
+    }
+
+    private static String tag(Instance instance, String key) {
+        return instance.tags().stream()
+            .filter(t -> key.equals(t.key()))
+            .map(Tag::value)
+            .findFirst()
+            .orElse(null);
     }
 }

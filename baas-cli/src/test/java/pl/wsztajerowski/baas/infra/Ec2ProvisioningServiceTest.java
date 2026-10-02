@@ -18,11 +18,12 @@ class Ec2ProvisioningServiceTest {
     private static final class CapturingEc2 implements Ec2Client {
         RunInstancesRequest request;
         DescribeInstancesRequest describe;
+        DescribeInstancesResponse answer = DescribeInstancesResponse.builder().build();
 
         @Override
         public DescribeInstancesResponse describeInstances(DescribeInstancesRequest request) {
             this.describe = request;
-            return DescribeInstancesResponse.builder().build();
+            return answer;
         }
 
         @Override
@@ -76,6 +77,33 @@ class Ec2ProvisioningServiceTest {
         assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
             .containsExactlyInAnyOrder(
                 org.assertj.core.groups.Tuple.tuple("tag:baas-role", java.util.List.of("benchmark-runner")),
+                org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
+    }
+
+    /** Teardown and `baas runs list` name runs from the tag, with no read of the results table. */
+    @Test
+    void eachLiveRunnerCarriesItsRunIdFromTheTag() {
+        var ec2 = new CapturingEc2();
+        ec2.answer = DescribeInstancesResponse.builder().reservations(r -> r.instances(
+            Instance.builder().instanceId("i-1").state(s -> s.name("running"))
+                .tags(Tag.builder().key("baas-request-id").value("20261003T000000000Z-a3f9c21b").build()).build(),
+            Instance.builder().instanceId("i-2").state(s -> s.name("pending")).build())).build();
+
+        assertThat(new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances()).containsExactly(
+            new Ec2ProvisioningService.LiveRunner("i-1", "running", "20261003T000000000Z-a3f9c21b"),
+            new Ec2ProvisioningService.LiveRunner("i-2", "pending", null));
+    }
+
+    @Test
+    void aRunsLiveInstanceIsFoundByItsRunIdTag() {
+        var ec2 = new CapturingEc2();
+        ec2.answer = DescribeInstancesResponse.builder()
+            .reservations(r -> r.instances(Instance.builder().instanceId("i-9").build())).build();
+
+        assertThat(new Ec2ProvisioningService(ec2).findLive("run-1")).contains("i-9");
+        assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple("tag:baas-request-id", java.util.List.of("run-1")),
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
     }
 }

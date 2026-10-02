@@ -49,4 +49,24 @@ class TeardownNoticeTest {
                 java.util.List.of("Runner AMI ami-1 was not deregistered (x): aws ec2 deregister-image --image-id ami-1")))
             .contains("partly retired", "  - Runner AMI ami-1", "aws ec2 deregister-image --image-id ami-1");
     }
+
+    /**
+     * The in-flight refusal names each run by its instance's tag and the command that stops one.
+     * It is built from the EC2 listing alone: teardown's deployer credentials hold no read of the
+     * results table, and the message must not need one.
+     */
+    @Test
+    void theInFlightRefusalNamesEachRunAndHowToStopIt() {
+        String message = TeardownCommand.inFlightRefusal(java.util.List.of(
+            new pl.wsztajerowski.baas.infra.Ec2ProvisioningService.LiveRunner(
+                "i-0abc", "running", "20261003T000000000Z-a3f9c21b"),
+            new pl.wsztajerowski.baas.infra.Ec2ProvisioningService.LiveRunner("i-0def", "pending", null)));
+
+        assertThat(message)
+            .contains("2 runs are still in flight")
+            .contains("20261003T000000000Z-a3f9c21b", "i-0abc", "running")
+            .contains("(no run id tag)", "i-0def", "pending")
+            .contains("baas runs terminate <runId>")
+            .doesNotContain("terminate them manually");
+    }
 }

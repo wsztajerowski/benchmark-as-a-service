@@ -64,11 +64,9 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Gate 1: no active runs
         try (var ec2 = factory.ec2()) {
-            List<String> running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances();
+            var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances();
             if (!running.isEmpty()) {
-                logger.error("Aborting: active benchmark runner instances detected:\n{}\n"
-                        + "Wait for them to finish or terminate them manually before tearing down.",
-                    running.stream().map(id -> "  " + id).collect(Collectors.joining("\n")));
+                logger.error(inFlightRefusal(running));
                 return 1;
             }
         }
@@ -192,5 +190,20 @@ public class TeardownCommand implements Callable<Integer> {
               Read it any time with:  baas results --all-projects
               %2$s still names it; keep a copy to read it elsewhere with --config-path.
               Remove it with:         aws dynamodb delete-table --table-name %1$s""".formatted(resultsTable, configFile);
+    }
+
+    /**
+     * Names each in-flight run by the {@code baas-request-id} tag its instance carries, read from
+     * the same {@code DescribeInstances} the gate already makes: teardown runs with deployer
+     * credentials, which hold no read of the results table, and need none for this.
+     */
+    static String inFlightRefusal(List<Ec2ProvisioningService.LiveRunner> running) {
+        String rows = running.stream()
+            .map(r -> "  %-30s %-21s %s".formatted(
+                r.runId() == null ? "(no run id tag)" : r.runId(), r.instanceId(), r.state()))
+            .collect(Collectors.joining("\n"));
+        return (running.size() == 1 ? "Aborting: 1 run is" : "Aborting: " + running.size() + " runs are")
+            + " still in flight:\n" + rows + "\n"
+            + "Wait for them to finish, or stop each one:  baas runs terminate <runId>";
     }
 }

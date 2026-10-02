@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.infra;
 
+import pl.wsztajerowski.baas.model.RunStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
+import pl.wsztajerowski.baas.runs.DynamoDbRunRecorder;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -15,6 +17,49 @@ public class UserDataScriptBuilder {
 
     // Static script body — variables are prepended by build()
     private static final String SCRIPT_BODY = """
+        # Run status lives on the run item (pk = RUN) in the results table, not in S3. Defined
+        # first, before anything else runs: the watchdog below is a forked subshell, which sees
+        # only the functions defined before the fork, and `run_status timed-out` runs in it. A
+        # definition cannot fail, so the watchdog still starts as soon as INSTANCE_ID resolves.
+        # The instance writes only its status (and its instance id, if the CLI could not), only to
+        # the item the CLI's reservation created — attribute_exists(pk), so a wrong key creates
+        # nothing — and never over a terminal status (RUN_STATUS_GUARD, rendered from the CLI's own
+        # expression). Every value spliced into the JSON is constrained: the sort key is a fixed
+        # timestamp plus the run id, the status comes from a fixed set, the instance id from IMDS.
+        # Retries and timeouts are set on this one command and exported nowhere — the runner's Java
+        # SDK reads the same variables — and bounded so that a table it cannot reach costs well
+        # under the 60 s minimum watchdog margin. A failure is logged and never stops the script:
+        # the boot log upload and the termination after it must still run.
+        run_status() {
+          local status="$1" update names values err rc
+          if [[ -n "${INSTANCE_ID}" ]]; then
+            update='SET #status = :s, #instanceId = if_not_exists(#instanceId, :iid)'
+            names='{"#status":"status","#instanceId":"instanceId"}'
+            values='{":s":{"S":"'"${status}"'"},":iid":{"S":"'"${INSTANCE_ID}"'"},'"${RUN_STATUS_GUARD_VALUES}"'}'
+          else
+            update='SET #status = :s'
+            names='{"#status":"status"}'
+            values='{":s":{"S":"'"${status}"'"},'"${RUN_STATUS_GUARD_VALUES}"'}'
+          fi
+          err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=3 aws dynamodb update-item \
+            --region "${AWS_REGION}" --table-name "${RESULTS_TABLE}" \
+            --key '{"pk":{"S":"RUN"},"sk":{"S":"'"${RUN_SORT_KEY}"'"}}' \
+            --update-expression "${update}" \
+            --condition-expression "attribute_exists(pk) AND ${RUN_STATUS_GUARD}" \
+            --expression-attribute-names "${names}" \
+            --expression-attribute-values "${values}" \
+            --cli-connect-timeout 5 --cli-read-timeout 10 2>&1 >/dev/null)
+          rc=$?
+          if [[ $rc -eq 0 ]]; then
+            echo "run_status: ${status}"
+          elif [[ "${err}" == *ConditionalCheckFailedException* ]]; then
+            echo "run_status: ${status} not recorded: status already terminal, or no run item at this key"
+          else
+            echo "run_status: ${status} not recorded (exit ${rc}): ${err}"
+          fi
+          return 0
+        }
+
         TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \\
           -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
         INSTANCE_ID=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" \\
@@ -24,6 +69,8 @@ public class UserDataScriptBuilder {
         (
           sleep ${WALL_CLOCK_HARD_KILL}
           echo "WATCHDOG: hard-kill cap exceeded; terminating $INSTANCE_ID"
+          # Before the log upload, so the outcome is on record even if the upload stalls.
+          run_status timed-out
           # This path never reaches the normal upload below, and it is exactly the
           # case a user needs the log for — ship it before the instance disappears.
           aws s3 cp /var/log/cloud-init-output.log \\
@@ -31,6 +78,10 @@ public class UserDataScriptBuilder {
           aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
         ) &
         WATCHDOG_PID=$!
+
+        # After the watchdog, never before it. Fills in the instance id when the CLI's own
+        # `launched` write did not land.
+        run_status running
 
         # Nothing is installed here. Corretto, perf, the AWS CLI and async-profiler are baked
         # into the AMI by `baas admin build-image` from infra/runner-image.yaml — a runner that
@@ -150,13 +201,8 @@ public class UserDataScriptBuilder {
         # fetched from SSM at boot. Access is granted by RunnerRole, not by knowing the name.
         # Exactly one of the two is configured: `baas run` resolves the table from the stack
         # output and fails before provisioning when it cannot, so an empty table here means the
-        # operator asked for --no-database. The runner treats absent store configuration as a
-        # hard failure rather than a silent no-op, so never leave both unset.
-        if [[ "${NO_DATABASE}" == "true" ]]; then
-          STORE_ARGS=(--no-database)
-        else
-          STORE_ARGS=(--results-table "${RESULTS_TABLE}")
-        fi
+        # Every run names the table: run status lives there too, so there is no run without one.
+        STORE_ARGS=(--results-table "${RESULTS_TABLE}")
 
         # Layer 2: benchmark process with its own timeout
         # BENCHMARK_PARAMS_ARRAY and RUNNER_TAGS_ARRAY are array literals written by build(),
@@ -189,9 +235,9 @@ public class UserDataScriptBuilder {
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 
-        # Write sentinel to S3
+        # The outcome, on the run item — what `baas run` polls and `baas runs list` shows.
         STATUS="completed"; [[ $EXIT_CODE -ne 0 ]] && STATUS="failed:${EXIT_CODE}"
-        echo "$STATUS" | aws s3 cp - "s3://${S3_BUCKET}/${RESULT_PATH}/run-status"
+        run_status "${STATUS}"
 
         # Ship the boot log before self-terminating — the instance is about to disappear
         # and this is the only record of what went wrong on a failed run.
@@ -207,7 +253,7 @@ public class UserDataScriptBuilder {
                         String requestId, String resultPath, String createdAt,
                         String benchmarkJarS3Key, int benchmarkTimeoutSeconds,
                         int wallClockHardKillSeconds, String imageVersion, String amiId,
-                        String runnerJarS3Key, String resultsTableName, boolean noDatabase,
+                        String runnerJarS3Key, String resultsTableName, String runSortKey,
                         List<String> benchmarkParams, Map<String, String> runnerTags) {
         List<String> tagArgs = runnerTags.entrySet().stream()
             .flatMap(e -> Stream.of("--tag", e.getKey() + "=" + e.getValue()))
@@ -238,13 +284,33 @@ public class UserDataScriptBuilder {
             export("AMI_ID", amiId) +
             export("RUNNER_JAR_S3_KEY", runnerJarS3Key) +
             export("RESULTS_TABLE", resultsTableName) +
-            export("NO_DATABASE", noDatabase) +
+            // Built by ResultKeys in the CLI and handed down verbatim. CREATED_AT above is
+            // Instant.toString(), whose width varies, so a key the shell rebuilt from it would
+            // address a different item from the one the CLI reserved.
+            export("RUN_SORT_KEY", runSortKey) +
+            export("RUN_STATUS_GUARD", DynamoDbRunRecorder.NOT_TERMINAL) +
+            export("RUN_STATUS_GUARD_VALUES", guardValues()) +
             array("BENCHMARK_PARAMS_ARRAY", benchmarkParams) +
             array("RUNNER_TAGS_ARRAY", tagArgs) +
             "\n" +
             SCRIPT_BODY;
 
         return Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /**
+     * The values {@link DynamoDbRunRecorder#NOT_TERMINAL} names, as the body of a JSON object, so
+     * the shell's guard reads the same terminal set the CLI's does — from {@link RunStatus}.
+     */
+    static String guardValues() {
+        return Stream.of(
+                Map.entry(":completed", RunStatus.COMPLETED),
+                Map.entry(":timedOut", RunStatus.TIMED_OUT),
+                Map.entry(":cancelled", RunStatus.CANCELLED),
+                Map.entry(":launchFailed", RunStatus.LAUNCH_FAILED),
+                Map.entry(":failedPrefix", RunStatus.FAILED_PREFIX))
+            .map(e -> "\"" + e.getKey() + "\":{\"S\":\"" + e.getValue() + "\"}")
+            .collect(java.util.stream.Collectors.joining(","));
     }
 
     private static String project(Map<String, String> runnerTags) {

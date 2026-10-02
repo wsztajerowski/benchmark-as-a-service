@@ -11,6 +11,8 @@ import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.ssm.SsmClient;
 import software.amazon.awssdk.services.sts.StsClient;
 
+import java.time.Duration;
+
 public class AwsClientFactory {
 
     private final Region region;
@@ -41,6 +43,19 @@ public class AwsClientFactory {
 
     public DynamoDbClient dynamoDb() {
         var b = DynamoDbClient.builder().region(region);
+        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        return b.build();
+    }
+
+    /**
+     * A DynamoDB client that gives up after {@code apiCallTimeout}, retries included. For the
+     * status write that precedes terminating an instance: with the network gone — one of the ways
+     * a CLI dies — the SDK's default retries would hold the termination back.
+     */
+    public DynamoDbClient dynamoDb(Duration apiCallTimeout) {
+        var b = DynamoDbClient.builder()
+            .region(region)
+            .overrideConfiguration(o -> o.apiCallTimeout(apiCallTimeout));
         if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
         return b.build();
     }
