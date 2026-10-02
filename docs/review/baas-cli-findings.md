@@ -33,7 +33,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 3 | S6 | `eval` on benchmark parameters | Med | **Fixed** |
 | 4 | S7 | `RunnerRole` can delete the entire results history | Med | **Partly fixed** |
 | 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Accepted (decided 2026-10-02) |
-| 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Open |
+| 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Accepted (decided 2026-10-02) |
 | 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | **Fixed** |
 | 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | **Fixed** |
 | 9 | A7 | Runner-JAR discovery hardcodes the upstream repo | Med | **Fixed** |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: S9.**
+**Next up: A6.**
 
 ---
 
@@ -188,7 +188,7 @@ that could cross-terminate is the benchmark JAR, which only an operator can supp
 failure mode: a subtly wrong condition denies the runner its *own* termination, disabling both the
 normal path and the watchdog, and shows up only when a paid run hangs.
 
-## 6. S9 — `OperatorRole` trusts the account root · Med
+## 6. S9 — `OperatorRole` trusts the account root · ACCEPTED
 
 `cf-template-core.yaml` ~line 271: `Principal: {AWS: <account>:root}` with no condition. The
 template comment argues authorization is delegated to identity policies, which is a legitimate
@@ -196,6 +196,12 @@ pattern, but any principal holding a broad `sts:AssumeRole` on `*` silently beco
 
 **Proposed fix:** add an `sts:ExternalId` or `aws:PrincipalTag` condition. Interacts with S4's
 escalation chain — worth doing together with any further IAM hardening.
+
+**Accepted (2026-10-02), recorded in CLAUDE.md's *Accepted risks*.** Account-root trust is the
+standard same-account delegation, and the principals that hold `sts:AssumeRole` on `*` —
+administrators, `PowerUserAccess` — already hold the rights the role grants. A principal allow-list
+would cost a deployer re-run per teammate and can lock every operator out on a wrong SSO pattern;
+`sts:ExternalId` guards a cross-account confused deputy and is a shared string within one account.
 
 ## 7. D1 — `baas results` documents behaviour it does not have · Med
 
