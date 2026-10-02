@@ -28,10 +28,12 @@ class UserDataScriptBuilderTest {
     }
 
     private String script(Map<String, String> runnerTags) {
-        return script(runnerTags, "baas-a1b2c3d4-results", false);
+        return script(runnerTags, "baas-a1b2c3d4-results");
     }
 
-    private String script(Map<String, String> runnerTags, String resultsTable, boolean noDatabase) {
+    private static final String RUN_SORT_KEY = "2026-07-24T12:00:00.000Z#20260724T120000000Z-a3f9c21b";
+
+    private String script(Map<String, String> runnerTags, String resultsTable) {
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-a1b2c3d4", "jmh",
             "20260724T120000000Z-a3f9c21b",
@@ -39,7 +41,7 @@ class UserDataScriptBuilderTest {
             "2026-07-24T12:00:00Z",
             "runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
             7200, 7500,
-            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, noDatabase,
+            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, RUN_SORT_KEY,
             List.of("MyBenchmark", "-f", "1"), runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
@@ -126,7 +128,7 @@ class UserDataScriptBuilderTest {
 
     /**
      * Under {@code set -e} a failed IMDSv2 fetch exits before the watchdog starts and orphans a
-     * paid instance. Errors are handled by exit code and the run-status sentinel instead.
+     * paid instance. Errors are handled by exit code and the run item's status instead.
      */
     @Test
     void hasNoSetE() {
@@ -168,7 +170,7 @@ class UserDataScriptBuilderTest {
             "$(touch " + marker + ")", "it's", "two words", "back\\slash", "a;b");
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "runs/p/id", "2026-07-24T12:00:00Z",
-            "runs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", false,
+            "runs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", RUN_SORT_KEY,
             params, Map.of());
 
         List<String> elements = evaluateArray(
@@ -224,47 +226,187 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * Both branches are always present in the script text — which one runs is decided at boot by
-     * these two exports, so they are what the CLI's choice actually reduces to. That the right
-     * branch is taken is asserted by executing it, below.
+     * Every run names the table: its status is recorded there too, so there is no run without one,
+     * and the runner is never told to discard measurements.
      */
     @Test
-    void selectsTheNoOpStoreOnlyWhenNoDatabaseIsAskedFor() {
-        assertThat(script()).contains("export NO_DATABASE='false'");
+    void alwaysPassesTheResultsTableAndNeverDiscards() throws Exception {
+        String script = script();
+        assertThat(script).doesNotContain("NO_DATABASE").doesNotContain("--no-database");
 
-        String discarding = script(Map.of(), null, true);
-        assertThat(discarding).contains("export NO_DATABASE='true'");
-        assertThat(discarding).contains("export RESULTS_TABLE=''");
+        String harness = script.lines()
+            .filter(l -> l.startsWith("export RESULTS_TABLE="))
+            .collect(Collectors.joining("\n"))
+            + "\n"
+            + script.lines().filter(l -> l.strip().startsWith("STORE_ARGS=(")).findFirst().orElseThrow().strip()
+            + "\nfor element in \"${STORE_ARGS[@]}\"; do printf '%s\\n' \"$element\"; done\n";
+        Process process = new ProcessBuilder("bash", "-c", harness).start();
+        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(process.exitValue()).isZero();
+        assertThat(stdout.lines().toList()).containsExactly("--results-table", "baas-a1b2c3d4-results");
+    }
+
+    // ─── Run status on the run item ──────────────────────────────────────────────
+
+    @Test
+    void writesNoRunStatusObjectToS3() {
+        assertThat(script()).doesNotContain("/run-status");
+    }
+
+    /** Built by ResultKeys in the CLI; the shell must not rebuild it from CREATED_AT. */
+    @Test
+    void theRunItemKeyArrivesVerbatim() {
+        String script = script();
+
+        assertThat(script).contains("export RUN_SORT_KEY='" + RUN_SORT_KEY + "'");
+        assertThat(script).contains(
+            "--key '{\"pk\":{\"S\":\"RUN\"},\"sk\":{\"S\":\"'\"${RUN_SORT_KEY}\"'\"}}'");
+        assertThat(script).doesNotContain("${CREATED_AT}#");
+    }
+
+    /** The shell's guard is the CLI's own expression and values, so "terminal" means one thing. */
+    @Test
+    void theTerminalGuardIsTheCLIsOwn() {
+        String script = script();
+
+        assertThat(script).contains("export RUN_STATUS_GUARD='" + pl.wsztajerowski.baas.runs.DynamoDbRunRecorder.NOT_TERMINAL + "'");
+        assertThat(script).contains("--condition-expression \"attribute_exists(pk) AND ${RUN_STATUS_GUARD}\"");
+        assertThat(UserDataScriptBuilder.guardValues())
+            .contains("\":completed\":{\"S\":\"completed\"}", "\":failedPrefix\":{\"S\":\"failed:\"}",
+                "\":timedOut\":{\"S\":\"timed-out\"}", "\":cancelled\":{\"S\":\"cancelled\"}",
+                "\":launchFailed\":{\"S\":\"launch-failed\"}");
     }
 
     /**
-     * The runner selects its adapter from exactly one of these, and rejects both-or-neither. The
-     * script decides at boot which single argument it passes, so the two can never arrive
-     * together however the CLI is invoked.
+     * The watchdog is a forked subshell, which sees only the functions defined before the fork:
+     * defined after it, `run_status timed-out` would be "command not found" on exactly the path
+     * it exists for — and {@code bash -n} would not notice.
      */
     @Test
-    void passesExactlyOneStoreSelectionArgument() throws Exception {
-        for (boolean noDatabase : new boolean[]{false, true}) {
-            String script = script(Map.of(), noDatabase ? null : "baas-a1b2c3d4-results", noDatabase);
-            String harness = script.lines()
-                .filter(l -> l.startsWith("export RESULTS_TABLE=") || l.startsWith("export NO_DATABASE="))
-                .collect(java.util.stream.Collectors.joining("\n"))
-                + "\n"
-                + script.substring(script.indexOf("if [[ \"${NO_DATABASE}\""),
-                    script.indexOf("# Layer 2"))
-                + "for element in \"${STORE_ARGS[@]}\"; do printf '%s\\n' \"$element\"; done\n";
+    void runStatusIsDefinedBeforeTheWatchdogForks() {
+        String script = script();
 
-            Process process = new ProcessBuilder("bash", "-c", harness).start();
-            String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
-            assertThat(process.exitValue()).isZero();
+        assertThat(script.indexOf("run_status() {"))
+            .isPositive()
+            .isLessThan(script.indexOf("INSTANCE_ID=$("))
+            .isLessThan(script.indexOf("# Layer 1: background watchdog"));
+    }
 
-            assertThat(stdout.lines().toList())
-                .as("--no-database=" + noDatabase)
-                .isEqualTo(noDatabase
-                    ? List.of("--no-database")
-                    : List.of("--results-table", "baas-a1b2c3d4-results"));
-        }
+    @Test
+    void recordsRunningOnlyAfterTheWatchdogStarts() {
+        String script = script();
+
+        assertThat(script.indexOf("run_status running"))
+            .isGreaterThan(script.indexOf("WATCHDOG_PID=$!"))
+            .isLessThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
+    }
+
+    @Test
+    void recordsTheOutcomeWhereTheSentinelUsedToBe() {
+        String script = script();
+        int benchmark = script.indexOf("java -jar /app/benchmark-runner.jar");
+
+        assertThat(script.indexOf("run_status \"${STATUS}\"", benchmark))
+            .isPositive()
+            .isLessThan(script.lastIndexOf("cloud-init-output.log"));
+    }
+
+    /** The runner's Java SDK reads the same variables; exporting them would change its retries. */
+    @Test
+    void retrySettingsApplyToTheStatusCommandOnly() {
+        String script = script();
+
+        assertThat(script.lines().map(String::strip))
+            .noneMatch(l -> l.startsWith("export AWS_MAX_ATTEMPTS") || l.startsWith("export AWS_RETRY_MODE"));
+        assertThat(script).contains(
+            "err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=3 aws dynamodb update-item");
+        // 3 attempts x (5 s connect + 10 s read) = 45 s, under the 60 s minimum watchdog margin, so
+        // an unreachable table delays the benchmark start but cannot outlast the watchdog's floor.
+        assertThat(script).contains("--cli-connect-timeout 5 --cli-read-timeout 10");
+    }
+
+    /**
+     * Executes the rendered watchdog subshell itself, with its delay set to zero and a stub
+     * {@code aws} that records each call. Proves the function is visible inside the forked
+     * subshell and that the outcome is recorded before the log upload and the termination.
+     */
+    @Test
+    void theWatchdogRecordsTimedOutBeforeShippingTheLogAndTerminating() throws Exception {
+        String script = script();
+        int start = script.indexOf("(\n  sleep ${WALL_CLOCK_HARD_KILL}");
+        int end = script.indexOf(") &", start) + ") &".length();
+        assertThat(start).as("watchdog block").isPositive();
+
+        List<String> calls = runAgainstStubAws(script, "ok",
+            "WALL_CLOCK_HARD_KILL=0\nINSTANCE_ID=i-0abc\n" + script.substring(start, end) + "\nwait\n");
+
+        assertThat(calls).hasSize(3);
+        assertThat(calls.get(0)).startsWith("dynamodb update-item").contains("timed-out").contains("i-0abc");
+        assertThat(calls.get(1)).startsWith("s3 cp /var/log/cloud-init-output.log");
+        assertThat(calls.get(2)).startsWith("ec2 terminate-instances");
+    }
+
+    @Test
+    void aRefusedStatusWriteIsExpectedAndAFailedOneIsLoggedButNeitherStopsTheScript() throws Exception {
+        String script = script();
+
+        assertThat(runStatusOutput(script, "ok")).contains("run_status: completed").contains("after");
+        assertThat(runStatusOutput(script, "conditional"))
+            .contains("run_status: completed not recorded: status already terminal, or no run item at this key")
+            .contains("after");
+        assertThat(runStatusOutput(script, "fail"))
+            .contains("run_status: completed not recorded (exit 255): boom")
+            .contains("after");
+    }
+
+    /** Without an instance id (IMDS failed) the write still lands, just without that attribute. */
+    @Test
+    void theStatusWriteWorksWithoutAnInstanceId() throws Exception {
+        List<String> calls = runAgainstStubAws(script(), "ok", "INSTANCE_ID=\nrun_status running\n");
+
+        assertThat(calls).singleElement().asString()
+            .contains("SET #status = :s").doesNotContain("instanceId");
+    }
+
+    private String runStatusOutput(String script, String mode) throws Exception {
+        Path log = tempDir.resolve("out-" + mode);
+        runAgainstStubAws(script, mode, "INSTANCE_ID=i-0abc\nrun_status completed > " + log + "\necho after >> " + log + "\n");
+        return Files.readString(log);
+    }
+
+    /**
+     * Runs the script's exports, its {@code run_status} definition and {@code body} under bash,
+     * with {@code aws} replaced by a stub that appends its arguments to a file and then succeeds,
+     * fails a condition, or fails outright.
+     */
+    private List<String> runAgainstStubAws(String script, String mode, String body) throws Exception {
+        Path calls = tempDir.resolve("calls-" + System.nanoTime());
+        Path bin = Files.createDirectories(tempDir.resolve("bin-" + System.nanoTime()));
+        Path aws = bin.resolve("aws");
+        Files.writeString(aws, """
+            #!/usr/bin/env bash
+            printf '%s\\n' "$*" >> "$STUB_CALLS"
+            case "$STUB_MODE" in
+              ok) exit 0 ;;
+              conditional) echo "An error occurred (ConditionalCheckFailedException) when calling the UpdateItem operation" >&2; exit 254 ;;
+              *) echo "boom" >&2; exit 255 ;;
+            esac
+            """);
+        assertThat(aws.toFile().setExecutable(true)).isTrue();
+        String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
+        String function = script.substring(script.indexOf("run_status() {"), script.indexOf("\n}\n", script.indexOf("run_status() {")) + 3);
+
+        ProcessBuilder builder = new ProcessBuilder("bash", "-c", exports + function + body)
+            .redirectErrorStream(true);
+        builder.environment().put("PATH", bin + ":" + System.getenv("PATH"));
+        builder.environment().put("STUB_CALLS", calls.toString());
+        builder.environment().put("STUB_MODE", mode);
+        Process running = builder.start();
+        String output = new String(running.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(running.waitFor(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(running.exitValue()).as("bash said: " + output).isZero();
+        return Files.exists(calls) ? Files.readAllLines(calls) : List.of();
     }
 
     // ─── Environment manifest ────────────────────────────────────────────────────
@@ -699,7 +841,7 @@ class UserDataScriptBuilderTest {
         String encoded = new UserDataScriptBuilder().build(
             hostile, hostile, hostile, hostile, "runs/" + hostile + "/id", hostile,
             "runs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
-            hostile, hostile, hostile, hostile, false,
+            hostile, hostile, hostile, hostile, hostile,
             List.of(hostile), Map.of("project", hostile, "branch", hostile));
         String script = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
         String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));

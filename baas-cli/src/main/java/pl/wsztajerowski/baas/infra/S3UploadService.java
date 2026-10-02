@@ -32,6 +32,14 @@ public class S3UploadService {
             .build(), RequestBody.fromFile(localFile));
     }
 
+    public void putText(String bucket, String key, String content) {
+        s3.putObject(PutObjectRequest.builder()
+            .bucket(bucket)
+            .key(key)
+            .contentType("text/plain; charset=utf-8")
+            .build(), RequestBody.fromString(content));
+    }
+
     public Optional<String> getObjectIfExists(String bucket, String key) {
         try {
             return Optional.of(s3.getObjectAsBytes(GetObjectRequest.builder()

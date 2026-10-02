@@ -68,7 +68,7 @@
 
 ## 5. Run-item writes from the CLI
 
-- [ ] 5.1 Add a run-status service in `baas-cli` with these writes:
+- [x] 5.1 Add a run-status service in `baas-cli` with these writes:
   - `reserve` (`launching`) sets every identity field and creates the item;
   - `launched` is conditioned on `status = launching` and `attribute_exists(pk)`;
   - `launchFailed`;
@@ -80,21 +80,21 @@
   - `stop` after `completed` leaves `completed`;
   - `launched` after `running` leaves `running`;
   - a write to a missing key creates nothing.
-- [ ] 5.2 In `RunCommand`, keep networking resolved before the run is named. Write `launching` after
+- [x] 5.2 In `RunCommand`, keep networking resolved before the run is named. Write `launching` after
   the upload and immediately before `RunInstances`, and exit non-zero without launching if it fails.
   Verify with a `RunCommandTest` case where the reservation throws and the fake EC2 records no
   `RunInstances` call.
-- [ ] 5.3 On `RunInstances` failure, write `launch-failed` with the AWS error code and upload
+- [x] 5.3 On `RunInstances` failure, write `launch-failed` with the AWS error code and upload
   `launch-error.txt` (key built by `RunLayout`), both best effort, then report the original error.
   Verify with tests: the item and object are written, and a test where both writes also fail still
   shows the original error and a non-zero exit.
-- [ ] 5.4 Register the shutdown hook as soon as `RunInstances` returns, then write `launched`, best
+- [x] 5.4 Register the shutdown hook as soon as `RunInstances` returns, then write `launched`, best
   effort. When `launched` is refused because the run is already terminal, terminate the instance
   just launched and exit non-zero. Verify with tests:
   - an interrupt raised before `launched` is written still terminates;
   - a failed `launched` write proceeds to the poll;
   - a refused `launched` write terminates the instance.
-- [ ] 5.5 Put the shutdown hook, the poll cap and `baas runs terminate` (section 9) on one stop
+- [x] 5.5 Put the shutdown hook, the poll cap and `baas runs terminate` (section 9) on one stop
   method: write the reason (`cancelled` on interrupt, `timed-out` on the poll cap) with a short
   timeout, then terminate whatever the write did. Verify with unit tests:
   - the hook writes `cancelled` before terminating;
@@ -103,7 +103,7 @@
 
 ## 6. User-data writes from the instance
 
-- [ ] 6.1 Have the CLI export `RUN_SORT_KEY`, built by `ResultKeys`, into user-data. Define the
+- [x] 6.1 Have the CLI export `RUN_SORT_KEY`, built by `ResultKeys`, into user-data. Define the
   `run_status` function **before** `INSTANCE_ID` and the watchdog. It writes `status`, plus
   `if_not_exists(instanceId)` when it has one, under `attribute_exists(pk)` and the terminal guard.
   It writes no timestamp and no tag. It passes `AWS_RETRY_MODE=standard`, `AWS_MAX_ATTEMPTS=3`,
@@ -113,7 +113,7 @@
   - the function is defined before the watchdog's `( … ) &`;
   - its JSON holds only `${VAR}` references;
   - no `AWS_MAX_ATTEMPTS` or `AWS_RETRY_MODE` is exported.
-- [ ] 6.2 Call `run_status running` immediately after the watchdog starts, replace the S3 `run-status`
+- [x] 6.2 Call `run_status running` immediately after the watchdog starts, replace the S3 `run-status`
   write with `run_status completed|failed:<n>`, and add `run_status timed-out` to the watchdog
   subshell before its boot-log upload. Verify with tests:
   - the rendered script has no `run-status` S3 write;
@@ -121,30 +121,30 @@
     before it;
   - there is no `set -e`;
   - `timed-out` precedes the watchdog's log upload.
-- [ ] 6.3 Add a bash test that executes the rendered watchdog body and the `run_status` function
+- [x] 6.3 Add a bash test that executes the rendered watchdog body and the `run_status` function
   against a stub `aws` that records its arguments. Run it once for each stub outcome: success,
   `ConditionalCheckFailedException`, a generic failure, and a hang beyond the timeouts. Verify that
   `timed-out` is sent from the subshell, that the script continues after every outcome, and that
   the hang gives up within the 60 s margin floor.
-- [ ] 6.4 Always render the results table into user-data, and remove the `NO_DATABASE` branch. Verify
+- [x] 6.4 Always render the results table into user-data, and remove the `NO_DATABASE` branch. Verify
   that `UserDataScriptBuilderTest` asserts that `STORE_ARGS` is always `--results-table`.
 
 ## 7. Polling and the lost-status report
 
-- [ ] 7.1 Replace the S3 `GetObject` poll with a strongly consistent `GetItem` on the run item, keeping
+- [x] 7.1 Replace the S3 `GetObject` poll with a strongly consistent `GetItem` on the run item, keeping
   the single re-read after the instance is seen terminated. Keep exit codes as today: `completed`
   exits 0, and `failed:<n>`, `timed-out` and `cancelled` exit 1. Verify with `RunCommandTest` cases
   for each status and a `--format json` summary test showing `exitCode` unchanged.
-- [ ] 7.2 When the poll reads a terminal status this CLI didn't write and the instance is pending or
+- [x] 7.2 When the poll reads a terminal status this CLI didn't write and the instance is pending or
   running, terminate it before exiting. Verify with a unit test for a foreign `cancelled` on a
   running instance.
-- [ ] 7.3 When no terminal status exists and the instance is gone, query the run's measurements and
+- [x] 7.3 When no terminal status exists and the instance is gone, query the run's measurements and
   report either "results stored, final status lost" or vanished with the boot-log path. Exit
   non-zero in both cases. Verify with a unit test for each branch.
 
 ## 8. `--no-database` removal
 
-- [ ] 8.1 Remove `--no-database` from `RunCommand`. `resolveResultsTable` resolves unconditionally,
+- [x] 8.1 Remove `--no-database` from `RunCommand`. `resolveResultsTable` resolves unconditionally,
   and the "Or discard the results" hint goes. Verify with a `RunCommandTest` case: the option is
   unknown, and nothing is uploaded or launched.
 - [ ] 8.2 Remove `--no-database` from `ApiCommonSharedOptions`, shrink `ResultsStoreBuilder`'s check
@@ -181,7 +181,7 @@
 
 ## 10. Teardown message
 
-- [ ] 10.1 Return each in-flight instance's id, state and `baas-request-id` tag from
+- [x] 10.1 Return each in-flight instance's id, state and `baas-request-id` tag from
   `listRunningBenchmarkInstances`. Rewrite teardown's refusal to name run ids and
   `baas runs terminate <runId>`. Verify with a `TeardownCommand` test asserting the message, and
   that no DynamoDB client is created on that path.

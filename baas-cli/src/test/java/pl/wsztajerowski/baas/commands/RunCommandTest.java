@@ -107,10 +107,10 @@ class RunCommandTest {
     void refusesToRunWhenNoInstallationIsConfigured() {
         var config = configWithResultsTable(null);
 
-        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
+        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("baas config sync --name")
-            .hasMessageContaining("--no-database");
+            .hasMessageNotContaining("--no-database");
     }
 
     @Test
@@ -118,7 +118,7 @@ class RunCommandTest {
         var config = new BaasConfig();
         config.setPrefix("   ");
 
-        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
+        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
             .isInstanceOf(IllegalStateException.class);
     }
 
@@ -126,15 +126,8 @@ class RunCommandTest {
     void derivesTheResultsTableFromTheConfiguredInstallation() {
         var config = configWithResultsTable("baas-123456789012-results");
 
-        assertThat(RunCommand.resolveResultsTable(config, false))
-            .contains("baas-123456789012-results");
-    }
-
-    /** Discarding results is legitimate, but it has to be asked for by name. */
-    @Test
-    void noDatabaseResolvesToNoTableWithoutConsultingTheConfig() {
-        assertThat(RunCommand.resolveResultsTable(configWithResultsTable(null), true))
-            .isEmpty();
+        assertThat(RunCommand.resolveResultsTable(config))
+            .isEqualTo("baas-123456789012-results");
     }
 
     /** The table is derived from the installation, so "no table" means "no installation". */
@@ -380,6 +373,18 @@ class RunCommandTest {
         }
     }
 
+    /**
+     * Every run records its status in the results table, so there is no run without one; the
+     * option that discarded measurements is gone rather than kept as a no-op.
+     */
+    @Test
+    void theDiscardOptionIsUnknown() {
+        var parser = new picocli.CommandLine(new RunCommand());
+
+        assertThatThrownBy(() -> parser.parseArgs("--benchmark-jar", "b.jar", "--no-database", "jmh"))
+            .isInstanceOf(picocli.CommandLine.UnmatchedArgumentException.class);
+    }
+
     /** Exit 2, the usage-error code, before the unreleased-build check that would exit 1. */
     @Test
     void anUnknownFormatIsRefusedRatherThanReadAsText() {
@@ -463,7 +468,7 @@ class RunCommandTest {
         assertThat(RunCommand.watchdogBound(1000, 120)).isEqualTo(1120);
     }
 
-    /** Below the floor the watchdog could kill the instance before run-status is written. */
+    /** Below the floor the watchdog could kill the instance before its final status is written. */
     @Test
     void aMarginBelowTheFloorIsRefused() {
         assertThatThrownBy(() -> RunCommand.watchdogBound(7200, 10))

@@ -25,11 +25,16 @@ import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
 import pl.wsztajerowski.baas.model.RunId;
+import pl.wsztajerowski.baas.model.RunItem;
+import pl.wsztajerowski.baas.model.RunStatus;
 import pl.wsztajerowski.baas.model.RunLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 import pl.wsztajerowski.baas.results.ResultsTable;
+import pl.wsztajerowski.baas.runs.DynamoDbRunRecorder;
+import pl.wsztajerowski.baas.runs.RunSession;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,7 +45,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
@@ -65,10 +69,10 @@ import java.util.regex.Pattern;
         "--project can be derived from the JAR's git repository instead:",
         "  baas config set --git-resolve-project true",
         "",
-        "Measurements go to the DynamoDB results table. S3 receives process output,",
-        "logs, profiler artifacts, the verbatim result JSON and the run-status",
-        "sentinel. Discarding measurements needs an explicit --no-database; an",
-        "unresolvable table fails before anything is launched."
+        "Measurements and the run's status go to the DynamoDB results table; see",
+        "them with baas results and baas runs list. S3 receives process output,",
+        "logs, profiler artifacts and the verbatim result JSON. An unresolvable",
+        "table fails before anything is launched."
     },
     separator = " "
 )
@@ -92,10 +96,10 @@ public class RunCommand implements Callable<Integer> {
     private volatile StatusLine statusLine;
 
     /**
-     * Set once the poll has seen the run end — a run-status sentinel, or the instance already
-     * terminated. The shutdown hook then leaves the instance to terminate itself.
+     * The run's lifecycle once it has been named — reserve, launch, poll, stop. Volatile because
+     * the shutdown hook reads it from another thread.
      */
-    private volatile boolean runEnded;
+    private volatile RunSession session;
 
     @Parameters(index = "0", paramLabel = "<type>",
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
@@ -133,10 +137,6 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--project", description = "Project name for the results partition. Required unless "
         + "git.resolveProject is enabled, which derives it from the repository holding --benchmark-jar.")
     String project;
-
-    @Option(names = "--no-database", description = "Discard measurements instead of storing them. "
-        + "Explicit opt-in: without it, an unresolvable results table fails before provisioning.")
-    boolean noDatabase;
 
     // No --image-version and no --ami-id: exactly one image is maintained, so there is nothing to
     // select between, and an override could only name an image whose results are not comparable.
@@ -299,7 +299,7 @@ public class RunCommand implements Callable<Integer> {
 
         // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
         // and the upload: a run that cannot say where its measurements go is going to fail anyway.
-        String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
+        String resolvedTable = resolveResultsTable(config);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         Timings timings = resolveTimings(config);
         int resolvedTimeout = timings.timeoutSeconds();
@@ -390,125 +390,191 @@ public class RunCommand implements Callable<Integer> {
                 runnerJarS3Key, BaasVersion.current());
         }
 
-        // 5. Build user-data
+        // 5. Build user-data. The run item's sort key is built here, once, by ResultKeys, and
+        //    handed to the instance verbatim; see UserDataScriptBuilder's RUN_SORT_KEY.
         Map<String, String> runnerTags =
             buildRunnerTags(benchmarkType, resolvedProject);
+        RunItem run = new RunItem(runId, resolvedProject, runInstant, resultPath, resolvedInstanceType,
+            RunStatus.LAUNCHING, null, null, runnerTags, null);
         String userData = new UserDataScriptBuilder().build(
             config.getAws().resolveRegion(), config.bucket(),
             benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
             resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            resolvedTable, noDatabase, benchmarkParams, runnerTags);
+            resolvedTable, run.sortKey(), benchmarkParams, runnerTags);
         // The script is what actually decides whether a run works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 6. Launch instance. It carries only the fixed tags (see Ec2ProvisioningService
-        //    #instanceTags): every caller --tag, and the observed imageVersion/instanceType, reach
-        //    the stored result through the runner's own --tag options in user-data, which is the
-        //    only place `baas results` reads. See
-        //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
-        logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
+        // The session's clients are deliberately never closed: the shutdown hook may still be
+        // using them while the main thread unwinds, and the JVM is exiting either way.
+        var ec2Instances = new Ec2ProvisioningService(factory.ec2());
+        var current = new RunSession(run,
+            new DynamoDbRunRecorder(factory.dynamoDb(), resolvedTable),
+            new DynamoDbRunRecorder(factory.dynamoDb(STOP_WRITE_TIMEOUT), resolvedTable),
+            ec2Instances);
 
-        String instanceId;
-        try (var ec2 = factory.ec2()) {
-            instanceId = new Ec2ProvisioningService(ec2).runInstance(
-                runnerImage.amiId(), resolvedInstanceType,
-                networking.get("SubnetId"), networking.get("SecurityGroupId"),
-                config.runnerInstanceProfile(),
-                userData, runId);
+        // 6. Reserve the run before launching it. An instance without a record is exactly the
+        //    invisible run `baas runs` exists to show, so a reservation that cannot be written
+        //    launches nothing.
+        try {
+            current.reserve();
+        } catch (RuntimeException e) {
+            logger.error("""
+                Could not record run {} in the results table, so nothing was launched: {}
+                If the operator role lacks dynamodb:UpdateItem, the installation predates run \
+                tracking — update it with `baas admin setup`.""", runId, e.getMessage());
+            return 1;
         }
-        summaryInstanceId = instanceId;
-        logger.info("Instance launched: {}", instanceId);
-        logger.info("Run ID: {}", runId);
+        session = current;
 
-        // 7. Shutdown hook
+        // 7. Shutdown hook, registered before the launch: an interrupt while RunInstances is in
+        //    flight still finds the instance, by its run-id tag. Once the run has ended the
+        //    instance terminates itself, and the watchdog backs it up; terminating it from here as
+        //    well would cut off its final cloud-init-output.log upload. This layer is for a CLI
+        //    that stops while the run is still in flight.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             // Cleared first, or the termination message would be drawn over by the status line.
             var line = statusLine;
             if (line != null) {
                 line.close();
             }
-            // Once the run has ended the instance terminates itself, and the watchdog still backs it
-            // up. Terminating it from here as well announced a termination on every successful run
-            // and could cut off the instance's final cloud-init-output.log upload. This layer is
-            // for a CLI that stops while the run is still in flight: Ctrl+C, or the poll cap.
-            if (runEnded) {
-                logger.debug("Run ended; instance {} terminates itself.", instanceId);
-                return;
-            }
-            logger.info("Terminating instance {} ...", instanceId);
-            try (var ec2 = factory.ec2()) {
-                new Ec2ProvisioningService(ec2).terminateInstance(instanceId);
+            var active = session;
+            if (active != null && !active.ended()) {
+                active.stop(RunStatus.CANCELLED);
+            } else if (active != null) {
+                logger.debug("Run ended; instance {} terminates itself.", active.instanceId());
             }
         }));
 
-        // 8. Poll
-        return poll(factory, config, instanceId, runId, resultPath, resolvedWallClock);
+        // 8. Launch. It carries only the fixed tags (see Ec2ProvisioningService#instanceTags):
+        //    every caller --tag, and the observed imageVersion/instanceType, reach the stored
+        //    result through the runner's own --tag options in user-data, which is the only place
+        //    `baas results` reads. See
+        //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
+        logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
+        String instanceId;
+        try {
+            instanceId = ec2Instances.runInstance(
+                runnerImage.amiId(), resolvedInstanceType,
+                networking.get("SubnetId"), networking.get("SecurityGroupId"),
+                config.runnerInstanceProfile(),
+                userData, runId);
+        } catch (RuntimeException e) {
+            recordLaunchFailure(factory, config, current, e, runnerImage.amiId(),
+                resolvedInstanceType, networking.get("SubnetId"));
+            return 1;
+        }
+        summaryInstanceId = instanceId;
+        logger.info("Instance launched: {}", instanceId);
+        logger.info("Run ID: {}", runId);
+        if (current.confirmLaunched(instanceId) == RunSession.Confirmation.CANCELLED_WHILE_LAUNCHING) {
+            return 1;
+        }
+
+        // 9. Poll
+        return poll(factory, config, current, resolvedWallClock);
     }
 
-    private int poll(AwsClientFactory factory, BaasConfig config, String instanceId,
-                     String runId, String resultPath, int wallClockSeconds) throws InterruptedException {
-        long startMs = System.currentTimeMillis();
-        long timeoutMs = (long) wallClockSeconds * 1000;
-        String bucket = config.bucket();
-        String statusKey = resultPath + "/run-status";
-        String logPath = "s3://" + bucket + "/" + resultPath + "/cloud-init-output.log";
+    /** Bounds the status write that precedes a termination; see AwsClientFactory#dynamoDb(Duration). */
+    static final java.time.Duration STOP_WRITE_TIMEOUT = java.time.Duration.ofSeconds(5);
 
-        // Built once, not per iteration: every client construction re-resolves the
-        // profile, and with a role-assuming operator profile that means a fresh
-        // sts:AssumeRole — hundreds of them over a long run.
-        try (var s3 = factory.s3(); var ec2 = factory.ec2(); var line = openStatusLine()) {
-            var storage = new S3UploadService(s3);
-            var provisioning = new Ec2ProvisioningService(ec2);
+    /**
+     * A launch that failed leaves no instance and so no boot log. What there is to keep is in the
+     * exception and in the request, so both go to the run's prefix, where {@code baas download}
+     * finds them, and the error code goes on the run item, where {@code baas runs list} shows it.
+     * Both are best effort: the launch error is reported whether or not they land, since a launch
+     * often fails for the same reason they would — the network or the credentials.
+     */
+    private void recordLaunchFailure(AwsClientFactory factory, BaasConfig config, RunSession current,
+                                     RuntimeException error, String amiId, String instanceType,
+                                     String subnetId) {
+        String errorCode = null;
+        String requestId = null;
+        if (error instanceof AwsServiceException aws) {
+            requestId = aws.requestId();
+            if (aws.awsErrorDetails() != null) {
+                errorCode = aws.awsErrorDetails().errorCode();
+            }
+        }
+        RunItem run = current.run();
+        logger.error("Launching the instance for run {} failed{}: {}", run.runId(),
+            errorCode == null ? "" : " (" + errorCode + ")", error.getMessage());
+        current.recordLaunchFailed(errorCode);
+        String report = String.join("\n",
+            "runId: " + run.runId(),
+            "time: " + Instant.now(),
+            "errorCode: " + (errorCode == null ? "" : errorCode),
+            "awsRequestId: " + (requestId == null ? "" : requestId),
+            "instanceType: " + instanceType,
+            "amiId: " + amiId,
+            "subnetId: " + subnetId,
+            "message: " + error.getMessage(),
+            "");
+        try (var s3 = factory.s3()) {
+            new S3UploadService(s3).putText(config.bucket(),
+                RunLayout.launchErrorKey(run.project(), run.runId()), report);
+            logger.info("Launch error recorded: baas download {}", run.runId());
+        } catch (RuntimeException e) {
+            logger.warn("Could not upload {} ({})", RunLayout.LAUNCH_ERROR_NAME, e.getMessage());
+        }
+    }
 
-            while (true) {
-                long elapsed = (System.currentTimeMillis() - startMs) / 1000;
-                if (elapsed * 1000 > timeoutMs) {
-                    logger.error("Client-side wall-clock cap exceeded ({}s). Exiting poll.", wallClockSeconds);
-                    return 1;
-                }
-
-                Optional<String> status = storage.getObjectIfExists(bucket, statusKey);
-                if (status.isPresent()) {
-                    // The run is over: a line still saying "running" beside its results is wrong,
-                    // and would be redrawn under every row of the table printed next.
-                    closeIfOpen(line);
-                    var exitCode = exitCodeFor(status.get().trim(), factory, config, runId, logPath);
-                    if (exitCode.isPresent()) {
-                        runEnded = true;
-                        return exitCode.getAsInt();
-                    }
-                } else {
-                    String state = provisioning.instanceState(instanceId);
-                    if ("terminated".equals(state) || "shutting-down".equals(state)) {
-                        // The instance is already going; nothing is left for the hook to stop.
-                        runEnded = true;
-                        // The sentinel is written moments before the instance terminates, so a
-                        // poll landing in that window sees a dead instance and no status yet.
-                        // Re-read once before reporting a successful run as a failure.
-                        var lateStatus = storage.getObjectIfExists(bucket, statusKey);
-                        closeIfOpen(line);
-                        if (lateStatus.isPresent()) {
-                            var exitCode = exitCodeFor(lateStatus.get().trim(), factory, config, runId, logPath);
-                            if (exitCode.isPresent()) {
-                                return exitCode.getAsInt();
-                            }
-                        }
-                        logger.error("Instance {} is {} but wrote no run-status sentinel — the runner "
-                            + "died before finishing.\nRunner log (present only if the instance got "
-                            + "far enough to upload it): {}", instanceId, state, logPath);
-                        return 1;
-                    }
+    private int poll(AwsClientFactory factory, BaasConfig config, RunSession current, int capSeconds)
+        throws InterruptedException {
+        RunItem run = current.run();
+        String logPath = "s3://" + config.bucket() + "/" + run.resultPath() + "/cloud-init-output.log";
+        RunSession.Outcome outcome;
+        try (var line = openStatusLine()) {
+            outcome = current.await(capSeconds, 15_000, System::currentTimeMillis, Thread::sleep,
+                () -> measurementsStored(factory, config, run.runId()),
+                (state, elapsed) -> {
                     if (line != null) {
-                        line.update(statusText(state, elapsed, instanceId));
+                        line.update(statusText(state, elapsed, current.instanceId()));
                     } else {
                         logger.info("Still running ({})... elapsed: {}s", state, elapsed);
                     }
-                }
+                });
+            // The run is over: a line still saying "running" beside its results is wrong, and
+            // would be redrawn under every row of the table printed next.
+            closeIfOpen(line);
+        }
+        return report(outcome, factory, config, run.runId(), current.instanceId(), logPath);
+    }
 
-                Thread.sleep(15_000);
-            }
+    /** Says what the outcome was, shows the results of a completed run, and returns its exit code. */
+    private int report(RunSession.Outcome outcome, AwsClientFactory factory, BaasConfig config,
+                       String runId, String instanceId, String logPath) {
+        String status = outcome.status();
+        logger.info("Run status: {}", status);
+        if (outcome.completed()) {
+            showResults(factory, config, runId);
+        } else if (status.startsWith(RunStatus.FAILED_PREFIX)) {
+            logger.error("Benchmark failed. Runner log: {}", logPath);
+        } else if (RunStatus.TIMED_OUT.equals(status)) {
+            logger.error("Run {} timed out. Runner log (if the instance got far enough to upload "
+                + "it): {}", runId, logPath);
+        } else if (RunStatus.CANCELLED.equals(status)) {
+            logger.error("Run {} was cancelled.", runId);
+        } else if (RunSession.Outcome.STATUS_LOST.equals(status)) {
+            logger.error("Instance {} terminated without recording its final status, but the run "
+                + "stored measurements: baas results --request-id {}\nRunner log: {}",
+                instanceId, runId, logPath);
+        } else {
+            logger.error("Instance {} terminated without recording a final status — the runner "
+                + "died before finishing.\nRunner log (present only if the instance got far "
+                + "enough to upload it): {}", instanceId, logPath);
+        }
+        return outcome.exitCode();
+    }
+
+    /** Asked only when the instance is gone without a final status; a failed read counts as none. */
+    private boolean measurementsStored(AwsClientFactory factory, BaasConfig config, String runId) {
+        try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
+            return !results.queryByRequestId(runId).isEmpty();
+        } catch (RuntimeException e) {
+            logger.debug("Could not check for stored measurements: {}", e.getMessage());
+            return false;
         }
     }
 
@@ -553,34 +619,14 @@ public class RunCommand implements Callable<Integer> {
         return console;
     }
 
-    /** Maps a run-status sentinel to an exit code, or empty while the run is still in flight. */
-    private OptionalInt exitCodeFor(String body, AwsClientFactory factory, BaasConfig config,
-                                    String runId, String logPath) {
-        logger.info("Run status: {}", body);
-        if ("completed".equals(body)) {
-            showResults(factory, config, runId);
-            return OptionalInt.of(0);
-        }
-        if (body.startsWith("failed:")) {
-            logger.error("Benchmark failed. Runner log: {}", logPath);
-            return OptionalInt.of(1);
-        }
-        return OptionalInt.empty();
-    }
-
     /**
      * Reads the same path {@code baas results} does, so the post-run summary can never disagree
      * with what a later query reports.
      *
-     * <p>A missing table name cannot normally get this far — {@link #resolveResultsTable} rejects
-     * it before provisioning — but {@code --no-database} reaches here with nothing to show, and a
-     * benchmark that has already run and terminated must not be reported as failed over a summary.
+     * <p>A benchmark that has already run and terminated must not be reported as failed over a
+     * summary, so a failed read is a warning.
      */
     private void showResults(AwsClientFactory factory, BaasConfig config, String runId) {
-        if (noDatabase) {
-            logger.info("--no-database: the runner stored nothing, so there is no result to show.");
-            return;
-        }
         String tableName = config.resultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
             var rows = results.queryByRequestId(runId);
@@ -673,26 +719,23 @@ public class RunCommand implements Callable<Integer> {
     static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
 
     /**
-     * The results table this run will write to, or empty when {@code --no-database} was passed.
+     * The results table this run records its status in and stores its measurements to.
      *
      * <p>Resolved before the runner-image lookup and before anything is uploaded or launched, like
      * every other precondition this command checks early: discovering it later costs a paid
-     * instance. There is no silent fallback. Before the cutover, an unset store selected a no-op
-     * adapter and the run reported success while the measurements were discarded; that behaviour
-     * still exists, but it now has to be asked for by name.
+     * instance. There is no option to go without one. Every run records its status in the table,
+     * so a run with no table could not be seen at all — and the {@code --no-database} that once
+     * discarded measurements had outlived any use.
      */
-    static Optional<String> resolveResultsTable(BaasConfig config, boolean noDatabase) {
-        if (noDatabase) {
-            return Optional.empty();
-        }
+    static String resolveResultsTable(BaasConfig config) {
         if (config.getPrefix() == null || config.getPrefix().isBlank()) {
             throw new IllegalStateException("""
-                No installation is configured, so this run has nowhere to store its measurements.
-                  Adopt one:              baas config sync --name baas-<accountId>
-                  Or discard the results: baas run --no-database ...
+                No installation is configured, so this run has nowhere to record its status or \
+                store its measurements.
+                  Adopt one:  baas config sync --name baas-<accountId>
                 Nothing was built or launched.""");
         }
-        return Optional.of(config.resultsTable());
+        return config.resultsTable();
     }
 
     /**

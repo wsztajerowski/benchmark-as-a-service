@@ -20,6 +20,7 @@ public final class RunLayout {
     public static final String RUNNER_JAR_NAME = "benchmark-runner.jar";
     public static final String BENCHMARK_JAR_NAME = "benchmark.jar";
     public static final String RUNNER_JAR_OVERRIDE_NAME = "runner.jar";
+    public static final String LAUNCH_ERROR_NAME = "launch-error.txt";
 
     private RunLayout() {
     }
@@ -44,6 +45,14 @@ public final class RunLayout {
      */
     public static String runnerJarOverrideKey(String project, String runId) {
         return inputPrefix(project, runId) + "/" + RUNNER_JAR_OVERRIDE_NAME;
+    }
+
+    /**
+     * Why the instance request failed, for a run that never launched: there is no instance and so
+     * no boot log, and this is what {@code baas download <runId>} then has to show.
+     */
+    public static String launchErrorKey(String project, String runId) {
+        return runPrefix(project, runId) + "/" + LAUNCH_ERROR_NAME;
     }
 
     public static String runnerJarKey(String version) {

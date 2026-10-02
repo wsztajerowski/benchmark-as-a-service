@@ -262,9 +262,11 @@ The reasons:
 Ctrl+C after a lost network must not wait out the SDK's default retries before terminating, hence
 the short timeout.
 
-When the poll reads a terminal status this CLI didn't write (for example `cancelled` from another
-operator's `terminate`), it still terminates the instance if it is pending or running, rather than
-setting `runEnded` and leaving.
+When the poll reads a `cancelled` or `timed-out` this CLI didn't write (another operator's
+`terminate`), it still terminates the instance if it is pending or running, rather than ending the
+run and leaving. A `completed` or `failed:<n>` is left alone: the instance wrote it and terminates
+itself after its boot-log upload, which a termination from here could cut off. (Narrowed during
+apply; see verify.md D2.)
 
 **`baas runs terminate` fails loudly.** `Ec2ProvisioningService.terminateInstance` swallows every
 exception, which suits a best-effort shutdown hook. `terminate` uses a variant that throws instead,
