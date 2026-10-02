@@ -1,7 +1,9 @@
 ## Why
 
-Benchmark runners launch into a public subnet with a public IP and `0.0.0.0/0` egress, because they need
-to reach yum repositories, GitHub Releases, MongoDB Atlas, and the EC2 API. Once a prebaked AMI supplies
+Benchmark runners launch into a public subnet with a public IP and `0.0.0.0/0` egress on 443, because they
+need to reach yum repositories, GitHub Releases, MongoDB Atlas, and the EC2 API. (Port 80, and the image
+build's own internet needs, moved to a separate `ImageBuildSecurityGroup` on 2026-10-02, outside this
+change.) Once a prebaked AMI supplies
 the tooling and DynamoDB replaces Atlas, none of those reasons survive — and S3 and DynamoDB both have
 *free* gateway endpoints.
 
@@ -19,11 +21,15 @@ shared-tag `TerminateInstances` grant let any runner terminate any other.
   interface endpoints (~$7/month each, since Image Builder orchestrates through SSM) and would still fail
   on its own terms, because a build instance with no egress cannot fetch the tools it is baking.
 - **BREAKING**: `UseExistingVpc`, `ExistingVpcId`, `ExistingSubnetId`, `ExistingSecurityGroupId`, and the
-  `CreateNetworking` condition are removed; every networking resource becomes unconditional. The CLI
+  `CreateNetworking` condition are removed; every networking resource becomes unconditional, including
+  `ImageBuildSecurityGroup`, which today exists only when the stack creates its networking. The CLI
   cannot verify that a foreign VPC provides the required gateway endpoints, and the failure mode — runs
   that hang until the wall-clock cap — is close to undiagnosable from a terminated instance.
-- Security group egress narrows to the AWS-managed prefix lists `com.amazonaws.<region>.s3` and
-  `com.amazonaws.<region>.dynamodb` on 443. No `0.0.0.0/0`, no port 80.
+- `RunnerSecurityGroup`'s remaining egress (443 to `0.0.0.0/0`) narrows to the AWS-managed prefix lists
+  `com.amazonaws.<region>.s3` and `com.amazonaws.<region>.dynamodb` on 443. Port 80 is already gone, and
+  image builds already use their own `ImageBuildSecurityGroup` (both shipped outside this change), so the
+  narrowing cannot reach the bake. Its `GroupDescription`, which still says "443/80", stays unedited:
+  editing it replaces the group.
 - **BREAKING**: self-termination changes mechanism. `InstanceInitiatedShutdownBehavior: terminate` on
   `RunInstances` lets the watchdog call `shutdown -h now` instead of `ec2:TerminateInstances`, so no EC2
   interface endpoint is needed and `RunnerRole` loses the `ec2:TerminateInstances` grant entirely

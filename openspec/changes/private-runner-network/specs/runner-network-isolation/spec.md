@@ -47,17 +47,18 @@ stack's region, on TCP 443. It SHALL NOT permit egress to `0.0.0.0/0`, and SHALL
 - **THEN** no rule covers TCP port 80
 
 ### Requirement: Build instances retain internet access in a separate subnet
-Image build instances SHALL launch into the public subnet, which retains its internet gateway route. The
-public subnet SHALL NOT be used for benchmark runners.
+Image build instances SHALL launch into the public subnet, which retains its internet gateway route, with
+`ImageBuildSecurityGroup` as their security group. The public subnet SHALL NOT be used for benchmark
+runners, and image builds SHALL NOT use `RunnerSecurityGroup`.
 
 #### Scenario: Builds still reach package repositories
 - **WHEN** `baas admin build-image` runs
 - **THEN** the build instance reaches its package sources and the build completes
 
-#### Scenario: Runner and builder use different subnets
-- **WHEN** the stack's subnets are inspected
-- **THEN** the image builder infrastructure configuration names the public subnet and runner provisioning
-  names the private subnet
+#### Scenario: Runner and builder use different subnets and security groups
+- **WHEN** the stack's subnets and security groups are inspected
+- **THEN** the image builder infrastructure configuration names the public subnet and
+  `ImageBuildSecurityGroup`, and runner provisioning names the private subnet and `RunnerSecurityGroup`
 
 ### Requirement: The instance terminates itself without calling the EC2 API
 Instances SHALL be launched with shutdown-initiated termination behaviour so that an operating-system

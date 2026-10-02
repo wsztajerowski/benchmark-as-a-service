@@ -13,7 +13,8 @@
 - [ ] 2.2 Add its route table with no internet-gateway route, and associate the subnet
 - [ ] 2.3 Associate the S3 and DynamoDB gateway endpoints with the private route table
 - [ ] 2.4 Add stack outputs for the runner subnet and the build subnet as distinct values
-- [ ] 2.5 Point the Image Builder infrastructure configuration explicitly at the build subnet
+- [ ] 2.5 Point the Image Builder infrastructure configuration explicitly at the build subnet, keeping
+  `ImageBuildSecurityGroup` as its security group
 - [ ] 2.6 Deploy and confirm no behaviour change while runners still use the public subnet
 - [ ] 2.7 Add a template test asserting the runner route table has no `0.0.0.0/0` route
 - [ ] 2.8 Add a template test asserting every VPC endpoint is of type Gateway
@@ -62,8 +63,10 @@
 
 - [ ] 6.1 Replace `RunnerSecurityGroup` egress with the AWS-managed prefix lists for S3 and DynamoDB on TCP
   443
-- [ ] 6.2 Remove the port 80 rule and any `0.0.0.0/0` rule
-- [ ] 6.3 Add a template test asserting no egress rule targets `0.0.0.0/0` and none covers port 80
+- [ ] 6.2 Remove the remaining `0.0.0.0/0` rule on 443 (port 80 was already removed outside this change,
+  when image builds got `ImageBuildSecurityGroup`; leave `GroupDescription` untouched)
+- [ ] 6.3 Add a template test asserting no egress rule targets `0.0.0.0/0` (the port-80 absence is already
+  pinned by `CoreTemplateTest`)
 - [ ] 6.4 Run a full benchmark and confirm nothing broke
 - [ ] 6.5 Confirm an outbound connection to an address outside both prefix lists fails from the instance
 
@@ -74,6 +77,8 @@
 - [ ] 7.2 Remove the networking condition and the condition attribute from every resource carrying it
 - [ ] 7.3 Remove any CLI option or config key that supplied those parameters
 - [ ] 7.4 Add a template test asserting no networking condition remains
+- [ ] 7.4a Make `ImageBuildSecurityGroup` unconditional and drop the `ExistingSecurityGroupId` arm from
+  `RunnerImageInfrastructure`'s `SecurityGroupIds`
 - [ ] 7.5 Deploy a stack update against an existing stack and confirm it succeeds
 
 ## 8. Documentation
