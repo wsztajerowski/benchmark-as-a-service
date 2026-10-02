@@ -53,6 +53,10 @@ package manifest, and `build.json` to `images/by-version/` in the results bucket
 reconstruction is `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`. Manual, rare,
 and it clobbers the current image — the right cost for a capability nobody has asked for.
 
+> **Correction (2026-10-02, review P3):** true from `imageVersion` 1.2.0 onward only. The file arrived
+> in one commit already at 1.2.0, so git holds no 1.0.0 or 1.1.0 — the two images §11's verification
+> ran on — and neither can be reconstructed.
+
 *Alternatives considered.* An S3 archive of rendered templates duplicates what git already stores, and its
 `by-version/` + `by-ami/` layout, absent-index reasoning, and fetch-by-version path are all machinery
 serving that duplicate. Building a historical image on demand inside `baas run --from-version` was

@@ -133,7 +133,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   fails there, before any upload. Two provisioning paths would produce silently incomparable
   results.
 - **Exactly one image, rebuilt in place.** No slots, no AMI history, no second pointer. The archive
-  is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to reconstruct.
+  is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to reconstruct — from
+  1.2.0 onward; 1.0.0 and 1.1.0 predate the file and cannot be rebuilt.
 - **The pointer is repointed *before* the replaced AMI is deregistered.** Retiring first aims the
   pointer at a deleted AMI for the whole ~15-minute build, failing every run launched in that window.
 - **Teardown retires the image, always, and only after the stack is gone.** The pointer, the AMI,

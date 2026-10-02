@@ -43,7 +43,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 |---|-----|---------|-----|--------|
 | 1 | P1 | Version preflight reads one `listComponents` page | ~~Med~~ Low | **Withdrawn as filed; hardened anyway** |
 | 2 | P2 | A failed retirement fails a command whose real work already succeeded | Med | **Fixed** |
-| 3 | P3 | Declared image `1.2.0` was never built; `1.0.0`/`1.1.0` are not in git | Med | Open |
+| 3 | P3 | Declared image `1.2.0` was never built; `1.0.0`/`1.1.0` are not in git | Med | **Fixed** |
 | 4 | P5 | CLAUDE.md's "`!GetAtt`, never `!Ref`" invariant is false, and following it breaks the stack | Med | **Fixed** |
 | 5 | P6 | `RunCommand` comment asserts the exact mechanism CLAUDE.md records as a past bug | Med | **Fixed** |
 | 6 | P4 | `\|\| echo absent` never fires — a missing tool records as empty string | Low | Open |
@@ -142,7 +142,7 @@ catch-and-warn the snapshot loop already used, naming the AMI that may need remo
 `aReplacedImageThatIsAlreadyGoneDoesNotFailTheBuild`, which errored with
 `InvalidAMIID.NotFound` against the old code.
 
-## 3. P3 — the declared image was never built, and the two that were are not in git · Med
+## 3. P3 — the declared image was never built, and the two that were are not in git · FIXED
 
 Verified against the live account (read-only):
 
@@ -172,6 +172,13 @@ retrospectively, and §11.7's own numbers are the counter-example.
 **Fix.** Either build 1.2.0 and record it, or set the declaration back to the version that was
 actually verified. Then soften design.md's archive claim to "from this change forward", since the
 `by-version/` archive it replaced would have held 1.0.0 and 1.1.0.
+
+**Fixed (2026-10-02).** The first half was closed by events: 1.2.0 has been built repeatedly since
+the account was reinstalled — the live pointer is `ami-0ae60d9d990dc00df`, tagged
+`baas-image-version=1.2.0`, built 2026-10-02T12:01Z — and `e2e-cloud-test.yml` passed
+`jmh-with-async` on it at 13:06Z. The second half cannot be repaired, only stated: the archived
+design.md carries a dated correction and CLAUDE.md's *Exactly one image* invariant now says "from
+1.2.0 onward".
 
 ## 4. P5 — the "`!GetAtt`, never `!Ref`" invariant is false, and following it breaks the stack · Med · **Fixed**
 
