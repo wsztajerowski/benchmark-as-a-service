@@ -741,6 +741,24 @@ class UserDataScriptBuilderTest {
     }
 
     /**
+     * Review P13: the manifest's async-profiler capture names the binary by path, a third copy of
+     * the declared {@code installPath}. Changing the declaration without it would quietly record
+     * "absent" on an image that has async-profiler — so every reference must follow the declaration.
+     */
+    @Test
+    void theAsyncProfilerCaptureFollowsTheDeclaredInstallPath() {
+        String asprof = new RunnerImageRenderer().definition().tools().asyncProfiler().installPath() + "/bin/asprof";
+        String script = script();
+
+        int references = script.split("/bin/asprof", -1).length - 1;
+        int declared = script.split(java.util.regex.Pattern.quote(asprof), -1).length - 1;
+        assertThat(references).as("the capture names asprof at all").isPositive();
+        assertThat(declared)
+            .as("every asprof reference in user-data must use runner-image.yaml's installPath (" + asprof + ")")
+            .isEqualTo(references);
+    }
+
+    /**
      * private-runner-network would otherwise have to tunnel this egress through a NAT or a VPC
      * endpoint, and releases/latest was an unpinned drift axis besides.
      */

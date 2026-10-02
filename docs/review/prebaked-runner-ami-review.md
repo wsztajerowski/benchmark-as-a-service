@@ -53,7 +53,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | **Fixed** (by `reportFailure`) |
 | 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | → new OpenSpec change `runs-command` (decided 2026-10-02) |
 | 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | **Fixed** |
-| 13 | P13 | async-profiler install path hardcoded a third time | Low | Open |
+| 13 | P13 | async-profiler install path hardcoded a third time | Low | **Fixed** (pinned by a test) |
 | 14 | P14 | `build()` polls without an upper bound | Low | Open |
 | 15 | P15 | `deployer-policy.json` is partition-hardcoded; the template beside it is not | Low | Open |
 
@@ -426,7 +426,7 @@ assertion in `RunnerImageRenderer`, would make it loud.
 justification was stale — each CLI reads only the copy bundled in its JAR, so no older file
 carries keys a newer one dropped.
 
-## 13. P13 — the async-profiler install path is hardcoded a third time · Low
+## 13. P13 — the async-profiler install path is hardcoded a third time · FIXED
 
 `runner-image.yaml` declares `installPath: /app/async-profiler`; `RunnerImageDefinition` derives
 `libraryPath()` from it; `UserDataScriptBuilder` line 69 hardcodes
@@ -434,6 +434,12 @@ carries keys a newer one dropped.
 nothing — and because of P4, the result is an empty string rather than a failure. The invariant
 that `installPath` must track `JmhWithAsyncProfilerSubcommand`'s default is documented; this third
 copy is not.
+
+**Fixed (2026-10-02) by pinning, not by plumbing.** `theAsyncProfilerCaptureFollowsTheDeclaredInstallPath`
+requires every `asprof` reference in user-data to use the bundled definition's `installPath`, the
+way `asyncProfilerLandsWhereTheRunnerLooksForIt` already pins the runner's default; checked to fail
+on a mismatched path. Passing the path into user-data was declined: the CLI's bundled definition
+need not match the AMI actually running, which a constant pinned at build time cannot get wrong.
 
 ## 14. P14 — `build()` polls without an upper bound · Low
 
