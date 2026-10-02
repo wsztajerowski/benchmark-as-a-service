@@ -84,6 +84,23 @@ class ImageBuilderServiceTest {
         assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage"));
     }
 
+    /**
+     * Review P14: only FAILED, CANCELLED and DELETED used to end the wait, so a status outside
+     * both lists polled forever. Anything that is neither AVAILABLE nor in progress now fails.
+     */
+    @Test
+    void aStatusThatIsNeitherDoneNorInProgressEndsTheWait() {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        for (ImageStatus status : List.of(ImageStatus.DEPRECATED, ImageStatus.DISABLED, ImageStatus.UNKNOWN_TO_SDK_VERSION)) {
+            imageBuilder.terminalStatus = status;
+
+            assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Image build");
+        }
+        assertThat(ssm.parameters).containsEntry(POINTER, PREVIOUS_AMI);
+    }
+
     @Test
     void firstEverBuildRetiresNothing() throws Exception {
         imageBuilder.amiId = NEW_AMI;

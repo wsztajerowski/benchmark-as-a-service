@@ -31,8 +31,15 @@ public class ImageBuilderService {
 
     /** Terminal states — anything else means the build is still in flight. */
     private static final List<ImageStatus> SUCCEEDED = List.of(ImageStatus.AVAILABLE);
-    private static final List<ImageStatus> FAILED =
-        List.of(ImageStatus.FAILED, ImageStatus.CANCELLED, ImageStatus.DELETED);
+    /**
+     * The only statuses worth waiting on. Listing these rather than the failures means a status
+     * this code has not met — {@code DEPRECATED}, {@code DISABLED}, or one newer than the SDK
+     * ({@code UNKNOWN_TO_SDK_VERSION}) — ends the wait instead of polling forever. A build stuck
+     * inside one of them still ends: Image Builder enforces its own timeouts.
+     */
+    private static final List<ImageStatus> IN_PROGRESS = List.of(
+        ImageStatus.PENDING, ImageStatus.CREATING, ImageStatus.BUILDING,
+        ImageStatus.TESTING, ImageStatus.DISTRIBUTING, ImageStatus.INTEGRATING);
 
     private final ImagebuilderClient imageBuilder;
     private final Ec2Client ec2;
@@ -119,9 +126,9 @@ public class ImageBuilderService {
                     .orElseThrow(() -> new IllegalStateException(
                         "Image build " + buildArn + " reported AVAILABLE but distributed no AMI"));
             }
-            if (FAILED.contains(status)) {
+            if (!IN_PROGRESS.contains(status)) {
                 throw new IllegalStateException("Image build %s: %s%s".formatted(
-                    status, buildArn,
+                    image.state().statusAsString(), buildArn,
                     image.state().reason() != null ? " — " + image.state().reason() : ""));
             }
 
