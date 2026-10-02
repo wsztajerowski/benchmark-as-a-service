@@ -42,16 +42,16 @@
 
 ## 4. Documentation and trackers
 
-- [ ] 4.1 Update CLAUDE.md:
+- [x] 4.1 Update CLAUDE.md:
   - the runner-image invariants, to say teardown retires the image;
   - the *Runner AMI snapshot cost* row of *Accepted risks*, to say a torn-down installation has
     no standing cost.
 
   Verify by `grep -n "teardown" CLAUDE.md` showing the new statements.
-- [ ] 4.2 Update `docs/diagrams/baas-teardown.mmd` and `baas-lifecycle.mmd`: retirement after the
+- [x] 4.2 Update `docs/diagrams/baas-teardown.mmd` and `baas-lifecycle.mmd`: retirement after the
   stack deletion, and the Retire block no longer listing image leftovers. Verify both render with
   `npx @mermaid-js/mermaid-cli`.
-- [ ] 4.3 Update `docs/analysis/cli-usage-analysis.md`:
+- [x] 4.3 Update `docs/analysis/cli-usage-analysis.md`:
   - U1 → Fixed;
   - U2's image part → Fixed;
   - in the installation state graph, *Residue* no longer lists image items, and the *Inherited*
@@ -59,7 +59,7 @@
   - U10 → "won't fix (decided 2026-10-02: `admin image` stays as is)".
 
   Verify the three state graphs still render.
-- [ ] 4.4 Mark rows 16 (U1) and 20 (U2, image part) in `docs/review/baas-cli-findings.md` Fixed, and
+- [x] 4.4 Mark rows 16 (U1) and 20 (U2, image part) in `docs/review/baas-cli-findings.md` Fixed, and
   re-run `openspec validate --specs`.
 
 ## 5. End-to-end verification — MANUAL, paid

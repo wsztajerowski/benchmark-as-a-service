@@ -43,16 +43,16 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
 | 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
-| 16 | U1 | Teardown leaves the AMI pointer, AMI, snapshot and image record — and a later setup inherits them | Med | Open |
+| 16 | U1 | Teardown leaves the AMI pointer, AMI, snapshot and image record — and a later setup inherits them | Med | **Fixed** |
 | 17 | U3 | A run whose CLI died is invisible: no `baas` command lists or stops it | Med | Open |
 | 18 | U5 | Region is never read from the environment; CI is right only because `AWS_REGION` equals the default | Med | **Fixed** |
 | 19 | U11 | Runner shares the image builder's security group, so its 80/443 internet egress is unenforced policy | Med | **Fixed** |
-| 20 | U2 | No CLI path from teardown residue to an empty account; the deployer cannot even list the residue | Low | Open |
+| 20 | U2 | No CLI path from teardown residue to an empty account; the deployer cannot even list the residue | Low | **Partly fixed** (image); table and bucket → `export-before-teardown` |
 | 21 | U4 | `env diff` takes result paths only; a run id fails with a misleading reason | Low | **Fixed** |
 | 22 | U6 | `--aws-profile` on three of five admin commands, persisted by one | Low | **Fixed** |
 | 23 | U7 | `config set --prefix` adopts an installation without the check `config sync` exists for | Low | **Fixed** |
 | 24 | U9 | `run` uploads the benchmark JAR before checking the stack exists | Low | **Fixed** |
-| 25 | U10 | `admin image` demands deployer credentials for a read the operator role can do | Low | Open |
+| 25 | U10 | `admin image` demands deployer credentials for a read the operator role can do | Low | Won't fix (decided 2026-10-02) |
 | 26 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | Open |
 | 27 | F1 | `config show` wrote its payload to stderr | Low | **Fixed** |
 | 28 | F2 | `--format` unvalidated on `run` and `results` | Low | **Fixed** |

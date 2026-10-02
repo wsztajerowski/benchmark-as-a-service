@@ -58,9 +58,9 @@ sequenceDiagram
     rect rgb(245, 245, 245)
         Note over IA,AWS: 4. Retire
         Adm->>CLI: baas admin teardown [--delete-bucket] [--yes]
-        CLI->>AWS: refuse if a runner is pending/running -- DeleteStack, wait
+        CLI->>AWS: refuse if a runner is pending/running -- DeleteStack, wait -- then retire the image<br/>(pointer, AMI, snapshot, Image Builder records)
         CLI-->>Adm: warns: table retained (bucket too, without --delete-bucket)
-        Note over Adm,AWS: Left behind, and invisible to the CLI: the results table,<br/>/<prefix>/runner/ami-id, the AMI and its snapshot, the Image Builder image record
-        Adm->>AWS: [aws dynamodb delete-table, ssm delete-parameter,<br/>ec2 deregister-image, ec2 delete-snapshot]
-        Note over CFG: config.yaml still names the prefix: results keeps reading the retained table,<br/>download and env diff fail once the bucket is gone, run gets past the surviving<br/>AMI pointer and fails at the upload (bucket gone) or the stack-output lookup
+        Note over Adm,AWS: Left behind: the results table (always) and the bucket (without --delete-bucket).<br/>Both are deleted by a future teardown, behind a second confirmation, once baas admin export exists
+        Adm->>AWS: [aws dynamodb delete-table, to remove the table today]
+        Note over CFG: config.yaml still names the prefix: results keeps reading the retained table,<br/>download and env diff fail once the bucket is gone, run stops at the image lookup:<br/>no runner image is published, and nothing was uploaded
     end
