@@ -94,9 +94,11 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   `ResultsQueryService` reads the item's top-level `tags` map; tagging the *instance* leaves every stored
   result with a null `imageVersion` and the comparison silently never fires. The tag values are the
   ones observed on the box, so a result's tags cannot disagree with its own `environment.json`.
-- **The benchmark runs from `/app`, never `/`.** The runner scans below its working directory for
-  `.log` files to upload; cloud-init starts user-data in `/`, so that walk covers the whole root
-  filesystem and aborts on `/proc` entries that vanish mid-walk.
+- **The benchmark runs from `/app`, never `/`.** The runner (`RunLogs`, every benchmark type) scans
+  below its working directory for `.log` files to upload, and cloud-init starts user-data in `/`.
+  The walk itself is now bounded — 8 levels, unreadable entries skipped — so from `/` it would no
+  longer abort on vanishing `/proc` entries, but it would still ship any `.log` the root filesystem
+  holds into the run's results.
 - **The results table name *does* go into user-data, and that is deliberate.** It replaced an SSM
   fetch of the mongo connection string, which had to stay out of instance metadata because it
   carried credentials. A table name carries none — access comes from `RunnerRole`, not from knowing
@@ -520,7 +522,7 @@ non-obvious entries:
 | `environment.json` | The environment the run measured on: `schemaVersion`, image version + AMI, instance type, CPU model/topology, memory, OS + kernel, JVM and tool versions, kernel tunables. Written **before** the benchmark, so it survives a failed run. Read by `baas env diff`. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
-| `logs/*.log` | Any `.log` found *below the working directory* (hence the `/app` invariant) |
+| `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/async-output/` |
 | `input/` | The run's own inputs — `benchmark.jar`, and `runner.jar` only when `--runner-jar` overrode the pinned one. Inside the run prefix, so a consumer has one sub-prefix to skip rather than filenames to special-case |
 | `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the run tree. Seeded once by the CLI and never overwritten. `releases/`, not `runner/`, because a prefix one character from `runs/` would need disambiguating in every listing |
 | `image-builds/` | Image Builder build logs (written by the build instance, not by a run) |

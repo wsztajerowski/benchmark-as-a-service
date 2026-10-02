@@ -11,7 +11,7 @@ C4Component
         Component(loader, "ResultLoaderService + JmhRunResults / JCStressHtmlResultParser", "Jackson, jsoup", "Reads jmh-result.json or the JCStress HTML report")
         Component(mappers, "JmhMeasurementMapper / JCStressMeasurementMapper", "Java", "Build StoredMeasurement values")
         Component(store, "ResultsStore", "DynamoDbResultsStore | MongoResultsStore | NoOpResultsStore", "Exactly one of --results-table, --mongo-connection-string, --no-database")
-        Component(storage, "StorageService", "S3StorageService | LocalStorageService", "Uploads output, result JSON, profiler artifacts, logs/*.log")
+        Component(storage, "StorageService", "S3StorageService | LocalStorageService", "Uploads output, result JSON, profiler artifacts, logs/**/*.log")
     }
 
     Component_Ext(model, "baas-model", "shared JAR", "MeasurementItemMapper, ResultKeys, RunLayout, TagKeys")

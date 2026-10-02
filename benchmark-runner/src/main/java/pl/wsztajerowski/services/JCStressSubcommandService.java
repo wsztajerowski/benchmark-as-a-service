@@ -64,6 +64,7 @@ public class JCStressSubcommandService {
         logger.info("Saving test outputs on S3");
         storageService
             .saveFile(outputPath.resolve("jcstress-output.txt"), jcStressOptions.processOutput());
+        RunLogs.upload(storageService, outputPath);
 
         Path resultFilepath = reportPath.resolve( "index.html");
         logger.info("Parsing JCStress html output: {}", resultFilepath);

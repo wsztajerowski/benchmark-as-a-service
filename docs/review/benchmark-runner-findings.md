@@ -32,8 +32,8 @@ workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 | 1 | S1 | Shell injection via `${{ inputs.parameters }}` on a self-hosted runner | High | **Fixed** |
 | 2 | S2 | OIDC `sub: repo:org/repo:*` + `on: pull_request` + self-hosted runner | High | **Reduced, not closed** |
 | 3 | S3 | `WorkflowRole` `RunInstances` on `*`, no type or region conditions | High | **Fixed** |
-| 4 | A1 | Four copy-pasted services diverged — only jmh uploads `logs/*.log` | Med | Open |
-| 5 | A2 | Unbounded log walk; no `visitFileFailed`; filename collisions | Med | Open |
+| 4 | A1 | Four copy-pasted services diverged — only jmh uploads `logs/*.log` | Med | **Fixed** (template refactor declined) |
+| 5 | A2 | Unbounded log walk; no `visitFileFailed`; filename collisions | Med | **Fixed** |
 | 6 | A4 | S3 upload before store write — transient error discards paid results | Med | **Partly addressed** |
 | 7 | A10 | CI hardcodes `baas-lynx-main`, unreachable by the prefix scheme | Low | **Fixed** |
 | 8 | D3 | `ASYNC_PATH` unset in PR CI → async test silently skipped | Low | **Fixed** |
@@ -127,6 +127,14 @@ enforced.
 shared 80% lives once and a missing step is a compile error rather than a missing S3 prefix.
 Highest-value item in this file — the divergence is already losing data.
 
+**Fixed (2026-10-02), without the template method.** The log walk moved into one helper,
+`services/RunLogs`, called by all four services right after the benchmark process output is saved
+— so a failed run keeps its logs too. `jmh-with-async`'s separate top-level scan of
+`async-output/` is gone; the walk covers that directory, so those logs now land under
+`logs/async-output/` instead of `logs/`. The template-method refactor was **declined**: apart from
+the logs, the copies differ only in import noise, so it would guard against drift that has not
+happened, at the cost of rewriting four services and four builders.
+
 ## 5. A2 — the `/app` invariant is enforced in the wrong module · Med
 
 `JmhSubcommandService.executeCommand()` (~line 53) walks `Paths.get(".")` unbounded, and the guard
@@ -142,6 +150,12 @@ against that walking all of `/` lives in a shell script in a *different Maven mo
 **Proposed fix:** an explicit `--log-scan-root` with a depth cap and a `CONTINUE`-returning
 `visitFileFailed`. The CLI-side invariant then becomes a convenience rather than load-bearing.
 Fix together with A1 — same code path.
+
+**Fixed (2026-10-02) in `RunLogs`, without `--log-scan-root`.** `visitFileFailed` returns
+`CONTINUE`, the walk stops at depth 8, and the key keeps the path relative to the root
+(`logs/a/run.log`, `logs/b/run.log`). A failure to scan at all is logged, never fatal — logs are a
+diagnostic extra on a run that has already been measured. With the walk bounded, the root stays the
+working directory rather than becoming a runner option and a user-data value.
 
 ## 6. A4 — the expensive artifact is persisted last · Med · **Partly addressed**
 

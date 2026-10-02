@@ -59,6 +59,9 @@ public class JmhWithAsyncProfilerSubcommandService {
             logger.info("Saving benchmark process output on S3");
             storageService
                 .saveFile(outputPath.resolve("jmh-with-async-output.txt"), jmhOptions.outputOptions().processOutput());
+            // Covers async-profiler's own logs too: its output directory sits below the working
+            // directory, so they land under logs/async-output/.
+            RunLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -71,19 +74,6 @@ public class JmhWithAsyncProfilerSubcommandService {
 
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
         uploadProfilerArtifacts();
-
-        logger.info("Saving JMH logs on S3");
-        try (Stream<Path> paths = list(asyncProfilerOptions.asyncOutputPath())){
-            paths
-                .filter(f -> f.toString().endsWith("log"))
-                .forEach(path -> {
-                    Path s3Key = outputPath.resolve("logs").resolve(path.getFileName());
-                    storageService
-                        .saveFile(s3Key, path);
-                });
-        } catch (IOException e) {
-            throw new JavaWonderlandException(e);
-        }
 
         List<StoredMeasurement> measurements = JmhRunResults.uploadJsonAndMap(
             storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
