@@ -188,17 +188,20 @@ The watchdog is the only one that survives a deadlocked JVM.
   (`CoreTemplateTest` pins its absence). Versioning only ever guarded an overwrite that the run
   id's 32-bit entropy suffix now prevents — and the consequence is stated, not implied: there is no
   server-side recovery from one.
-- **`RunnerSecurityGroup` allows egress on 443 and 80 only — no 27017, and adding it back is a
-  regression.** The rule existed because Atlas does not serve clients on 443. Nothing connects to
-  Atlas now, and `CoreTemplateTest.runnerHasNoEgressToMongoAtlasAnyMore` pins its absence rather
-  than merely not testing for it — a security group rule nobody can explain is one somebody
-  restores.
+- **`RunnerSecurityGroup` allows egress on 443 only — no 80, no 27017, and adding either back is a
+  regression.** 27017 existed because Atlas does not serve clients on 443; nothing connects to Atlas
+  now. 80 existed for `dnf`, which only the image bake runs, and the bake has its own
+  `ImageBuildSecurityGroup` (443 + 80) — sharing one group handed the runner the builder's internet
+  egress. `CoreTemplateTest` pins both absences rather than merely not testing for them — a security
+  group rule nobody can explain is one somebody restores. Under `--use-existing-vpc` both runner
+  and build use the operator's supplied group; no group is created in a foreign VPC.
 - **Editing `RunnerSecurityGroup`'s `GroupDescription` replaces the security group.** It is an
   immutable property, so CloudFormation deletes and recreates the resource and the group *id
   changes*. Anything holding the old id is then pointing at a group that no longer exists —
   `~/.baas/config.yaml` most obviously, which `baas admin setup` rewrites, but not a run already in
   flight. Observed: removing the 27017 rule also touched the description, and the id moved. Change
-  the rules without touching the description unless you intend the replacement.
+  the rules without touching the description unless you intend the replacement. Its text still says
+  "443/80" for exactly this reason, and `theRunnerSecurityGroupDescriptionIsNeverEdited` pins it.
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.

@@ -40,8 +40,50 @@ class CoreTemplateTest {
                 + "table over the gateway endpoint, so 27017 grants egress nothing uses")
             .noneSatisfy(rule -> assertThat(rule.get("FromPort")).isEqualTo(27017));
         assertThat(egress)
-            .as("443 and 80 are still needed: GitHub Releases, S3, the AWS APIs")
-            .hasSize(2);
+            .as("443 only: S3, DynamoDB and the EC2 API the watchdog calls; port 80 left with the "
+                + "image build, which has its own group")
+            .hasSize(1);
+    }
+
+    /**
+     * The bake needs the internet (dnf over 80, async-profiler from GitHub) and the runner needs
+     * none of it, because the bake already happened. Sharing one group handed the runner the
+     * builder's egress — the invariant that it contacts nothing outside the account then rested on
+     * the user-data script alone.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theImageBuildHasItsOwnSecurityGroupAndOnlyItKeepsPort80() {
+        var groupIds = (List<Object>)
+            InfraFixtures.properties(template, "RunnerImageInfrastructure").get("SecurityGroupIds");
+        assertThat(groupIds).hasSize(1);
+        assertThat((List<Object>) groupIds.get(0))
+            .as("!If [CreateNetworking, build group, the operator's existing group]")
+            .containsExactly("CreateNetworking", "ImageBuildSecurityGroup", "ExistingSecurityGroupId");
+
+        var runnerEgress = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "RunnerSecurityGroup").get("SecurityGroupEgress");
+        assertThat(runnerEgress).noneSatisfy(rule -> assertThat(rule.get("FromPort")).isEqualTo(80));
+
+        var buildEgress = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "ImageBuildSecurityGroup").get("SecurityGroupEgress");
+        assertThat(buildEgress).extracting(rule -> rule.get("FromPort")).containsExactlyInAnyOrder(443, 80);
+
+        assertThat(InfraFixtures.resource(template, "ImageBuildSecurityGroup").get("Condition"))
+            .as("under --use-existing-vpc no group is created in the operator's VPC")
+            .isEqualTo("CreateNetworking");
+    }
+
+    /**
+     * GroupDescription is immutable: editing it makes CloudFormation replace the group, moving its
+     * id, and the replacement fails outright while a runner still holds the old one. That happened
+     * once by accident (removing 27017 also touched the text). Its "443/80" is now out of date on
+     * purpose — see the template comment.
+     */
+    @Test
+    void theRunnerSecurityGroupDescriptionIsNeverEdited() {
+        assertThat(InfraFixtures.properties(template, "RunnerSecurityGroup").get("GroupDescription"))
+            .isEqualTo("Benchmark runner security group. No inbound; outbound 443/80 only.");
     }
 
     @Test

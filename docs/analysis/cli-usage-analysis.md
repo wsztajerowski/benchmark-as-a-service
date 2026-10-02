@@ -168,11 +168,13 @@ stateDiagram-v2
 | U8 | **`runner.sourceRepo` can only be set by hand-editing YAML**, though the error message says that is how to set it. | Info | `RunnerJarResolver.assetUrl` |
 | U9 | **`run` uploads before it checks the stack.** `resolveNetworking` runs after the JAR upload, so a torn-down or wrong installation uploads the benchmark JAR, then fails on missing outputs. | Low | `RunCommand.execute` |
 | U10 | **`admin image` needs deployer credentials** for a read that `OperatorRole` can already do (`ssm:GetParameter`, `ec2:DescribeImages`; `run` makes the same call). An operator can't ask which image their next run will use. | Low | `ImageCommand` |
-| U11 | **The runner shares its security group with the image-build instance.** The 80/443 internet egress exists for `dnf`/GitHub during the bake. "The instance contacts no host outside the account" is therefore enforced by the user-data script, not the network, and the rule descriptions still say "HTTPS to GitHub" and "package downloads (yum)". | Med | `RunnerImageInfrastructure.SecurityGroupIds`, `RunnerSecurityGroup` |
+| U11 | **The runner shares its security group with the image-build instance.** The 80/443 internet egress exists for `dnf`/GitHub during the bake. "The instance contacts no host outside the account" is therefore enforced by the user-data script, not the network, and the rule descriptions still say "HTTPS to GitHub" and "package downloads (yum)". | Med · **Fixed** | `RunnerImageInfrastructure.SecurityGroupIds`, `RunnerSecurityGroup` |
 | U12 | **A failed first create traps the next setup.** `ROLLBACK_COMPLETE` → teardown → setup is refused while the create's retained table exists, and only `aws dynamodb delete-table` clears it. Not exercised; it would need a forced create failure. | Low | static |
 | U13 | **A successful run logs "Terminating instance …"** and calls `TerminateInstances` on an already-terminated instance, because the shutdown hook is never deregistered. | Info | `RunCommand.execute` |
 | U14 | **Reinstall breaks the AWS CLI's cached role credentials.** After teardown + setup, the AWS CLI (not `baas`) fails with `InvalidClientTokenId` on the operator profile until its cached session expires: the role was recreated with a new id. `baas` is unaffected because the SDK does not read `~/.aws/cli/cache`. | Info | §8 |
 | U15 | **The results table formats scores in the JVM's locale** (`9702970,774` under pl-PL). That's right for a human reading it, and JSON/CSV are unaffected (`Locale.ROOT`). Recorded so nobody "fixes" it into a parsing bug: the table is not a machine format. | Info | §8 |
+| U16 | **`--tag project=…` likely makes `RunInstances` fail.** The instance is always tagged `project=baas`, and caller tags are appended after it, so a caller `project` tag sends the key twice, which EC2 rejects. It would fail after the JAR upload. Not exercised. | Low | `Ec2ProvisioningService.runInstance` |
+| U17 | **An update run of `admin setup` prints "BaasCliOperatorRole created … Nobody can assume it yet"**, which is true only on create. | Info | 2026-10-02 deploy |
 
 ## 4. Fixed on this branch
 
@@ -184,6 +186,7 @@ stateDiagram-v2
 | F4 | The friendly `ROLLBACK_COMPLETE` refusal lived only in `createOrUpdateStack`, which setup calls only when the stack does *not* exist, so it was dead code and setup surfaced CloudFormation's raw error | Moved onto the update path setup uses (`CloudFormationService.requireUpdatable`) |
 | F5 | `describeImage` mapped *every* EC2 error to "no image", so a denied `DescribeImages` told the operator to rebuild an image that existed | Only `InvalidAMIID.*` means absent; the new test fails without the fix |
 | F6 | Stale text: misplaced javadocs in `RunCommand` and `SetupCommand` (including the old caller-ARN hash), "name is fixed by your caller ARN" in setup's own error message, `benchmarkMetadata.tags`, `--ami-id`, a teardown diagram describing an SSM delete and `aws.coreStackName` that no longer exist, and a README E2E section for the deleted `act` harness | Corrected |
+| F7 | U11: the runner shared the image build's security group and its 80/443 internet egress | New `ImageBuildSecurityGroup` (443 + 80) for Image Builder; the runner group dropped port 80. Deployed 2026-10-02 with no replacement (the runner group kept its id), then the image was rebuilt and a run completed on it (§8). Under `--use-existing-vpc` nothing changes |
 
 ## 5. Simplifications
 
@@ -202,9 +205,9 @@ In rough order of value:
 7. **`createOrUpdateStack` → `createStack`.** Setup sends every existing stack through
    `updateStackParameters`, so the update branch is unreachable.
 8. **Resolve networking before uploading** (closes U9). It's one `DescribeStacks` call moved up.
-9. **A separate build security group** (closes U11). The runner then gets 443 to AWS endpoints only,
-   which turns the network into what enforces the no-egress invariant. Rule descriptions are
-   mutable without replacement, and `GroupDescription` must not be touched.
+9. ~~A separate build security group~~: done (F7). Narrowing the runner's 443 to the S3 and DynamoDB
+   prefix lists is left to `private-runner-network`, because the watchdog still needs the public
+   EC2 API until that change moves self-termination to `shutdown`.
 
 Not proposed: a `--detach`/`attach` pair for U3. It would need run discovery by tag, and the
 watchdog already bounds the cost. A read-only `baas runs` that lists `baas-role=benchmark-runner`
@@ -250,7 +253,8 @@ These are deliberately not decided here:
     S3-listing alternative, including an IAM change.
   To be implemented as its own OpenSpec change. Doing it now means no backfill: the table holds
   two runs.
-- U11: is a second security group worth a stack replacement of nothing (new resource only)?
+- ~~U11: is a second security group worth it?~~ **Decided 2026-10-02: yes, implemented on this branch
+  (F7)** outside `private-runner-network`, whose artifacts were updated to build on it.
 
 ## 8. Paid lifecycle test (2026-10-01)
 
@@ -269,8 +273,11 @@ Backups of the config, all 19 table items and all 202 S3 objects (657 MB) were t
 | 8 | Patched CLI: teardown with no `--yes`, `stdin` closed, during step 7 | Refused, naming `i-06ebd67a…`, 6 s after launch (almost certainly still `pending`; F3). Nothing deleted. |
 | 9 | Read side | `results --request-id` JSON carried every machine-observed tag. The project sweep correctly found nothing visible. `download` fetched 8 artifacts. `env diff` by path gave "No differences". By run id it failed misleadingly → U4. `config show > f` wrote 20 lines (F1). `results --format xml` exited 2 (F2). |
 | 10 | `e2e-cloud-test.yml`, `workflow_dispatch` on `main` (**paid 3**) | Green: OIDC into the recreated role, `config sync`, `jmh-with-async` with flamegraph and JFR, 11 artifacts, every assertion. |
+| 11 | 2026-10-02: `admin setup` with `ImageBuildSecurityGroup` (F7) | Stack update in 30 s. The runner group kept its id `sg-0c3e552b…` (no replacement) and now has one egress rule; `sg-build` has two, and Image Builder points at it. Setup's "BaasCliOperatorRole created" message on an update → U17 |
+| 12 | `admin build-image` through the build group (**paid 4**) | Exit 0 in 9 min 10 s, `ami-060b449b…`. Retired `ami-072e0a34…` and its snapshot, confirming rebuild in place |
+| 13 | `run jmh-with-async`, CI's parameters, on the 443-only runner group (**paid 5**) | Completed. 11 artifacts including flamegraphs and JFR, 1 measurement stored, and the instance carried `RunnerSecurityGroup`: the runner needs no port 80 |
 | — | AWS CLI with the operator profile after step 4 | `InvalidClientTokenId` from the cached session of the deleted role; `baas` itself unaffected → U14. |
 
-End state: one installation, `baas-381492019823`, federated, image 1.2.0 published, no live
-instances. The backed-up S3 objects and table items were **not** restored. They were test runs, as
+End state: one installation, `baas-381492019823`, federated, image 1.2.0 (`ami-060b449b…`) published,
+separate runner and build security groups, no live instances. The backed-up S3 objects and table items were **not** restored. They were test runs, as
 agreed, and the backup stays in the session scratchpad until the session ends.
