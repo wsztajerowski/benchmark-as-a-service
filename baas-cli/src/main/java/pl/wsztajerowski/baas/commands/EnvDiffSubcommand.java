@@ -18,6 +18,7 @@ import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.results.EnvironmentManifest;
+import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.util.List;
 import java.util.Map;
@@ -30,9 +31,12 @@ import java.util.concurrent.Callable;
     description = "Report the environment fields that differ between two runs.",
     footer = {
         "",
-        "Result paths are runs/<project>/<runId>, as printed by baas run:",
-        "  baas env diff runs/lynx-journal/20260724T120000000Z-a3f9c21b \\",
-        "                runs/lynx-journal/20260811T093000000Z-b7e4d0f2",
+        "Name each run by the id baas run and baas results show, or by its",
+        "result path (runs/<project>/<runId>):",
+        "  baas env diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2",
+        "",
+        "A run that failed before storing a measurement has no index entry:",
+        "name it by its result path.",
         "",
         "A run recorded before the unified layout keeps its original path",
         "(<branch>/<type>/<timestamp>); both shapes still resolve."
@@ -49,11 +53,21 @@ public class EnvDiffSubcommand implements Callable<Integer> {
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
 
-    @Parameters(index = "0", paramLabel = "<resultPathA>", description = "First run's result path.")
+    @Parameters(index = "0", paramLabel = "<runA>",
+        description = "First run: its run id, or its result path.")
     String resultPathA;
 
-    @Parameters(index = "1", paramLabel = "<resultPathB>", description = "Second run's result path.")
+    @Parameters(index = "1", paramLabel = "<runB>",
+        description = "Second run: its run id, or its result path.")
     String resultPathB;
+
+    /**
+     * Resolves a run id to its stored result path. Overridden by tests, which have no table. Only
+     * called for an argument shaped like a run id, so two literal paths never touch DynamoDB.
+     */
+    ResultsQueryService runLookup(BaasConfig config, AwsClientFactory factory) {
+        return new ResultsQueryService(factory.dynamoDb(), config.resultsTable());
+    }
 
     private ConfigService configService() {
         return BaasApp.configService(spec);
@@ -69,12 +83,25 @@ public class EnvDiffSubcommand implements Callable<Integer> {
             config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
         String bucket = config.bucket();
 
+        String pathA;
+        String pathB;
+        try (var lookup = runLookup(config, factory)) {
+            pathA = RunReference.resolve(resultPathA, lookup::resultPathForRun);
+            pathB = RunReference.resolve(resultPathB, lookup::resultPathForRun);
+        }
+        for (var unresolved : new String[][]{{resultPathA, pathA}, {resultPathB, pathB}}) {
+            if (unresolved[1] == null) {
+                logger.error("{}", RunReference.noSuchRun(unresolved[0]));
+                return 1;
+            }
+        }
+
         EnvironmentManifest a;
         EnvironmentManifest b;
         try (var s3 = factory.s3()) {
             var storage = new S3UploadService(s3);
-            var fetchedA = fetch(storage, bucket, resultPathA);
-            var fetchedB = fetch(storage, bucket, resultPathB);
+            var fetchedA = fetch(storage, bucket, pathA);
+            var fetchedB = fetch(storage, bucket, pathB);
             if (fetchedA.isEmpty() || fetchedB.isEmpty()) {
                 return 1;
             }

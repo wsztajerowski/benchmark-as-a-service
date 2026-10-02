@@ -29,8 +29,14 @@ sequenceDiagram
     end
 
     rect rgb(245, 255, 245)
-        Note over User,FS: baas env diff <resultPathA> <resultPathB> -- result PATHS only, no run ids
-        User->>ED: baas env diff runs/p/<idA> runs/p/<idB>
+        Note over User,FS: baas env diff <runA> <runB> -- each a run id or a result path,<br/>resolved by the same RunReference as download
+        User->>ED: baas env diff <runIdA> <runIdB>
+        loop each argument shaped like a run id
+            ED->>DDB: resultPathForRun(id)
+            alt no item (also: a run that failed before storing a measurement)
+                ED-->>User: "No run found with id ..." naming the path form, exit 1 -- S3 not read
+            end
+        end
         ED->>S3: GetObject <A>/environment.json
         ED->>S3: GetObject <B>/environment.json
         alt either missing
