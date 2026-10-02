@@ -85,3 +85,11 @@ As `baas-operator-381492019823` against `baas-381492019823-results`, each write 
 
 The runner's deny cases are covered by the simulation above. Exercising them live would need
 credentials for `RunnerRole`, which only the instance profile holds.
+
+## Deviations found during apply
+
+- **D1, the request-ID index filter.** The design named `#gsi1sk <> :run`. DynamoDB rejects it:
+  "Filter Expression can only contain non-primary key attributes: Primary key attribute: gsi1sk"
+  (6 errors in `ResultsQueryServiceIT`). It was replaced by `attribute_exists(#kind)`, since `kind`
+  is on every measurement and on no run item. `MeasurementItemMapper.KIND` became public for it.
+  design.md and tasks.md were corrected.

@@ -9,6 +9,9 @@ import org.testcontainers.utility.DockerImageName;
 import pl.wsztajerowski.baas.model.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.MeasurementKind;
 import pl.wsztajerowski.baas.model.ResultKeys;
+import pl.wsztajerowski.baas.model.RunItem;
+import pl.wsztajerowski.baas.model.RunItemMapper;
+import pl.wsztajerowski.baas.model.RunStatus;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -272,6 +275,66 @@ class ResultsQueryServiceIT {
     @Test
     void anEmptyPartitionReturnsNothing() {
         assertThat(service.queryProject("project-with-no-runs")).isEmpty();
+    }
+
+    // ─── Run items share the table (run-status-in-dynamodb) ───────────────────────
+
+    @Test
+    void everyProjectIgnoresRunItems() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        putRun("lynx-journal", "req-1");
+        putRun("only-runs", "req-9");
+
+        assertThat(service.scanAllProjects(false)).hasSize(1);
+        assertThat(service.scanAllProjects(true))
+            .as("--all-runs widens exclusion, never the item kind")
+            .hasSize(1);
+    }
+
+    @Test
+    void thePickerDoesNotOfferAProjectThatHasOnlyRunItems() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        putRun("only-runs", "req-9");
+
+        assertThat(service.listVisibleProjects()).containsExactly("lynx-journal");
+    }
+
+    @Test
+    void aLookupByRunIdReturnsTheMeasurementsNotTheRunItem() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        put(measurement("lynx-journal", "req-1", "methodTwo", Map.of()));
+        putRun("lynx-journal", "req-1");
+
+        assertThat(service.queryByRequestId("req-1")).hasSize(2);
+    }
+
+    @Test
+    void aRunThatStoredNothingResolvesItsPathFromTheRunItem() {
+        putRun("lynx-journal", "req-failed");
+
+        assertThat(service.resultPathForRun("req-failed")).isEqualTo("runs/lynx-journal/req-failed");
+    }
+
+    @Test
+    void aRunFromBeforeRunItemsStillResolvesFromItsMeasurements() {
+        put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
+
+        assertThat(service.resultPathForRun("req-old")).isEqualTo("main/jmh/ts");
+    }
+
+    @Test
+    void anUnknownRunIdResolvesToNoPath() {
+        assertThat(service.resultPathForRun("no-such-run")).isNull();
+    }
+
+    private void putRun(String project, String runId) {
+        var run = new RunItem(runId, project, Instant.parse("2026-10-03T00:00:00Z"),
+            "runs/" + project + "/" + runId, "c5.2xlarge", RunStatus.LAUNCHING, null, null,
+            Map.of("project", project), null);
+        var item = new java.util.HashMap<>(RunItemMapper.key(run));
+        item.putAll(RunItemMapper.identityAttributes(run));
+        item.put(RunItemMapper.STATUS, software.amazon.awssdk.services.dynamodb.model.AttributeValue.fromS(run.status()));
+        client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build());
     }
 
     private void put(StoredMeasurement measurement) {

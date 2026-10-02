@@ -2,6 +2,7 @@ package pl.wsztajerowski.baas.results;
 
 import pl.wsztajerowski.baas.model.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
+import pl.wsztajerowski.baas.model.RunItemMapper;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
@@ -33,6 +34,13 @@ public class ResultsQueryService implements AutoCloseable {
      */
     private static final String EXCLUDE_FILTER =
         "attribute_not_exists(#tags) OR attribute_not_exists(#tags.#excluded) OR #tags.#excluded <> :excluded";
+
+    /**
+     * The table holds run items too, at {@code pk = RUN}. A {@code Scan} sees every partition, so
+     * each one restricts itself to measurements; {@link MeasurementItemMapper#fromItem} refuses
+     * anything else, so a reader that forgets fails loudly.
+     */
+    private static final String MEASUREMENTS_ONLY = "begins_with(#pk, :resultPrefix)";
 
     private static final String TAGS_ATTRIBUTE = "tags";
     private static final String PROJECT_ATTRIBUTE = "project";
@@ -73,13 +81,19 @@ public class ResultsQueryService implements AutoCloseable {
 
     /** Every project's measurements: {@code --all-projects}. One paginated {@code Scan}. */
     public List<ResultRow> scanAllProjects(boolean includeExcluded) {
-        var request = ScanRequest.builder().tableName(tableName);
+        var names = new HashMap<String, String>();
+        var values = new HashMap<String, AttributeValue>();
+        addMeasurementsOnlyFilter(names, values);
+        String filter = MEASUREMENTS_ONLY;
         if (!includeExcluded) {
-            var names = new HashMap<String, String>();
-            var values = new HashMap<String, AttributeValue>();
             addExcludeFilter(names, values);
-            request.filterExpression(EXCLUDE_FILTER).expressionAttributeNames(names).expressionAttributeValues(values);
+            filter = MEASUREMENTS_ONLY + " AND (" + EXCLUDE_FILTER + ")";
         }
+        var request = ScanRequest.builder()
+            .tableName(tableName)
+            .filterExpression(filter)
+            .expressionAttributeNames(names)
+            .expressionAttributeValues(values);
         List<ResultRow> rows = new ArrayList<>();
         for (var page : client.scanPaginator(request.build())) {
             for (Map<String, AttributeValue> item : page.items()) {
@@ -100,11 +114,14 @@ public class ResultsQueryService implements AutoCloseable {
     public List<String> listVisibleProjects() {
         var names = new HashMap<String, String>(Map.of("#project", PROJECT_ATTRIBUTE));
         var values = new HashMap<String, AttributeValue>();
+        addMeasurementsOnlyFilter(names, values);
         addExcludeFilter(names, values);
         var request = ScanRequest.builder()
             .tableName(tableName)
             .projectionExpression("#project")
-            .filterExpression(EXCLUDE_FILTER)
+            // Without the pk test, a run item's project attribute would offer a project whose
+            // only runs stored nothing — and open onto an empty table.
+            .filterExpression(MEASUREMENTS_ONLY + " AND (" + EXCLUDE_FILTER + ")")
             .expressionAttributeNames(names)
             .expressionAttributeValues(values)
             .build();
@@ -118,6 +135,11 @@ public class ResultsQueryService implements AutoCloseable {
             }
         }
         return List.copyOf(projects);
+    }
+
+    private static void addMeasurementsOnlyFilter(Map<String, String> names, Map<String, AttributeValue> values) {
+        names.put("#pk", MeasurementItemMapper.PK);
+        values.put(":resultPrefix", AttributeValue.fromS(ResultKeys.PK_PREFIX));
     }
 
     private static void addExcludeFilter(Map<String, String> names, Map<String, AttributeValue> values) {
@@ -142,13 +164,19 @@ public class ResultsQueryService implements AutoCloseable {
      * expression, so leaving them behind fails <em>every</em> {@code --request-id} query at runtime
      * with a {@code ValidationException}. A builder-level unit test would not see it; the coverage
      * is an integration test that round-trips against a real endpoint.
+     *
+     * <p>The run's own run item shares its index partition and is filtered out. A key condition
+     * cannot say "not equal", and DynamoDB refuses a filter on a key attribute ({@code gsi1sk} is
+     * the index's sort key), so the filter keys on {@code kind}: every measurement carries it, and
+     * a run item never does.
      */
     public List<ResultRow> queryByRequestId(String requestId) {
         return runQuery(QueryRequest.builder()
             .tableName(tableName)
             .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
             .keyConditionExpression("#pk = :pk")
-            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
+            .filterExpression("attribute_exists(#kind)")
+            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK, "#kind", MeasurementItemMapper.KIND))
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(requestId))))
             .build());
@@ -158,9 +186,31 @@ public class ResultsQueryService implements AutoCloseable {
      * The S3 prefix a run's artifacts were written to, or {@code null} when the index holds no such
      * run. Read from the stored attribute rather than reconstructed, which is what keeps every
      * historical path resolving after the layout changed — and why nothing needs a compatibility
-     * shim. {@code requestId-index} projects ALL, so this is one query and no follow-up GetItem.
+     * shim. {@code requestId-index} projects ALL, so each lookup is one query and no GetItem.
+     *
+     * <p>The run item is asked first, addressed exactly by {@code gsi1sk = RUN}: it exists for every
+     * run since run items did, including one that failed or never launched and so stored no
+     * measurement. A run from before that has only measurements, which the second query reads.
      */
     public String resultPathForRun(String runId) {
+        var runItem = client.query(QueryRequest.builder()
+            .tableName(tableName)
+            .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
+            .keyConditionExpression("#pk = :pk AND #sk = :run")
+            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK, "#sk", MeasurementItemMapper.GSI1SK))
+            .expressionAttributeValues(Map.of(
+                ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(runId)),
+                ":run", AttributeValue.fromS(ResultKeys.RUN_INDEX_SORT_KEY)))
+            .build());
+        var fromRunItem = runItem.items().stream()
+            .map(item -> RunItemMapper.fromItem(item).resultPath())
+            .filter(java.util.Objects::nonNull)
+            .findFirst();
+        if (fromRunItem.isPresent()) {
+            return fromRunItem.get();
+        }
+        // No run item: a run recorded before run items existed. Its measurements are the only
+        // index entries under its id, so the first one names the path.
         var response = client.query(QueryRequest.builder()
             .tableName(tableName)
             .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
