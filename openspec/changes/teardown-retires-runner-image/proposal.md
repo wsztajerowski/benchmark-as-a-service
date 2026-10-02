@@ -68,9 +68,11 @@ None.
     installation graph);
   - `docs/review/baas-cli-findings.md`.
 - **Deliberately not changed:**
-  - The **results table** is still retained, with no flag to delete it: benchmark history outlives
-    the stack.
-  - The **bucket** is still retained unless `--delete-bucket` is passed.
+  - The **results table** is still retained, with no flag to delete it, and the **bucket** is still
+    retained unless `--delete-bucket` is passed. Deleting both on every teardown, behind a second
+    typed confirmation that recommends `baas admin export`, is decided (2026-10-02) but belongs to
+    `export-before-teardown`. It ships only together with the export command, so the destructive
+    behaviour never exists without its safety net.
   - The **live-runner gate and the confirmation still come first**, so nothing is retired while a
     run is in flight or before the stack name is retyped.
   - **"Exactly one image, rebuilt in place"** and "repoint before retire" are untouched: teardown

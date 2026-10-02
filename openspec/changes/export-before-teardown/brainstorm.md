@@ -194,3 +194,34 @@ otherwise expire results, and moves the runner JAR out of per-run copies. It lan
 does not technically depend on it — the mirror copies whole prefixes and is indifferent to their
 shape — but the bundle layout above is documented against the settled layout, and freezing a backup
 format before the thing being backed up stops moving would mean writing it twice.
+
+## Decisions recorded 2026-10-02 (supersede parts of the above; reconcile at the proposal step)
+
+Made while scoping `teardown-retires-runner-image`. The text above is left as written; where it
+disagrees with this block, this block wins.
+
+- **Teardown removes everything BaaS created, every time:** the core stack, the runner image (already
+  retired unconditionally by `teardown-retires-runner-image`), the S3 bucket and the results table.
+  `--delete-bucket` goes away, and so does the planned `--delete-table`. Nothing is left for a later
+  setup to trip over or inherit.
+- **A second, separate confirmation guards the data loss.** After the usual stack-name confirmation,
+  teardown says plainly that every result and artifact will be deleted, recommends running
+  `baas admin export` first, and requires a specific typed phrase. Whether `--yes` may skip this
+  second step, and how it behaves without a terminal, are still open.
+- **Export is decoupled from teardown.** No `--export-to`, and no gate making table deletion depend on
+  an export in the same invocation. Teardown advises; the operator decides.
+- **Export's parts are selectable.** The table is exported whole by default. The bucket is optional or
+  filterable, because old run artifacts may not be worth keeping. This replaces "the mirror takes every
+  key" above.
+- **Import targets a freshly set-up installation**, as Open Question 1 above already leaned towards.
+  Reuse of retained resources through CloudFormation resource import was considered and dropped: the
+  data no longer needs to survive inside AWS.
+- **The template keeps `DeletionPolicy: Retain`** on the bucket and table, and teardown deletes them
+  explicitly after both confirmations. `Retain` then guards only against deletion *outside* baas (the
+  console, `aws cloudformation delete-stack`), which bypasses both confirmations. Check the deployer
+  policy for `dynamodb:DeleteTable` in the design.
+- **Sequencing:** teardown's data deletion ships only with, or after, `baas admin export`, so the
+  destructive behaviour never exists without its safety net. Hence it lives in this change, not in
+  `teardown-retires-runner-image`, which ships image retirement on its own first.
+- CLAUDE.md's "benchmark history outlives any single stack" and the *Results table* / teardown
+  invariants will need rewriting when this lands; the specs' "table deletable by no flag at all" too.
