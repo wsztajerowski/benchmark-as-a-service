@@ -16,6 +16,8 @@ was ruled out. The check moved to after task 2.2:
 
 The result is recorded under task 2.2 below.
 
+**Result:** see *Task 2.2* below. Every case matches the design. ✓
+
 ### 1.2 AWS CLI on the runner image
 
 The newest run's `environment.json` (`runs/benchmark-as-a-service/20261002T195517542Z-6c4ff89e/`,
@@ -46,3 +48,40 @@ claim the first only. Nothing is created either way, which is the property that 
 ### 1.4 `--no-database` in workflows and scripts
 
 `git grep -n -e '--no-database' -- .github scripts` finds nothing (exit 1). ✓
+
+## Task 2.2: stack update, and the deployed roles (2026-10-03)
+
+`java -jar baas-cli/target/baas-cli.jar admin setup`, built from `run-status-in-dynamodb` after
+task 2.1, reported `Updating stack baas-381492019823... updated successfully` (00:19:56 → 00:20:57).
+The deployer policy is unchanged.
+
+`aws iam simulate-principal-policy` against the deployed roles, with a `dynamodb:LeadingKeys`
+context entry (this replaces 1.1's `simulate-custom-policy`):
+
+```
+runner dynamodb:UpdateItem RUN => allowed
+runner dynamodb:UpdateItem RESULT#x => implicitDeny
+runner dynamodb:PutItem RESULT#x => allowed
+runner dynamodb:PutItem RUN => implicitDeny
+runner dynamodb:BatchWriteItem RESULT#x => allowed
+runner dynamodb:BatchWriteItem RUN => implicitDeny
+runner dynamodb:DeleteItem RUN => implicitDeny
+operator dynamodb:UpdateItem RUN => allowed
+operator dynamodb:UpdateItem RESULT#x => implicitDeny
+operator dynamodb:PutItem RUN => implicitDeny
+operator dynamodb:PutItem RESULT#x => implicitDeny
+```
+
+### 13.7 live checks, run now that the stack is updated
+
+As `baas-operator-381492019823` against `baas-381492019823-results`, each write conditioned on
+`attribute_exists(pk)` so that nothing could be written even if a check were wrongly allowed:
+
+| Call | Result |
+|---|---|
+| `update-item` on `RESULT#verify-deny` | `AccessDeniedException` ✓ |
+| `put-item` on `RUN` | `AccessDeniedException` ✓ |
+| `update-item` on `RUN` | `ConditionalCheckFailedException`: IAM allowed it, and the condition stopped the write ✓ |
+
+The runner's deny cases are covered by the simulation above. Exercising them live would need
+credentials for `RunnerRole`, which only the instance profile holds.
