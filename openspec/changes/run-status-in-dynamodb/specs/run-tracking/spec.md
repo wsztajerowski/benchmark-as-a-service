@@ -190,8 +190,9 @@ after uploading its boot log, so the CLI SHALL NOT terminate it.
 `baas runs list` SHALL show the most recent runs of every project and status, newest first, 20 by
 default and `--limit <n>` otherwise. `--in-flight` SHALL restrict the output to runs whose resolved
 status is not terminal and not vanished. `--project <name>` and repeatable `--tag <key>=<value>` SHALL
-filter the rows. The table SHALL show run identifier, project, status, instance, instance type, start
-time and duration, plus the error code for a failed launch. `--format json` and `--format csv` SHALL
+filter the rows. The table SHALL show run identifier, project, status, source, instance, instance type,
+start time and, for a run in flight, the time elapsed since it started, plus the error code for a failed
+launch. A finished run shows no duration: the instance records no timestamp, so none is known. `--format json` and `--format csv` SHALL
 carry the same rows, including tags. Runs tagged `exclude_from_results=true` SHALL be shown like any
 other. Statuses SHALL be resolved with a single instance lookup per invocation, whose size does not grow
 with the number of unresolved runs. When filters are given, the listing SHALL keep reading older runs

@@ -157,9 +157,9 @@
 
 ## 9. `baas runs` command group
 
-- [ ] 9.1 Add the `runs` group with no action of its own, registered at the root next to `run`. Verify
+- [x] 9.1 Add the `runs` group with no action of its own, registered at the root next to `run`. Verify
   with a test that `baas runs` prints usage naming `list` and `terminate`.
-- [ ] 9.2 Implement `baas runs list` with these options: `--limit` (default 20), `--in-flight`,
+- [x] 9.2 Implement `baas runs list` with these options: `--limit` (default 20), `--in-flight`,
   `--project`, repeatable `--tag`, and `--format table|json|csv`. It pages the `RUN` partition newest
   first until `--limit` rows match. It resolves statuses with one `DescribeInstances` on
   `tag:baas-role=benchmark-runner` and `instance-state-name=pending,running`, joined on
@@ -172,7 +172,7 @@
   - `exclude_from_results=true` runs are shown;
   - listing writes nothing;
   - an empty `--in-flight` prints its message and exits 0.
-- [ ] 9.3 Implement `baas runs terminate <runId> [--yes]` on the stop method, with a termination
+- [x] 9.3 Implement `baas runs terminate <runId> [--yes]` on the stop method, with a termination
   call that throws instead of `Ec2ProvisioningService.terminateInstance`, which swallows errors. It
   prompts when interactive, refuses without a terminal and without `--yes`, and exits non-zero when
   the termination fails. It terminates a pending or running instance even when the item is already

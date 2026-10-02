@@ -15,6 +15,7 @@ import pl.wsztajerowski.baas.commands.DownloadCommand;
 import pl.wsztajerowski.baas.commands.EnvCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
+import pl.wsztajerowski.baas.commands.RunsCommand;
 import pl.wsztajerowski.baas.commands.admin.AdminCommand;
 import pl.wsztajerowski.baas.config.ConfigService;
 
@@ -29,6 +30,7 @@ import java.nio.file.Path;
         AdminCommand.class,
         ConfigCommand.class,
         RunCommand.class,
+        RunsCommand.class,
         ResultsCommand.class,
         DownloadCommand.class,
         EnvCommand.class
