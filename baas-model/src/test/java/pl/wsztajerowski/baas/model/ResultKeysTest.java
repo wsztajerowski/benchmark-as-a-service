@@ -164,4 +164,43 @@ class ResultKeysTest {
             java.util.TimeZone.setDefault(original);
         }
     }
+
+    @Test
+    void runSortKeyIsTheFixedWidthTimestampThenTheRunId() {
+        assertThat(ResultKeys.runSortKey(Instant.parse("2026-10-03T00:15:16.659Z"), "20261003T001516659Z-a3f9c21b"))
+            .isEqualTo("2026-10-03T00:15:16.659Z#20261003T001516659Z-a3f9c21b");
+    }
+
+    /**
+     * {@code baas run}'s CREATED_AT is {@code Instant.toString()}: six fractional digits on a
+     * microsecond clock, none at all on a whole second. The key must not inherit either width,
+     * or the shell and the CLI would address two different items.
+     */
+    @Test
+    void runSortKeyHasThreeFractionalDigitsWhateverTheInstantPrecision() {
+        assertThat(ResultKeys.runSortKey(Instant.parse("2026-10-03T00:15:16.659123Z"), "r"))
+            .isEqualTo("2026-10-03T00:15:16.659Z#r");
+        assertThat(ResultKeys.runSortKey(Instant.parse("2026-10-03T00:15:16Z"), "r"))
+            .isEqualTo("2026-10-03T00:15:16.000Z#r");
+    }
+
+    @Test
+    void runSortKeysOrderChronologically() {
+        var earlier = ResultKeys.runSortKey(Instant.parse("2026-10-03T00:15:16Z"), "zzz");
+        var later = ResultKeys.runSortKey(Instant.parse("2026-10-03T00:15:16.001Z"), "aaa");
+
+        assertThat(earlier).isLessThan(later);
+    }
+
+    @Test
+    void noMeasurementIndexSortKeyCanEqualTheRunItems() {
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jmh()))
+            .isNotEqualTo(ResultKeys.RUN_INDEX_SORT_KEY);
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jcstress()))
+            .isNotEqualTo(ResultKeys.RUN_INDEX_SORT_KEY);
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jmh()))
+            .as("a measurement's index sort key always carries a separator; RUN never does")
+            .contains(ResultKeys.SEPARATOR);
+        assertThat(ResultKeys.RUN_INDEX_SORT_KEY).doesNotContain(ResultKeys.SEPARATOR);
+    }
 }

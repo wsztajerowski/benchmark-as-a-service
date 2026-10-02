@@ -131,7 +131,17 @@ public final class MeasurementItemMapper {
         return item;
     }
 
+    /**
+     * Refuses anything outside a {@code RESULT#} partition. The table also holds run items, and a
+     * reader that forgot to exclude them would otherwise render one as an empty row or offer its
+     * project in the picker; failing here makes that mistake loud.
+     */
     public static StoredMeasurement fromItem(Map<String, AttributeValue> item) {
+        String pk = str(item, PK);
+        if (pk == null || !pk.startsWith(ResultKeys.PK_PREFIX)) {
+            throw new IllegalArgumentException("Not a measurement item (pk=" + pk + ", sk="
+                + str(item, SK) + "): every reader of measurements must exclude run items");
+        }
         return new StoredMeasurement(
             str(item, PROJECT),
             str(item, REQUEST_ID),
