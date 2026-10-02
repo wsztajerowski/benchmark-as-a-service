@@ -45,25 +45,25 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * Actually runs the generated {@code export RUNNER_TAGS=...} line through bash, then the
-     * script's own {@code eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"} line — the exact two-parse
-     * sequence the real user-data script performs — and returns the resulting array elements.
+     * Actually runs the generated {@code RUNNER_TAGS_ARRAY=(...)} line through bash and returns the
+     * resulting array elements — what the runner's argv will hold.
      *
-     * A substring check on the rendered script text cannot catch either of the round-1 defects:
-     * the export line is always "correct" by construction (it's just Java string concatenation),
-     * and the bug only exists in what bash's SECOND parse (the eval) does with that text. Only
-     * executing it proves the fix.
+     * A substring check on the rendered script text cannot catch a quoting defect: the line is
+     * always "correct" by construction (it's just Java string concatenation), and the bug only
+     * exists in what bash makes of it. Only executing it proves the fix.
      */
     private List<String> evaluateRunnerTagsArray(Map<String, String> runnerTags) throws Exception {
-        String script = script(runnerTags);
-        String exportLine = script.lines()
-            .filter(l -> l.startsWith("export RUNNER_TAGS="))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("no RUNNER_TAGS export line in generated script"));
+        return evaluateArray(script(runnerTags), "RUNNER_TAGS_ARRAY");
+    }
 
-        String harness = exportLine + "\n"
-            + "eval \"RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})\"\n"
-            + "for element in \"${RUNNER_TAGS_ARRAY[@]}\"; do printf '%s\\n' \"$element\"; done\n";
+    private List<String> evaluateArray(String script, String name) throws Exception {
+        String arrayLine = script.lines()
+            .filter(l -> l.startsWith(name + "=("))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("no " + name + " line in generated script"));
+
+        String harness = arrayLine + "\n"
+            + "for element in \"${" + name + "[@]}\"; do printf '%s\\n' \"$element\"; done\n";
 
         Process process = new ProcessBuilder("bash", "-c", harness).start();
         String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
@@ -153,7 +153,29 @@ class UserDataScriptBuilderTest {
 
     @Test
     void passesBenchmarkParametersThrough() {
-        assertThat(script()).contains("export BENCHMARK_PARAMETERS='MyBenchmark -f 1'");
+        assertThat(script()).contains("BENCHMARK_PARAMS_ARRAY=('MyBenchmark' '-f' '1')");
+    }
+
+    /**
+     * S6: parameters used to travel as one string and be re-split by {@code eval}, which expanded
+     * {@code $} and backticks on the instance and broke on a {@code "}. Every character must reach
+     * the runner as typed, one argument per parameter.
+     */
+    @Test
+    void benchmarkParametersReachTheRunnerExactlyAsTyped() throws Exception {
+        Path marker = tempDir.resolve("PWNED");
+        List<String> params = List.of("MyBenchmark", "-p", "pattern=a$b", "-jvmArgs", "-Dx=\"q\" `id`",
+            "$(touch " + marker + ")", "it's", "two words", "back\\slash", "a;b");
+        String encoded = new UserDataScriptBuilder().build(
+            "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "runs/p/id", "2026-07-24T12:00:00Z",
+            "runs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", false,
+            params, Map.of());
+
+        List<String> elements = evaluateArray(
+            new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8), "BENCHMARK_PARAMS_ARRAY");
+
+        assertThat(Files.exists(marker)).as("a parameter must never run as shell").isFalse();
+        assertThat(elements).containsExactlyElementsOf(params);
     }
 
     // ─── Prebaked image: nothing is installed at run time ────────────────────────
@@ -432,8 +454,8 @@ class UserDataScriptBuilderTest {
         String script = script(Map.of("project", "lynx-journal", "experiment", "gc tuning"));
 
         assertThat(script)
-            .contains("--tag \"project=lynx-journal\"")
-            .contains("--tag \"experiment=gc tuning\"");
+            .contains("'--tag' 'project=lynx-journal'")
+            .contains("'--tag' 'experiment=gc tuning'");
 
         assertThat(script.indexOf("RUNNER_TAGS_ARRAY[@]"))
             .as("caller tags have to be arguments of the runner invocation itself")
@@ -446,8 +468,8 @@ class UserDataScriptBuilderTest {
         String script = script(Map.of());
 
         assertThat(script)
-            .as("an empty array must still expand cleanly under the eval pattern")
-            .contains("export RUNNER_TAGS=''");
+            .as("an empty array must still be a valid array literal")
+            .contains("RUNNER_TAGS_ARRAY=()");
     }
 
     @Test
@@ -455,17 +477,15 @@ class UserDataScriptBuilderTest {
         String script = script(Map.of("note", "it's fine"));
 
         assertThat(script)
-            .as("the export is single-quoted, so an embedded quote must be escaped")
-            .contains("--tag \"note=it'\\''s fine\"");
+            .as("each element is single-quoted, so an embedded quote must be escaped")
+            .contains("'note=it'\\''s fine'");
     }
 
     // ─── Fix round 1: a tag value is DATA, never re-parsed as shell ──────────────
     //
-    // RUNNER_TAGS is exported once (parse 1: bash's own single-quote handling) and then handed to
-    // `eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"` (parse 2: eval re-parses the expanded text as
-    // shell source). A substring check on the rendered script text cannot see what parse 2 does —
-    // the export line is "correct" by construction regardless of what eval later makes of it. The
-    // tests below actually run both parses through bash and assert on the resulting array.
+    // Tags once went through an export and then an eval — two parses. Since S6 the array literal
+    // is written directly, so bash parses each value exactly once. The tests below still run the
+    // line through bash and assert on the resulting array, since that is what the runner sees.
 
     /**
      * CRITICAL (round-1 finding 1): an unescaped {@code $(...)} inside a tag value used to
@@ -549,7 +569,7 @@ class UserDataScriptBuilderTest {
     @Test
     void theSourceTagReachesTheRunnerAsACommandLineTag() {
         assertThat(script(Map.of("project", "lynx-journal", "source", "ci")))
-            .contains("--tag \"source=ci\"");
+            .contains("'--tag' 'source=ci'");
     }
 
     // ─── Final-review I1: defence in depth against a colliding caller tag ────────
@@ -574,8 +594,8 @@ class UserDataScriptBuilderTest {
         String script = script(Map.of("jdk", "attacker-supplied"));
 
         assertThat(script)
-            .as("the caller tag must actually be rendered into RUNNER_TAGS")
-            .contains("--tag \"jdk=attacker-supplied\"");
+            .as("the caller tag must actually be rendered into RUNNER_TAGS_ARRAY")
+            .contains("'--tag' 'jdk=attacker-supplied'");
 
         String invocation = script.substring(
             script.indexOf("java -jar /app/benchmark-runner.jar"),
@@ -583,8 +603,8 @@ class UserDataScriptBuilderTest {
 
         // "${RUNNER_TAGS_ARRAY[@]}" expands to the caller's --tag args at THIS position in the
         // invocation; only its position relative to the observed jdk tag line matters, since the
-        // array's own content (the literal caller value) lives in the earlier `export
-        // RUNNER_TAGS=...` line, asserted above.
+        // array's own content (the literal caller value) lives in the earlier
+        // `RUNNER_TAGS_ARRAY=(...)` line, asserted above.
         int callerArrayIndex = invocation.indexOf("RUNNER_TAGS_ARRAY[@]");
         int observedTagIndex = invocation.indexOf("--tag \"jdk=${JDK_VERSION}\"");
         assertThat(callerArrayIndex).as("caller tags array must be expanded in the invocation").isNotNegative();

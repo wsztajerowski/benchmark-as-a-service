@@ -6,6 +6,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 
 public class UserDataScriptBuilder {
 
@@ -149,16 +150,12 @@ public class UserDataScriptBuilder {
         fi
 
         # Layer 2: benchmark process with its own timeout
-        # eval expands BENCHMARK_PARAMETERS (a double-quoted shell string) into an array
-        # so params containing spaces are passed as single tokens to java.
-        eval "BENCHMARK_PARAMS_ARRAY=(${BENCHMARK_PARAMETERS})"
-        # Caller-supplied tags (project, commit, and any --tag the operator passed).
+        # BENCHMARK_PARAMS_ARRAY and RUNNER_TAGS_ARRAY are array literals written by build(),
+        # one quoted element per argument, so bash parses them once, as data — no eval.
         # RunCommand.buildRunnerTags already rejects a caller tag whose key is
         # machine-observed (imageVersion, instanceType, jdk, cpuModel, cpuArch, type), so
-        # this array should never actually collide with the five observed --tag lines
-        # below. Same export-then-eval pattern as BENCHMARK_PARAMETERS, so values
-        # containing spaces stay single argv tokens.
-        eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"
+        # the caller tags should never actually collide with the five observed --tag lines
+        # below.
         # Tier 1 of the environment comparison: the five --tag lines below reach
         # benchmarkMetadata.tags, so `baas results` can flag a group whose rows sat on
         # different environments without fetching anything from S3. They are the values
@@ -204,23 +201,9 @@ public class UserDataScriptBuilder {
                         int wallClockHardKillSeconds, String imageVersion, String amiId,
                         String runnerJarS3Key, String resultsTableName, boolean noDatabase,
                         List<String> benchmarkParams, Map<String, String> runnerTags) {
-        String params = String.join(" ", benchmarkParams.stream()
-            .map(p -> p.contains(" ") ? "\"" + p + "\"" : p)
-            .toList());
-
-        // Each --tag "k=v" segment is re-parsed by the script's own
-        // `eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"` (see SCRIPT_BODY) — a SECOND shell parse,
-        // distinct from the export-line parse the outer single-quote escaping below protects.
-        // Inside that second parse, k/v sit in a double-quoted segment, where \, ", $ and ` are
-        // still live metacharacters (double quotes suppress word-splitting and globbing, but NOT
-        // command/variable substitution). An unescaped $(...) or ` there executes with RunnerRole's
-        // IAM permissions — including the SSM read the operator policy deliberately withholds —
-        // so every occurrence of those four characters must be backslash-escaped first, the same
-        // way json_escape protects values destined for the double-quoted JSON manifest below.
-        String tagArgs = runnerTags.entrySet().stream()
-            .map(e -> "--tag \"" + escapeForEvaledDoubleQuote(e.getKey()) + "="
-                + escapeForEvaledDoubleQuote(e.getValue()) + "\"")
-            .collect(java.util.stream.Collectors.joining(" "));
+        List<String> tagArgs = runnerTags.entrySet().stream()
+            .flatMap(e -> Stream.of("--tag", e.getKey() + "=" + e.getValue()))
+            .toList();
 
         String script = "#!/bin/bash\n" +
             "# No set -e — errors handled explicitly so watchdog always starts\n" +
@@ -248,8 +231,8 @@ public class UserDataScriptBuilder {
             export("RUNNER_JAR_S3_KEY", runnerJarS3Key) +
             export("RESULTS_TABLE", resultsTableName) +
             export("NO_DATABASE", noDatabase) +
-            export("BENCHMARK_PARAMETERS", params) +
-            export("RUNNER_TAGS", tagArgs) +
+            array("BENCHMARK_PARAMS_ARRAY", benchmarkParams) +
+            array("RUNNER_TAGS_ARRAY", tagArgs) +
             "\n" +
             SCRIPT_BODY;
 
@@ -265,35 +248,31 @@ public class UserDataScriptBuilder {
     }
 
     /**
-     * The one way a value enters the script. Every export goes through it, machine-generated or
-     * not: an unclosed quote on any line makes bash reject the whole script before the watchdog
-     * starts, so a value that is safe today only by provenance is one rename away from orphaning a
-     * paid instance. A {@code '} survives by closing the quote, emitting an escaped quote and
-     * reopening it; null exports as empty.
+     * One of the two ways a value enters the script, {@link #array} being the other; every value
+     * goes through one of them, machine-generated or not. An unclosed quote on any line makes bash
+     * reject the whole script before the watchdog starts, so a value that is safe today only by
+     * provenance is one rename away from orphaning a paid instance. Null exports as empty.
      */
     private static String export(String name, Object value) {
-        String text = value != null ? value.toString() : "";
-        return "export " + name + "='" + text.replace("'", "'\\''") + "'\n";
+        return "export " + name + "=" + shellQuote(value != null ? value.toString() : "") + "\n";
     }
 
     /**
-     * Escapes a caller-supplied tag key/value so it survives, as literal text, the SECOND shell
-     * parse performed by {@code eval "RUNNER_TAGS_ARRAY=(${RUNNER_TAGS})"} in SCRIPT_BODY. That
-     * eval re-parses the segment as shell source, where the value sits inside a double-quoted
-     * {@code "k=v"} token; \, ", $ and ` are the characters double quotes do NOT neutralize
-     * (only word-splitting and globbing are suppressed), so each occurrence is backslash-escaped
-     * — turning {@code $(cmd)}, {@code `cmd`} and {@code ${var}} into inert text instead of a
-     * command/variable substitution, and letting a literal " or \\ round-trip unmolested.
+     * An argument vector as a bash array literal, one quoted element per argument. It replaced an
+     * {@code eval} of a flat string, which parsed every argument a second time: a {@code $} or
+     * backtick in a benchmark parameter expanded on the instance, and a {@code "} broke the line.
+     * Arrays cannot be exported, which is fine — only this script reads them.
      */
-    private static String escapeForEvaledDoubleQuote(String value) {
-        StringBuilder escaped = new StringBuilder(value.length());
-        for (int i = 0; i < value.length(); i++) {
-            char c = value.charAt(i);
-            if (c == '\\' || c == '"' || c == '$' || c == '`') {
-                escaped.append('\\');
-            }
-            escaped.append(c);
-        }
-        return escaped.toString();
+    private static String array(String name, List<String> elements) {
+        return name + "=(" + String.join(" ", elements.stream().map(UserDataScriptBuilder::shellQuote).toList())
+            + ")\n";
+    }
+
+    /**
+     * Single quotes make everything literal except {@code '} itself, which survives by closing
+     * the quote, emitting an escaped quote and reopening it.
+     */
+    private static String shellQuote(String value) {
+        return "'" + value.replace("'", "'\\''") + "'";
     }
 }

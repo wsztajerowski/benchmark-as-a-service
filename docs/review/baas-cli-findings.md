@@ -30,7 +30,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 |---|-----|---------|-----|--------|
 | 1 | S4 | Deployer policy is an escalation primitive | High | **Partly fixed / partly accepted** |
 | 2 | S5 | User-data built by concatenation, one value of eleven escaped | Med | **Fixed** |
-| 3 | S6 | `eval` on benchmark parameters | Med | Open |
+| 3 | S6 | `eval` on benchmark parameters | Med | **Fixed** |
 | 4 | S7 | `RunnerRole` can delete the entire results history | Med | **Partly fixed** |
 | 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Open |
 | 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Open |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: S6.**
+**Next up: S8.**
 
 ---
 
@@ -139,9 +139,9 @@ poll cap would terminate the instance. Two parts:
   call. That is exactly GitHub's repository-name alphabet, so no repository is rejected; a clone
   into a directory GitHub would not name is told to pass `--project`.
 
-The `eval` second parse of `BENCHMARK_PARAMETERS` is S6 and is untouched.
+The `eval` second parse of `BENCHMARK_PARAMETERS` was S6, fixed separately.
 
-## 3. S6 — `eval` on benchmark parameters · Med
+## 3. S6 — `eval` on benchmark parameters · FIXED
 
 `UserDataScriptBuilder` line ~68: `eval "BENCHMARK_PARAMS_ARRAY=(${BENCHMARK_PARAMETERS})"`, and
 `build()` only quotes params containing a space. Any param with `$`, a backtick, `;` or `"` either
@@ -149,6 +149,14 @@ breaks or executes. Same user, so robustness more than escalation — but avoida
 
 **Proposed fix:** base64 the argument vector and `readarray` it, or write it to a file the runner
 reads. Fix alongside S5, same file.
+
+**Fixed (2026-10-02)** with neither proposal: `build()` writes `BENCHMARK_PARAMS_ARRAY=(…)` and
+`RUNNER_TAGS_ARRAY=(…)` as array literals, one single-quoted element per argument, by the same
+rule the exports use. Bash parses each value once, as data, and both `eval` lines are gone — and
+with them `escapeForEvaledDoubleQuote`, the tags' separate escaper for that second parse. No decode
+step precedes the watchdog, and the runner's interface is unchanged.
+`benchmarkParametersReachTheRunnerExactlyAsTyped` runs `$`, backticks, `$(…)`, `"`, `'`, `\`, `;`
+and a space through bash and expects the argv back verbatim.
 
 ## 4. S7 — `RunnerRole` can delete the whole results history · Med
 
