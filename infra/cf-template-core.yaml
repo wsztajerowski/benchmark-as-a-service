@@ -189,6 +189,10 @@ Resources:
       RouteTableIds:
         - !Ref PublicRouteTable
 
+  # The runner's group. Port 80 left with the image build, which has its own group below: the
+  # runner installs nothing, and 443 is still needed for the public EC2 API its watchdog calls.
+  # GroupDescription still says "443/80" and must stay that way: it is immutable, and editing it
+  # replaces the group — a new id, and a replacement that fails while any runner holds the old one.
   RunnerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Condition: CreateNetworking
@@ -200,17 +204,40 @@ Resources:
           FromPort: 443
           ToPort: 443
           CidrIp: 0.0.0.0/0
-          Description: HTTPS to GitHub, S3 and AWS APIs
-        - IpProtocol: tcp
-          FromPort: 80
-          ToPort: 80
-          CidrIp: 0.0.0.0/0
-          Description: HTTP for package downloads (yum)
+          Description: HTTPS to S3, DynamoDB and the EC2 API
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
         - Key: Name
           Value: !Sub ${ResourceNamePrefix}-sg-runner
+
+  # The image build instance's group, kept apart from the runner's because their needs are
+  # opposite: the bake downloads packages (dnf, port 80 included) and async-profiler from GitHub,
+  # the runner downloads nothing because the bake did. Sharing one group gave the runner the
+  # builder's internet egress. Created only with the stack's own networking — under
+  # --use-existing-vpc the operator supplied a group, and the build keeps using it.
+  ImageBuildSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateNetworking
+    Properties:
+      GroupDescription: Runner image build instances. No inbound; outbound 443/80 for package and tool downloads.
+      VpcId: !Ref BaasVpc
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS to package repositories, GitHub and AWS APIs
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP for package repositories
+      Tags:
+        - Key: project
+          Value: !Sub ${ResourceNamePrefix}
+        - Key: Name
+          Value: !Sub ${ResourceNamePrefix}-sg-build
 
   # ─── S3 Bucket ────────────────────────────────────────────────────────────────
 
@@ -456,7 +483,7 @@ Resources:
         - c5.large
       SubnetId: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
       SecurityGroupIds:
-        - !If [CreateNetworking, !Ref RunnerSecurityGroup, !Ref ExistingSecurityGroupId]
+        - !If [CreateNetworking, !Ref ImageBuildSecurityGroup, !Ref ExistingSecurityGroupId]
       TerminateInstanceOnFailure: true
       Logging:
         S3Logs:

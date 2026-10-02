@@ -310,6 +310,21 @@ endpoint, because it carries no hourly charge.
 - **WHEN** the deployed security group's egress rules are inspected
 - **THEN** no rule covers port 27017
 
+### Requirement: The image build and the runner do not share a security group
+When the stack creates its own networking, `RunnerImageInfrastructure` SHALL use a dedicated
+`ImageBuildSecurityGroup` permitting outbound TCP 443 and 80, and `RunnerSecurityGroup` SHALL permit
+outbound TCP 443 only. Under `UseExistingVpc` both SHALL use `ExistingSecurityGroupId`, and the stack
+SHALL NOT create a security group in the existing VPC. `RunnerSecurityGroup`'s `GroupDescription` SHALL
+NOT change, since editing it replaces the group.
+
+#### Scenario: Port 80 is the build's alone
+- **WHEN** the two groups' egress rules are inspected on a stack that created its networking
+- **THEN** the build group covers 443 and 80, and the runner group covers 443 and nothing else
+
+#### Scenario: An existing VPC keeps the operator's group
+- **WHEN** the stack is deployed with `UseExistingVpc=true`
+- **THEN** no security group resource is created and the build instance uses `ExistingSecurityGroupId`
+
 ### Requirement: The runner can write results but not read them
 `RunnerRole` SHALL be granted `dynamodb:PutItem` and `dynamodb:BatchWriteItem` on the results table ARN
 and nothing else on that table. It SHALL NOT be granted `Query`, `Scan`, `GetItem`, or any delete action.

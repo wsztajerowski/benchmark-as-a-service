@@ -20,9 +20,9 @@ C4Deployment
         ContainerDb(ddb, "Table <prefix>-results", "DynamoDB", "Retain")
         ContainerDb(ssm, "/<prefix>/runner/ami-id", "SSM", "outside the stack")
         Container(ami, "Runner AMI + 30 GB snapshot", "EC2", "outside the stack; one at a time")
-        Deployment_Node(subnet, "Public subnet 10.0.1.0/24 (or existing)", "S3 + DynamoDB gateway endpoints; SG egress 443/80 only") {
-            Container(runnerI, "Runner instance", "c5/c6i/c7i/m5/m6i/m7i, 30 GB gp3", "Lives timeout + margin at most")
-            Container(buildI, "Image build instance", "c5.large", "Same subnet and security group as the runner")
+        Deployment_Node(subnet, "Public subnet 10.0.1.0/24 (or existing)", "S3 + DynamoDB gateway endpoints") {
+            Container(runnerI, "Runner instance", "c5/c6i/c7i/m5/m6i/m7i, 30 GB gp3", "sg-runner: egress 443 only. Lives timeout + margin at most")
+            Container(buildI, "Image build instance", "c5.large", "Same subnet, own sg-build: egress 443 + 80")
         }
     }
 
