@@ -100,9 +100,22 @@ public class RunnerImageRenderer {
             if (is == null) {
                 throw new IllegalStateException(classpathResource + " is not on the classpath");
             }
-            return YAML.readValue(is, RunnerImageDefinition.class);
+            return parse(is);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        }
+    }
+
+    /** Fails on an unknown key (Jackson's default) and on a missing value ({@code requireComplete}). */
+    static RunnerImageDefinition parse(InputStream yaml) throws IOException {
+        try {
+            return YAML.readValue(yaml, RunnerImageDefinition.class).requireComplete();
+        } catch (com.fasterxml.jackson.databind.exc.UnrecognizedPropertyException e) {
+            String path = e.getPath().stream()
+                .map(com.fasterxml.jackson.databind.JsonMappingException.Reference::getFieldName)
+                .collect(java.util.stream.Collectors.joining("."));
+            throw new IllegalStateException("runner-image.yaml has an unknown key '" + path
+                + "' (known there: " + e.getKnownPropertyIds() + ")", e);
         }
     }
 

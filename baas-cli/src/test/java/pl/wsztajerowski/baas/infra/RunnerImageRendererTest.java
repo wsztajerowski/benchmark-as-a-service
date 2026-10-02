@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class RunnerImageRendererTest {
 
@@ -118,5 +119,46 @@ class RunnerImageRendererTest {
             .as("the perf RPM is built from one kernel build; a mismatch against the parent AMI's "
                 + "kernel breaks profiling in a way no unit test on this side can see")
             .isEqualTo(perf.kernelRelease());
+    }
+
+    // ─── Review P12: the declaration is parsed strictly ──────────────────────────
+    //
+    // A typo used to be dropped silently and the field defaulted — perfEventParanoid to 0, more
+    // permissive than the declared 1 — and the bake succeeded with it.
+
+    private static String shippedYaml() throws Exception {
+        try (var is = RunnerImageRenderer.class.getResourceAsStream("/templates/runner-image.yaml")) {
+            return new String(is.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
+    }
+
+    private static RunnerImageDefinition parse(String yaml) throws Exception {
+        return RunnerImageRenderer.parse(new java.io.ByteArrayInputStream(yaml.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+
+    @Test
+    void theShippedDeclarationParsesStrictly() throws Exception {
+        assertThat(parse(shippedYaml()).kernel().perfEventParanoid()).isEqualTo(1);
+    }
+
+    @Test
+    void aMistypedKeyIsRejectedByItsPath() throws Exception {
+        String typo = shippedYaml().replace("perfEventParanoid:", "perf_event_paranoid:");
+
+        assertThatThrownBy(() -> parse(typo))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("unknown key 'kernel.perf_event_paranoid'")
+            .hasMessageContaining("perfEventParanoid");
+    }
+
+    @Test
+    void aMissingValueIsRejectedByItsPath() throws Exception {
+        String withoutLine = shippedYaml().lines()
+            .filter(line -> !line.strip().startsWith("kptrRestrict:"))
+            .collect(java.util.stream.Collectors.joining("\n"));
+
+        assertThatThrownBy(() -> parse(withoutLine))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("missing kernel.kptrRestrict");
     }
 }

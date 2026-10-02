@@ -52,7 +52,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 9 | P9 | Change widened open finding S5 without updating it | Low | **Fixed** (by S5) |
 | 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | **Fixed** (by `reportFailure`) |
 | 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | → new OpenSpec change `runs-command` (decided 2026-10-02) |
-| 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | Open |
+| 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | **Fixed** |
 | 13 | P13 | async-profiler install path hardcoded a third time | Low | Open |
 | 14 | P14 | `build()` polls without an upper bound | Low | Open |
 | 15 | P15 | `deployer-policy.json` is partition-hardcoded; the template beside it is not | Low | Open |
@@ -404,7 +404,7 @@ the proposal starts from:
   record its run id and creation instant changes accordingly.
 - Breaking CLI change: `feat(cli)!`, next major.
 
-## 12. P12 — kernel tunables silently default to `0`/`null` on a mistyped key · Low
+## 12. P12 — kernel tunables silently default to `0`/`null` on a mistyped key · FIXED
 
 `RunnerImageDefinition.Kernel` uses `int` primitives under
 `@JsonIgnoreProperties(ignoreUnknown = true)`. A mistyped key in `runner-image.yaml` (say
@@ -418,6 +418,13 @@ The delta spec says these values "SHALL NOT be left to the base image's defaults
 exactly that, and every downstream artifact — component, manifest, `env diff` — reports the wrong
 value as though it were chosen. Boxed types plus a null check at load, or a required-field
 assertion in `RunnerImageRenderer`, would make it loud.
+
+**Fixed (2026-10-02), both ways.** `ignoreUnknown` is gone from every record, so a typo fails as
+`unknown key 'kernel.perf_event_paranoid'`, naming the known keys; the kernel ints are boxed and
+`RunnerImageDefinition.requireComplete` names every missing value by its YAML path. Both fire in
+`RunnerImageRenderer.parse`, before any AWS call from `setup` or `build-image`. The leniency's own
+justification was stale — each CLI reads only the copy bundled in its JAR, so no older file
+carries keys a newer one dropped.
 
 ## 13. P13 — the async-profiler install path is hardcoded a third time · Low
 
