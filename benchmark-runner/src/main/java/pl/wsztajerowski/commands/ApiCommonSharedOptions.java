@@ -40,9 +40,6 @@ public class ApiCommonSharedOptions {
     @Option(names = "--results-table", description = "DynamoDB table holding benchmark measurements.")
     String resultsTableName;
 
-    @Option(names = "--no-database", description = "Discard measurements instead of storing them. Explicit opt-in; absent configuration is an error.")
-    boolean noDatabase;
-
     @Option(names = "--dynamodb-endpoint",
         defaultValue = "${AWS_ENDPOINT_URL_DYNAMODB}",
         description = "Custom DynamoDB endpoint, for LocalStack.")
@@ -126,10 +123,6 @@ public class ApiCommonSharedOptions {
         return resultsTableName;
     }
 
-    public boolean isNoDatabase() {
-        return noDatabase;
-    }
-
     public URI getDynamoDbEndpoint() {
         return dynamoDbEndpoint;
     }
@@ -142,7 +135,6 @@ public class ApiCommonSharedOptions {
         return ResultsStoreBuilder.builder()
             .withTableName(resultsTableName)
             .withConnectionString(mongoConnectionString)
-            .withNoDatabase(noDatabase)
             .withDynamoDbEndpoint(dynamoDbEndpoint)
             .build();
     }

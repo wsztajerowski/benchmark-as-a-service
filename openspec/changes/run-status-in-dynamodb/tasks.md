@@ -147,11 +147,11 @@
 - [x] 8.1 Remove `--no-database` from `RunCommand`. `resolveResultsTable` resolves unconditionally,
   and the "Or discard the results" hint goes. Verify with a `RunCommandTest` case: the option is
   unknown, and nothing is uploaded or launched.
-- [ ] 8.2 Remove `--no-database` from `ApiCommonSharedOptions`, shrink `ResultsStoreBuilder`'s check
+- [x] 8.2 Remove `--no-database` from `ApiCommonSharedOptions`, shrink `ResultsStoreBuilder`'s check
   to exactly one of `--results-table` / `--mongo-connection-string`, and delete `NoOpResultsStore`
   and its test. Verify with `ResultsStoreBuilderTest` (neither or both fails, either alone succeeds)
   and `ApiCommonSharedOptionsTest` (the option is unknown).
-- [ ] 8.3 Remove the "swap for `--no-database`" comments from `jmh-with-profiler.sh` and
+- [x] 8.3 Remove the "swap for `--no-database`" comments from `jmh-with-profiler.sh` and
   `jmh-with-async.sh`. Verify with `git grep -- '--no-database'`, which should find no code, script
   or main doc.
 
