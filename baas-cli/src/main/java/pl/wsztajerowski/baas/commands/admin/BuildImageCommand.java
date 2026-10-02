@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
@@ -38,8 +37,6 @@ public class BuildImageCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Option(names = "--aws-profile", description = "AWS CLI profile (deployer credentials).")
-    String awsProfile;
 
     @Spec CommandSpec spec;
 
@@ -50,7 +47,6 @@ public class BuildImageCommand implements Callable<Integer> {
     @Override
     public Integer call() throws Exception {
         BaasConfig config = configService().load();
-        if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
         String prefix = config.requirePrefix();
         var renderer = new RunnerImageRenderer();
