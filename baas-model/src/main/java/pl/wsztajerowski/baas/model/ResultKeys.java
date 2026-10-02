@@ -65,6 +65,30 @@ public final class ResultKeys {
             .collect(Collectors.joining(","));
     }
 
+    /**
+     * Every run of every project shares this one partition: the questions it answers — what is
+     * in flight, what happened to my run — are installation-wide, and one {@code Query} answers
+     * them newest first. Projects stay an attribute.
+     */
+    public static final String RUN_PARTITION_KEY = "RUN";
+
+    /**
+     * A run item's {@code gsi1sk}. A measurement's index sort key always contains {@code #}
+     * (class#method#mode, or {@code JCSTRESS#<id>}), so it can never equal this, and a lookup by
+     * run id can address the run item exactly instead of relying on sort order.
+     */
+    public static final String RUN_INDEX_SORT_KEY = "RUN";
+
+    /**
+     * {@code <createdAt>#<runId>}, the timestamp in the same fixed-width format measurements use,
+     * so the partition reads chronologically. The CLI hands this to user-data verbatim: the shell
+     * never rebuilds it, because the {@code CREATED_AT} it holds is {@link Instant#toString()},
+     * whose width varies.
+     */
+    public static String runSortKey(Instant createdAt, String runId) {
+        return formatTimestamp(createdAt) + SEPARATOR + runId;
+    }
+
     public static String requestIndexPartitionKey(String requestId) {
         return requestId;
     }

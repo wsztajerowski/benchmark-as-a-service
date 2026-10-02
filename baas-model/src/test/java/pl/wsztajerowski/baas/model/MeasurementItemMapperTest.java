@@ -246,4 +246,16 @@ class MeasurementItemMapperTest {
         assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(withNanosecondPrecisionClock)))
             .isEqualTo(withNanosecondPrecisionClock);
     }
+
+    /** A reader that forgot to exclude run items must fail, not render an empty row. */
+    @Test
+    void aRunItemIsRefusedAsAMeasurement() {
+        var run = new HashMap<>(RunItemMapper.key(Instant.parse("2026-10-03T00:00:00Z"), "r-1"));
+        run.putAll(RunItemMapper.identityAttributes(RunItemMapperTest.run()));
+
+        assertThatThrownBy(() -> MeasurementItemMapper.fromItem(run))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("pk=RUN")
+            .hasMessageContaining("must exclude run items");
+    }
 }

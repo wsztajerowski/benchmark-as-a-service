@@ -36,7 +36,7 @@
 
 ## 3. Model: run-item keys and mapper (`baas-model`)
 
-- [ ] 3.1 Add the run-item key constructors to `ResultKeys`:
+- [x] 3.1 Add the run-item key constructors to `ResultKeys`:
   - the `RUN` partition;
   - the run sort key, `<createdAt>#<runId>` with the fixed-width timestamp;
   - `gsi1sk = RUN`.
@@ -44,11 +44,11 @@
   Verify with unit tests: the sort key is fixed width and orders chronologically, a `createdAt`
   whose `Instant.toString()` has six fractional digits or no fractional digits still yields three,
   and `RUN` cannot equal any measurement's index sort key.
-- [ ] 3.2 Add a run-item mapper (to item and from item) carrying the run's identity fields, status,
+- [x] 3.2 Add a run-item mapper (to item and from item) carrying the run's identity fields, status,
   instance id, error code and tag map (project, source, `type`, caller tags). Add the status
   vocabulary and its terminal set (`failed:` matched by prefix). Verify with round-trip unit tests
   and a test that each terminal status is classified as terminal.
-- [ ] 3.3 Make `MeasurementItemMapper.fromItem` reject an item whose `pk` is not `RESULT#…`. Verify
+- [x] 3.3 Make `MeasurementItemMapper.fromItem` reject an item whose `pk` is not `RESULT#…`. Verify
   with a unit test that a run item makes it throw, naming the item.
 
 ## 4. Readers exclude run items (`baas-cli`)
