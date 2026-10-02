@@ -48,8 +48,8 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 5 | P6 | `RunCommand` comment asserts the exact mechanism CLAUDE.md records as a past bug | Med | **Fixed** |
 | 6 | P4 | `\|\| echo absent` never fires — a missing tool records as empty string | Low | **Fixed** |
 | 7 | P7 | "comparison group" wording assumes grouping `baas results` does not do | Low | **Fixed** (warning removed) |
-| 8 | P8 | `tasks.md` §11.3 contradicts the delta spec it verifies | Low | Open |
-| 9 | P9 | Change widened open finding S5 without updating it | Low | Open |
+| 8 | P8 | `tasks.md` §11.3 contradicts the delta spec it verifies | Low | **Closed** (archive left as ticked) |
+| 9 | P9 | Change widened open finding S5 without updating it | Low | **Fixed** (by S5) |
 | 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | Open |
 | 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | Open |
 | 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | Open |
@@ -314,7 +314,7 @@ comparing two runs' machines is `baas env diff`'s job. Removed from code, README
 sequence diagram and the `runner-image-provisioning` spec, whose scenarios now say no warning is
 emitted.
 
-## 8. P8 — `tasks.md` §11.3 contradicts the delta spec it verifies · Low
+## 8. P8 — `tasks.md` §11.3 contradicts the delta spec it verifies · CLOSED
 
 Delta spec, *The image version is bumped by hand and validated before building*:
 
@@ -335,7 +335,13 @@ it. Both are marked `[x]`, so whichever was actually run, one of the two records
 **Fix.** Reword 11.3 to "confirm an edited tool version without an `imageVersion` bump fails the
 preflight", and add the unchanged-content case if it was not exercised.
 
-## 9. P9 — the change widened open finding S5 without updating it · Low
+**Closed (2026-10-02) without editing the archive.** The spec is right and the code follows it;
+11.3's wording describes the edited-content case. The archived `tasks.md` stays as it was ticked —
+it is a record of what was checked then, and rewording a ticked item after the fact would blur
+that. Both cases are pinned today: `preflightRejectsAStaleVersionBeforeAnyBuildStarts` (edited,
+no bump) and `preflightAcceptsAnUnchangedVersion` (unchanged rebuild), in `ImageBuilderServiceTest`.
+
+## 9. P9 — the change widened open finding S5 without updating it · FIXED
 
 S5 (*user-data built by concatenation, one value of eleven escaped*) is the next item in the
 walkthrough. `UserDataScriptBuilder.build` now interpolates **thirteen** values into single-quoted
@@ -345,6 +351,9 @@ that can be edited in the console, not a compile-time constant.
 
 Not a new finding; S5's entry and count should be updated so the walkthrough sees the current
 surface when it reaches it.
+
+**Fixed (2026-10-02) by S5's fix.** S5 was updated with the wider surface, and its fix routes every
+export — `IMAGE_VERSION` and `AMI_ID` included — through one quoting helper (`d4a85c3`).
 
 ## 10. P10 — a corrupt manifest stack-traces where a missing one is handled · Low
 
