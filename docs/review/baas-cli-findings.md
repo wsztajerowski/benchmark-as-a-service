@@ -37,7 +37,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | **Fixed** |
 | 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | **Fixed** |
 | 9 | A7 | Runner-JAR discovery hardcodes the upstream repo | Med | **Fixed** |
-| 10 | A6 | Config: silent unknown keys, no schema version, stale default | Low | Open |
+| 10 | A6 | Config: silent unknown keys, no schema version, stale default | Low | **Fixed** |
 | 11 | A9 | `requestId` collides at second granularity | Low | **Fixed** |
 | 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | **Fixed** |
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: A6.**
+**Next up: S11.**
 
 ---
 
@@ -279,7 +279,7 @@ version and asset, and uploads nothing. Both halves of the finding are closed �
 download moved to the laptop, it also became verifiable, which closed the separately-accepted
 checksum risk.
 
-## 10. A6 — config handling · Low
+## 10. A6 — config handling · FIXED
 
 `ConfigService` disables `FAIL_ON_UNKNOWN_PROPERTIES`, so a typo'd key in a hand-edited
 `config.yaml` is silently dropped. No schema version for migrations. `CONFIG_FILE` is a static
@@ -301,6 +301,14 @@ were read by nothing but `config show` are deleted as well: `aws.vpcId`, and
 `benchmark.asyncProfilerVersion`, which reported `4.0` regardless of what the AMI actually held
 because the manifest's value comes from `asprof --version` on the instance. Status stays **Open**:
 silent unknown keys and the absent schema version remain.
+
+**Fixed (2026-10-02).** `ConfigService` now logs `Ignoring unknown key '<dotted.path>' in <file>`
+for each unknown key and keeps loading. Failing instead would break every upgrade, since files
+from older releases carry retired keys, and any `save()` drops them anyway. That makes both the typo
+(`operatorProfil:` silently falling back to ambient credentials) and the rename
+(`ec2.wallClockHardKillSeconds` → `ec2.watchdogMarginSeconds`) visible. The testability complaint had
+already gone with `ConfigService.at(path)`. **A schema version is declined:** no migration has
+needed one, and should one ever be needed, an absent version can be read as version 1.
 
 ## 11. A9 — `requestId` collides at second granularity · Low
 
