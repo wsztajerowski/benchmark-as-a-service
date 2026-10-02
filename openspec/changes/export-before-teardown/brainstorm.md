@@ -225,3 +225,11 @@ disagrees with this block, this block wins.
   `teardown-retires-runner-image`, which ships image retirement on its own first.
 - CLAUDE.md's "benchmark history outlives any single stack" and the *Results table* / teardown
   invariants will need rewriting when this lands; the specs' "table deletable by no flag at all" too.
+
+## Scenario to cover — review U12 (added 2026-10-02)
+
+A failed first `baas admin setup` rolls back, and `DeletionPolicy: Retain` keeps the results table
+through the rollback. Teardown then leaves it, and the next setup's pre-check refuses on it; today
+only `aws dynamodb delete-table` clears it. Decided: no separate fix — this change closes it. Its
+spec should carry the scenario *rolled-back first create → teardown → setup succeeds*, whichever
+teardown shape the proposal settles on.

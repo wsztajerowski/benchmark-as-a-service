@@ -53,7 +53,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 23 | U7 | `config set --prefix` adopts an installation without the check `config sync` exists for | Low | **Fixed** |
 | 24 | U9 | `run` uploads the benchmark JAR before checking the stack exists | Low | **Fixed** |
 | 25 | U10 | `admin image` demands deployer credentials for a read the operator role can do | Low | Won't fix (decided 2026-10-02) |
-| 26 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | Open |
+| 26 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | → `export-before-teardown` (decided 2026-10-02) |
 | 27 | F1 | `config show` wrote its payload to stderr | Low | **Fixed** |
 | 28 | F2 | `--format` unvalidated on `run` and `results` | Low | **Fixed** |
 | 29 | F3 | Teardown gate ignored `pending` runners | Low | **Fixed** |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: U12.**
+**Next up: none in this file without a decision** — U3 and U20 are decided and await their own changes.
 
 ---
 
