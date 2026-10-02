@@ -55,7 +55,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | **Fixed** |
 | 13 | P13 | async-profiler install path hardcoded a third time | Low | **Fixed** (pinned by a test) |
 | 14 | P14 | `build()` polls without an upper bound | Low | **Fixed** |
-| 15 | P15 | `deployer-policy.json` is partition-hardcoded; the template beside it is not | Low | Open |
+| 15 | P15 | `deployer-policy.json` is partition-hardcoded; the template beside it is not | Low | Won't fix (decided 2026-10-02) |
 
 **P2, P5 and P6 were fixed on 2026-08-13.** P2's fix is pinned by a test confirmed to fail against
 the pre-fix code. **P1 was withdrawn the same day** — its premise did not survive checking against
@@ -455,7 +455,7 @@ an in-progress status still ends, because Image Builder enforces its own timeout
 needed choosing. Pinned by `aStatusThatIsNeitherDoneNorInProgressEndsTheWait` (`DEPRECATED`,
 `DISABLED`, `UNKNOWN_TO_SDK_VERSION`).
 
-## 15. P15 — `deployer-policy.json` is partition-hardcoded; the template beside it is not · Low
+## 15. P15 — `deployer-policy.json` is partition-hardcoded; the template beside it is not · WON'T FIX
 
 `cf-template-core.yaml` uses `!Sub arn:${AWS::Partition}:...` throughout, including the two managed
 policy ARNs this change added. The statements this change added to `deployer-policy.json`
@@ -466,6 +466,11 @@ widened `PassRolesToServices`) use a literal `arn:aws:`, as does the rest of tha
 Consistency only — no partition other than `aws` is a stated target. Noted because commit
 `743a3b7` is titled "partition-agnostic ARNs" and the two files now disagree about what that
 means.
+
+**Won't fix (2026-10-02); the constraint is now stated.** CLAUDE.md records that BaaS targets the
+commercial `aws` partition only. A `${PARTITION}` placeholder would have been cheap, but it would
+suggest support that nothing else has — the CLI fetches the runner JAR from GitHub releases — so
+the inconsistency is resolved by naming the scope rather than by half-widening it.
 
 ---
 

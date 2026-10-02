@@ -482,6 +482,11 @@ CloudFormation's bucket read handler needs is what pushed it over. `Create` is d
 wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would grant `PutObject`,
 which the deployer has no business holding.
 
+**BaaS targets the commercial `aws` partition only.** `deployer-policy.json` writes `arn:aws:`
+literally while `cf-template-core.yaml` uses `${AWS::Partition}`; the template's form is free and
+harmless, but making the policy partition-aware alone would imply support nothing else has — the
+CLI fetches the runner JAR from GitHub releases, for one. Not a gap to close piecemeal.
+
 **`deployer-policy.json` is a template, never a policy.** It carries `${ACCOUNT_ID}` / `${REGION}`
 / `${PREFIX}` placeholders and is rendered per caller by `DeployerPolicyRenderer` — every resource
 it names is prefix-exact, so two developers cannot reach each other's stack, bucket or SSM
