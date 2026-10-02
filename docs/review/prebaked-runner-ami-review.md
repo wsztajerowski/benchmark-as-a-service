@@ -46,7 +46,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 3 | P3 | Declared image `1.2.0` was never built; `1.0.0`/`1.1.0` are not in git | Med | **Fixed** |
 | 4 | P5 | CLAUDE.md's "`!GetAtt`, never `!Ref`" invariant is false, and following it breaks the stack | Med | **Fixed** |
 | 5 | P6 | `RunCommand` comment asserts the exact mechanism CLAUDE.md records as a past bug | Med | **Fixed** |
-| 6 | P4 | `\|\| echo absent` never fires — a missing tool records as empty string | Low | Open |
+| 6 | P4 | `\|\| echo absent` never fires — a missing tool records as empty string | Low | **Fixed** |
 | 7 | P7 | "comparison group" wording assumes grouping `baas results` does not do | Low | Open |
 | 8 | P8 | `tasks.md` §11.3 contradicts the delta spec it verifies | Low | Open |
 | 9 | P9 | Change widened open finding S5 without updating it | Low | Open |
@@ -252,7 +252,7 @@ options populate it, records that instance-tagging is how results ended up with 
 `imageVersion` once already, and points at
 `UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance`.
 
-## 6. P4 — `|| echo absent` never fires; a missing tool records as an empty string · Low
+## 6. P4 — `|| echo absent` never fires; a missing tool records as an empty string · FIXED
 
 `UserDataScriptBuilder`, lines 67 and 69:
 
@@ -282,6 +282,12 @@ information worth not losing.
 PERF_VERSION=$(perf --version 2>/dev/null | head -1)
 PERF_VERSION=$(json_escape "${PERF_VERSION:-absent}")
 ```
+
+**Fixed (2026-10-02)** as proposed, plus one thing the finding missed: through `2>&1`, a missing
+`asprof` recorded bash's own `No such file or directory` as its version. The async-profiler capture
+now runs only when the binary is executable, then defaults the same way. Pinned by
+`aMissingToolIsRecordedAsAbsent`, which runs the script's own capture lines through bash and
+fails against the old ones with exactly `["", "bash: …/asprof: No such file or directory"]`.
 
 ## 7. P7 — "comparison group" assumes grouping `baas results` does not do · Low
 

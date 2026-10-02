@@ -717,6 +717,30 @@ class UserDataScriptBuilderTest {
     }
 
     /**
+     * Review P4: `cmd | head -1 || echo absent` never echoes, since head succeeds on empty input, so
+     * a missing tool recorded "" — and asprof, through 2>&1, bash's own error as its version. Runs
+     * the script's own capture lines with perf producing nothing and no async-profiler installed.
+     */
+    @Test
+    void aMissingToolIsRecordedAsAbsent() throws Exception {
+        String script = script();
+        String captures = script.lines()
+            .filter(l -> l.startsWith("json_escape()") || l.startsWith("PERF_VERSION=")
+                || l.contains("ASYNC_PROFILER_VERSION="))
+            .collect(Collectors.joining("\n", "", "\n"));
+        assertThat(captures).contains("/app/async-profiler/bin/asprof");
+        assertThat(Path.of("/app/async-profiler/bin/asprof")).doesNotExist();
+
+        Process process = new ProcessBuilder("bash", "-c",
+            "perf() { :; }\n" + captures + "printf '%s\\n' \"$PERF_VERSION\" \"$ASYNC_PROFILER_VERSION\"")
+            .redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(output.lines()).containsExactly("absent", "absent");
+    }
+
+    /**
      * private-runner-network would otherwise have to tunnel this egress through a NAT or a VPC
      * endpoint, and releases/latest was an unpinned drift axis besides.
      */
