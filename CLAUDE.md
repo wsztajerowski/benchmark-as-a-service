@@ -134,6 +134,14 @@ The watchdog is the only one that survives a deadlocked JVM.
   is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to reconstruct.
 - **The pointer is repointed *before* the replaced AMI is deregistered.** Retiring first aims the
   pointer at a deleted AMI for the whole ~15-minute build, failing every run launched in that window.
+- **Teardown retires the image, always, and only after the stack is gone.** The pointer, the AMI,
+  its snapshot and the recipe's Image Builder records live outside the stack, so deleting the stack
+  left them, and a later setup could launch that inherited AMI without any `build-image`. Retiring
+  after the stack means a failed stack deletion still leaves an installation with an image to run
+  on. The pointer is deleted even when its AMI cannot be: the pointer is what a later setup would
+  inherit, while a leftover AMI is only a cost leak. No step fails the teardown; leftovers are named
+  with the command that removes each. `--stack-name` retires *that* installation's image.
+  `build-image` itself still leaves one Image Builder record per build, which cost nothing.
 - **`infra/runner-image.yaml` is the only place a tool version is declared**, ships in the JAR as
   `/templates/runner-image.yaml`, and any edit needs `imageVersion` bumped — Image Builder
   components are immutable at a version.
@@ -602,7 +610,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + margin` (300 s by default). Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
-| Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. |
+| Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. Teardown retires the image, so a torn-down installation costs nothing. |
 | ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |
 | MongoDB | Retained in `benchmark-runner`, connect-only, and **no live user is known**. The standalone justification named java-wonderland, which sits on a branch frozen 2024-06-22 that cannot run today's runner at all: `--s3-result-prefix` is gone, no `--project` makes `getProject()` throw, and naming no store fails the exactly-one-of check. So this is no longer a settled trade — retirement is an open decision, deserving its own change and spec delta rather than a rider on someone else's. `baas` itself never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
 | `baas run` project layout | Assumes a pre-built JAR handed in by `--benchmark-jar`, which is required — `baas run` does not build. Anything that produces a JAR before invoking it is fine; the CLI has no opinion on how. |

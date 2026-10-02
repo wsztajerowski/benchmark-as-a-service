@@ -95,18 +95,20 @@ stateDiagram-v2
     Ready --> Busy: baas run (runner pending/running)
     Busy --> Ready: run-status + self-terminate<br/>Ctrl+C shutdown hook<br/>watchdog at timeout+margin
     Busy --> Busy: admin teardown refused
-    Deployed --> Residue: admin teardown [--delete-bucket]
-    Ready --> Residue: admin teardown [--delete-bucket]
+    Deployed --> Residue: admin teardown [--delete-bucket]<br/>(retires the image, F15)
+    Ready --> Residue: admin teardown [--delete-bucket]<br/>(retires the image, F15)
     Residue --> Residue: admin setup refused (bucket or table exists)
-    Residue --> Empty: [outside] delete table, pointer, AMI, snapshot<br/>(+ bucket without --delete-bucket)
-    Residue --> Inherited: [outside] delete table (+bucket) only, then admin setup
-    Inherited --> Ready: baas run works with NO build-image —<br/>the previous installation's pointer and AMI survived
+    Residue --> Empty: [outside] delete table<br/>(+ bucket without --delete-bucket)
 
     state Residue {
         [*] --> kept
-        kept: results table (always)<br/>bucket (unless --delete-bucket)<br/>/#lt;prefix#gt;/runner/ami-id<br/>AMI + 30 GB snapshot<br/>Image Builder image record
+        kept: results table (always)<br/>bucket (unless --delete-bucket)
     }
 ```
+
+The *Inherited* state — a setup on a reused prefix launching the previous installation's AMI with no
+`build-image` — is no longer reachable: teardown retires the image (F15). *Residue* itself goes
+away once `export-before-teardown` makes teardown delete the bucket and table too.
 
 Orthogonal flag on `Deployed`/`Ready`: **federated** ↔ **not federated**. Turned on by `setup
 --github-org --github-repo --oidc-provider-arn` and off by `setup --revoke-github-oidc`. A plain
@@ -156,8 +158,8 @@ stateDiagram-v2
 
 | ID | Gap | Sev | Evidence |
 |---|---|---|---|
-| U1 | **Teardown does not remove the image.** `/<prefix>/runner/ami-id`, the AMI, its 30 GB snapshot and the Image Builder image record all survive, so "remove BaaS from this account" is not reachable with `baas`. Once the table is cleared by hand, a later `setup` lands in *Inherited*: `run` works with no `build-image`, on an AMI whose component the stack deleted. The standing snapshot cost also never stops. | Med | §8: all four survived. An AMI from the August caller-ARN installation (`3q7i7s65-runner-…`) had survived seven weeks the same way |
-| U2 | **No CLI path from *Residue* to *Empty*.** The table has no delete flag by design. The four image leftovers (U1) and a table retained by a rolled-back create both need `aws` by hand. The deployer can't even *list* what is left: it lacks `cloudformation:ListStacks`, `s3:ListAllMyBuckets`, `ssm:DescribeParameters` and `dynamodb:ListTables`, and it can't delete the old installation's Image Builder component. | Low | §8 |
+| U1 | **Teardown does not remove the image.** `/<prefix>/runner/ami-id`, the AMI, its 30 GB snapshot and the Image Builder image record all survive, so "remove BaaS from this account" is not reachable with `baas`. Once the table is cleared by hand, a later `setup` lands in *Inherited*: `run` works with no `build-image`, on an AMI whose component the stack deleted. The standing snapshot cost also never stops. | Med · **Fixed** | F15 |
+| U2 | **No CLI path from *Residue* to *Empty*.** The table has no delete flag by design. The four image leftovers (U1) and a table retained by a rolled-back create both need `aws` by hand. The deployer can't even *list* what is left: it lacks `cloudformation:ListStacks`, `s3:ListAllMyBuckets`, `ssm:DescribeParameters` and `dynamodb:ListTables`, and it can't delete the old installation's Image Builder component. | Low · Partly fixed | F15 (image); table and bucket → `export-before-teardown` |
 | U3 | **A detached run is invisible.** If the CLI dies without its shutdown hook (SIGKILL, laptop sleep, lost network), no `baas` command lists in-flight runs, reattaches to one, or terminates one. Teardown refuses while one exists, and its advice is "terminate them manually". The watchdog bounds the cost to `timeout + margin` (2 h 05 m by default). | Med | `TeardownCommand`, `RunCommand.poll` |
 | U4 | **`env diff` accepts result paths only.** `results` shows run ids, and `download` accepts either form. A human going from `results` to `env diff` has to hand-compose `runs/<project>/<runId>`, which CLAUDE.md calls the error-prone thing (`RunLayout` is the only builder). Passing a run id fails with a misleading reason: "No environment.json at s3://…/<runId>/environment.json — Runs from before the prebaked-image change carry no environment manifest". | Low · **Fixed** | F11 |
 | U5 | **Region could not come from the environment.** `AWS_REGION` was ignored and `config sync` had no `--region`, so CI was right only because `vars.AWS_REGION` equalled the default. | Med · **Fixed** | F9 |
@@ -165,7 +167,7 @@ stateDiagram-v2
 | U7 | **`config set --prefix` adopts an installation unchecked** and duplicates `config sync --name` minus its existence check, the check CLAUDE.md says is the reason sync requires the name. | Low · **Fixed** | F14 |
 | U8 | **`runner.sourceRepo` can only be set by hand-editing YAML**, though the error message says that is how to set it. | Info | `RunnerJarResolver.assetUrl` |
 | U9 | **`run` uploads before it checks the stack.** `resolveNetworking` runs after the JAR upload, so a torn-down or wrong installation uploads the benchmark JAR, then fails on missing outputs. | Low · **Fixed** | F10 |
-| U10 | **`admin image` needs deployer credentials** for a read that `OperatorRole` can already do (`ssm:GetParameter`, `ec2:DescribeImages`; `run` makes the same call). An operator can't ask which image their next run will use. | Low | `ImageCommand` |
+| U10 | **`admin image` needs deployer credentials** for a read that `OperatorRole` can already do (`ssm:GetParameter`, `ec2:DescribeImages`; `run` makes the same call). An operator can't ask which image their next run will use. | Low · Won't fix | Decided 2026-10-02: `admin image` stays as is — what an operator needs is in each run's `environment.json` |
 | U11 | **The runner shares its security group with the image-build instance.** The 80/443 internet egress exists for `dnf`/GitHub during the bake. "The instance contacts no host outside the account" is therefore enforced by the user-data script, not the network, and the rule descriptions still say "HTTPS to GitHub" and "package downloads (yum)". | Med · **Fixed** | `RunnerImageInfrastructure.SecurityGroupIds`, `RunnerSecurityGroup` |
 | U12 | **A failed first create traps the next setup.** `ROLLBACK_COMPLETE` → teardown → setup is refused while the create's retained table exists, and only `aws dynamodb delete-table` clears it. Not exercised; it would need a forced create failure. | Low | static |
 | U13 | **A successful run logs "Terminating instance …"** and calls `TerminateInstances` on an already-terminated instance, because the shutdown hook is never deregistered. | Info · **Fixed** | F10 |
@@ -195,6 +197,7 @@ stateDiagram-v2
 | F12 | U6: `--aws-profile` on three of five admin commands, saved by one | Only `setup` takes it, and saves it to `aws.profile`; `build-image` and `image` lost their per-call override and read the config like `teardown` and `deployer-policy`. Nothing used the override. A one-off different deployer goes through `--config-path` |
 | F13 | U19 | `deployer-policy --region`, render-only, over the resolved region. Checked live: all seven region spots rendered as `us-west-2`. Also fixed `infra/README.md` and CLAUDE.md, which still showed the removed `--for-arn` |
 | F14 | U7: `config set --prefix` adopted an installation without the existence check | Removed. It dated from the CLI's first commit, when the prefix was a name you chose; the 2026-09-22 naming change made names derived and kept the option without recording why. Nothing used it, and the dev-installation procedure already uses `config sync --name`. Released as a minor (feature) by decision, not as a major |
+| F15 | U1, and U2's image part | Teardown retires the image after deleting the stack: the AMI and its snapshots, the pointer (even when the AMI cannot be removed), and every Image Builder record of the recipe; no step fails the teardown; `--stack-name` retires that installation's. OpenSpec change `teardown-retires-runner-image` |
 
 ## 5. Simplifications
 
@@ -209,7 +212,7 @@ In rough order of value:
    This removes the need for a `--region` on `sync` and keeps CI correct in any region.
 4. ~~One place for the deployer profile~~: done (F12) — `setup` takes and saves it, every other admin command reads the config.
 5. ~~Drop `config set --prefix`~~: done (F14). `config sync --name` covers it, and so does `--config-path` for by-hand files.
-6. **`baas image` under operator credentials**, or fold the image line into `config show` (closes U10).
+6. ~~`baas image` under operator credentials~~: won't fix (U10, decided 2026-10-02).
 7. ~~`createOrUpdateStack` → `createStack`~~ (done, F10). Setup sends every existing stack through
    `updateStackParameters`, so the update branch is unreachable.
 8. ~~Resolve networking before uploading~~ (done, F10). It's one `DescribeStacks` call moved up.

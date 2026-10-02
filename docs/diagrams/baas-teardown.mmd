@@ -4,8 +4,10 @@ sequenceDiagram
     participant EC2 as AWS EC2
     participant S3 as AWS S3
     participant CF as AWS CloudFormation
+    participant SSM as AWS SSM
+    participant IB as EC2 Image Builder
 
-    Note over User,CF: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack only. The CI stack and the results table are untouched,<br/>and so is everything build-image created outside the stack: the AMI pointer<br/>/<prefix>/runner/ami-id, the AMI and its 30 GB snapshot.
+    Note over User,IB: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack, then retires the runner image build-image created outside it.<br/>The CI stack and the results table are untouched.
     User->>TD: baas admin teardown [--stack-name] [--yes] [--delete-bucket]
     Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else the configured prefix (the stack IS the prefix)
 
@@ -47,7 +49,22 @@ sequenceDiagram
     end
     CF-->>TD: status = DELETE_COMPLETE
 
-    Note over TD: NOT touched: the SSM AMI pointer, the AMI and its snapshot (built by<br/>Image Builder outside the stack), and the Image Builder image record.<br/>Their survival was observed in the 2026-10-01 lifecycle test -- a later setup + run<br/>would then resolve the old pointer and launch the old AMI with no build-image.
+    rect rgb(235, 245, 255)
+        Note over TD,IB: Retire the runner image -- always, AFTER the stack (a failed stack deletion keeps an image to run on).<br/>prefix = the installation torn down (--stack-name), not this machine's. No step fails the teardown.
+        TD->>SSM: getParameter(/<prefix>/runner/ami-id)
+        opt pointer present and its AMI still exists
+            TD->>EC2: describeImages -- collect snapshot ids
+            TD->>EC2: deregisterImage(ami), deleteSnapshot(each)
+        end
+        TD->>SSM: deleteParameter(/<prefix>/runner/ami-id) -- even if the AMI could not be retired
+        TD->>IB: listImages(owner Self, name <prefix>-recipe-runner) + listImageBuildVersions
+        TD->>IB: deleteImage(each build version)
+        alt everything removed
+            TD-->>User: "Runner image retired ... needs baas admin build-image before baas run"
+        else something failed
+            TD-->>User: warn: each leftover, with the aws command that removes it (exit stays 0)
+        end
+    end
 
     opt bucket was retained
         TD-->>User: warn: a later `baas admin setup` for this installation will FAIL while<br/>the bucket exists -- its name derives from the ACCOUNT, so this hits whoever<br/>runs it next, not just you. Delete it by hand or re-run with --delete-bucket.
