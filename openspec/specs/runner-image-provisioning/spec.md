@@ -130,21 +130,22 @@ benchmark process starts. `environment.json` SHALL carry a `schemaVersion` field
 - **THEN** it carries a `schemaVersion` field identifying its structure
 
 ### Requirement: Results carry coarse environment tags
-`baas run` SHALL record `imageVersion` and `instanceType` as result tags so that environment differences
-are detectable from the results store alone, without fetching any S3 object. `BenchmarkMetadata.tags` is a
-free-form `Map<String,String>`, so this SHALL require no schema change.
+`baas run` SHALL record `imageVersion` and `instanceType` as result tags so that results can be shown,
+filtered and grouped by environment from the results store alone, without fetching any S3 object. The
+tags map is free-form, so this SHALL require no schema change. `baas results` SHALL NOT warn about rows
+whose environments differ: comparing two runs' environments is `baas env diff`'s job.
 
 #### Scenario: Tags appear on stored results
 - **WHEN** a benchmark completes on the current AMI
 - **THEN** its stored result carries `imageVersion` and `instanceType` tags
 
-#### Scenario: Mismatched environments are visible without S3 access
-- **WHEN** `baas results` returns a comparison group whose rows carry differing `imageVersion` values
-- **THEN** the difference is surfaced in the output
+#### Scenario: Results can be sliced by environment without S3 access
+- **WHEN** `baas results --tag imageVersion=1.2.0` is invoked
+- **THEN** only results measured on image 1.2.0 are returned, and no S3 object is read
 
-#### Scenario: Differing environments are reported, not filtered
-- **WHEN** a comparison group contains rows from two different image versions
-- **THEN** both rows are still present in the output
+#### Scenario: Differing environments raise no warning
+- **WHEN** `baas results` returns rows carrying differing `imageVersion` values
+- **THEN** every row is printed and no environment warning is emitted
 
 ### Requirement: Environments can be compared field by field
 `baas env diff <runA> <runB>` SHALL fetch both runs' `environment.json` from the results bucket and

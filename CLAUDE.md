@@ -92,7 +92,7 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   through `json_escape`.
 - **`imageVersion`/`instanceType` reach the database via the runner's `--tag`, not EC2 tags.**
   `ResultsQueryService` reads the item's top-level `tags` map; tagging the *instance* leaves every stored
-  result with a null `imageVersion` and the comparison silently never fires. The tag values are the
+  result with a null `imageVersion`, and `--tag`/`--group-by` on it silently match nothing. The tag values are the
   ones observed on the box, so a result's tags cannot disagree with its own `environment.json`.
 - **The benchmark runs from `/app`, never `/`.** The runner (`RunLogs`, every benchmark type) scans
   below its working directory for `.log` files to upload, and cloud-init starts user-data in `/`.
@@ -354,7 +354,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   `RunCommand`'s JSON summary, `DeployerPolicyCommand`. A timestamp prefix on any of it breaks
   `--format json | jq` and `--format csv > file`, which is why none of it is logged. The test for
   which side a line belongs on is whether a redirect of stdout should keep it: an empty answer
-  ("No results found.", "No differences.") is payload; the environment warning, both
+  ("No results found.", "No differences.") is payload; the unknown-`--tag` warning, both
   `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged.
 - **Terminal effects happen only when `Console` says interactive: `System.console()` +
   `isTerminal()` + `TERM != dumb`, decided once.** Every misdetection is a *no*, so the worst case

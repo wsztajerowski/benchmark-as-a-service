@@ -47,7 +47,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 4 | P5 | CLAUDE.md's "`!GetAtt`, never `!Ref`" invariant is false, and following it breaks the stack | Med | **Fixed** |
 | 5 | P6 | `RunCommand` comment asserts the exact mechanism CLAUDE.md records as a past bug | Med | **Fixed** |
 | 6 | P4 | `\|\| echo absent` never fires — a missing tool records as empty string | Low | **Fixed** |
-| 7 | P7 | "comparison group" wording assumes grouping `baas results` does not do | Low | Open |
+| 7 | P7 | "comparison group" wording assumes grouping `baas results` does not do | Low | **Fixed** (warning removed) |
 | 8 | P8 | `tasks.md` §11.3 contradicts the delta spec it verifies | Low | Open |
 | 9 | P9 | Change widened open finding S5 without updating it | Low | Open |
 | 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | Open |
@@ -289,7 +289,7 @@ now runs only when the binary is executable, then defaults the same way. Pinned 
 `aMissingToolIsRecordedAsAbsent`, which runs the script's own capture lines through bash and
 fails against the old ones with exactly `["", "bash: …/asprof: No such file or directory"]`.
 
-## 7. P7 — "comparison group" assumes grouping `baas results` does not do · Low
+## 7. P7 — "comparison group" assumes grouping `baas results` does not do · FIXED
 
 The delta spec, design.md and the commit message all describe `baas results` flagging *a
 comparison group* whose rows disagree. `ResultsQueryService.environmentWarning` computes distinct
@@ -304,6 +304,15 @@ that always fires stops being read.
 
 Not re-raising D1. Flagging that this change's artifacts read as though it were already fixed.
 When D1 lands, `environmentWarning` should move inside the group.
+
+**Fixed (2026-10-02) by removing the warning.** D1 had landed, but the warning still compared every
+row displayed: unrelated benchmarks straddling an image bump triggered it, `--group-by
+instanceType` triggered it by construction, and its hint still named result paths. Scoping it to
+one benchmark variant was offered and declined: the decision was that it earns no place at all.
+The environment tags stay — `-v` shows them, and `--tag` / `--group-by` slice by them — and
+comparing two runs' machines is `baas env diff`'s job. Removed from code, README, the results
+sequence diagram and the `runner-image-provisioning` spec, whose scenarios now say no warning is
+emitted.
 
 ## 8. P8 — `tasks.md` §11.3 contradicts the delta spec it verifies · Low
 

@@ -161,7 +161,6 @@ public class ResultsCommand implements Callable<Integer> {
                 case "csv" -> printCsv(rows);
                 default -> printTable(console(), rows);
             }
-            ResultsQueryService.environmentWarning(rows).ifPresent(logger::warn);
         }
         return 0;
     }
@@ -236,7 +235,6 @@ public class ResultsCommand implements Callable<Integer> {
             while (true) {
                 var notes = new ArrayList<String>();
                 List<ResultRow> rows = fetch(results, notes::add, notes::add);
-                ResultsQueryService.environmentWarning(rows).ifPresent(notes::add);
                 printFrame(rows, notes, LocalTime.now().format(time));
                 Thread.sleep(WATCH_INTERVAL.toMillis());
             }

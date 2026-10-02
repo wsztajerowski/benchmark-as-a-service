@@ -92,9 +92,8 @@ public record ResultRow(
     }
 
     /**
-     * Tier 1 of the environment comparison, read from the free-form tag map, so null for every run
-     * recorded before the prebaked-image change. Enough to see that two rows sat on different
-     * environments without fetching anything from S3.
+     * Read from the free-form tag map, so null for every run recorded before the prebaked-image
+     * change. Flat in the JSON output, where CI and other consumers read them.
      */
     public String imageVersion() {
         return tags.get(TagKeys.IMAGE_VERSION);

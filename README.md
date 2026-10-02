@@ -245,18 +245,11 @@ when you need them.
 
 Every run records the environment it measured on, in two tiers.
 
-**Tier 1 — the results store.** Each result carries `imageVersion` and `instanceType` tags, so
-`baas results` can tell you that rows in front of you did *not* measure the same thing, without
-fetching anything:
-
-```
-These rows span runner image versions: 1.0.0, 1.1.0
-They did not all measure the same environment. Compare two of them with:
-  baas env diff <resultPathA> <resultPathB>
-```
-
-Rows are flagged, never filtered — the difference is the point, and whether it matters is your
-call. Runs recorded before this existed carry no tags and are not treated as a difference.
+**Tier 1 — the results store.** Each result carries the environment it observed as tags —
+`imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` — so you can see and slice by it
+without fetching anything: `-v` prints them under each row, `--tag imageVersion=1.2.0` keeps one
+image's results, and `--group-by instanceType` keeps the best per instance type. Runs recorded
+before these tags existed carry none.
 
 **Tier 2 — the manifest.** `<result-path>/environment.json` holds ~20 fields describing what
 actually ran: image version and AMI, instance type, CPU model and topology, memory, OS and kernel,

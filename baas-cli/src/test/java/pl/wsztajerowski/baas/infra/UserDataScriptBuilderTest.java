@@ -355,7 +355,7 @@ class UserDataScriptBuilderTest {
      * EC2 instance tags are not result tags. {@code ResultsQueryService} reads
      * {@code benchmarkMetadata.tags}, which is populated only by the runner's own {@code --tag}
      * option — tagging the instance instead leaves every stored result with a null
-     * {@code imageVersion}, and the tier-1 comparison silently never fires.
+     * {@code imageVersion}, and filtering or grouping by it silently matches nothing.
      */
     @Test
     void passesEnvironmentTagsToTheRunnerNotJustToTheInstance() {
