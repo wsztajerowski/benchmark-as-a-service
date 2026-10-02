@@ -315,4 +315,93 @@ class ImageBuilderServiceTest {
     static ImageState state(ImageStatus status, String reason) {
         return ImageState.builder().status(status).reason(reason).build();
     }
+
+    // ─── retireInstallation: what teardown leaves behind ─────────────────────────
+
+    private static final String RECIPE = "a1b2c3d4-recipe-runner";
+    private static final String RECORDS = "arn:aws:imagebuilder:eu-central-1:123456789012:image/" + RECIPE;
+
+    private void recordBuilds(String version, int count) {
+        var builds = new java.util.ArrayList<String>();
+        for (int i = 1; i <= count; i++) {
+            builds.add(RECORDS + "/" + version + "/" + i);
+        }
+        imageBuilder.imageRecords.put(RECORDS + "/" + version, builds);
+    }
+
+    private static long remaining(java.util.Map<String, List<String>> records) {
+        return records.values().stream().mapToLong(List::size).sum();
+    }
+
+    @Test
+    void retiringAnInstallationRemovesThePointerTheAmiItsSnapshotsAndEveryRecord() {
+        ssm.parameters.put(POINTER, NEW_AMI);
+        ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-current"));
+        recordBuilds("1.2.0", 3);
+        recordBuilds("1.1.0", 1);
+        String otherInstallation = "arn:aws:imagebuilder:eu-central-1:123456789012:image/a1b2c3d4-dev-recipe-runner/1.2.0";
+        imageBuilder.imageRecords.put(otherInstallation, new java.util.ArrayList<>(List.of(otherInstallation + "/1")));
+
+        List<String> leftovers = service().retireInstallation(POINTER, RECIPE);
+
+        assertThat(leftovers).isEmpty();
+        assertThat(ssm.parameters).doesNotContainKey(POINTER);
+        assertThat(ec2.images).doesNotContainKey(NEW_AMI);
+        assertThat(calls).contains("deregisterImage:" + NEW_AMI, "deleteSnapshot:snap-current");
+        assertThat(imageBuilder.imageRecords.get(otherInstallation))
+            .as("another installation's records are not this teardown's to delete")
+            .containsExactly(otherInstallation + "/1");
+        assertThat(imageBuilder.deletedImages).hasSize(4);
+        assertThat(imageBuilder.imageNameFilters).containsOnly(RECIPE);
+    }
+
+    @Test
+    void noPointerIsNotAnErrorAndTheRecordsStillGo() {
+        recordBuilds("1.2.0", 1);
+
+        assertThat(service().retireInstallation(POINTER, RECIPE)).isEmpty();
+        assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage:"));
+        assertThat(remaining(imageBuilder.imageRecords)).isZero();
+    }
+
+    /** What build-image's own retirement can leave: a pointer surviving its AMI (fix F5). */
+    @Test
+    void aPointerNamingAnAmiThatIsAlreadyGoneIsStillDeleted() {
+        ssm.parameters.put(POINTER, NEW_AMI);
+
+        assertThat(service().retireInstallation(POINTER, RECIPE)).isEmpty();
+        assertThat(ssm.parameters).doesNotContainKey(POINTER);
+        assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage:"));
+    }
+
+    /**
+     * The pointer is what would let a later setup launch an inherited image, so it goes even when
+     * its AMI cannot — and the AMI that stays is named, with the command that removes it.
+     */
+    @Test
+    void aFailedDeregisterIsALeftoverAndThePointerAndRecordsStillGo() {
+        ssm.parameters.put(POINTER, NEW_AMI);
+        ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-current"));
+        ec2.deregisterErrorCode = "UnauthorizedOperation";
+        recordBuilds("1.2.0", 2);
+
+        List<String> leftovers = service().retireInstallation(POINTER, RECIPE);
+
+        assertThat(leftovers).singleElement().asString()
+            .contains(NEW_AMI, "aws ec2 deregister-image --image-id " + NEW_AMI);
+        assertThat(ssm.parameters).doesNotContainKey(POINTER);
+        assertThat(remaining(imageBuilder.imageRecords)).isZero();
+    }
+
+    @Test
+    void recordsSpreadOverSeveralPagesAreAllDeleted() {
+        imageBuilder.pageSize = 2;
+        recordBuilds("1.2.0", 5);
+        recordBuilds("1.1.0", 3);
+        recordBuilds("1.0.0", 1);
+
+        assertThat(service().retireInstallation(POINTER, RECIPE)).isEmpty();
+        assertThat(imageBuilder.deletedImages).hasSize(9);
+        assertThat(remaining(imageBuilder.imageRecords)).isZero();
+    }
 }
