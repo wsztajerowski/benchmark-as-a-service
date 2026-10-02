@@ -176,7 +176,8 @@ jobs:
           find ./artifacts -type f | sort
           test -s ./artifacts/environment.json
           test -s ./artifacts/jmh-result.json
-          test -s ./artifacts/run-status
+          # Run status lives on the run item now, not in the prefix (run-status-in-dynamodb).
+          test ! -e ./artifacts/run-status
           test -s "./artifacts/${BENCHMARK_TYPE}-output.txt"
           # Written by async-profiler on the baked image — the tunables, the pinned profiler and
           # perf versions and the artifact upload path, all exercised end to end.
@@ -184,6 +185,14 @@ jobs:
             echo "no flamegraph produced — the profiler did not run on the baked image"; exit 1; }
           find ./artifacts -name '*.jfr' | grep -q . || {
             echo "no JFR recording produced"; exit 1; }
+
+      # The outcome as recorded on the run item, which is what `baas run` polled and what
+      # `baas runs list` shows any operator — including one whose CLI never launched this run.
+      - name: The run item recorded the outcome
+        run: |
+          $BAAS runs list --project "$PROJECT" --limit 50 --format json > runs.json
+          test "$(jq -r --arg id "${{ steps.run.outputs.run_id }}" \
+            '.[] | select(.runId == $id) | .status' runs.json)" = "completed"
 
       - name: Publish the run's artifacts
         if: always()
@@ -193,11 +202,10 @@ jobs:
           path: ./artifacts
           if-no-files-found: ignore
 
-      # Downloaded by RESULT PATH, not by run id, and that distinction is the whole point of the
-      # summary carrying both. `baas download <runId>` resolves the id through requestId-index —
-      # but a run that failed stored no measurement, so it has no index entry, and the lookup
-      # reports "No run found" exactly when the boot log is most needed. Verified against a real
-      # forced failure: the id form fails, the path form retrieves all seven artifacts.
+      # Downloaded by result path. Since run-status-in-dynamodb a failed run is also downloadable by
+      # its id, which resolves through the run item even when no measurement was stored; the path
+      # form stays because it needs no index lookup at all, and a failure step should depend on as
+      # little as possible.
       - name: Surface the runner boot log on failure
         if: failure() && steps.run.outputs.result_path != ''
         run: |
