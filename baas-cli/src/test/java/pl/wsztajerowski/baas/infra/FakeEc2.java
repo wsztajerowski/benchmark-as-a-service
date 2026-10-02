@@ -29,6 +29,8 @@ class FakeEc2 implements Ec2Client {
     final List<String> calls;
     /** When set, describeImages fails with this error code instead of answering. */
     String describeImagesErrorCode;
+    /** When set, deregisterImage fails with this error code. */
+    String deregisterErrorCode;
 
     FakeEc2(List<String> calls) {
         this.calls = calls;
@@ -61,6 +63,12 @@ class FakeEc2 implements Ec2Client {
     @Override
     public DeregisterImageResponse deregisterImage(DeregisterImageRequest request) {
         calls.add("deregisterImage:" + request.imageId());
+        if (deregisterErrorCode != null) {
+            throw (Ec2Exception) Ec2Exception.builder()
+                .message(deregisterErrorCode)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode(deregisterErrorCode).build())
+                .build();
+        }
         images.remove(request.imageId());
         return DeregisterImageResponse.builder().build();
     }

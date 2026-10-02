@@ -8,9 +8,12 @@ import software.amazon.awssdk.services.ec2.model.Tag;
 import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
 import software.amazon.awssdk.services.imagebuilder.model.Filter;
 import software.amazon.awssdk.services.imagebuilder.model.ImageStatus;
+import software.amazon.awssdk.services.imagebuilder.model.Ownership;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.ssm.SsmClient;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -232,6 +235,89 @@ public class ImageBuilderService {
                     snapshotId, amiId, e.getMessage());
             }
         }
+    }
+
+    /**
+     * Removes everything {@code build-image} created outside the stack, for an installation being
+     * torn down: the AMI the pointer names (with its snapshots), the pointer itself, and every
+     * Image Builder record of the installation's recipe.
+     *
+     * <p>Every step catches its own failure and carries on, because by the time this runs the
+     * stack is already gone and the teardown has succeeded. A leftover is a cost leak, not a
+     * correctness problem — except the pointer, which is what would let a later setup launch an
+     * inherited image. So the pointer is deleted even when its AMI could not be retired.
+     *
+     * @return one line per leftover, naming it and the command that removes it; empty when
+     *         nothing is left
+     */
+    public List<String> retireInstallation(String parameterName, String recipeName) {
+        List<String> leftovers = new ArrayList<>();
+
+        Optional<String> pointed = Optional.empty();
+        try {
+            pointed = readPointer(parameterName);
+        } catch (SdkException e) {
+            leftovers.add("Could not read " + parameterName + " (" + e.getMessage() + "); any AMI it "
+                + "names is left: aws ssm get-parameter --name " + parameterName);
+        }
+        pointed.ifPresent(amiId -> {
+            try {
+                if (describeImage(amiId).isPresent()) {
+                    retire(amiId);
+                } else {
+                    logger.debug("Pointer {} names {}, which is already gone", parameterName, amiId);
+                }
+            } catch (SdkException e) {
+                leftovers.add("Runner AMI " + amiId + " was not deregistered (" + e.getMessage() + "): "
+                    + "aws ec2 deregister-image --image-id " + amiId
+                    + ", then delete its snapshots");
+            }
+        });
+
+        try {
+            new SsmService(ssm).deleteParameter(parameterName);
+        } catch (SdkException e) {
+            leftovers.add("AMI pointer " + parameterName + " was not deleted (" + e.getMessage() + "): "
+                + "aws ssm delete-parameter --name " + parameterName);
+        }
+
+        leftovers.addAll(deleteImageRecords(recipeName));
+        return leftovers;
+    }
+
+    /**
+     * Every build version of every image version named after the recipe. Records cost nothing,
+     * but they are the last trace of the installation and they number the next installation's
+     * builds — after the 2026-10-01 wipe the first rebuild came out as {@code /2}.
+     */
+    private List<String> deleteImageRecords(String recipeName) {
+        List<String> leftovers = new ArrayList<>();
+        List<String> builds = new ArrayList<>();
+        try {
+            imageBuilder.listImagesPaginator(r -> r
+                    .owner(Ownership.SELF)
+                    .filters(Filter.builder().name("name").values(recipeName).build()))
+                .imageVersionList()
+                .forEach(version -> imageBuilder.listImageBuildVersionsPaginator(r -> r
+                        .imageVersionArn(version.arn()))
+                    .imageSummaryList()
+                    .forEach(build -> builds.add(build.arn())));
+        } catch (SdkException e) {
+            leftovers.add("Could not list Image Builder records of " + recipeName + " (" + e.getMessage()
+                + "): aws imagebuilder list-images --owner Self");
+            return leftovers;
+        }
+        for (String build : builds) {
+            try {
+                imageBuilder.deleteImage(r -> r.imageBuildVersionArn(build));
+            } catch (SdkException e) {
+                leftovers.add("Image Builder record " + build + " was not deleted (" + e.getMessage()
+                    + "): aws imagebuilder delete-image --image-build-version-arn " + build);
+            }
+        }
+        logger.debug("Deleted {} of {} Image Builder record(s) of {}",
+            builds.size() - leftovers.size(), builds.size(), recipeName);
+        return leftovers;
     }
 
     /** The published image, or empty when no build has completed or the AMI is gone. */

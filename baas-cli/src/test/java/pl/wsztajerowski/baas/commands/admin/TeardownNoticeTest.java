@@ -21,4 +21,32 @@ class TeardownNoticeTest {
             .contains("--config-path")
             .contains("aws dynamodb delete-table --table-name baas-123456789012-results");
     }
+
+    /** --stack-name names the installation whose image is retired, not this machine's. */
+    @Test
+    void theImageRetiredIsTheTornDownInstallations() {
+        var config = new pl.wsztajerowski.baas.config.BaasConfig();
+        config.setPrefix("baas-123456789012");
+
+        var named = new TeardownCommand();
+        new picocli.CommandLine(named).parseArgs("--stack-name", "baas-123456789012-dev");
+        String dev = named.resolveInstallation(config);
+        assertThat(TeardownCommand.pointerPath(dev)).isEqualTo("/baas-123456789012-dev/runner/ami-id");
+        assertThat(TeardownCommand.recipeName(dev)).isEqualTo("baas-123456789012-dev-recipe-runner");
+
+        var configured = new TeardownCommand();
+        new picocli.CommandLine(configured).parseArgs();
+        assertThat(TeardownCommand.pointerPath(configured.resolveInstallation(config)))
+            .isEqualTo("/baas-123456789012/runner/ami-id");
+    }
+
+    @Test
+    void theImageNoticesSayWhatWasRetiredOrWhatIsLeft() {
+        assertThat(TeardownCommand.imageRetiredNotice("baas-123456789012"))
+            .contains("/baas-123456789012/runner/ami-id", "baas-123456789012-recipe-runner",
+                "baas admin build-image");
+        assertThat(TeardownCommand.imageLeftoverNotice("baas-123456789012",
+                java.util.List.of("Runner AMI ami-1 was not deregistered (x): aws ec2 deregister-image --image-id ami-1")))
+            .contains("partly retired", "  - Runner AMI ami-1", "aws ec2 deregister-image --image-id ami-1");
+    }
 }

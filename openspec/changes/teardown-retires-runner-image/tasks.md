@@ -2,20 +2,20 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 With the deployer profile, delete the two live image records of
+- [x] 1.1 With the deployer profile, delete the two live image records of
   `baas-381492019823-recipe-runner/1.2.0` whose AMIs `build-image` already deregistered (build
   versions `/1` and `/2`). Verify both succeed and `list-image-build-versions` then shows only `/3`.
   That confirms `imagebuilder:DeleteImage` is permitted on the installation's records, and that a
   record pointing at a deregistered AMI can be deleted.
-- [ ] 1.2 Confirm the deployer is allowed `imagebuilder:ListImages` and `ListImageBuildVersions` by
+- [x] 1.2 Confirm the deployer is allowed `imagebuilder:ListImages` and `ListImageBuildVersions` by
   running both with the deployer profile. Verify neither returns AccessDenied.
 
 ## 2. Retirement in ImageBuilderService
 
-- [ ] 2.1 Extend `FakeImageBuilder` with image versions and build versions (listing, with
+- [x] 2.1 Extend `FakeImageBuilder` with image versions and build versions (listing, with
   pagination, and deletion), and `FakeSsm` with `deleteParameter`. Verify the existing
   `ImageBuilderServiceTest` still passes.
-- [ ] 2.2 Add `retireInstallation(parameterName, recipeName)`, following design.md:
+- [x] 2.2 Add `retireInstallation(parameterName, recipeName)`, following design.md:
   1. read the pointer;
   2. retire its AMI when it still exists;
   3. delete the pointer unconditionally;
@@ -28,16 +28,16 @@
   - a pointer naming a deregistered AMI (the pointer is deleted);
   - a failing deregister (warned, and the pointer and records are still deleted);
   - records spread over more than one page.
-- [ ] 2.3 Verify `ImageBuilderService.retire` and `publish` are unchanged:
+- [x] 2.3 Verify `ImageBuilderService.retire` and `publish` are unchanged:
   `git diff main -- …ImageBuilderService.java` shows only additions, and the build-path tests pass.
 
 ## 3. Teardown wiring
 
-- [ ] 3.1 Call `retireInstallation("/" + resolvedStack + "/runner/ami-id",
+- [x] 3.1 Call `retireInstallation("/" + resolvedStack + "/runner/ami-id",
   resolvedStack + "-recipe-runner")` in `TeardownCommand`, after `deleteStack` returns and never
   before the gates. Verify with a test that the paths derive from `--stack-name` when it is given,
   and from the configured prefix otherwise.
-- [ ] 3.2 Make the closing notices say the image was retired, still naming the retained table (and
+- [x] 3.2 Make the closing notices say the image was retired, still naming the retained table (and
   the bucket when kept). Verify the existing `TeardownNoticeTest`, extended to cover the new text.
 
 ## 4. Documentation and trackers

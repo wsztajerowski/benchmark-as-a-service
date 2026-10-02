@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.infra;
 
 import software.amazon.awssdk.services.ssm.SsmClient;
+import software.amazon.awssdk.services.ssm.model.DeleteParameterRequest;
+import software.amazon.awssdk.services.ssm.model.DeleteParameterResponse;
 import software.amazon.awssdk.services.ssm.model.GetParameterRequest;
 import software.amazon.awssdk.services.ssm.model.GetParameterResponse;
 import software.amazon.awssdk.services.ssm.model.Parameter;
@@ -43,6 +45,15 @@ class FakeSsm implements SsmClient {
         calls.add("putParameter:" + request.value());
         parameters.put(request.name(), request.value());
         return PutParameterResponse.builder().build();
+    }
+
+    @Override
+    public DeleteParameterResponse deleteParameter(DeleteParameterRequest request) {
+        calls.add("deleteParameter:" + request.name());
+        if (parameters.remove(request.name()) == null) {
+            throw ParameterNotFoundException.builder().message(request.name() + " not found").build();
+        }
+        return DeleteParameterResponse.builder().build();
     }
 
     @Override

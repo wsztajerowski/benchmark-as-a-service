@@ -15,6 +15,7 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
+import pl.wsztajerowski.baas.infra.ImageBuilderService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 
 import java.nio.file.Path;
@@ -59,7 +60,7 @@ public class TeardownCommand implements Callable<Integer> {
 
         // An explicit --stack-name still wins: it is how a by-hand installation, or one deployed
         // under the old caller-ARN naming, is reached.
-        String resolvedStack = stackName != null ? stackName : config.requirePrefix();
+        String resolvedStack = resolveInstallation(config);
 
         // Gate 1: no active runs
         try (var ec2 = factory.ec2()) {
@@ -115,6 +116,20 @@ public class TeardownCommand implements Callable<Integer> {
             new CloudFormationService(cf).deleteStack(resolvedStack);
         }
 
+        // Then the image, which build-image created outside the stack. After the stack rather than
+        // before: a failed stack deletion then leaves an installation that still has an image to
+        // run on. Never fatal — the stack is gone, so the teardown has succeeded either way.
+        List<String> imageLeftovers;
+        try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
+            imageLeftovers = new ImageBuilderService(imageBuilder, ec2, ssm)
+                .retireInstallation(pointerPath(resolvedStack), recipeName(resolvedStack));
+        }
+        if (imageLeftovers.isEmpty()) {
+            logger.info("{}", imageRetiredNotice(resolvedStack));
+        } else {
+            logger.warn("{}", imageLeftoverNotice(resolvedStack, imageLeftovers));
+        }
+
         // Both retained resources are named, because a setup that trips over one and then the
         // other is two rounds of the same opaque CloudFormation error.
         if (!bucketDeleted) {
@@ -128,6 +143,38 @@ public class TeardownCommand implements Callable<Integer> {
         }
         logger.warn("{}", retainedTableNotice(resultsTable, configService().configFilePath()));
         return 0;
+    }
+
+    /** {@code --stack-name} when given, otherwise this machine's configured installation. */
+    String resolveInstallation(BaasConfig config) {
+        return stackName != null ? stackName : config.requirePrefix();
+    }
+
+    /**
+     * The installation's AMI pointer. From the installation being torn down, not this machine's
+     * configured prefix: {@code --stack-name} may name another installation, and retiring the
+     * configured one's image instead would break an installation nobody asked to touch.
+     */
+    static String pointerPath(String installation) {
+        return "/" + installation + "/runner/ami-id";
+    }
+
+    /** The installation's Image Builder recipe, whose image records teardown deletes. */
+    static String recipeName(String installation) {
+        return installation + "-recipe-runner";
+    }
+
+    static String imageRetiredNotice(String installation) {
+        return """
+            Runner image retired: the AMI %1$s named, its snapshots, the pointer itself and the
+              Image Builder records of %2$s. A later setup of this installation needs
+              `baas admin build-image` before `baas run` works.""".formatted(pointerPath(installation), recipeName(installation));
+    }
+
+    static String imageLeftoverNotice(String installation, List<String> leftovers) {
+        return "Runner image of " + installation + " only partly retired; the stack is deleted, so "
+            + "remove these by hand:\n" + leftovers.stream()
+                .map(line -> "  - " + line).collect(Collectors.joining("\n"));
     }
 
     /**

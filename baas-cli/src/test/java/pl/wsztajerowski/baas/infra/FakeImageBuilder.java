@@ -4,6 +4,14 @@ import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
 import software.amazon.awssdk.services.imagebuilder.model.Component;
 import software.amazon.awssdk.services.imagebuilder.model.ComponentSummary;
 import software.amazon.awssdk.services.imagebuilder.model.ComponentVersion;
+import software.amazon.awssdk.services.imagebuilder.model.DeleteImageRequest;
+import software.amazon.awssdk.services.imagebuilder.model.DeleteImageResponse;
+import software.amazon.awssdk.services.imagebuilder.model.ImageSummary;
+import software.amazon.awssdk.services.imagebuilder.model.ImageVersion;
+import software.amazon.awssdk.services.imagebuilder.model.ListImageBuildVersionsRequest;
+import software.amazon.awssdk.services.imagebuilder.model.ListImageBuildVersionsResponse;
+import software.amazon.awssdk.services.imagebuilder.model.ListImagesRequest;
+import software.amazon.awssdk.services.imagebuilder.model.ListImagesResponse;
 import software.amazon.awssdk.services.imagebuilder.model.GetComponentRequest;
 import software.amazon.awssdk.services.imagebuilder.model.GetComponentResponse;
 import software.amazon.awssdk.services.imagebuilder.model.GetImageRequest;
@@ -40,6 +48,16 @@ class FakeImageBuilder implements ImagebuilderClient {
      */
     int pageSize;
     int pagesServed;
+
+    /**
+     * Image records: image version ARN ({@code …/image/<recipe>/<version>}) → its build version
+     * ARNs. Listed by {@code listImages}/{@code listImageBuildVersions}, removed by
+     * {@code deleteImage}; both listings honour {@link #pageSize}.
+     */
+    final Map<String, List<String>> imageRecords = new LinkedHashMap<>();
+    final List<String> deletedImages = new ArrayList<>();
+    /** Names passed to the listImages name filter, so a test can see which recipe was asked for. */
+    final List<String> imageNameFilters = new ArrayList<>();
 
     String amiId = "ami-unset";
     ImageStatus terminalStatus = ImageStatus.AVAILABLE;
@@ -126,6 +144,51 @@ class FakeImageBuilder implements ImagebuilderClient {
     private static String versionFromBuildArn(String arn) {
         String[] segments = arn.split("/");
         return segments[segments.length - 2];
+    }
+
+    @Override
+    public ListImagesResponse listImages(ListImagesRequest request) {
+        String name = request.filters().stream()
+            .filter(filter -> "name".equals(filter.name()))
+            .flatMap(filter -> filter.values().stream())
+            .findFirst().orElse(null);
+        imageNameFilters.add(name);
+        var versions = imageRecords.keySet().stream()
+            .filter(arn -> name == null || arn.contains(":image/" + name + "/"))
+            .map(arn -> ImageVersion.builder().arn(arn).name(name).build())
+            .toList();
+        var page = page(versions, request.nextToken());
+        var response = ListImagesResponse.builder().imageVersionList(page.items());
+        return (page.next() != null ? response.nextToken(page.next()) : response).build();
+    }
+
+    @Override
+    public ListImageBuildVersionsResponse listImageBuildVersions(ListImageBuildVersionsRequest request) {
+        var builds = imageRecords.getOrDefault(request.imageVersionArn(), List.of()).stream()
+            .map(arn -> ImageSummary.builder().arn(arn).build())
+            .toList();
+        var page = page(builds, request.nextToken());
+        var response = ListImageBuildVersionsResponse.builder().imageSummaryList(page.items());
+        return (page.next() != null ? response.nextToken(page.next()) : response).build();
+    }
+
+    @Override
+    public DeleteImageResponse deleteImage(DeleteImageRequest request) {
+        String arn = request.imageBuildVersionArn();
+        deletedImages.add(arn);
+        imageRecords.values().forEach(builds -> builds.remove(arn));
+        return DeleteImageResponse.builder().imageBuildVersionArn(arn).build();
+    }
+
+    private record Page<T>(List<T> items, String next) {}
+
+    private <T> Page<T> page(List<T> all, String token) {
+        if (pageSize <= 0) {
+            return new Page<>(all, null);
+        }
+        int from = token == null ? 0 : Integer.parseInt(token);
+        int to = Math.min(from + pageSize, all.size());
+        return new Page<>(all.subList(from, to), to < all.size() ? Integer.toString(to) : null);
     }
 
     @Override
