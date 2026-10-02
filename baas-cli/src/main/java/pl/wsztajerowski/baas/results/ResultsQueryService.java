@@ -11,7 +11,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeSet;
 
 /**
@@ -190,44 +189,6 @@ public class ResultsQueryService implements AutoCloseable {
             }
         }
         return rows;
-    }
-
-    /**
-     * Tier 1 of the environment comparison: rows that disagree on {@code imageVersion} or
-     * {@code instanceType} are not comparable, and the numbers in the table give no hint of it.
-     *
-     * <p>Reported, never filtered — dropping a row would hide the very thing worth knowing, and
-     * the operator is the one who decides whether the difference matters. Rows carrying no tag at
-     * all predate this change and are ignored rather than counted as a difference.
-     *
-     * <p>A diagnostic, not payload: {@code ResultsCommand} logs it for every format, so a
-     * {@code --format json} consumer is warned on stderr without the warning entering the JSON.
-     */
-    public static Optional<String> environmentWarning(List<ResultRow> rows) {
-        var imageVersions = distinctTagValues(rows, ResultRow::imageVersion);
-        var instanceTypes = distinctTagValues(rows, ResultRow::instanceType);
-
-        var lines = new ArrayList<String>();
-        if (imageVersions.size() > 1) {
-            lines.add("These rows span runner image versions: " + String.join(", ", imageVersions));
-        }
-        if (instanceTypes.size() > 1) {
-            lines.add("These rows span instance types: " + String.join(", ", instanceTypes));
-        }
-        if (lines.isEmpty()) {
-            return Optional.empty();
-        }
-        lines.add("They did not all measure the same environment. Compare two of them with:");
-        lines.add("  baas env diff <resultPathA> <resultPathB>");
-        return Optional.of(String.join(System.lineSeparator(), lines));
-    }
-
-    private static java.util.SortedSet<String> distinctTagValues(
-        List<ResultRow> rows, java.util.function.Function<ResultRow, String> tag) {
-        return rows.stream()
-            .map(tag)
-            .filter(value -> value != null && !value.isEmpty())
-            .collect(java.util.stream.Collectors.toCollection(java.util.TreeSet::new));
     }
 
     @Override

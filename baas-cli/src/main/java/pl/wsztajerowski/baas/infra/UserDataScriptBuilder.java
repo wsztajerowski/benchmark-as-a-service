@@ -162,9 +162,8 @@ public class UserDataScriptBuilder {
         # machine-observed (imageVersion, instanceType, jdk, cpuModel, cpuArch, type), so
         # the caller tags should never actually collide with the five observed --tag lines
         # below.
-        # Tier 1 of the environment comparison: the five --tag lines below reach
-        # benchmarkMetadata.tags, so `baas results` can flag a group whose rows sat on
-        # different environments without fetching anything from S3. They are the values
+        # The five --tag lines below reach the item's tags map, so `baas results` can filter
+        # and group by the environment without fetching anything from S3. They are the values
         # OBSERVED above, not the ones the CLI passed down, so a result's tags cannot
         # disagree with its own environment.json. They are listed AFTER the caller-tags
         # expansion above, not before, as defence in depth: the runner parses --tag into

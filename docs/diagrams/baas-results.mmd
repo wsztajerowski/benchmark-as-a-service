@@ -49,8 +49,5 @@ sequenceDiagram
         end
         RC->>Out: reprint last frame on the normal screen
     else once
-        RC->>Out: table (tags only with -v) | JSON array | CSV
-        opt rows from different imageVersion / instanceType
-            RC-->>User: environment warning (stderr)
-        end
+        RC->>Out: table (params and tags only with -v) | JSON array | CSV
     end

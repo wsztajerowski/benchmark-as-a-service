@@ -177,8 +177,8 @@ interactive or when `--format json` or `--format csv` is given.
 - **THEN** the command exits non-zero with a message that `--watch` applies to the table only
 
 #### Scenario: A row-derived warning is shown once per frame
-- **WHEN** the watched rows span two runner image versions
-- **THEN** the environment warning appears below the table in each frame, and is not repeated as a log
+- **WHEN** `--tag experiment=x` is watched and no returned row carries the `experiment` tag
+- **THEN** the unknown-tag warning appears below the table in each frame, and is not repeated as a log
   line on every refresh
 
 #### Scenario: Interrupting leaves a clean terminal

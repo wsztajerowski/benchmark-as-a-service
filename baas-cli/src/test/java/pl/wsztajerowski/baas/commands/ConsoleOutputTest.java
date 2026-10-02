@@ -149,7 +149,7 @@ class ConsoleOutputTest {
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
             var rows = List.of(row("r1", "1.0.0"), row("r2", "1.1.0"));
-            command.printFrame(rows, List.of("These rows span runner image versions: 1.0.0, 1.1.0"), "12:00:00");
+            command.printFrame(rows, List.of("No row carries tag 'experiment'"), "12:00:00");
         } finally {
             System.setErr(originalErr);
         }
@@ -157,7 +157,7 @@ class ConsoleOutputTest {
         String frame = out.toString();
         assertThat(frame).startsWith(ESC + "[H" + ESC + "[2J");
         assertThat(frame).contains("refreshed 12:00:00", "Ctrl+C to stop");
-        assertThat(frame.indexOf("span runner image versions")).isGreaterThan(frame.indexOf("r2"));
+        assertThat(frame.indexOf("No row carries tag")).isGreaterThan(frame.indexOf("r2"));
         assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
     }
 
