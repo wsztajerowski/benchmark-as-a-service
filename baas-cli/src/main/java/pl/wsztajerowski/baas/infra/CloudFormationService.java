@@ -30,47 +30,27 @@ public class CloudFormationService {
         this.cf = cf;
     }
 
-    public void createOrUpdateStack(String stackName, String templateBody, Map<String, String> params) {
+    /**
+     * Creates the stack. Updates never come here: setup sends every existing stack through
+     * {@link #updateStackParameters}, which carries unnamed parameters forward. This used to be a
+     * create-or-update method whose update branch nothing could reach — including the friendly
+     * {@code ROLLBACK_COMPLETE} refusal, which now lives on the update path.
+     */
+    public void createStack(String stackName, String templateBody, Map<String, String> params) {
         List<Parameter> cfParams = params.entrySet().stream()
             .map(e -> Parameter.builder().parameterKey(e.getKey()).parameterValue(e.getValue()).build())
             .toList();
 
         logger.debug("Stack parameters for {}: {}", stackName, params);
 
-        Optional<Stack> existing = describeStack(stackName);
-
-        if (existing.isPresent()) {
-            requireUpdatable(existing.get());
-            try {
-                cf.updateStack(UpdateStackRequest.builder()
-                    .stackName(stackName)
-                    .templateBody(templateBody)
-                    .parameters(cfParams)
-                    .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
-                    .build());
-                logger.info("Updating stack {}...", stackName);
-                // Through await(), like the create branch below: a failed update otherwise reports
-                // only that the waiter reached UPDATE_ROLLBACK_COMPLETE, naming neither the
-                // resource nor the reason, and the cause has to be dug out of the stack events by
-                // hand. Found the hard way, on the update that added the Image Builder resources.
-                await(stackName, "update", () -> cf.waiter().waitUntilStackUpdateComplete(r -> r.stackName(stackName)));
-            } catch (CloudFormationException e) {
-                if (isNoUpdateNeeded(e)) {
-                    logger.info("Stack {} is already up to date.", stackName);
-                    return;
-                }
-                throw e;
-            }
-        } else {
-            cf.createStack(CreateStackRequest.builder()
-                .stackName(stackName)
-                .templateBody(templateBody)
-                .parameters(cfParams)
-                .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
-                .build());
-            logger.info("Creating stack {}...", stackName);
-            await(stackName, "create", () -> cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName)));
-        }
+        cf.createStack(CreateStackRequest.builder()
+            .stackName(stackName)
+            .templateBody(templateBody)
+            .parameters(cfParams)
+            .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
+            .build());
+        logger.info("Creating stack {}...", stackName);
+        await(stackName, "create", () -> cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName)));
         logger.info("Stack {} deployed successfully.", stackName);
     }
 
@@ -79,7 +59,7 @@ public class CloudFormationService {
      * forward with {@code UsePreviousValue}.
      *
      * <p>{@code baas admin build-image} owns three parameters and knows nothing about the rest. A
-     * plain {@link #createOrUpdateStack} call would send only what it knows, and CloudFormation
+     * plain create-style call would send only what it knows, and CloudFormation
      * fills the remainder from template defaults — which for a stack deployed with
      * {@code --use-existing-vpc} means {@code UseExistingVpc} silently flips back to "false" and
      * the update starts building a VPC over someone's existing networking.
@@ -87,8 +67,8 @@ public class CloudFormationService {
     public void updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
             "Stack '" + stackName + "' does not exist. Run `baas admin setup` first."));
-        // Here, not only in createOrUpdateStack: setup sends every existing stack down this path,
-        // so a failed first create reached CloudFormation's own rejection instead of this advice.
+        // Setup sends every existing stack down this path, so this is where a failed first create
+        // has to be recognised, before CloudFormation answers with its own less useful rejection.
         requireUpdatable(stack);
 
         var keys = new java.util.LinkedHashSet<String>();

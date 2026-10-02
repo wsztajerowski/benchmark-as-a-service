@@ -240,9 +240,11 @@ public class SetupCommand implements Callable<Integer> {
             }
         }
 
+        boolean created;
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
-            if (cloudFormation.stackExists(resolvedStack)) {
+            created = !cloudFormation.stackExists(resolvedStack);
+            if (!created) {
                 // Networking is fixed at creation. Checked before anything is submitted, so a
                 // refused update leaves the stack untouched rather than rolling back.
                 requireNetworkingUnchanged(
@@ -260,7 +262,7 @@ public class SetupCommand implements Callable<Integer> {
                 // invocation named, or empty when it named none. Carry-forward governs updates
                 // only.
                 params.putAll(federationParametersForCreate());
-                cloudFormation.createOrUpdateStack(resolvedStack, templateBody, params);
+                cloudFormation.createStack(resolvedStack, templateBody, params);
             }
         }
 
@@ -277,29 +279,37 @@ public class SetupCommand implements Callable<Integer> {
         configService().save(config);
         logger.info("Configuration written to {}", configService().configFilePath());
 
-        if (!operatorRoleArn.isEmpty()) {
-            logger.info("""
-                    BaasCliOperatorRole created: {}
-                    Nobody can assume it yet. Two one-time steps:
-                      1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,
-                         and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.
-                      2. Point the CLI at that profile:
-                           baas config set --operator-profile <profile-name>
-                         Until you do, `baas run` uses the default credential chain, not this role.""",
-                operatorRoleArn);
-        }
+        logger.info("{}", nextSteps(created, operatorRoleArn, resolvedPrefix));
 
+        return 0;
+    }
+
+    /**
+     * What to do next. The onboarding steps are true only of a stack this run created: on an update
+     * the operator role already existed — someone may well be assuming it — and the image may be
+     * built, so repeating "nobody can assume it yet" and "build the image" there was simply wrong.
+     */
+    static String nextSteps(boolean created, String operatorRoleArn, String prefix) {
+        if (!created) {
+            return "Installation " + prefix + " is deployed."
+                + (operatorRoleArn.isEmpty() ? "" : " Operator role: " + operatorRoleArn);
+        }
         // Setup deliberately does not build the image — that is a ~15-minute operation and every
         // re-setup would pay for it. It is a hard precondition of `baas run`, so say so here
         // rather than letting the first run be where the user finds out.
-        logger.info("""
-                Next: build the runner image.
-                      baas admin build-image
-                    Takes ~15 minutes and publishes an AMI to /{}/runner/ami-id.
-                    `baas run` fails until it exists — there is no boot-time install path.""",
-            resolvedPrefix);
-
-        return 0;
+        return """
+            BaasCliOperatorRole created: %s
+            Nobody can assume it yet. Two one-time steps:
+              1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,
+                 and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.
+              2. Point the CLI at that profile:
+                   baas config set --operator-profile <profile-name>
+                 Until you do, `baas run` uses the default credential chain, not this role.
+            Next: build the runner image.
+                  baas admin build-image
+                Takes ~15 minutes and publishes an AMI to /%s/runner/ami-id.
+                `baas run` fails until it exists — there is no boot-time install path."""
+            .formatted(operatorRoleArn.isEmpty() ? "(no OperatorRoleArn output)" : operatorRoleArn, prefix);
     }
 
     /**

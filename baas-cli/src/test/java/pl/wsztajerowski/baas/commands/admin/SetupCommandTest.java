@@ -279,4 +279,17 @@ class SetupCommandTest {
         assertThatThrownBy(() -> cmd.parseArgs("--mongo-uri", "mongodb+srv://user:pass@host/db"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
+
+    /** Onboarding steps are true only of a stack this run created (U17). */
+    @Test
+    void anUpdateDoesNotClaimTheOperatorRoleWasJustCreated() {
+        String arn = "arn:aws:iam::123456789012:role/baas-123456789012-role-operator";
+
+        assertThat(SetupCommand.nextSteps(false, arn, "baas-123456789012"))
+            .contains("is deployed", arn)
+            .doesNotContain("created", "Nobody can assume", "build-image");
+        assertThat(SetupCommand.nextSteps(true, arn, "baas-123456789012"))
+            .contains("BaasCliOperatorRole created: " + arn, "Nobody can assume it yet",
+                "baas admin build-image", "/baas-123456789012/runner/ami-id");
+    }
 }

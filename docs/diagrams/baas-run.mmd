@@ -5,6 +5,7 @@ sequenceDiagram
     participant S3 as AWS S3
     participant SSM as AWS SSM
     participant EC2 as AWS EC2
+    participant CF as AWS CloudFormation
     participant DDB as DynamoDB results table
     participant GH as GitHub Releases (laptop only)
 
@@ -23,6 +24,7 @@ sequenceDiagram
     EC2-->>RC: image + tags (baas-image-version), or InvalidAMIID.NotFound
     Note over RC: no image -> exit 1 naming `baas admin build-image`.<br/>Checked before any upload, so a missing image costs two API<br/>calls rather than a wasted upload. There is no fallback to<br/>AL2023 + yum.
     Note over RC: ONE clock read: runInstant = Instant.now().<br/>runId = RunId.generate(runInstant) -- 20260820T174432812Z-a3f9c21b<br/>resultPath = RunLayout.runPrefix(project, runId)<br/>= runs/<project>/<runId>.<br/>The same instant travels on as --created-at, so the prefix<br/>name and the stored createdAt cannot disagree.
+    RC->>CF: describeStacks(prefix) -- SubnetId, SecurityGroupId, BEFORE any upload<br/>(a missing installation fails here, having uploaded nothing)
     RC->>S3: s3.putObject(bucket, runs/<project>/<runId>/input/benchmark.jar)
     S3-->>RC: PutObjectResponse
     alt --runner-jar given
@@ -40,7 +42,7 @@ sequenceDiagram
     RC->>EC2: ec2.runInstances(amiId, instanceType, subnetId, sgId, instanceProfile, userData, runId)
     Note over EC2: min=1 max=1<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: ONLY project=baas, baas-role=benchmark-runner,<br/>baas-request-id=runId -- no caller --tag ever reaches the instance
     EC2-->>RC: instanceId
-    Note over RC: register JVM shutdown hook<br/>ec2.terminateInstances(instanceId) on Ctrl+C<br/>(clears the status line first, then logs the termination)
+    Note over RC: register JVM shutdown hook: terminates the instance on Ctrl+C or at the poll cap.<br/>Does nothing once the poll has seen the run end (run-status read, or instance<br/>already terminating) -- the instance terminates itself, the watchdog backs it up
     loop poll every 15 seconds
         RC->>S3: s3.getObjectAsBytes(resultPath/run-status)
         S3-->>RC: completed or failed:N or absent -- sleep 15s and retry

@@ -166,15 +166,15 @@ stateDiagram-v2
 | U6 | **The deployer profile is overridable on three of five admin commands.** `teardown` and `deployer-policy` have no `--aws-profile`. `setup` persists the override while `build-image`/`image` don't. | Low | admin commands |
 | U7 | **`config set --prefix` adopts an installation unchecked** and duplicates `config sync --name` minus its existence check, the check CLAUDE.md says is the reason sync requires the name. | Low | `ConfigSetSubcommand` |
 | U8 | **`runner.sourceRepo` can only be set by hand-editing YAML**, though the error message says that is how to set it. | Info | `RunnerJarResolver.assetUrl` |
-| U9 | **`run` uploads before it checks the stack.** `resolveNetworking` runs after the JAR upload, so a torn-down or wrong installation uploads the benchmark JAR, then fails on missing outputs. | Low | `RunCommand.execute` |
+| U9 | **`run` uploads before it checks the stack.** `resolveNetworking` runs after the JAR upload, so a torn-down or wrong installation uploads the benchmark JAR, then fails on missing outputs. | Low · **Fixed** | F10 |
 | U10 | **`admin image` needs deployer credentials** for a read that `OperatorRole` can already do (`ssm:GetParameter`, `ec2:DescribeImages`; `run` makes the same call). An operator can't ask which image their next run will use. | Low | `ImageCommand` |
 | U11 | **The runner shares its security group with the image-build instance.** The 80/443 internet egress exists for `dnf`/GitHub during the bake. "The instance contacts no host outside the account" is therefore enforced by the user-data script, not the network, and the rule descriptions still say "HTTPS to GitHub" and "package downloads (yum)". | Med · **Fixed** | `RunnerImageInfrastructure.SecurityGroupIds`, `RunnerSecurityGroup` |
 | U12 | **A failed first create traps the next setup.** `ROLLBACK_COMPLETE` → teardown → setup is refused while the create's retained table exists, and only `aws dynamodb delete-table` clears it. Not exercised; it would need a forced create failure. | Low | static |
-| U13 | **A successful run logs "Terminating instance …"** and calls `TerminateInstances` on an already-terminated instance, because the shutdown hook is never deregistered. | Info | `RunCommand.execute` |
+| U13 | **A successful run logs "Terminating instance …"** and calls `TerminateInstances` on an already-terminated instance, because the shutdown hook is never deregistered. | Info · **Fixed** | F10 |
 | U14 | **Reinstall breaks the AWS CLI's cached role credentials.** After teardown + setup, the AWS CLI (not `baas`) fails with `InvalidClientTokenId` on the operator profile until its cached session expires: the role was recreated with a new id. `baas` is unaffected because the SDK does not read `~/.aws/cli/cache`. | Info | §8 |
 | U15 | **The results table formats scores in the JVM's locale** (`9702970,774` under pl-PL). That's right for a human reading it, and JSON/CSV are unaffected (`Locale.ROOT`). Recorded so nobody "fixes" it into a parsing bug: the table is not a machine format. | Info | §8 |
 | U16 | **`--tag project=…` made `RunInstances` fail.** The instance was always tagged `project=baas` and caller tags were appended, so a caller `project` sent the key twice. Confirmed free by a dry-run: `InvalidParameterValue: Duplicate tag key 'project' specified`, a failure after the JAR upload. | Low · **Fixed** | F8 |
-| U17 | **An update run of `admin setup` prints "BaasCliOperatorRole created … Nobody can assume it yet"**, which is true only on create. | Info | 2026-10-02 deploy |
+| U17 | **An update run of `admin setup` prints "BaasCliOperatorRole created … Nobody can assume it yet"**, which is true only on create. | Info · **Fixed** | F10 |
 | U18 | **`config sync` in a region with no installation reports `AccessDenied`, not "no installation".** The operator role may call `DescribeStacks` only in its own region, so the misleading error comes from IAM. Only reachable now that the region can come from the environment. | Info | 2026-10-02 probe |
 
 ## 4. Fixed on this branch
@@ -190,6 +190,7 @@ stateDiagram-v2
 | F7 | U11: the runner shared the image build's security group and its 80/443 internet egress | New `ImageBuildSecurityGroup` (443 + 80) for Image Builder; the runner group dropped port 80. Deployed 2026-10-02 with no replacement (the runner group kept its id), then the image was rebuilt and a run completed on it (§8). Under `--use-existing-vpc` nothing changes |
 | F8 | U16, and more broadly: caller `--tag`s and `instanceType`/`imageVersion` were copied onto the EC2 instance, where nothing reads them | The instance carries only `project=baas`, `baas-role` and `baas-request-id`; `runInstance` no longer accepts extra tags. Result tags reach the result through the runner, as before |
 | F9 | U5: region was read only from the config file, defaulting to `eu-central-1` | `resolveRegion()`: the file, then `AWS_REGION`, then `eu-central-1`. Never stored, so a CI `config sync` writes no region and keeps following the job's. `admin setup` records the region it deployed to. Checked live: a blank config followed `AWS_REGION`, and the synced file held `aws: {}` |
+| F10 | U9, U13, U17 and an unreachable branch | `run` resolves the stack's networking before uploading anything. The shutdown hook no longer terminates (or announces terminating) an instance whose run it saw end; it still covers Ctrl+C and the poll cap. `setup` prints the onboarding steps only when it created the stack ("Installation … is deployed" on an update, checked live). `createOrUpdateStack` became `createStack` |
 
 ## 5. Simplifications
 
@@ -205,9 +206,9 @@ In rough order of value:
 4. **One inherited `--aws-profile` on `admin`**, replacing the three per-command copies (closes U6).
 5. **Drop `config set --prefix`** (closes U7). `config sync --name` covers it, and so does `--config-path` for by-hand files.
 6. **`baas image` under operator credentials**, or fold the image line into `config show` (closes U10).
-7. **`createOrUpdateStack` → `createStack`.** Setup sends every existing stack through
+7. ~~`createOrUpdateStack` → `createStack`~~ (done, F10). Setup sends every existing stack through
    `updateStackParameters`, so the update branch is unreachable.
-8. **Resolve networking before uploading** (closes U9). It's one `DescribeStacks` call moved up.
+8. ~~Resolve networking before uploading~~ (done, F10). It's one `DescribeStacks` call moved up.
 9. ~~A separate build security group~~: done (F7). Narrowing the runner's 443 to the S3 and DynamoDB
    prefix lists is left to `private-runner-network`, because the watchdog still needs the public
    EC2 API until that change moves self-termination to `shutdown`.
