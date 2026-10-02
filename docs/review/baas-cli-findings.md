@@ -60,6 +60,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 30 | F4 | `ROLLBACK_COMPLETE` refusal unreachable from setup | Low | **Fixed** |
 | 31 | F5 | Denied `DescribeImages` reported as "no image" | Low | **Fixed** |
 | 32 | U16 | `--tag project=…` duplicated the instance's `project` tag and failed `RunInstances` | Low | **Fixed** |
+| 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 
 **Next up: S5.**
 
@@ -352,7 +353,7 @@ incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived f
 
 ---
 
-## 16–32. CLI usage analysis (U*, F*) · 2026-10-01
+## 16–33. CLI usage analysis (U*, F*) · 2026-10-01
 
 Found by the command-surface review and paid lifecycle test in
 [`docs/analysis/cli-usage-analysis.md`](../analysis/cli-usage-analysis.md), which holds each

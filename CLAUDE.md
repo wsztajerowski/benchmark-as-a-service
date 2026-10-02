@@ -474,7 +474,8 @@ which the deployer has no business holding.
 / `${PREFIX}` placeholders and is rendered per caller by `DeployerPolicyRenderer` — every resource
 it names is prefix-exact, so two developers cannot reach each other's stack, bucket or SSM
 parameter. Attaching the file as-is grants nothing. `baas admin deployer-policy` prints the
-rendered form; `--for-arn` renders it for someone else.
+rendered form; `--for-account` renders it for another account, and `--region` for the region
+`baas admin setup --region` will use — the region is in seven of its ARNs and conditions.
 
 `baas admin setup`'s preflight (opportunistic `SimulatePrincipalPolicy`, plus translating any
 `AccessDenied` into the rendered policy) is a **UX affordance, not a control** — anyone holding the

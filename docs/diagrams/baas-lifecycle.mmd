@@ -11,7 +11,7 @@ sequenceDiagram
 
     rect rgb(240, 240, 255)
         Note over IA,AWS: 0. One-time IAM
-        Adm->>CLI: baas admin deployer-policy [--for-account]
+        Adm->>CLI: baas admin deployer-policy [--region] [--for-account]
         CLI->>AWS: sts:GetCallerIdentity (skipped with --for-account)
         CLI-->>Adm: rendered policy JSON on stdout
         Adm->>IA: hand over the JSON
