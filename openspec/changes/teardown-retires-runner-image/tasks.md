@@ -66,24 +66,24 @@
 
 No automated test covers teardown against AWS. This costs one image build and one runner launch.
 
-- [ ] 5.1 Back up `~/.baas/config.yaml` outside the repository, and verify the copy is
+- [x] 5.1 Back up `~/.baas/config.yaml` outside the repository, and verify the copy is
   byte-identical.
-- [ ] 5.2 Run `baas admin teardown --yes --delete-bucket` with the change built. Verify:
+- [x] 5.2 Run `baas admin teardown --yes --delete-bucket` with the change built. Verify:
   - the pointer parameter is gone (`aws ssm get-parameter` returns ParameterNotFound);
   - `describe-images --owners self` lists no BaaS AMI;
   - `describe-snapshots --owner-ids self` lists no BaaS snapshot;
   - `list-images --owner Self` lists no `baas-381492019823-recipe-runner` record. This is the
     check for the design's open risk: a record deleted after its recipe is gone;
   - the command exits 0.
-- [ ] 5.3 Delete the retained table by hand, run `baas admin setup` (with the federation flags),
+- [x] 5.3 Delete the retained table by hand, run `baas admin setup` (with the federation flags),
   then `baas run`. Verify the run is refused for want of a runner image: the *Inherited* state
   can no longer be reached.
-- [ ] 5.4 Run `baas admin build-image`, then one `baas run jmh` against `fake-jmh-benchmarks`.
+- [x] 5.4 Run `baas admin build-image`, then one `baas run jmh` against `fake-jmh-benchmarks`.
   Verify the run completes, leaving the installation as it was before 5.2. Then delete the backup
   from 5.1, recording which assertion showed the config survived.
 
 ## 6. Verification record
 
-- [ ] 6.1 Run `/opsx:verify` and record the result in `verify.md` in this change directory:
+- [x] 6.1 Run `/opsx:verify` and record the result in `verify.md` in this change directory:
   a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any
   deviation from design.md or this task list.
