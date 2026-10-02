@@ -50,7 +50,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 7 | P7 | "comparison group" wording assumes grouping `baas results` does not do | Low | **Fixed** (warning removed) |
 | 8 | P8 | `tasks.md` §11.3 contradicts the delta spec it verifies | Low | **Closed** (archive left as ticked) |
 | 9 | P9 | Change widened open finding S5 without updating it | Low | **Fixed** (by S5) |
-| 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | Open |
+| 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | **Fixed** (by `reportFailure`) |
 | 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | Open |
 | 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | Open |
 | 13 | P13 | async-profiler install path hardcoded a third time | Low | Open |
@@ -355,13 +355,19 @@ surface when it reaches it.
 **Fixed (2026-10-02) by S5's fix.** S5 was updated with the wider surface, and its fix routes every
 export — `IMAGE_VERSION` and `AMI_ID` included — through one quoting helper (`d4a85c3`).
 
-## 10. P10 — a corrupt manifest stack-traces where a missing one is handled · Low
+## 10. P10 — a corrupt manifest stack-traces where a missing one is handled · FIXED
 
 `EnvDiffSubcommand.fetch` handles an absent `environment.json` with a clear, actionable message.
 `EnvironmentManifest.parse` throws `UncheckedIOException` on malformed JSON, and nothing catches
 it — the user gets a Java stack trace. The delta spec covers only the missing case
 (*"Missing manifest fails clearly"*), so this is a gap in both the spec and the code. Since the
 manifest is assembled by shell heredoc on a remote host, malformed is a state worth handling.
+
+**Fixed (2026-10-02) by `BaasApp.reportFailure`,** added since: every exception a command throws is
+logged as its message alone, the stack trace kept for `-v`. A malformed manifest now reads
+`java.io.IOException: environment.json for <path> is not valid JSON`. Matching the missing-manifest
+message (S3 location, `baas download` hint) was offered and declined as cosmetic: the heredoc that
+writes the file is now quoting-safe (S5) and run through bash in tests.
 
 ## 11. P11 — `benchmarkType` in the manifest makes every cross-type diff report a difference · Low
 
