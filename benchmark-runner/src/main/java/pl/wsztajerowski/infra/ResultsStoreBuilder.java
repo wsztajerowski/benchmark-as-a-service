@@ -16,17 +16,17 @@ import static java.util.Objects.requireNonNull;
 /**
  * Selects exactly one results store.
  *
- * <p>Absent configuration is a hard failure. The previous builder returned a no-op when the
- * connection string was null or empty, which let a paid run report success while discarding its
- * measurements — the single most expensive silent failure this project had. Discarding now
- * requires naming the intent with {@code --no-database}.
+ * <p>Absent configuration is a hard failure, and nothing discards measurements. An older builder
+ * returned a no-op when the connection string was null or empty, which let a paid run report
+ * success while discarding its measurements — the single most expensive silent failure this
+ * project had. Its explicit successor, {@code --no-database}, is gone too: a CLI run records its
+ * status in the results table, so it always has one, and a local run names a LocalStack table.
  */
 public class ResultsStoreBuilder {
     private static final Logger logger = LoggerFactory.getLogger(ResultsStoreBuilder.class);
 
     private String tableName;
     private URI connectionString;
-    private boolean noDatabase;
     private URI dynamoDbEndpoint;
     private DynamoDbClient dynamoDbClient;
 
@@ -44,11 +44,6 @@ public class ResultsStoreBuilder {
 
     public ResultsStoreBuilder withConnectionString(URI connectionString) {
         this.connectionString = connectionString;
-        return this;
-    }
-
-    public ResultsStoreBuilder withNoDatabase(boolean noDatabase) {
-        this.noDatabase = noDatabase;
         return this;
     }
 
@@ -73,22 +68,17 @@ public class ResultsStoreBuilder {
         boolean hasTable = tableName != null && !tableName.isBlank();
         boolean hasConnectionString = connectionString != null && !connectionString.toString().isBlank();
 
-        int selected = (hasTable ? 1 : 0) + (hasConnectionString ? 1 : 0) + (noDatabase ? 1 : 0);
-        if (selected > 1) {
+        if (hasTable && hasConnectionString) {
             throw new IllegalStateException(
-                "More than one results store selected. Name exactly one of --results-table, "
-                    + "--mongo-connection-string or --no-database, not both.");
+                "More than one results store selected. Name exactly one of --results-table or "
+                    + "--mongo-connection-string, not both.");
         }
-        if (selected == 0) {
+        if (!hasTable && !hasConnectionString) {
             throw new IllegalStateException(
-                "No results store configured. Pass --results-table for DynamoDB, "
-                    + "--mongo-connection-string for MongoDB, or --no-database to discard "
-                    + "measurements deliberately.");
+                "No results store configured. Pass --results-table for DynamoDB (with "
+                    + "--dynamodb-endpoint for LocalStack), or --mongo-connection-string for MongoDB.");
         }
 
-        if (noDatabase) {
-            return new NoOpResultsStore();
-        }
         if (hasTable) {
             return dynamoDbStore();
         }

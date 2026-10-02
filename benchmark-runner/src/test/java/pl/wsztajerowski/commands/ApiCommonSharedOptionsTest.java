@@ -19,9 +19,11 @@ class ApiCommonSharedOptionsTest {
         assertThat(options.getProject()).isEqualTo("lynx-journal");
     }
 
+    /** Every run names a store; the option that discarded measurements is gone. */
     @Test
-    void parsesNoDatabase() {
-        assertThat(parse("--no-database", "--project", "p").isNoDatabase()).isTrue();
+    void theDiscardOptionIsUnknown() {
+        assertThatThrownBy(() -> parse("--no-database", "--project", "p"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
     @Test

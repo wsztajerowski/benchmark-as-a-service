@@ -11,9 +11,8 @@
 #   an AWS_PROFILE=localstack entry in ~/.aws/config
 #   export ASYNC_PATH=/path/to/libasyncProfiler.{so,dylib}
 #
-# Absent store configuration is now a hard failure rather than a silent discard, so this
-# script names one explicitly. Swap --results-table/--dynamodb-endpoint for --no-database
-# to run without storing anything.
+# Absent store configuration is a hard failure rather than a silent discard, and no option
+# discards measurements, so this script names a LocalStack table explicitly.
 #
 # NOTE: --mongo-connection-string defaults from $MONGO_CONNECTION_STRING. If you have that
 # exported, naming a table too is rejected as ambiguous — unset it for local runs.
