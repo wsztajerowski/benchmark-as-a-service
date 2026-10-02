@@ -188,7 +188,7 @@
 
 ## 11. CI workflow
 
-- [ ] 11.1 In `.github/workflows/e2e-cloud-test.yml`, replace `test -s ./artifacts/run-status` with
+- [x] 11.1 In `.github/workflows/e2e-cloud-test.yml`, replace `test -s ./artifacts/run-status` with
   a check of the run item's status through `baas runs list --format json`. Rewrite the comment
   claiming failed runs cannot be downloaded by id. Verify the workflow passes on the PR, which needs
   task 2.2 to have been done first.
