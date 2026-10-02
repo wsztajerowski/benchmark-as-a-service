@@ -388,21 +388,12 @@ public class RunCommand implements Callable<Integer> {
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 6. Launch instance. These are EC2 *instance* tags — console visibility and the
-        //    `baas-role` scoping that RunnerRole's TerminateInstances condition depends on. They
-        //    are NOT what `baas results` reads: ResultsQueryService reads the item's top-level
-        //    tags map, which is populated only by the runner's own --tag options,
-        //    emitted by UserDataScriptBuilder from the values observed on the instance. Tagging
-        //    the instance instead is how every stored result ended up with a null imageVersion
-        //    once already; the tier-1 comparison then silently never fires. Don't treat the two
-        //    lines below as covering that — see
+        // 6. Launch instance. It carries only the fixed tags (see Ec2ProvisioningService
+        //    #instanceTags): every caller --tag, and the observed imageVersion/instanceType, reach
+        //    the stored result through the runner's own --tag options in user-data, which is the
+        //    only place `baas results` reads. See
         //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
         logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
-        Map<String, String> tags = new LinkedHashMap<>(extraTags);
-        tags.putIfAbsent("instanceType", resolvedInstanceType);
-        if (runnerImage.imageVersion() != null) {
-            tags.putIfAbsent("imageVersion", runnerImage.imageVersion());
-        }
 
         // Resolved per run rather than cached in config: replacing RunnerSecurityGroup moves its
         // id, and a stored copy then names a group that no longer exists. The operator role
@@ -415,7 +406,7 @@ public class RunCommand implements Callable<Integer> {
                 runnerImage.amiId(), resolvedInstanceType,
                 networking.get("SubnetId"), networking.get("SecurityGroupId"),
                 config.runnerInstanceProfile(),
-                userData, runId, tags);
+                userData, runId);
         }
         summaryInstanceId = instanceId;
         logger.info("Instance launched: {}", instanceId);

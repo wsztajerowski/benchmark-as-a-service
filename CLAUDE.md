@@ -103,9 +103,13 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   the name — so fetching it at boot would buy nothing and cost a round trip on every run. Don't
   "restore" the SSM indirection.
 - **`baas run` forwards `project` and every `--tag` — `branch` and `commit` included — to the
-  *runner*, not just to the instance.** They reach the item's top-level `tags` map, which is the only query surface `baas results`
-  has. A caller `--tag` for a machine-observed key (`imageVersion`, `instanceType`, `jdk`,
-  `cpuModel`, `cpuArch`, `type`) is rejected outright rather than dropped or allowed to win — the
+  *runner*, and never to the instance.** They reach the item's top-level `tags` map, which is the
+  only query surface `baas results` has. The instance carries only `project=baas`, `baas-role` and
+  `baas-request-id` (`Ec2ProvisioningService.instanceTags`, which takes no extra tags on purpose): a
+  copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
+  was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
+  machine-observed key (`imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch`, `type`) is
+  rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
 
 **Three termination layers, all required.** Any one alone leaves a way to orphan a paid instance.

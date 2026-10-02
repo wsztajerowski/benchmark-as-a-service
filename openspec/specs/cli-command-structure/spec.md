@@ -82,13 +82,19 @@ day-to-day commands, and SHALL run under operator credentials.
 - **THEN** the payload contains no logger timestamp prefixes
 
 ### Requirement: User tags are passed through to the runner
-`baas run` SHALL forward every `--tag key=value` option into the user-data script as a runner argument,
-in addition to applying the EC2 instance tags it already applies. A tag applied only to the instance
-SHALL NOT be considered forwarded.
+`baas run` SHALL forward every `--tag key=value` option into the user-data script as a runner argument.
+It SHALL NOT apply any caller tag to the EC2 instance: the instance carries only `project=baas`,
+`baas-role=benchmark-runner` and `baas-request-id=<runId>`. A caller tag on the instance could collide with
+a fixed key, which EC2 rejects for the whole launch, and would be subject to EC2's tag limits.
 
 #### Scenario: User tags appear in rendered user-data
 - **WHEN** `baas run --tag branch=main --tag experiment=gc jmh -- MyBenchmark` renders user-data
 - **THEN** the runner invocation carries `--tag branch=main` and `--tag experiment=gc`
+
+#### Scenario: No caller tag reaches the instance
+- **WHEN** `baas run --tag project=foo --tag branch=main jmh -- MyBenchmark` launches its instance
+- **THEN** the instance's tags are exactly `project=baas`, `baas-role` and `baas-request-id`, and the launch
+  does not fail on a duplicate key
 
 #### Scenario: Environment tags are still forwarded
 - **WHEN** user-data is rendered

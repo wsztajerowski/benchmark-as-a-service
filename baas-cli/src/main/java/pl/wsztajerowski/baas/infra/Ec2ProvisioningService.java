@@ -5,9 +5,7 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.stream.Collectors;
 
 public class Ec2ProvisioningService {
@@ -20,15 +18,26 @@ public class Ec2ProvisioningService {
         this.ec2 = ec2;
     }
 
-    public String runInstance(String amiId, String instanceType, String subnetId,
-                              String securityGroupId, String instanceProfileName,
-                              String userData, String requestId, Map<String, String> extraTags) {
-        List<Tag> tags = new ArrayList<>(List.of(
+    /**
+     * The instance carries the fixed tags and nothing else: {@code baas-role} (RunnerRole's
+     * terminate condition and teardown's live-runner gate), {@code baas-request-id} (finding a run's
+     * instance) and {@code project=baas}. Caller {@code --tag}s belong to the stored result and reach
+     * it through the runner. Copying them here too sent a {@code --tag project=…} as a second
+     * {@code project} key, which EC2 rejects outright, and exposed every result tag to EC2's own
+     * limits (256-character values, a reserved {@code aws:} prefix, 50 tags) — failures that land
+     * after the JAR upload. There is deliberately no parameter for extra tags.
+     */
+    static List<Tag> instanceTags(String requestId) {
+        return List.of(
             Tag.builder().key("project").value("baas").build(),
             Tag.builder().key("baas-role").value("benchmark-runner").build(),
-            Tag.builder().key("baas-request-id").value(requestId).build()
-        ));
-        extraTags.forEach((k, v) -> tags.add(Tag.builder().key(k).value(v).build()));
+            Tag.builder().key("baas-request-id").value(requestId).build());
+    }
+
+    public String runInstance(String amiId, String instanceType, String subnetId,
+                              String securityGroupId, String instanceProfileName,
+                              String userData, String requestId) {
+        List<Tag> tags = instanceTags(requestId);
         logger.debug("Launching {} from {} in subnet {} (sg {}, instance profile {}) with tags {}",
             instanceType, amiId, subnetId, securityGroupId, instanceProfileName,
             tags.stream().collect(Collectors.toMap(Tag::key, Tag::value)));

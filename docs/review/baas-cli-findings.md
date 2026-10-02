@@ -59,7 +59,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 29 | F3 | Teardown gate ignored `pending` runners | Low | **Fixed** |
 | 30 | F4 | `ROLLBACK_COMPLETE` refusal unreachable from setup | Low | **Fixed** |
 | 31 | F5 | Denied `DescribeImages` reported as "no image" | Low | **Fixed** |
-| 32 | U16 | `--tag project=…` likely duplicates the instance's `project` tag and fails `RunInstances` | Low | Open |
+| 32 | U16 | `--tag project=…` duplicated the instance's `project` tag and failed `RunInstances` | Low | **Fixed** |
 
 **Next up: S5.**
 
