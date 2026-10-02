@@ -214,17 +214,21 @@ public class ImageBuilderService {
      * Deregisters an AMI and deletes the snapshots behind it. Snapshot IDs have to be collected
      * first — once the AMI is deregistered its block device mapping is no longer readable, and the
      * snapshots would sit there billing indefinitely.
+     *
+     * @return the snapshots that could not be deleted, each already logged; empty when all went
      */
-    public void retire(String amiId) {
+    public List<String> retire(String amiId) {
         List<String> snapshots = ec2.describeImages(r -> r.imageIds(amiId)).images().stream()
             .flatMap(image -> image.blockDeviceMappings().stream())
             .filter(mapping -> mapping.ebs() != null && mapping.ebs().snapshotId() != null)
             .map(mapping -> mapping.ebs().snapshotId())
             .toList();
 
-        logger.info("Retiring replaced image {} ({} snapshot(s))", amiId, snapshots.size());
+        // Not "replaced": teardown retires through here too, and there nothing replaced it.
+        logger.info("Retiring image {} ({} snapshot(s))", amiId, snapshots.size());
         ec2.deregisterImage(r -> r.imageId(amiId));
 
+        List<String> failed = new ArrayList<>();
         for (String snapshotId : snapshots) {
             try {
                 ec2.deleteSnapshot(r -> r.snapshotId(snapshotId));
@@ -233,8 +237,10 @@ public class ImageBuilderService {
                 // whole command here would strand a build that has already succeeded.
                 logger.warn("Could not delete snapshot {} of retired image {}: {}",
                     snapshotId, amiId, e.getMessage());
+                failed.add(snapshotId);
             }
         }
+        return failed;
     }
 
     /**
@@ -263,7 +269,10 @@ public class ImageBuilderService {
         pointed.ifPresent(amiId -> {
             try {
                 if (describeImage(amiId).isPresent()) {
-                    retire(amiId);
+                    // Collected so teardown's closing notice cannot claim snapshots it left.
+                    retire(amiId).forEach(snapshotId -> leftovers.add("Snapshot " + snapshotId
+                        + " of retired AMI " + amiId + " was not deleted: "
+                        + "aws ec2 delete-snapshot --snapshot-id " + snapshotId));
                 } else {
                     logger.debug("Pointer {} names {}, which is already gone", parameterName, amiId);
                 }

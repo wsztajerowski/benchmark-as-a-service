@@ -31,6 +31,8 @@ class FakeEc2 implements Ec2Client {
     String describeImagesErrorCode;
     /** When set, deregisterImage fails with this error code. */
     String deregisterErrorCode;
+    /** When set, deleteSnapshot fails with this error code. */
+    String deleteSnapshotErrorCode;
 
     FakeEc2(List<String> calls) {
         this.calls = calls;
@@ -76,6 +78,12 @@ class FakeEc2 implements Ec2Client {
     @Override
     public DeleteSnapshotResponse deleteSnapshot(DeleteSnapshotRequest request) {
         calls.add("deleteSnapshot:" + request.snapshotId());
+        if (deleteSnapshotErrorCode != null) {
+            throw (Ec2Exception) Ec2Exception.builder()
+                .message(deleteSnapshotErrorCode)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode(deleteSnapshotErrorCode).build())
+                .build();
+        }
         return DeleteSnapshotResponse.builder().build();
     }
 
