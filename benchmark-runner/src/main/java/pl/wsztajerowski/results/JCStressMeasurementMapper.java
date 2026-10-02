@@ -26,7 +26,7 @@ public final class JCStressMeasurementMapper {
             requestId,
             createdAt,
             MeasurementKind.JCSTRESS,
-            null, null, null, null, null, null,
+            null, null, null, Map.of(), null, null, null,
             Map.of(),
             summaryOf(result),
             tags,

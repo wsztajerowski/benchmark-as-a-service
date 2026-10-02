@@ -550,7 +550,7 @@ non-passing tests, so per-test items would cover failures alone). No derived ind
 | | |
 |---|---|
 | `pk` | `RESULT#<project>` — `--project`, or the benchmark JAR's git repository when `git.resolveProject` is on |
-| `sk` | `<class>#<method>#<mode>#<timestamp>#<requestId>`, or `JCSTRESS#<timestamp>#<requestId>` |
+| `sk` | `<class>#<method>#<mode>#<timestamp>#<requestId>[#<params>]`, or `JCSTRESS#<timestamp>#<requestId>` |
 | GSI `requestId-index` | `gsi1pk` = request ID; the one access path that is not a project sweep |
 
 `mode` is in the sort key because a `-bm thrpt,avgt` run produces two results whose class and method
@@ -558,6 +558,16 @@ are identical; without it they differ only by a millisecond and one silently ove
 Timestamps are fixed-width UTC with exactly three fractional digits — `Instant.toString()` omits
 trailing zeros, which makes keys of differing length that misorder as strings, and that surfaces as
 missing rows rather than as an error.
+
+`#<params>` is there for the same reason as `mode`, one level down: a `@Param` sweep's variants share
+class, method, mode and the run's single timestamp. Without it, `BatchWriteItem` rejected the whole batch
+(`Provided list of item keys contains duplicates`), failing the run and taking any other benchmark in the
+batch with it; across batches, the last variant silently overwrote the rest. It is `name=value` sorted by
+name, joined by `,` (`ResultKeys.formatParams`), and **appended only when present** — not a fixed field
+like `mode` — so every key written before it, and every benchmark without params, is byte-identical.
+Nothing parses a key, so an optional trailing field costs nothing. The GSI sort key carries no params:
+that index is queried by request id alone and need not be unique. Params are a benchmark's identity,
+not a tag: they are a separate `params` map on the item, not part of the query surface.
 
 **Keys are constructed only in `ResultKeys`, items only in `MeasurementItemMapper`**, both in
 `baas-model`. Hand-encoding either elsewhere is how a query returns zero rows instead of failing to
@@ -583,9 +593,11 @@ prefix drops that segment, so what the path stopped carrying the tags now carry 
 whole point of tags being the query surface.
 
 Unknown keys pass through — `baas results` warns only when a `--tag` names a key no row carries.
-Grouping keeps the highest score per `(project, benchmark, <group-tag>)`, group tag defaulting to
+Grouping keeps the highest score per `(project, benchmark, params, <group-tag>)`, group tag defaulting to
 `branch`, and rows carrying no group tag are bucketed rather than dropped. Project is in the key
-because `--all-projects` can put two projects' identically named benchmarks side by side.
+because `--all-projects` can put two projects' identically named benchmarks side by side; params are in it
+because a sweep's variants are different workloads, and the best across them is only ever the cheapest.
+The table never shows params in its columns — `-v` prints a `params` line above the `tags` line.
 `--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
 
 The retired `benchmark_overview.sh` also hard-coded `tags.project: 'lynx-journal'`. `baas results`

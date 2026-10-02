@@ -67,14 +67,34 @@ class JmhMeasurementMapperTest {
         assertThat(measurement.secondaryMetrics()).isEmpty();
     }
 
+    /** Review A11: without them a sweep's variants are indistinguishable, in the key and on screen. */
+    @Test
+    void carriesTheResolvedParams() {
+        var measurement = map(result("com.example.MapLookup.get", Map.of("impl", "hash", "size", "10"), Map.of()));
+
+        assertThat(measurement.params()).containsExactlyInAnyOrderEntriesOf(Map.of("impl", "hash", "size", "10"));
+    }
+
+    @Test
+    void aBenchmarkWithoutParamsHasNone() {
+        var measurement = map(result("com.example.Bench.method", null, Map.of()));
+
+        assertThat(measurement.params()).isEmpty();
+    }
+
     private static Metric metric(Double score, String unit) {
         return new Metric(score, 0.5, null, null, unit, null);
     }
 
     private static JmhResult result(String benchmark, Map<String, Metric> secondaryMetrics) {
+        return result(benchmark, null, secondaryMetrics);
+    }
+
+    private static JmhResult result(String benchmark, Map<String, String> params, Map<String, Metric> secondaryMetrics) {
         return new JmhResult(
             "1.37", benchmark, "thrpt", 1L, 1L, "jvm", List.of(), "25", "vm", "25",
             1L, "1 s", 1L, 1L, "1 s", 1L,
+            params,
             metric(1234.5, "ops/s"),
             secondaryMetrics);
     }

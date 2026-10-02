@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Groups by {@code (project, benchmark, <group tag>)} and keeps the highest-scoring row per group — the
+ * Groups by {@code (project, benchmark, params, <group tag>)} and keeps the highest-scoring row per group — the
  * behaviour the retired {@code benchmark_overview.sh} had, carried forward.
  */
 public final class ResultsGrouping {
@@ -26,8 +26,10 @@ public final class ResultsGrouping {
             // NUL-separated, a character no name can contain. Project first: under --all-projects
             // two projects can share a benchmark name, and merging them would report one project's
             // score as the other's. (Written as an escape: a literal NUL made git treat this file
-            // as binary.)
-            String key = row.project() + "\u0000" + row.benchmarkName() + "\u0000" + groupValue(row, groupTag);
+            // as binary.) Params next: a sweep's variants are different workloads, so the best of
+            // them is only ever the cheapest one — compared across branches it says nothing.
+            String key = row.project() + "\u0000" + row.benchmarkName() + "\u0000" + row.paramsKey()
+                + "\u0000" + groupValue(row, groupTag);
             best.merge(key, row, ResultsGrouping::higherScoring);
         }
         return List.copyOf(best.values());
@@ -58,6 +60,8 @@ public final class ResultsGrouping {
         return rows.stream()
             .sorted(Comparator.comparing((ResultRow row) -> row.project() == null ? "" : row.project())
                 .thenComparing(ResultRow::benchmarkName)
+                // Keeps each variant's rows together, whatever --group-by splits them by.
+                .thenComparing(ResultRow::paramsKey)
                 .thenComparing(row -> row.createdAt() == null ? "" : row.createdAt()))
             .toList();
     }

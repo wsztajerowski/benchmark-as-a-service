@@ -8,6 +8,11 @@ final class StoredMeasurementFixtures {
     private StoredMeasurementFixtures() {}
 
     static StoredMeasurement jmh() {
+        return jmh(Map.of());
+    }
+
+    /** The same measurement as one variant of a {@code @Param} sweep. */
+    static StoredMeasurement jmh(Map<String, String> params) {
         return new StoredMeasurement(
             "lynx-journal",
             "jmh-20260817_220706",
@@ -16,6 +21,7 @@ final class StoredMeasurementFixtures {
             "pl.wsztajerowski.fake.Incrementing_Synchronized",
             "incrementUsingSynchronized",
             "thrpt",
+            params,
             14075511.867,
             10632927.824,
             "ops/s",
@@ -34,7 +40,7 @@ final class StoredMeasurementFixtures {
             "jcstress-20260817_221500",
             Instant.parse("2026-08-17T22:15:00.000Z"),
             MeasurementKind.JCSTRESS,
-            null, null, null, null, null, null,
+            null, null, null, Map.of(), null, null, null,
             Map.of(),
             new JcstressSummary(12, 10, 1, 1,
                 Map.of("SomeTest", "FORBIDDEN"),

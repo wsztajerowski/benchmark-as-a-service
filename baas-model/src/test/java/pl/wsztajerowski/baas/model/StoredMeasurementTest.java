@@ -63,6 +63,7 @@ class StoredMeasurementTest {
             "pl.wsztajerowski.fake.Incrementing_Synchronized",
             "incrementUsingSynchronized",
             "thrpt",
+            Map.of(),
             14075511.867,
             10632927.824,
             "ops/s",

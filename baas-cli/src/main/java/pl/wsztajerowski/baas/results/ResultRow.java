@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.TagKeys;
 
@@ -20,11 +21,22 @@ public record ResultRow(
     String scoreUnit,
     String createdAt,
     Map<String, String> tags,
-    String project
+    String project,
+    /** A {@code @Param} sweep's variant; empty otherwise. Part of the benchmark's identity, not a tag. */
+    Map<String, String> params
 ) {
 
     public ResultRow {
         tags = tags == null ? Map.of() : Map.copyOf(tags);
+        params = params == null ? Map.of() : Map.copyOf(params);
+    }
+
+    /** Without params: every benchmark that declares no {@code @Param}. */
+    public ResultRow(String requestId, String benchmarkName, String benchmarkType, String mode,
+                     double score, double scoreError, String scoreUnit, String createdAt,
+                     Map<String, String> tags, String project) {
+        this(requestId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
+            tags, project, Map.of());
     }
 
     /**
@@ -49,7 +61,8 @@ public record ResultRow(
             measurement.scoreUnit() == null ? "" : measurement.scoreUnit(),
             measurement.createdAt() == null ? "" : measurement.createdAt().toString(),
             measurement.tags(),
-            measurement.project());
+            measurement.project(),
+            measurement.params());
     }
 
     /**
@@ -62,6 +75,11 @@ public record ResultRow(
             return "(jcstress) " + measurement.requestId();
         }
         return measurement.benchmarkClass() + "." + measurement.benchmarkMethod();
+    }
+
+    /** The canonical {@code k=v,k=v} text the sort key uses — one form for grouping and ordering too. */
+    public String paramsKey() {
+        return ResultKeys.formatParams(params);
     }
 
     public String tag(String key) {

@@ -39,7 +39,7 @@ workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 | 8 | D3 | `ASYNC_PATH` unset in PR CI → async test silently skipped | Low | **Fixed** |
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | **Reduced in surface** |
 | 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | **Fixed** |
-| 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | Open |
+| 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | **Fixed** |
 
 ### How `cli-driven-ci-workflows` closed them
 
@@ -218,7 +218,7 @@ Third-party actions are pinned to mutable tags (`machulav/ec2-github-runner@v2`)
 A classic PAT with `repo` scope, used by `machulav/ec2-github-runner` in `start-ec2-runner.yml` and
 `stop-ec2-runner.yml`. A fine-grained PAT or a GitHub App narrows the blast radius.
 
-## 11. A11 — two `@Param` variants of one benchmark method share a sort key · Med
+## 11. A11 — two `@Param` variants of one benchmark method share a sort key · FIXED
 
 `JmhResult` does not parse JMH's `params` object, so the resolved parameter values never reach the
 stored measurement. The sort key is `class#method#mode#timestamp#requestId`
@@ -242,6 +242,21 @@ layout one.
 **Proposed fix:** parse `params` into the measurement and fold the resolved values into the sort
 key — the same argument that put `mode` there, for the same reason. Storing them only as a tag
 would make them queryable without fixing the overwrite, so the key change is the load-bearing half.
+
+**Correction (2026-10-02): worse than written.** The description above predates the DynamoDB store,
+which writes through `BatchWriteItem` in batches of 25. DynamoDB rejects a batch holding two equal
+keys, so the usual outcome was not a silent overwrite but a failed run (`Provided list of item keys
+contains duplicates`) — losing every measurement in that batch, other benchmarks' included. The
+silent overwrite happened only when duplicates fell in different batches, and in the MongoDB adapter.
+Both reproduced by `storesEveryVariantOfAParameterSweep` in the shared store contract suite.
+
+**Fixed (2026-10-02), as proposed, without an OpenSpec change.** `JmhResult` parses `params`, the
+measurement and the item carry them as a `params` map, and `ResultKeys.sortKey` appends
+`#name=value,…` (sorted) only when present — every pre-existing key is byte-identical, so nothing
+migrates. The GSI sort key stays param-free. `baas results` groups per `(project, benchmark,
+params, <group tag>)`, orders a variant's rows together, keeps `benchmarkName` plain, adds a
+`params` object to JSON and a last `params` column to CSV, and shows params only under `-v`, on a
+`params` line above a now-labelled `tags` line — never in a column, since a sweep can declare many.
 
 ---
 

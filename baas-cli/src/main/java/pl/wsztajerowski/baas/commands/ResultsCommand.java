@@ -381,11 +381,11 @@ public class ResultsCommand implements Callable<Integer> {
             out.printf(
                 "  {\"requestId\":\"%s\",\"benchmarkName\":\"%s\",\"benchmarkType\":\"%s\"," +
                 "\"mode\":\"%s\",\"score\":%s,\"scoreError\":%s,\"scoreUnit\":\"%s\"," +
-                "\"createdAt\":\"%s\",\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s}%s%n",
+                "\"createdAt\":\"%s\",\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s}%s%n",
                 r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
                 jsonNumber(r.score()), jsonNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
                 jsonOrNull(r.imageVersion()), jsonOrNull(r.instanceType()), jsonObject(r.tags()),
-                i < rows.size() - 1 ? "," : "");
+                jsonObject(r.params()), i < rows.size() - 1 ? "," : "");
         }
         out.println("]");
     }
@@ -393,20 +393,21 @@ public class ResultsCommand implements Callable<Integer> {
     private void printCsv(List<ResultRow> rows) {
         var out = console();
         out.println(
-            "requestId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags");
+            // params last, so a consumer reading columns by position is not shifted.
+            "requestId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags,params");
         for (ResultRow r : rows) {
             // Locale.ROOT for the same reason as printJson — a comma decimal separator turns one
             // CSV column into two.
-            out.printf("%s,%s,%s,%s,%.6f,%.6f,%s,%s,%s,%s,%s%n",
+            out.printf("%s,%s,%s,%s,%.6f,%.6f,%s,%s,%s,%s,%s,%s%n",
                 r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
                 r.score(), r.scoreError(), r.scoreUnit(), r.createdAt(),
                 r.imageVersion() != null ? r.imageVersion() : "",
                 r.instanceType() != null ? r.instanceType() : "",
-                csvField(csvTags(r.tags())));
+                csvField(csvTags(r.tags())), csvField(csvTags(r.params())));
         }
     }
 
-    /** Every tag, key-sorted, as {@code k=v;k=v}. */
+    /** Every tag (or param), key-sorted, as {@code k=v;k=v}. */
     static String csvTags(Map<String, String> tags) {
         return new java.util.TreeMap<>(tags).entrySet().stream()
             .map(e -> e.getKey() + "=" + e.getValue())
@@ -421,7 +422,7 @@ public class ResultsCommand implements Callable<Integer> {
         return "\"" + value.replace("\"", "\"\"") + "\"";
     }
 
-    /** Key-sorted, so the same row always serialises identically. */
+    /** Key-sorted, so the same row always serialises identically. Tags and params alike. */
     static String jsonObject(Map<String, String> tags) {
         return new java.util.TreeMap<>(tags).entrySet().stream()
             .map(e -> jsonString(e.getKey()) + ":" + jsonString(e.getValue()))

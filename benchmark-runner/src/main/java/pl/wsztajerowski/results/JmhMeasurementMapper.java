@@ -39,6 +39,7 @@ public final class JmhMeasurementMapper {
             fullyQualified.substring(0, lastDot),
             fullyQualified.substring(lastDot + 1),
             result.mode(),
+            result.params(),
             primary == null ? null : primary.score(),
             primary == null ? null : primary.scoreError(),
             primary == null ? null : primary.scoreUnit(),

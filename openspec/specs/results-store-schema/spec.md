@@ -35,9 +35,13 @@ result.
 
 ### Requirement: Item key encoding
 A measurement SHALL be stored at `pk = RESULT#<project>`. A JMH measurement SHALL use
-`sk = <fullyQualifiedClassName>#<methodName>#<createdAt>#<requestId>`; a JCStress measurement SHALL use
-`sk = JCSTRESS#<createdAt>#<requestId>`. The global secondary index SHALL be partitioned on `requestId`
-with sort key `<fullyQualifiedClassName>#<methodName>`.
+`sk = <fullyQualifiedClassName>#<methodName>#<mode>#<createdAt>#<requestId>`, followed by
+`#<params>` when the benchmark declares `@Param`s, where `<params>` is every resolved parameter as
+`name=value`, sorted by name and joined by `,`. A benchmark without params SHALL have no such segment, so
+its key is unchanged. A JCStress measurement SHALL use `sk = JCSTRESS#<createdAt>#<requestId>`. The global
+secondary index SHALL be partitioned on `requestId` with sort key
+`<fullyQualifiedClassName>#<methodName>#<mode>`, which carries no params. A JMH item SHALL carry its
+resolved params as a `params` map, omitted when there are none.
 
 #### Scenario: Results of one project share a partition
 - **WHEN** results from three separate runs of the same project are stored
@@ -46,6 +50,15 @@ with sort key `<fullyQualifiedClassName>#<methodName>`.
 #### Scenario: Sort key orders benchmark-major then chronologically
 - **WHEN** one benchmark method has results from three different times
 - **THEN** those items are adjacent in sort-key order and ordered by `createdAt` within the benchmark
+
+#### Scenario: Every variant of a parameter sweep is stored
+- **WHEN** one run of a benchmark declaring `@Param size` with values `10` and `1000` is stored in one write
+- **THEN** two items exist, whose sort keys end in `#size=10` and `#size=1000`, and each carries its own
+  `params` map
+
+#### Scenario: A benchmark without params keeps its key
+- **WHEN** a benchmark that declares no `@Param` is stored
+- **THEN** its sort key ends in `#<requestId>` and its item has no `params` attribute
 
 #### Scenario: A run's results are reachable by request ID
 - **WHEN** the global secondary index is queried for a request ID

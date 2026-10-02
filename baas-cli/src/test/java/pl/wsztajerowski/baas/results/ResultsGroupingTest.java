@@ -15,6 +15,42 @@ class ResultsGroupingTest {
             branch == null ? Map.of() : Map.of(ResultsFilters.BRANCH, branch));
     }
 
+    private static ResultRow variant(String size, String branch, double score) {
+        return new ResultRow("req-" + score, "com.acme.MapLookup.get", "jmh", "thrpt",
+            score, 1.0, "ops/s", "2026-08-19T09:00:00Z", Map.of(ResultsFilters.BRANCH, branch), "p",
+            Map.of("size", size));
+    }
+
+    /**
+     * Review A11: a sweep's variants are different workloads. Grouping them together would keep
+     * only the cheapest variant, and compare that across branches.
+     */
+    @Test
+    void keepsTheBestPerVariantRatherThanAcrossTheSweep() {
+        var rows = List.of(
+            variant("10", "main", 900.0),
+            variant("10", "main", 950.0),
+            variant("100000", "main", 40.0));
+
+        var best = ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH);
+
+        assertThat(best).extracting(ResultRow::score).containsExactlyInAnyOrder(950.0, 40.0);
+    }
+
+    @Test
+    void displayOrderKeepsEachVariantsGroupsTogether() {
+        var rows = List.of(
+            variant("100000", "main", 40.0),
+            variant("10", "feature-x", 990.0),
+            variant("100000", "feature-x", 45.0),
+            variant("10", "main", 950.0));
+
+        var sorted = ResultsGrouping.sortedForDisplay(rows);
+
+        assertThat(sorted).extracting(row -> row.params().get("size"))
+            .containsExactly("10", "10", "100000", "100000");
+    }
+
     @Test
     void keepsTheHighestScoringRunPerGroup() {
         var rows = List.of(

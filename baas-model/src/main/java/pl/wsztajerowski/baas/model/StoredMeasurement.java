@@ -18,6 +18,12 @@ public record StoredMeasurement(
     String benchmarkClass,
     String benchmarkMethod,
     String mode,
+    /**
+     * JMH's resolved {@code @Param} values, empty for a benchmark without any. Part of what a
+     * measurement <em>is</em>, not a tag: a sweep's variants share class, method, mode and run, and
+     * only these tell them apart — in the sort key and in {@code baas results}' grouping alike.
+     */
+    Map<String, String> params,
     Double score,
     Double scoreError,
     String scoreUnit,
@@ -49,6 +55,7 @@ public record StoredMeasurement(
             require(benchmarkClass, "benchmarkClass");
             require(benchmarkMethod, "benchmarkMethod");
         }
+        params = params == null ? Map.of() : Map.copyOf(params);
         secondaryMetrics = secondaryMetrics == null ? Map.of() : Map.copyOf(secondaryMetrics);
         tags = tags == null ? Map.of() : Map.copyOf(tags);
     }
@@ -61,13 +68,13 @@ public record StoredMeasurement(
 
     public StoredMeasurement withTags(Map<String, String> newTags) {
         return new StoredMeasurement(project, requestId, createdAt, kind, benchmarkClass,
-            benchmarkMethod, mode, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
+            benchmarkMethod, mode, params, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
             newTags, resultPath, resultJsonKey, environmentJsonKey, profilerOutputPath);
     }
 
     public StoredMeasurement withBenchmarkClass(String newBenchmarkClass) {
         return new StoredMeasurement(project, requestId, createdAt, kind, newBenchmarkClass,
-            benchmarkMethod, mode, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
+            benchmarkMethod, mode, params, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
             tags, resultPath, resultJsonKey, environmentJsonKey, profilerOutputPath);
     }
 }

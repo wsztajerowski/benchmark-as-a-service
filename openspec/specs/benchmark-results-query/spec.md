@@ -84,8 +84,9 @@ output is interactive.
 - **THEN** the summary lists that run's measurements rather than appearing empty
 
 ### Requirement: Results are grouped with the best score kept
-`baas results` SHALL group returned rows by project, benchmark and a grouping tag, and keep only the
-highest-scoring row per group. The grouping tag SHALL default to `branch`. Rows lacking the grouping tag
+`baas results` SHALL group returned rows by project, benchmark, params and a grouping tag, and keep only
+the highest-scoring row per group; each variant of a `@Param` sweep is therefore its own group. Rows
+SHALL be displayed ordered by project, benchmark and params, so one variant's groups are adjacent. The grouping tag SHALL default to `branch`. Rows lacking the grouping tag
 SHALL be collected into a single untagged group rather than dropped. `--all-runs` SHALL disable grouping
 and report every row.
 
@@ -96,6 +97,10 @@ and report every row.
 #### Scenario: Two grouping values stay separate
 - **WHEN** a benchmark has results tagged `branch=main` and `branch=feature-x`
 - **THEN** two rows are returned, one per branch
+
+#### Scenario: A sweep's variants are grouped separately
+- **WHEN** a benchmark has results for `size=10` and `size=100000` on `branch=main`
+- **THEN** two rows are returned, one per variant, each carrying that variant's highest score
 
 #### Scenario: Untagged rows are not lost
 - **WHEN** some measurements carry no `branch` tag
@@ -248,10 +253,13 @@ PROJECT column. The PROJECT column SHALL appear only under `--all-projects`.
 - **THEN** the table has no PROJECT column
 
 ### Requirement: Output carries a measurement's tags, and the table omits the score error
-The `baas results` table SHALL NOT include a score-error column. JSON output SHALL carry `scoreError` and
-a `tags` object holding every tag of the measurement; CSV output SHALL carry a `scoreError` column and a
-`tags` column holding every tag as `key=value` pairs separated by `;`. With `-v`, each table row SHALL be
-followed by an indented line listing every tag of that row; without `-v`, no such line SHALL be printed.
+The `baas results` table SHALL NOT include a score-error column, and its benchmark column SHALL NOT carry
+params. JSON output SHALL carry `scoreError`, a `tags` object holding every tag of the measurement and a
+`params` object holding its params (empty when there are none); `benchmarkName` SHALL stay the plain name.
+CSV output SHALL carry a `scoreError` column, a `tags` column holding every tag as `key=value` pairs
+separated by `;`, and, as its last column, a `params` column in the same form. With `-v`, each table row
+SHALL be followed by an indented line labelled `params` listing its params, when it has any, and then an
+indented line labelled `tags` listing every tag; without `-v`, no such line SHALL be printed.
 
 #### Scenario: Table has no error column
 - **WHEN** `baas results --project p` prints a table
@@ -263,7 +271,11 @@ followed by an indented line listing every tag of that row; without `-v`, no suc
 
 #### Scenario: Verbose table shows tags under each row
 - **WHEN** `baas results --project p -v` prints a table
-- **THEN** each row is followed by an indented line listing its tags as `key=value`
+- **THEN** each row is followed by an indented line labelled `tags` listing its tags as `key=value`
+
+#### Scenario: Verbose table shows a sweep variant's params above its tags
+- **WHEN** `baas results --project p -v` prints a row whose params are `impl=hash` and `size=10`
+- **THEN** the row is followed by `params  impl=hash  size=10`, then by its `tags` line
 
 #### Scenario: Default table shows no tag lines
 - **WHEN** `baas results --project p` prints a table without `-v`

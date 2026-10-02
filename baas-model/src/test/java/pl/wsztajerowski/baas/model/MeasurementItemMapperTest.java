@@ -23,6 +23,20 @@ class MeasurementItemMapperTest {
     }
 
     @Test
+    void aSweepVariantRoundTripsWithItsParams() {
+        var original = StoredMeasurementFixtures.jmh(Map.of("impl", "hash", "size", "10"));
+
+        assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(original)))
+            .isEqualTo(original);
+    }
+
+    /** Every item written before params were stored must stay byte-identical, so none is added. */
+    @Test
+    void aBenchmarkWithoutParamsStoresNoParamsAttribute() {
+        assertThat(MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh())).doesNotContainKey("params");
+    }
+
+    @Test
     void aJcstressMeasurementRoundTrips() {
         var original = StoredMeasurementFixtures.jcstress();
 
@@ -93,6 +107,7 @@ class MeasurementItemMapperTest {
         var withNaNScoreError = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Map.of(),
             original.score(), Double.NaN, original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
             original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
@@ -114,6 +129,7 @@ class MeasurementItemMapperTest {
         var withInfiniteScore = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Map.of(),
             Double.POSITIVE_INFINITY, original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
             original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
@@ -138,6 +154,7 @@ class MeasurementItemMapperTest {
         var withBadSecondaryMetric = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             Map.of(
                 "gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec"),
@@ -167,6 +184,7 @@ class MeasurementItemMapperTest {
         var withNullUnit = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             Map.of(
                 "gc.alloc.rate", new SecondaryMetric(1234.5, null),
@@ -193,6 +211,7 @@ class MeasurementItemMapperTest {
         var allBad = new StoredMeasurement(
             original.project(), original.requestId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             Map.of("gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec")),
             original.jcstress(), original.tags(),
@@ -218,6 +237,7 @@ class MeasurementItemMapperTest {
             original.project(), original.requestId(),
             Instant.parse("2026-08-17T22:07:06.123456789Z"), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
+            Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
             original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
