@@ -66,7 +66,7 @@ public class EnvDiffSubcommand implements Callable<Integer> {
 
         // Read-only, day-to-day: operator credentials, like `run` and `results`.
         var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
         String bucket = config.bucket();
 
         EnvironmentManifest a;

@@ -7,7 +7,7 @@ sequenceDiagram
     Note over User,CF: baas config sync --name <prefix> -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>--name is required although derivable: a bare sync would adopt whatever<br/>installation the active credentials imply.
     User->>CS: baas [--config-path f] config sync --name baas-123456789012
     CS->>CFG: loadOrEmpty() -- a missing file is an empty config
-    Note over CS: region = aws.region from the file, default eu-central-1.<br/>AWS_REGION / AWS_DEFAULT_REGION are NOT consulted, and sync has no --region:<br/>a CI job on another region's installation needs `config set --region` first.
+    Note over CS: region = aws.region from the file, else AWS_REGION, else eu-central-1.<br/>Resolved, never stored: a sync with no region in the file writes none,<br/>so a CI job keeps following its own AWS_REGION.
     opt no aws.operatorProfile and no ambient credentials
         CS-->>User: warn: using the default credential chain
     end

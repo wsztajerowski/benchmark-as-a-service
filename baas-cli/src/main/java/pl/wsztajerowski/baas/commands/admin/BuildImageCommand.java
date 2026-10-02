@@ -58,20 +58,20 @@ public class BuildImageCommand implements Callable<Integer> {
         String imageVersion = definition.imageVersion();
         String parentAmiId = definition.parentImage().amiId();
 
-        if (!config.getAws().getRegion().equals(definition.parentImage().region())) {
+        if (!config.getAws().resolveRegion().equals(definition.parentImage().region())) {
             // An AMI ID means nothing outside its own region, so this would fail deep inside the
             // stack update with a message about an image that "does not exist".
             logger.error("""
                     infra/runner-image.yaml pins a parent AMI in {}, but this stack is in {}.
                     Set parentImage.region and parentImage.amiId to an AL2023 image in {}.""",
-                definition.parentImage().region(), config.getAws().getRegion(), config.getAws().getRegion());
+                definition.parentImage().region(), config.getAws().resolveRegion(), config.getAws().resolveRegion());
             return 1;
         }
 
         // Deployer credentials, like every other `baas admin` subcommand: building an image needs
         // imagebuilder:*, ssm:PutParameter and a widened iam:PassRole, none of which an operator
         // holds. See RunCommand for the other half of that split.
-        var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
 
         String componentName = prefix + "-component-runner";
         try (var imageBuilderClient = factory.imageBuilder();

@@ -80,9 +80,12 @@ public class BaasConfig {
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AwsConfig {
+        public static final String DEFAULT_REGION = "eu-central-1";
+
         private String profile;
         private String operatorProfile;
-        private String region = "eu-central-1";
+        /** Only what the file says; null when it says nothing. See {@link #resolveRegion()}. */
+        private String region;
 
         public String getProfile() { return profile; }
         public void setProfile(String profile) { this.profile = profile; }
@@ -102,6 +105,27 @@ public class BaasConfig {
 
         public String getRegion() { return region; }
         public void setRegion(String region) { this.region = region; }
+
+        /**
+         * The region every command uses: the file's {@code aws.region}, else {@code AWS_REGION},
+         * else {@value #DEFAULT_REGION}. The file wins because it is what {@code admin setup} wrote
+         * for this installation. The environment is consulted at all so that a CI job, whose fresh
+         * config names no region, follows the region its credentials step was given instead of
+         * silently assuming the default.
+         *
+         * <p>Resolved, never stored: {@link #getRegion()} stays the file's own value, so saving a
+         * configuration cannot copy an environment variable into the file and pin it there.
+         */
+        public String resolveRegion() {
+            return resolveRegion(System.getenv());
+        }
+
+        String resolveRegion(java.util.Map<String, String> environment) {
+            if (region != null && !region.isBlank()) return region;
+            String fromEnvironment = environment.get("AWS_REGION");
+            if (fromEnvironment != null && !fromEnvironment.isBlank()) return fromEnvironment.strip();
+            return DEFAULT_REGION;
+        }
     }
 
     public static class Ec2Config {

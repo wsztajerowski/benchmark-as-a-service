@@ -106,7 +106,10 @@ public class SetupCommand implements Callable<Integer> {
         if (region != null) config.getAws().setRegion(region);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
-        String resolvedRegion = config.getAws().getRegion();
+        // Recorded in the file: the installation lives in one region, and the machine that
+        // created it should keep addressing that region whatever the environment later says.
+        String resolvedRegion = config.getAws().resolveRegion();
+        config.getAws().setRegion(resolvedRegion);
 
         var factory = new AwsClientFactory(resolvedRegion, config.getAws().getProfile());
 

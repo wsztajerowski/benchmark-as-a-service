@@ -169,7 +169,7 @@ public class ResultsCommand implements Callable<Integer> {
     /** The query service for the configured table. Overridden by tests, which have no table. */
     ResultsQueryService openResults(BaasConfig config, String tableName) {
         var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
         return new ResultsQueryService(factory.dynamoDb(), tableName);
     }
 

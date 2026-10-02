@@ -59,7 +59,7 @@ public class DeployerPolicyCommand implements Callable<Integer> {
     public Integer call() {
         var renderer = new DeployerPolicyRenderer();
         var config = configService().load();
-        var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
 
         String accountId;
         if (forAccount != null) {
@@ -76,7 +76,7 @@ public class DeployerPolicyCommand implements Callable<Integer> {
         // Payload, so the Console, never coloured: `baas admin deployer-policy > policy.json`
         // has to stay clean.
         Console.of(spec.commandLine().getOut())
-            .println(renderer.render(accountId, config.getAws().getRegion(), resolved));
+            .println(renderer.render(accountId, config.getAws().resolveRegion(), resolved));
         return 0;
     }
 

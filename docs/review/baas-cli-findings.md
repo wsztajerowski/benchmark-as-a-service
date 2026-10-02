@@ -45,7 +45,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
 | 16 | U1 | Teardown leaves the AMI pointer, AMI, snapshot and image record — and a later setup inherits them | Med | Open |
 | 17 | U3 | A run whose CLI died is invisible: no `baas` command lists or stops it | Med | Open |
-| 18 | U5 | Region is never read from the environment; CI is right only because `AWS_REGION` equals the default | Med | Open |
+| 18 | U5 | Region is never read from the environment; CI is right only because `AWS_REGION` equals the default | Med | **Fixed** |
 | 19 | U11 | Runner shares the image builder's security group, so its 80/443 internet egress is unenforced policy | Med | **Fixed** |
 | 20 | U2 | No CLI path from teardown residue to an empty account; the deployer cannot even list the residue | Low | Open |
 | 21 | U4 | `env diff` takes result paths only; a run id fails with a misleading reason | Low | Open |
@@ -357,6 +357,6 @@ incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived f
 Found by the command-surface review and paid lifecycle test in
 [`docs/analysis/cli-usage-analysis.md`](../analysis/cli-usage-analysis.md), which holds each
 entry's evidence, the state graphs that locate it, and the proposed simplification. The table
-above lists the actionable ones; U8, U13, U14, U15 and U17 are informational and live only there.
+above lists the actionable ones; U8, U13, U14, U15, U17 and U18 are informational and live only there.
 F1–F5 were fixed on the `cli-usage-analysis` branch with a test each.
 
