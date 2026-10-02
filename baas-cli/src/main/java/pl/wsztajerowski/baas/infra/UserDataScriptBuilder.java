@@ -83,6 +83,9 @@ public class UserDataScriptBuilder {
         PERF_VERSION=$(perf --version 2>/dev/null | head -1)
         PERF_VERSION=$(json_escape "${PERF_VERSION:-absent}")
         AWS_CLI_VERSION=$(json_escape "$(aws --version 2>&1 | head -1)")
+        # Cleared first: when asprof is missing nothing below assigns it, and the default would
+        # otherwise take any ASYNC_PROFILER_VERSION already in the environment.
+        ASYNC_PROFILER_VERSION=
         [ -x /app/async-profiler/bin/asprof ] && ASYNC_PROFILER_VERSION=$(/app/async-profiler/bin/asprof --version 2>&1 | head -1)
         ASYNC_PROFILER_VERSION=$(json_escape "${ASYNC_PROFILER_VERSION:-absent}")
         PERF_EVENT_PARANOID=$(sysctl -n kernel.perf_event_paranoid 2>/dev/null)
