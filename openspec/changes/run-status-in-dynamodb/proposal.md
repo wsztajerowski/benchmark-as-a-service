@@ -20,6 +20,10 @@ polls.
     `launch-failed` when the launch fails, and `cancelled` from its shutdown hook and from
     `baas runs terminate`.
   - The instance records `running`, `completed`, `failed:<n>`, and `timed-out` (from the watchdog).
+    It writes only the status and its instance id, and only to an item that already exists. Every
+    identity field, the tags included, is written once, by the CLI's reservation, so no caller tag
+    value is rendered into user-data.
+  - The CLI records `timed-out` too, when its poll cap fires on a run still in flight.
   - Every write is a conditional `UpdateItem`, and the first terminal status wins.
   - `vanished` is never written. It is inferred when reading: a non-terminal status whose instance
     is gone.
@@ -50,6 +54,12 @@ polls.
 - **BREAKING:** `--no-database` is removed from `baas run` and from `benchmark-runner`, and
   `NoOpResultsStore` is deleted. Every run names a store: the installation's table, or a LocalStack
   table for local runs. The runner's MongoDB adapter is untouched.
+- **BREAKING: every CLI pointed at the installation must be upgraded.** An older CLI reads run
+  items as measurements. Once the first run item exists, its `results --all-projects`, project
+  picker, `results --request-id`, `download <runId>` and `env diff <runId>` fail, while
+  `results --project <name>` still works. The first run item appears when the implementation PR's
+  CI first runs, well before the release. Until then, use a CLI built from the branch for those
+  commands. Accepted on 2026-10-02 instead of releasing a reader fix ahead of the batch.
 
 ## Capabilities
 
@@ -84,7 +94,10 @@ polls.
   - `benchmark-runner`: `ResultsStoreBuilder` and `ApiCommonSharedOptions` drop `--no-database`;
     `NoOpResultsStore` is deleted.
 - **Infra:** `infra/cf-template-core.yaml` and `infra/operator-policy.json` (the two DynamoDB grants).
-  The deployer policy does not change.
+  The deployer policy does not change. The stack update ships ahead of the code: it is harmless to
+  today's CLIs and runners, and CI on the implementation PR needs it.
+- **CI:** `.github/workflows/e2e-cloud-test.yml` asserts a downloaded `run-status` file and says
+  failed runs cannot be downloaded by id. Both change.
 - **Docs:** CLAUDE.md (S3 layout, results table, termination layers, absent-store paragraph,
   *Adding a benchmark type*), README, `docs/diagrams/baas-run.mmd`, `c4-3-component-runner.mmd`, a
   new `baas runs` sequence diagram, the ADR, and `docs/review/baas-cli-findings.md` (U3 marked
@@ -101,6 +114,8 @@ polls.
   - One table, retained.
   - The table name still goes into user-data, which is still deliberate.
   - The MongoDB adapter.
+  - `baas run`'s exit codes: `failed:<n>` still exits 1.
+  - "The instance's clock never reaches the record": the instance writes no timestamp.
   - No backfill of past runs.
 - **Closes:** U3. **Tightens:** S7, since the runner can no longer write outside `RESULT#*` and
   `RUN`.
