@@ -76,9 +76,15 @@ public class UserDataScriptBuilder {
         # jdk tag: same observation as JVM_VERSION_RAW above, projected to the bare version
         # number (e.g. "25") instead of the full escaped line — not a second `java -version`.
         JDK_VERSION=$(printf '%s' "$JVM_VERSION_RAW" | sed -n 's/.*"\\(.*\\)".*/\\1/p')
-        PERF_VERSION=$(json_escape "$(perf --version 2>/dev/null | head -1 || echo absent)")
+        # Capture, then default: `cmd | head -1 || echo absent` never reaches the echo, because a
+        # pipeline's status is head's, and head succeeds on empty input. A missing tool then recorded
+        # "" — and asprof, through 2>&1, bash's "No such file" as its version. No pipefail: this
+        # script's error handling is deliberately explicit (no set -e).
+        PERF_VERSION=$(perf --version 2>/dev/null | head -1)
+        PERF_VERSION=$(json_escape "${PERF_VERSION:-absent}")
         AWS_CLI_VERSION=$(json_escape "$(aws --version 2>&1 | head -1)")
-        ASYNC_PROFILER_VERSION=$(json_escape "$(/app/async-profiler/bin/asprof --version 2>&1 | head -1 || echo absent)")
+        [ -x /app/async-profiler/bin/asprof ] && ASYNC_PROFILER_VERSION=$(/app/async-profiler/bin/asprof --version 2>&1 | head -1)
+        ASYNC_PROFILER_VERSION=$(json_escape "${ASYNC_PROFILER_VERSION:-absent}")
         PERF_EVENT_PARANOID=$(sysctl -n kernel.perf_event_paranoid 2>/dev/null)
         KPTR_RESTRICT=$(sysctl -n kernel.kptr_restrict 2>/dev/null)
         TRANSPARENT_HUGEPAGES=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null)
