@@ -731,9 +731,13 @@ class UserDataScriptBuilderTest {
         assertThat(captures).contains("/app/async-profiler/bin/asprof");
         assertThat(Path.of("/app/async-profiler/bin/asprof")).doesNotExist();
 
-        Process process = new ProcessBuilder("bash", "-c",
+        // ASYNC_PROFILER_VERSION set in the environment, as CI's own workflow does: a capture that
+        // only assigns when asprof exists would otherwise report the inherited value, not "absent".
+        var builder = new ProcessBuilder("bash", "-c",
             "perf() { :; }\n" + captures + "printf '%s\\n' \"$PERF_VERSION\" \"$ASYNC_PROFILER_VERSION\"")
-            .redirectErrorStream(true).start();
+            .redirectErrorStream(true);
+        builder.environment().put("ASYNC_PROFILER_VERSION", "inherited-from-the-environment");
+        Process process = builder.start();
         String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
         assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
 
