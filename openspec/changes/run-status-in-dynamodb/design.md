@@ -69,7 +69,8 @@ place" rule as for measurement keys.
 ### Run items are excluded from measurement readers by key, and rejected by the mapper
 
 - Both Scans gain `begins_with(pk, :resultPrefix)` with `RESULT#`.
-- `queryByRequestId` gains a sort-key condition that excludes `RUN`.
+- `queryByRequestId` gains a filter expression `#gsi1sk <> :run`. A key condition can't say "not
+  equal", so this has to be a filter.
 - `MeasurementItemMapper.fromItem` throws on any item whose `pk` is not `RESULT#…`.
 
 A filter that a future reader forgets then fails loudly instead of rendering an empty row or
@@ -86,12 +87,22 @@ runs from `--all-runs` semantics they have nothing to do with. It would also lea
 
 ### Every write is one conditional `UpdateItem`, and the first terminal status wins
 
-Each writer sets `status`, `updatedAt` and its own fields. The identity fields (`runId`,
-`project`, `createdAt`, `resultPath`, `instanceType`, `tags`, and `instanceId` once known) are set
-with `if_not_exists`, so whichever write arrives first creates a complete item. The values are the
-same on both sides: the CLI put them into user-data, and the instance id comes from EC2 either way.
+**The CLI's `launching` reservation is the only write that creates the item.** It sets every
+identity field: `runId`, `project`, `createdAt`, `resultPath`, `instanceType`, `updatedAt` and the
+CLI-side `tags` (project, source, `type`, caller tags). `type` goes on the run item because the CLI
+sets it, not the instance, even though `TagKeys` lists it with the observed keys as reserved.
 
-The condition is:
+**The later writes are narrow:**
+- the CLI's `launched` sets `status`, `instanceId` and `updatedAt`;
+- the instance sets `status`, and `instanceId` with `if_not_exists`. It writes no timestamp, so "the
+  instance's clock never reaches the record" holds for the run item too.
+
+Reservation-first (decision 3) means the instance can never be the one that creates the item. So
+every write after the reservation also requires `attribute_exists(pk)`. If a writer gets the key
+wrong, its write is refused instead of creating a second, orphan item, and the real item is left
+looking vanished.
+
+The terminal guard on every write is:
 
 ```
 attribute_not_exists(#status)
@@ -99,7 +110,15 @@ attribute_not_exists(#status)
           OR begins_with(#status, :failedPrefix))
 ```
 
-`failed:<n>` is matched by prefix, so exit codes need no enumeration.
+`failed:<n>` is matched by prefix, so exit codes need no enumeration. `status` is a DynamoDB reserved
+word, hence `#status`. `launched` is narrower still: `#status = :launching`. A `launched` write
+delayed past the instance's `running` would otherwise move the status backwards.
+
+*Rejected:* having both writers set the identity fields with `if_not_exists` (the first decision).
+Once the reservation must succeed before launch, the instance's copy can never be the one that
+creates the item. It would still cost something: caller tag values, which are arbitrary text,
+rendered into JSON inside user-data. And together with a key mismatch, it would let the instance
+create an orphan item.
 
 *Rejected:* letting the instance's outcome override `cancelled`. It would need a two-branch
 condition and an asymmetry the spec has to explain, only to make a label more accurate. The
@@ -110,16 +129,33 @@ measurements are stored either way.
 The order in `RunCommand` becomes:
 
 ```
-preflight (project, table, JAR, image) → name the run (one clock read) → upload
-→ resolve networking → UpdateItem launching ──fail──▶ exit ≠ 0, nothing launched
-→ RunInstances ──ok──▶ UpdateItem launched (+instanceId) → shutdown hook → poll
+preflight (project, table, JAR, image) → resolve networking → name the run (one clock read)
+→ upload → UpdateItem launching ──fail──▶ exit ≠ 0, nothing launched
+→ RunInstances ──ok──▶ register shutdown hook
+                       → UpdateItem launched (+instanceId)   best effort, cond: status = launching
+                            ├─ ok / failed ─▶ poll
+                            └─ refused, already terminal (cancelled while launching)
+                                 ─▶ terminate own instance → exit ≠ 0
              └─fail─▶ UpdateItem launch-failed (+error code) and PutObject launch-error.txt
                       (each best effort) → report the original error → exit ≠ 0
 ```
 
+Networking stays resolved before the run is named and before the upload, where it is today, so a
+torn-down installation fails before anything is uploaded.
+
 A failed reservation stops the launch because an instance without a record is exactly the
 invisibility U3 removes. It also follows the CLI's rule of detecting every failure it can before
 money is spent.
+
+The hook is registered as soon as `RunInstances` returns, before any further write. If the
+`launched` write threw, or Ctrl+C arrived during its retries, there would otherwise be no hook, and a
+paid instance would run on with no one terminating it. `launched` is best effort because the
+instance's `running` write fills in `instanceId` anyway.
+
+**A refused `launched`** means the item went terminal during the launch. In practice that is
+`baas runs terminate` on a `launching` run that had no instance yet to stop. The CLI then terminates
+the instance it just created. Otherwise that instance would run to the end, paid and missing from
+`--in-flight`.
 
 *Rejected:*
 - **Writing only after `RunInstances`.** It leaves a failed launch unrecorded, so
@@ -133,33 +169,64 @@ A non-terminal item is resolved against EC2:
 - with its `instanceId` when the item has one;
 - otherwise with `tag:baas-request-id`.
 
-`baas runs list` collects every non-terminal row's run id into a single `DescribeInstances` call
-filtered on that tag (up to 200 values per filter). The instance's state decides: `pending` or
-`running` means in flight, and anything else, including no instance, means vanished. The result is
-never written back. Writing it back would make a list command a writer and would race an instance
-that is only slow to report.
+`baas runs list` asks the reverse question, with one call whose size doesn't grow with history:
+
+```
+DescribeInstances  tag:baas-role = benchmark-runner,  instance-state-name = pending,running
+  → map baas-request-id → (instanceId, state)
+non-terminal row whose run id is in the map  ⇒ in flight
+non-terminal row whose run id is not          ⇒ vanished
+```
+
+This is the same filter `listRunningBenchmarkInstances` already uses for teardown. Vanished runs are
+never written back, so non-terminal items pile up for good. Listing their run ids as filter values
+would hit `DescribeInstances`'s limit of about 200 values per filter. The live set, by contrast, is
+bounded by what is actually running.
+
+The result is never written back. Writing it back would make a list command a writer and would race
+an instance that is only slow to report.
+
+`--project` and `--tag` are filter expressions, and DynamoDB applies `Limit` before filtering. So
+`list` keeps paging the `RUN` partition, newest first, until it has `--limit` matching rows or reaches
+the end. `--in-flight` is filtered on the client after the EC2 join, and it pages the same way.
 
 ### User-data writes status through one shell function, with no fallback
 
-`run_status <status>` wraps `aws dynamodb update-item` with the condition above.
-- **Quoting.** Every value it puts into JSON is already constrained: the run id has a fixed format,
-  the project matches the PR #73 regex, the status comes from a fixed set, and the instance id
-  comes from IMDS. Following the quoting invariant, they are still captured into variables first,
-  and the `--key` and `--expression-attribute-values` JSON contains only `${VAR}` references.
-- **Retries.** The call runs with `AWS_RETRY_MODE=standard` and a raised `AWS_MAX_ATTEMPTS`.
-- **A refused condition.** `ConditionalCheckFailedException`, found in stderr, is logged as
-  "status already terminal" and returns success.
+`run_status <status>` wraps `aws dynamodb update-item` with the condition above, plus
+`attribute_exists(pk)`.
+- **The key comes from the CLI.** The CLI builds the sort key once with `ResultKeys` and exports it
+  as `RUN_SORT_KEY`. The shell never rebuilds it from `CREATED_AT`, which is
+  `runInstant.toString()`: a variable-width string, unlike the key's fixed three fractional digits.
+- **Quoting.** The JSON carries only constrained values: `RUN_SORT_KEY` (a fixed-format timestamp
+  plus the run id), a status from a fixed set, and the instance id from IMDS. No tag and no project
+  name is written from the shell. Following the quoting invariant, they are still captured into
+  variables first, and the `--key` and `--expression-attribute-values` JSON contains only `${VAR}`
+  references.
+- **Bounded retries, and only for this command.** The settings are passed inline:
+  `AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=3 aws dynamodb update-item --cli-connect-timeout 5
+  --cli-read-timeout 10 …`. The worst case, about 3 × 15 s plus backoff, stays under the 60 s
+  minimum watchdog margin. Nothing is exported: the runner's Java SDK reads the same environment
+  variables, so exporting them would change its own S3 and DynamoDB retry behaviour.
+- **A refused condition.** `ConditionalCheckFailedException`, found in stderr, is logged as "status
+  already terminal" and returns success.
 - **Any other failure** is logged and also returns. Because nothing aborts the script, the boot-log
   upload and the termination that follow always run.
 
 Placement:
 
 ```
-INSTANCE_ID → watchdog started → run_status running   (invariant: nothing before the watchdog)
+run_status() { … }                (defined first: a definition cannot fail, so the
+                                   watchdog-first rule holds)
+INSTANCE_ID → watchdog started → run_status running
 … manifest, JAR fetch, java -jar …
 run_status completed|failed:<n>  (replaces the S3 sentinel) → boot log → terminate
 watchdog subshell: run_status timed-out → boot log → terminate
 ```
+
+The function has to be defined before the watchdog's `( … ) &`. A forked subshell sees only the
+functions defined before the fork. Defined next to `json_escape`, which comes after the watchdog,
+`run_status timed-out` would fail with "command not found" on exactly the path it exists for, and
+`bash -n` would not notice. A test therefore runs the watchdog body itself against a stub `aws`.
 
 *Rejected:* falling back to the S3 sentinel when the DynamoDB write fails. That keeps two sources
 of truth and two poll paths in order to cover a failure the CLI can already report honestly (next
@@ -173,6 +240,34 @@ runs for the summary.
 - If measurements exist: "results stored; the instance's final status was lost", exit 1. The
   benchmark's exit code is unknown, so success is not claimed.
 - If none exist: the vanished report, naming the boot log.
+
+Exit codes are unchanged: `completed` exits 0, and `failed:<n>`, `timed-out` and `cancelled` all
+exit 1, as `failed:<n>` does today. The `--format json` summary's `exitCode` is therefore stable.
+
+### The CLI always terminates after recording why it stopped
+
+One method serves the shutdown hook, the poll cap and `baas runs terminate`:
+1. write the reason, with a short API-call timeout;
+2. terminate the instance whether or not the write succeeded.
+
+The reasons:
+- `cancelled` on interrupt and from `terminate`;
+- `timed-out` when the poll cap fires. The poll cap equals the watchdog bound but starts counting at
+  launch, while the watchdog counts from boot. So with the CLI attached, the cap always fires first,
+  and calling it `cancelled` would misreport every timeout.
+
+Ctrl+C after a lost network must not wait out the SDK's default retries before terminating, hence
+the short timeout.
+
+When the poll reads a terminal status this CLI didn't write (for example `cancelled` from another
+operator's `terminate`), it still terminates the instance if it is pending or running, rather than
+setting `runEnded` and leaving.
+
+**`baas runs terminate` fails loudly.** `Ec2ProvisioningService.terminateInstance` swallows every
+exception, which suits a best-effort shutdown hook. `terminate` uses a variant that throws instead,
+and exits non-zero on failure. It also terminates any pending or running instance even when the item
+is already terminal. Otherwise a failed termination after a successful `cancelled` write would hide
+a live instance from `--in-flight`, and a retry would only answer "already ended".
 
 ### `--no-database` is removed from both the CLI and the runner
 
@@ -204,11 +299,8 @@ operating runs is the operator's job.
 `list` and `terminate` are subcommands, and a bare `baas runs` prints usage. This matches every
 other group (`admin`, `config`) and keeps a destructive action away from read-only filter options.
 
-`terminate` and `RunCommand`'s shutdown hook call one method:
-1. record `cancelled`, conditionally;
-2. terminate the instance.
-
-`OperatorRole` already holds tag-scoped `ec2:TerminateInstances`. Confirmation follows teardown's
+`terminate` and `RunCommand`'s shutdown hook share the stop method described above. `OperatorRole`
+already holds tag-scoped `ec2:TerminateInstances`. Confirmation follows teardown's
 pattern: prompt on an interactive terminal, `--yes` to skip, and refuse without a terminal.
 
 `list` reuses `baas results`' output plumbing: `Console`, `console.Table`, and JSON/CSV under
@@ -230,8 +322,9 @@ sync` pins, and it changes in step with the template.
 - **No change to what a stored measurement means.** The measurement items, their keys, their tags
   and the runner's measurement path are unchanged.
 - **User-data gains one `aws dynamodb update-item` call (`running`) before the benchmark starts**,
-  at the same point in the script as the environment-manifest uploads. It completes before the JVM
-  starts, so it cannot overlap a measurement.
+  at the same point in the script as the environment-manifest uploads. It completes, or gives up
+  within its bound, before the JVM starts, so it cannot overlap a measurement. Its retry settings
+  are inline on that one command, so the runner JVM's SDK configuration is untouched.
 - **The final status write replaces an `aws s3 cp` at the same point, after the benchmark exits.**
 - **The watchdog's write happens only on the kill path.**
 
@@ -243,8 +336,21 @@ Results recorded before and after this change are therefore directly comparable.
   the operator role has no `UpdateItem` yet, so every run is refused.
   → Fails safe, with no instance launched. The error names `baas admin setup` as the fix, and the
   migration plan says to update the stack first.
-- **[An old CLI against an updated stack]** Unaffected. It writes and polls the S3 sentinel, and
-  the runner's narrowed `PutItem` still covers `RESULT#`.
+- **[An old CLI against an updated stack, before any run item exists]** Unaffected. It writes and
+  polls the S3 sentinel, and the runner's narrowed `PutItem` still covers `RESULT#`.
+- **[An old CLI once a run item exists]** It filters nothing:
+  - `scanAllProjects` and `queryByRequestId` pass the run item to `MeasurementItemMapper.fromItem`,
+    and `MeasurementKind.valueOf(null)` throws;
+  - `resultPathForRun` uses `.limit(1)`, and `RUN` sorts before lowercase class names, so
+    `download <id>` and `env diff <id>` can read the run item and fail;
+  - the picker offers projects that only have run items.
+
+  Only `results --project <name>`, a `Query` on `RESULT#<name>`, is untouched. The first run item
+  appears on the implementation PR's first CI run, well before the batched release.
+  → Accepted on 2026-10-02 (option A): every CLI must be upgraded, which is stated as **BREAKING** in
+  the proposal. Until the release, use a CLI built from the branch. *Rejected:* releasing the reader
+  fix to `main` ahead of the batch. It would cost a release outside the `next-release` batch, for a
+  read-only gap of days on what is effectively a one-user installation.
 - **[`ForAllValues` passes vacuously when the request carries no leading key]** Every
   `PutItem`/`BatchWriteItem`/`UpdateItem` request carries its key, so the condition always has
   values to test.
@@ -265,12 +371,20 @@ Results recorded before and after this change are therefore directly comparable.
 
 ## Migration Plan
 
-1. Update the stack first with `baas admin setup` from the new CLI. This adds the IAM grants and
-   narrows `PutItem`. Old CLIs keep working against it.
-2. Use the new CLI for runs. There is no data migration and no backfill. Old `run-status` objects
-   stay in S3 as artifacts, and old runs still resolve through their measurements.
-3. Rollback: the old CLI works against the updated stack (see Risks). Run items written in the
-   meantime are inert to it, because every reader filters by `RESULT#` or never reaches `RUN`.
+1. **Stack first, before any code is pushed.** The IAM edit is implemented right after the
+   assumption checks (tasks section 2) and deployed by the user with `baas admin setup` from a
+   branch build. It adds the two `UpdateItem` grants and narrows the runner's `PutItem` to
+   `RESULT#`, which is the only place today's runners write, so today's CLIs and runners are
+   unaffected. CI on the implementation PR runs the PR's CLI against the shared installation and
+   needs these grants from its first run.
+2. **Upgrade every CLI.** The first run item appears on the PR's first CI run. From then on an older
+   CLI's `--all-projects`, picker and lookups by id fail (see Risks). Until the release, use a CLI
+   built from the branch for those commands.
+3. There is no data migration and no backfill. Old `run-status` objects stay in S3 as artifacts,
+   and old runs still resolve through their measurements.
+4. Rollback: an older CLI can launch and poll against the updated stack, but its readers fail on the
+   run items already written. A rollback therefore also means deleting the `RUN` items, which no
+   `baas` command does, or living with `--project`-only queries.
 
 ## Resolved Questions
 
@@ -282,10 +396,11 @@ Results recorded before and after this change are therefore directly comparable.
   launch, and the reservation is written after all three.
 - **Which terminal status wins?** The first one written (decided during explore).
 - **Does `--no-database` keep a status path?** No: the flag is removed (decided during explore).
+- **What does the instance write?** Only `status` and `if_not_exists(instanceId)`, on an existing
+  item (decided 2026-10-02 after the pre-apply review).
+- **Old CLIs?** They must be upgraded, and the gap is accepted (decided 2026-10-02, option A).
 
 ## Open Questions
 
-- The exact `AWS_MAX_ATTEMPTS` for the status call (for example 8). It is tuning that changes no
-  spec or task.
 - Whether `baas run`'s status line shows the item's status (`launched`, `running`) instead of the
   EC2 state. It is cosmetic and can follow later.
