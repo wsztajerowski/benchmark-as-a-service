@@ -173,7 +173,7 @@ stateDiagram-v2
 | U13 | **A successful run logs "Terminating instance …"** and calls `TerminateInstances` on an already-terminated instance, because the shutdown hook is never deregistered. | Info | `RunCommand.execute` |
 | U14 | **Reinstall breaks the AWS CLI's cached role credentials.** After teardown + setup, the AWS CLI (not `baas`) fails with `InvalidClientTokenId` on the operator profile until its cached session expires: the role was recreated with a new id. `baas` is unaffected because the SDK does not read `~/.aws/cli/cache`. | Info | §8 |
 | U15 | **The results table formats scores in the JVM's locale** (`9702970,774` under pl-PL). That's right for a human reading it, and JSON/CSV are unaffected (`Locale.ROOT`). Recorded so nobody "fixes" it into a parsing bug: the table is not a machine format. | Info | §8 |
-| U16 | **`--tag project=…` likely makes `RunInstances` fail.** The instance is always tagged `project=baas`, and caller tags are appended after it, so a caller `project` tag sends the key twice, which EC2 rejects. It would fail after the JAR upload. Not exercised. | Low | `Ec2ProvisioningService.runInstance` |
+| U16 | **`--tag project=…` made `RunInstances` fail.** The instance was always tagged `project=baas` and caller tags were appended, so a caller `project` sent the key twice. Confirmed free by a dry-run: `InvalidParameterValue: Duplicate tag key 'project' specified`, a failure after the JAR upload. | Low · **Fixed** | F8 |
 | U17 | **An update run of `admin setup` prints "BaasCliOperatorRole created … Nobody can assume it yet"**, which is true only on create. | Info | 2026-10-02 deploy |
 
 ## 4. Fixed on this branch
@@ -187,6 +187,7 @@ stateDiagram-v2
 | F5 | `describeImage` mapped *every* EC2 error to "no image", so a denied `DescribeImages` told the operator to rebuild an image that existed | Only `InvalidAMIID.*` means absent; the new test fails without the fix |
 | F6 | Stale text: misplaced javadocs in `RunCommand` and `SetupCommand` (including the old caller-ARN hash), "name is fixed by your caller ARN" in setup's own error message, `benchmarkMetadata.tags`, `--ami-id`, a teardown diagram describing an SSM delete and `aws.coreStackName` that no longer exist, and a README E2E section for the deleted `act` harness | Corrected |
 | F7 | U11: the runner shared the image build's security group and its 80/443 internet egress | New `ImageBuildSecurityGroup` (443 + 80) for Image Builder; the runner group dropped port 80. Deployed 2026-10-02 with no replacement (the runner group kept its id), then the image was rebuilt and a run completed on it (§8). Under `--use-existing-vpc` nothing changes |
+| F8 | U16, and more broadly: caller `--tag`s and `instanceType`/`imageVersion` were copied onto the EC2 instance, where nothing reads them | The instance carries only `project=baas`, `baas-role` and `baas-request-id`; `runInstance` no longer accepts extra tags. Result tags reach the result through the runner, as before |
 
 ## 5. Simplifications
 
