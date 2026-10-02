@@ -10,21 +10,21 @@
 
   Record the output in `verify.md`. If `ForAllValues` behaves differently for `BatchWriteItem`,
   stop and revise design.md. This checks the policy logic only; task 13.7 checks the live deny.
-- [ ] 1.2 Read the `awsCliVersion` field of the current runner image's `environment.json` (any run
+- [x] 1.2 Read the `awsCliVersion` field of the current runner image's `environment.json` (any run
   since `ami-060b449bdd8cd463e`). Confirm it is AWS CLI v2, which honours `AWS_RETRY_MODE`,
   `AWS_MAX_ATTEMPTS`, `--cli-connect-timeout` and `--cli-read-timeout`, and supports
   `dynamodb update-item --condition-expression`.
-- [ ] 1.3 Against LocalStack, check the designed `update-item` with its condition. Expected results:
+- [x] 1.3 Against LocalStack, check the designed `update-item` with its condition. Expected results:
   - on an item at `completed`, the exit code is non-zero and stderr names
     `ConditionalCheckFailedException`;
   - `begins_with(#status, :failedPrefix)` refuses an overwrite of `failed:3`;
   - `attribute_exists(pk)` refuses a write to a missing key and creates nothing.
-- [ ] 1.4 `git grep -n -- '--no-database'` across `.github/` and `scripts/`, and confirm no workflow
+- [x] 1.4 `git grep -n -- '--no-database'` across `.github/` and `scripts/`, and confirm no workflow
   or script passes it. Record the result.
 
 ## 2. Infrastructure first (it ships before any code is pushed)
 
-- [ ] 2.1 In `cf-template-core.yaml`, add `UpdateItem` with `LeadingKeys = RUN` to `RunnerRole` and
+- [x] 2.1 In `cf-template-core.yaml`, add `UpdateItem` with `LeadingKeys = RUN` to `RunnerRole` and
   `OperatorRole`, and narrow `RunnerRole`'s `PutItem`/`BatchWriteItem` to `LeadingKeys = RESULT#*`.
   Update `infra/operator-policy.json` to match. Verify with `CoreTemplateTest` cases pinning both
   conditions and the absence of any delete action, the existing reference-copy sync test, and a

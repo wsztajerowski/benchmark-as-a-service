@@ -436,8 +436,33 @@ class CoreTemplateTest {
     void theRunnerCanWriteAndBatchDeleteResultsButNeverReadOrSingleItemDeleteThem() {
         var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("RunnerRole"));
 
-        assertThat(actions).containsExactlyInAnyOrder("dynamodb:PutItem", "dynamodb:BatchWriteItem");
-        assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query");
+        assertThat(actions).containsExactlyInAnyOrder(
+            "dynamodb:PutItem", "dynamodb:BatchWriteItem", "dynamodb:UpdateItem");
+        assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query",
+            "dynamodb:GetItem");
+    }
+
+    /**
+     * The runner's puts are confined to measurement partitions, so it cannot forge a run item,
+     * and its one update is confined to the RUN partition, so it cannot rewrite a measurement.
+     */
+    @Test
+    void theRunnerPutsOnlyMeasurementsAndUpdatesOnlyRunItems() {
+        var runner = dynamoDbPolicyDocumentFor("RunnerRole");
+
+        assertThat(leadingKeysCondition(runner, "dynamodb:PutItem"))
+            .isEqualTo(Map.of("ForAllValues:StringLike", List.of("RESULT#*")));
+        assertThat(leadingKeysCondition(runner, "dynamodb:BatchWriteItem"))
+            .isEqualTo(Map.of("ForAllValues:StringLike", List.of("RESULT#*")));
+        assertThat(leadingKeysCondition(runner, "dynamodb:UpdateItem"))
+            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("RUN")));
+    }
+
+    /** The operator's first write on the table, and it reaches run items only. */
+    @Test
+    void theOperatorUpdatesOnlyRunItems() {
+        assertThat(leadingKeysCondition(dynamoDbPolicyDocumentFor("OperatorRole"), "dynamodb:UpdateItem"))
+            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("RUN")));
     }
 
     /**
@@ -451,9 +476,10 @@ class CoreTemplateTest {
     void theOperatorCanReadResultsButNeverWriteThem() {
         var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("OperatorRole"));
 
-        assertThat(actions)
-            .containsExactlyInAnyOrder("dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem");
-        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:DeleteItem");
+        assertThat(actions).containsExactlyInAnyOrder(
+            "dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem", "dynamodb:UpdateItem");
+        assertThat(actions).doesNotContain(
+            "dynamodb:PutItem", "dynamodb:BatchWriteItem", "dynamodb:DeleteItem");
     }
 
     @Test
@@ -579,5 +605,26 @@ class CoreTemplateTest {
                 .anyMatch(action -> action.startsWith("dynamodb:")))
             .findFirst()
             .orElseThrow(() -> new AssertionError("No dynamodb policy document on " + logicalId));
+    }
+
+    /**
+     * The {@code dynamodb:LeadingKeys} condition of the one statement granting {@code action}, as
+     * operator → values. Fails if the action is granted by more than one statement, which would
+     * let an unconditioned copy widen the conditioned one.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> leadingKeysCondition(Map<String, Object> document, String action) {
+        var statements = ((List<Map<String, Object>>) document.get("Statement")).stream()
+            .filter(statement -> {
+                Object raw = statement.get("Action");
+                return raw instanceof List<?> list ? list.contains(action) : action.equals(raw);
+            })
+            .toList();
+        assertThat(statements).as("statements granting " + action).hasSize(1);
+        var condition = (Map<String, Map<String, Object>>) statements.getFirst().get("Condition");
+        assertThat(condition).as("condition on " + action).isNotNull();
+        var byOperator = new java.util.TreeMap<String, Object>();
+        condition.forEach((operator, keys) -> byOperator.put(operator, keys.get("dynamodb:LeadingKeys")));
+        return byOperator;
     }
 }
