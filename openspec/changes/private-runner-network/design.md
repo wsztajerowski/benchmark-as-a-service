@@ -1,6 +1,7 @@
 ## Context
 
-Runners launch into a public subnet with a public IP and `0.0.0.0/0` egress on ports 443 and 80, because
+Runners launch into a public subnet with a public IP and `0.0.0.0/0` egress on port 443 (port 80 went
+with the 2026-10-02 split that gave image builds their own `ImageBuildSecurityGroup`), because
 they need to reach yum repositories for the JDK, GitHub Releases for the runner JAR and async-profiler,
 MongoDB Atlas on 27017, and the EC2 API for self-termination.
 
@@ -39,8 +40,10 @@ any runner can terminate any other.
 
 ```
 BaasVpc
-├─ PublicSubnet   → IGW route.  Image Builder build instances only. Rare, short-lived.
-└─ RunnerSubnet   → no IGW.  S3 + DynamoDB gateway endpoints. Every benchmark run.
+├─ PublicSubnet   → IGW route.  ImageBuildSecurityGroup (443 + 80).
+│                   Image Builder build instances only. Rare, short-lived.
+└─ RunnerSubnet   → no IGW.  S3 + DynamoDB gateway endpoints.
+                    RunnerSecurityGroup (443 to the S3 and DynamoDB prefix lists). Every benchmark run.
 ```
 
 The builder and the runner have inverted requirements by construction: the runner needs no internet
@@ -96,8 +99,11 @@ will create the full networking set on update, leaving the caller's own resource
 ### Egress narrows to managed prefix lists
 
 Because gateway endpoints route to the AWS-managed prefix lists for S3 and DynamoDB, egress can name exactly
-those, on 443 only. Port 80 disappears with the yum dependency. The security group becomes a readable
-statement of what a runner may reach, rather than an open default.
+those, on 443 only. Port 80 already left with the 2026-10-02 split: the bake, the only thing that used it,
+has `ImageBuildSecurityGroup`. Because the bake no longer shares `RunnerSecurityGroup`, narrowing the
+runner's egress cannot break a build — before the split it would have. The security group becomes a
+readable statement of what a runner may reach, rather than an open default. Its `GroupDescription` still
+says "443/80" and must stay that way: it is immutable, and editing it replaces the group.
 
 ### Runner JAR staging becomes mandatory, and is verified
 

@@ -47,6 +47,32 @@ termination path SHALL continue to use operator credentials.
 - **WHEN** an identity that has assumed `BaasCliOperatorRole` terminates a benchmark instance it launched
 - **THEN** the request succeeds
 
+## MODIFIED Requirements
+
+### Requirement: The image build and the runner do not share a security group
+`RunnerImageInfrastructure` SHALL use a dedicated `ImageBuildSecurityGroup` permitting outbound TCP 443 and
+80, created unconditionally. `RunnerSecurityGroup` SHALL permit outbound TCP 443 only, and only to the
+AWS-managed prefix lists for S3 and DynamoDB in the stack's region. `RunnerSecurityGroup`'s
+`GroupDescription` SHALL NOT change, since editing it replaces the group.
+
+The `0.0.0.0/0` rule on 443 existed for GitHub Releases and the EC2 API. The runner JAR is staged through
+S3 and self-termination uses `shutdown`, so no destination outside the two prefix lists remains. A
+benchmark that makes outbound network calls of its own now fails; such a benchmark needs a deliberate,
+documented egress addition rather than the previous open default.
+
+#### Scenario: Port 80 is the build's alone
+- **WHEN** the two groups' egress rules are inspected
+- **THEN** the build group covers 443 and 80, and the runner group covers 443 and nothing else
+
+#### Scenario: The runner reaches only the two prefix lists
+- **WHEN** `RunnerSecurityGroup`'s egress rules are inspected
+- **THEN** every rule targets the S3 or DynamoDB prefix list and none targets `0.0.0.0/0`
+
+#### Scenario: An existing VPC keeps the operator's group
+- **WHEN** the stack is deployed with `UseExistingVpc=true`
+- **THEN** the deploy fails, because the parameter no longer exists: the stack always creates its own
+  networking and both security groups, so there is no operator-supplied group left to keep
+
 ## REMOVED Requirements
 
 ### Requirement: Existing networking can be reused via stack parameters
@@ -59,15 +85,6 @@ configuration that cannot be validated is worse than not supporting it.
 parameters `UseExistingVpc`, `ExistingVpcId`, `ExistingSubnetId`, and `ExistingSecurityGroupId` are removed;
 passing them fails the deploy. A stack previously deployed with existing networking will create the full
 networking set on update, and the caller-supplied resources are left untouched for the caller to remove.
-
-### Requirement: Runner egress permits general outbound access
-**Reason**: Egress on `0.0.0.0/0` for ports 443 and 80 existed to reach yum repositories, GitHub Releases,
-and Atlas. The prebaked AMI supplies the toolchain, the runner JAR is staged through S3, and DynamoDB
-replaces Atlas, so no destination outside the S3 and DynamoDB prefix lists remains.
-
-**Migration**: No operator action for self-contained benchmarks. A benchmark that makes outbound network
-calls of its own will now fail; such a benchmark requires a deliberate, documented egress addition rather
-than relying on the previous open default.
 
 ### Requirement: The instance self-terminates through the EC2 API
 **Reason**: Calling `ec2:TerminateInstances` from a private subnet would require an EC2 interface endpoint
