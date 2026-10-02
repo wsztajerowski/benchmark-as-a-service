@@ -52,10 +52,9 @@ public class ConfigSetSubcommand implements Callable<Integer> {
             + "benchmark JAR's repository, baas results from the current directory's.")
     Boolean gitResolveProject;
 
-    @Option(names = "--prefix",
-        description = "Installation this machine addresses, e.g. baas-123456789012. Prefer "
-            + "`baas config sync --name`, which checks the installation exists first.")
-    String prefix;
+    // No --prefix. Adopting an installation is `baas config sync --name`, which checks the stack
+    // exists first; this option wrote the same field unchecked, so a typo surfaced only as the
+    // first real command's AWS error. It dated from when the prefix was a name you chose.
 
     @Spec CommandSpec spec;
 
@@ -72,7 +71,6 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         }
         BaasConfig config = configService().loadOrEmpty();
 
-        if (prefix != null) config.setPrefix(prefix);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
         if (region != null) config.getAws().setRegion(region);

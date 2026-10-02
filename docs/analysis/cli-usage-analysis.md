@@ -32,7 +32,7 @@ Every command also takes `-h`, `-V`, `-v` and the inherited `--config-path <file
 | `admin build-image` | — | deployer | no |
 | `admin image` | — | deployer | no |
 | `admin teardown` | `--stack-name`, `--yes`, `--delete-bucket` | deployer | no |
-| `config set` | `--aws-profile`, `--operator-profile`, `--region`, `--instance-type`, `--timeout`, `--watchdog-margin`, `--git-resolve-project`, `--prefix` | none | yes |
+| `config set` | `--aws-profile`, `--operator-profile`, `--region`, `--instance-type`, `--timeout`, `--watchdog-margin`, `--git-resolve-project` | none | yes |
 | `config show` | — | none | no |
 | `config sync` | `--name` (required) | operator | prefix |
 | `run <type> -- <params>` | `--benchmark-jar` (required), `--runner-jar`, `--project`, `--tag k=v`…, `--instance-type`, `--timeout`, `--watchdog-margin`, `--no-database`, `--format text\|json` | operator | no |
@@ -49,7 +49,7 @@ The precedence is always flag over config file over built-in default. What diffe
 | region | `admin setup` (saved), `admin deployer-policy` (render only) | yes | `AWS_REGION`, only when the file names none (F9) | `eu-central-1` |
 | deployer profile | `setup` only (saved) | yes | `AWS_PROFILE` only when `aws.profile` is unset | none → default chain |
 | operator profile | — | yes | `AWS_PROFILE` / OIDC when unset | none → default chain |
-| prefix | — | `--prefix` (unchecked) | — | none; `setup` / `config sync` write it |
+| prefix | — | — (F14) | — | none; `setup` / `config sync --name` write it |
 | instance type, timeout, watchdog margin | `run` | yes | — | `c5.2xlarge`, 7200 s, 300 s |
 | git project derivation | — | yes | — | off |
 | `runner.sourceRepo` | — | **no** (hand-edit only) | — | `wsztajerowski/benchmark-as-a-service` |
@@ -119,8 +119,6 @@ stateDiagram-v2
     direction LR
     [*] --> NoConfig
     NoConfig --> Adopted: config sync --name P<br/>admin setup
-    NoConfig --> Unchecked: config set --prefix P
-    Unchecked --> Adopted: nothing verifies it — a typo surfaces<br/>as the first command's AWS error
     Adopted --> Operator: config set --operator-profile<br/>(or ambient creds: OIDC, AWS_PROFILE)
     Operator --> Operator: config set (preferences)
     Operator --> Orphaned: [elsewhere] admin teardown
@@ -164,7 +162,7 @@ stateDiagram-v2
 | U4 | **`env diff` accepts result paths only.** `results` shows run ids, and `download` accepts either form. A human going from `results` to `env diff` has to hand-compose `runs/<project>/<runId>`, which CLAUDE.md calls the error-prone thing (`RunLayout` is the only builder). Passing a run id fails with a misleading reason: "No environment.json at s3://…/<runId>/environment.json — Runs from before the prebaked-image change carry no environment manifest". | Low · **Fixed** | F11 |
 | U5 | **Region could not come from the environment.** `AWS_REGION` was ignored and `config sync` had no `--region`, so CI was right only because `vars.AWS_REGION` equalled the default. | Med · **Fixed** | F9 |
 | U6 | **The deployer profile is overridable on three of five admin commands.** `teardown` and `deployer-policy` have no `--aws-profile`. `setup` persists the override while `build-image`/`image` don't. | Low · **Fixed** | F12 |
-| U7 | **`config set --prefix` adopts an installation unchecked** and duplicates `config sync --name` minus its existence check, the check CLAUDE.md says is the reason sync requires the name. | Low | `ConfigSetSubcommand` |
+| U7 | **`config set --prefix` adopts an installation unchecked** and duplicates `config sync --name` minus its existence check, the check CLAUDE.md says is the reason sync requires the name. | Low · **Fixed** | F14 |
 | U8 | **`runner.sourceRepo` can only be set by hand-editing YAML**, though the error message says that is how to set it. | Info | `RunnerJarResolver.assetUrl` |
 | U9 | **`run` uploads before it checks the stack.** `resolveNetworking` runs after the JAR upload, so a torn-down or wrong installation uploads the benchmark JAR, then fails on missing outputs. | Low · **Fixed** | F10 |
 | U10 | **`admin image` needs deployer credentials** for a read that `OperatorRole` can already do (`ssm:GetParameter`, `ec2:DescribeImages`; `run` makes the same call). An operator can't ask which image their next run will use. | Low | `ImageCommand` |
@@ -195,6 +193,7 @@ stateDiagram-v2
 | F11 | U4: `env diff` took result paths only | Each argument is a run id or a result path, resolved by `RunReference`, now shared with `download`. An unknown id fails naming itself before S3 is read. Failed runs still need their path until U3 adds the run item. Checked live: two runs diffed by id showed different CPU models on the same `c5.2xlarge` (Xeon 8124M vs 8275CL) |
 | F12 | U6: `--aws-profile` on three of five admin commands, saved by one | Only `setup` takes it, and saves it to `aws.profile`; `build-image` and `image` lost their per-call override and read the config like `teardown` and `deployer-policy`. Nothing used the override. A one-off different deployer goes through `--config-path` |
 | F13 | U19 | `deployer-policy --region`, render-only, over the resolved region. Checked live: all seven region spots rendered as `us-west-2`. Also fixed `infra/README.md` and CLAUDE.md, which still showed the removed `--for-arn` |
+| F14 | U7: `config set --prefix` adopted an installation without the existence check | Removed. It dated from the CLI's first commit, when the prefix was a name you chose; the 2026-09-22 naming change made names derived and kept the option without recording why. Nothing used it, and the dev-installation procedure already uses `config sync --name`. Released as a minor (feature) by decision, not as a major |
 
 ## 5. Simplifications
 
@@ -208,7 +207,7 @@ In rough order of value:
 3. ~~Read region from the config file, then `AWS_REGION`, then the default~~: done (F9).
    This removes the need for a `--region` on `sync` and keeps CI correct in any region.
 4. ~~One place for the deployer profile~~: done (F12) — `setup` takes and saves it, every other admin command reads the config.
-5. **Drop `config set --prefix`** (closes U7). `config sync --name` covers it, and so does `--config-path` for by-hand files.
+5. ~~Drop `config set --prefix`~~: done (F14). `config sync --name` covers it, and so does `--config-path` for by-hand files.
 6. **`baas image` under operator credentials**, or fold the image line into `config show` (closes U10).
 7. ~~`createOrUpdateStack` → `createStack`~~ (done, F10). Setup sends every existing stack through
    `updateStackParameters`, so the update branch is unreachable.
