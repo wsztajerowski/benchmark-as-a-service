@@ -54,7 +54,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | → new OpenSpec change `runs-command` (decided 2026-10-02) |
 | 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | **Fixed** |
 | 13 | P13 | async-profiler install path hardcoded a third time | Low | **Fixed** (pinned by a test) |
-| 14 | P14 | `build()` polls without an upper bound | Low | Open |
+| 14 | P14 | `build()` polls without an upper bound | Low | **Fixed** |
 | 15 | P15 | `deployer-policy.json` is partition-hardcoded; the template beside it is not | Low | Open |
 
 **P2, P5 and P6 were fixed on 2026-08-13.** P2's fix is pinned by a test confirmed to fail against
@@ -441,12 +441,19 @@ way `asyncProfilerLandsWhereTheRunnerLooksForIt` already pins the runner's defau
 on a mismatched path. Passing the path into user-data was declined: the CLI's bundled definition
 need not match the AMI actually running, which a constant pinned at build time cannot get wrong.
 
-## 14. P14 — `build()` polls without an upper bound · Low
+## 14. P14 — `build()` polls without an upper bound · FIXED
 
 `ImageBuilderService.build` loops `while (true)` on a 30-second poll. `SUCCEEDED` holds
 `AVAILABLE`; `FAILED` holds `FAILED`, `CANCELLED`, `DELETED`. `DEPRECATED` and
 `UNKNOWN_TO_SDK_VERSION` are in neither, so either would spin forever. It is an interactive
 command and Ctrl+C works, so the practical impact is small, but there is no deadline.
+
+**Fixed (2026-10-02) without a deadline.** The loop now waits only on the in-progress statuses
+(`PENDING`, `CREATING`, `BUILDING`, `TESTING`, `DISTRIBUTING`, `INTEGRATING`); anything that is
+neither those nor `AVAILABLE` fails at once with the status and the build ARN. A build stuck inside
+an in-progress status still ends, because Image Builder enforces its own timeouts — so no deadline
+needed choosing. Pinned by `aStatusThatIsNeitherDoneNorInProgressEndsTheWait` (`DEPRECATED`,
+`DISABLED`, `UNKNOWN_TO_SDK_VERSION`).
 
 ## 15. P15 — `deployer-policy.json` is partition-hardcoded; the template beside it is not · Low
 
