@@ -36,37 +36,34 @@ sequenceDiagram
         end
     end
 
-    SC->>CFSvc: createOrUpdateStack(stackName, template, params)
-    Note over CFSvc: params: ResourceNamePrefix, UseExistingVpc,<br/>ExistingVpcId, ExistingSubnetId, ExistingSecurityGroupId
-    CFSvc->>CF: describeStacks(stackName)
-    alt stack absent
-        CF-->>CFSvc: stack not found
+    SC->>CF: describeStacks(stackName) -- exists?
+    alt stack exists (update)
+        Note over SC: networking params sent only if this invocation named them,<br/>and refused if they differ from the deployed values.<br/>Federation params carried forward unless named or revoked.
+        SC->>CFSvc: updateStackParameters(stack, template, changed params)
+        alt status ROLLBACK_COMPLETE
+            CFSvc-->>User: refuse -- delete it first with<br/>baas admin teardown --stack-name X --yes
+        else updatable
+            CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
+            alt nothing changed
+                CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
+            else changes applied
+                CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
+            end
+        end
+    else stack absent (create)
+        SC->>CFSvc: createStack(stack, template, explicit params incl. federation or empty)
         CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
         CFSvc->>CF: waiter.waitUntilStackCreateComplete()
-        loop poll DescribeStacks
-            CF-->>CFSvc: status = CREATE_IN_PROGRESS
-        end
-        CF-->>CFSvc: status = CREATE_COMPLETE
-    else stack in ROLLBACK_COMPLETE
-        CF-->>CFSvc: status = ROLLBACK_COMPLETE
-        CFSvc-->>User: IllegalStateException -- delete it first with<br/>baas admin teardown --stack-name X --yes
-    else stack exists and is updatable
-        CF-->>CFSvc: existing stack details
-        CFSvc->>CF: updateStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
-        alt template unchanged
-            CF-->>CFSvc: ValidationError "No updates are to be performed"
-            Note over CFSvc: swallowed -- report "already up to date" and return
-        else changes applied
-            CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
-            CF-->>CFSvc: status = UPDATE_COMPLETE
-        end
     end
 
-    SC->>CF: describeStacks() -- read stack outputs
-    CF-->>SC: BucketName, ResultsTableName, SubnetId, SecurityGroupId, VpcId,<br/>RunnerInstanceProfileName, OperatorRoleArn,<br/>RunnerRoleName, RunnerRoleArn, S3BucketArn
-    SC->>FS: ConfigService.save() to ~/.baas/config.yaml
-    Note over SC,FS: only non-sensitive values are written to the config file
+    SC->>CF: describeStacks() -- OperatorRoleArn output, to print only
+    SC->>FS: ConfigService.save() -- prefix, aws.profile, resolved aws.region
+    Note over SC,FS: nothing derivable or resolvable is stored
 
-    SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>until then `baas run` uses the default credential chain
+    alt created
+        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>Next: baas admin build-image (~15 min)
+    else updated
+        SC-->>User: "Installation <prefix> is deployed. Operator role: <arn>"
+    end
 
     SC-->>User: exit 0

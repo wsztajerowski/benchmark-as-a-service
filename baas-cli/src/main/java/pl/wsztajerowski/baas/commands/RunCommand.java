@@ -90,6 +90,12 @@ public class RunCommand implements Callable<Integer> {
      */
     private volatile StatusLine statusLine;
 
+    /**
+     * Set once the poll has seen the run end — a run-status sentinel, or the instance already
+     * terminated. The shutdown hook then leaves the instance to terminate itself.
+     */
+    private volatile boolean runEnded;
+
     @Parameters(index = "0", paramLabel = "<type>",
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
     String benchmarkType;
@@ -335,6 +341,13 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
 
+        // Before naming the run and before any upload: a torn-down or wrong installation used to
+        // upload the benchmark JAR and only then fail here. Resolved per run rather than cached in
+        // config: replacing RunnerSecurityGroup moves its id, and a stored copy then names a group
+        // that no longer exists. The operator role already holds cloudformation:DescribeStacks on
+        // its own stack, so this costs one call.
+        Map<String, String> networking = resolveNetworking(factory, config);
+
         // 3. Name the run. One clock read: the instant travels into the identifier, into the S3
         //    prefix and on to the runner as --created-at, so the prefix name and the stored
         //    timestamp are the same value rather than two values that happen to be close.
@@ -395,11 +408,6 @@ public class RunCommand implements Callable<Integer> {
         //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
         logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
 
-        // Resolved per run rather than cached in config: replacing RunnerSecurityGroup moves its
-        // id, and a stored copy then names a group that no longer exists. The operator role
-        // already holds cloudformation:DescribeStacks on its own stack, so this costs one call.
-        Map<String, String> networking = resolveNetworking(factory, config);
-
         String instanceId;
         try (var ec2 = factory.ec2()) {
             instanceId = new Ec2ProvisioningService(ec2).runInstance(
@@ -418,6 +426,14 @@ public class RunCommand implements Callable<Integer> {
             var line = statusLine;
             if (line != null) {
                 line.close();
+            }
+            // Once the run has ended the instance terminates itself, and the watchdog still backs it
+            // up. Terminating it from here as well announced a termination on every successful run
+            // and could cut off the instance's final cloud-init-output.log upload. This layer is
+            // for a CLI that stops while the run is still in flight: Ctrl+C, or the poll cap.
+            if (runEnded) {
+                logger.debug("Run ended; instance {} terminates itself.", instanceId);
+                return;
             }
             logger.info("Terminating instance {} ...", instanceId);
             try (var ec2 = factory.ec2()) {
@@ -458,11 +474,14 @@ public class RunCommand implements Callable<Integer> {
                     closeIfOpen(line);
                     var exitCode = exitCodeFor(status.get().trim(), factory, config, runId, logPath);
                     if (exitCode.isPresent()) {
+                        runEnded = true;
                         return exitCode.getAsInt();
                     }
                 } else {
                     String state = provisioning.instanceState(instanceId);
                     if ("terminated".equals(state) || "shutting-down".equals(state)) {
+                        // The instance is already going; nothing is left for the hook to stop.
+                        runEnded = true;
                         // The sentinel is written moments before the instance terminates, so a
                         // poll landing in that window sees a dead instance and no status yet.
                         // Re-read once before reporting a successful run as a failure.

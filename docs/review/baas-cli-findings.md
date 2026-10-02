@@ -51,7 +51,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 21 | U4 | `env diff` takes result paths only; a run id fails with a misleading reason | Low | Open |
 | 22 | U6 | `--aws-profile` on three of five admin commands, persisted by one | Low | Open |
 | 23 | U7 | `config set --prefix` adopts an installation without the check `config sync` exists for | Low | Open |
-| 24 | U9 | `run` uploads the benchmark JAR before checking the stack exists | Low | Open |
+| 24 | U9 | `run` uploads the benchmark JAR before checking the stack exists | Low | **Fixed** |
 | 25 | U10 | `admin image` demands deployer credentials for a read the operator role can do | Low | Open |
 | 26 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | Open |
 | 27 | F1 | `config show` wrote its payload to stderr | Low | **Fixed** |
