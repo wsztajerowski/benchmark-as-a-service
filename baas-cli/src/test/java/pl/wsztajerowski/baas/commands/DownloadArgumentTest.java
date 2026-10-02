@@ -10,30 +10,30 @@ class DownloadArgumentTest {
 
     @Test
     void aRunIdentifierIsRecognised() {
-        assertThat(DownloadCommand.looksLikeRunId("20260820T174432812Z-a3f9c21b")).isTrue();
+        assertThat(RunReference.looksLikeRunId("20260820T174432812Z-a3f9c21b")).isTrue();
     }
 
     /** The branch that keeps every run stored before the unified layout retrievable. */
     @Test
     void anOldLayoutPathIsNotARunIdentifier() {
-        assertThat(DownloadCommand.looksLikeRunId("main/jmh/20260819_090000")).isFalse();
+        assertThat(RunReference.looksLikeRunId("main/jmh/20260819_090000")).isFalse();
     }
 
     @Test
     void aNewLayoutPathIsNotARunIdentifier() {
-        assertThat(DownloadCommand.looksLikeRunId("runs/lynx-journal/20260820T174432812Z-a3f9c21b"))
+        assertThat(RunReference.looksLikeRunId("runs/lynx-journal/20260820T174432812Z-a3f9c21b"))
             .isFalse();
     }
 
     @Test
     void aLegacyRequestIdIsNotMistakenForOne() {
-        assertThat(DownloadCommand.looksLikeRunId("jmh-20260819_090000")).isFalse();
+        assertThat(RunReference.looksLikeRunId("jmh-20260819_090000")).isFalse();
     }
 
     @Test
     void nothingIsNotARunIdentifier() {
-        assertThat(DownloadCommand.looksLikeRunId(null)).isFalse();
-        assertThat(DownloadCommand.looksLikeRunId("")).isFalse();
+        assertThat(RunReference.looksLikeRunId(null)).isFalse();
+        assertThat(RunReference.looksLikeRunId("")).isFalse();
     }
 
     /**
@@ -54,7 +54,7 @@ class DownloadArgumentTest {
 
     @Test
     void aLiteralPathNeedsNoResultsTable() {
-        assertThat(DownloadCommand.looksLikeRunId("main/jmh/20260819_090000"))
+        assertThat(RunReference.looksLikeRunId("main/jmh/20260819_090000"))
             .as("the literal-path branch never reaches the table lookup")
             .isFalse();
     }

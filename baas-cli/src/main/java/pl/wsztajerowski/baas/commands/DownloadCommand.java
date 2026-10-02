@@ -19,7 +19,6 @@ import pl.wsztajerowski.baas.results.ResultsQueryService;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;
-import java.util.regex.Pattern;
 
 /**
  * Fetches everything a stored measurement deliberately leaves out.
@@ -52,18 +51,6 @@ public class DownloadCommand implements Callable<Integer> {
         description = "Local directory to write into. Default: ./<last path segment>.")
     Path outputDir;
 
-    private static final Pattern RUN_ID = Pattern.compile("\\d{8}T\\d{9}Z-[0-9a-f]{8}");
-
-    /**
-     * A path is never a run identifier and a run identifier never contains a slash, so the two
-     * argument shapes cannot be confused. The path branch is what keeps every run stored before
-     * this layout retrievable — {@code baas download} follows each item's stored {@code resultPath}
-     * rather than reconstructing one.
-     */
-    static boolean looksLikeRunId(String argument) {
-        return argument != null && RUN_ID.matcher(argument).matches();
-    }
-
     /** Split out from {@link #call()} so the guard is reachable without AWS credentials. */
     boolean tableUnresolvable(String table) {
         return table == null || table.isBlank();
@@ -91,13 +78,11 @@ public class DownloadCommand implements Callable<Integer> {
         var factory = new AwsClientFactory(
             config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
 
-        String resolvedPath = resultPath;
-        if (looksLikeRunId(resultPath)) {
+        if (RunReference.looksLikeRunId(resultPath)) {
             // Only the run-id branch needs the table; a literal path resolves without it, so this
             // is checked here rather than beside the bucket check above.
-            String table;
             try {
-                table = config.resultsTable();
+                config.resultsTable();
             } catch (IllegalStateException noInstallation) {
                 logger.error("""
                     No installation is configured, so run id '{}' cannot be resolved to a path.
@@ -107,16 +92,17 @@ public class DownloadCommand implements Callable<Integer> {
                     Nothing was written.""", resultPath);
                 return 1;
             }
-            try (var results = new ResultsQueryService(factory.dynamoDb(), table)) {
-                resolvedPath = results.resultPathForRun(resultPath);
-            }
-            // Before anything is written, so an unknown run leaves no partial directory behind.
-            if (resolvedPath == null) {
-                logger.error("No run found with id '{}'. Nothing was written.", resultPath);
-                return 1;
-            }
-            logger.debug("Run {} resolves to {}", resultPath, resolvedPath);
         }
+        String resolvedPath;
+        try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
+            resolvedPath = RunReference.resolve(resultPath, results::resultPathForRun);
+        }
+        // Before anything is written, so an unknown run leaves no partial directory behind.
+        if (resolvedPath == null) {
+            logger.error("{} Nothing was written.", RunReference.noSuchRun(resultPath));
+            return 1;
+        }
+        logger.debug("{} resolves to {}", resultPath, resolvedPath);
         String prefix = resolvedPath.endsWith("/") ? resolvedPath : resolvedPath + "/";
 
         try (var s3 = factory.s3()) {

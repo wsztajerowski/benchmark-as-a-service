@@ -52,7 +52,7 @@ sequenceDiagram
         CLI-->>Op: run id + result table
         Op->>CLI: baas results [--project p | --all-projects | --request-id id]
         Op->>CLI: baas download <runId>
-        Op->>CLI: baas env diff runs/p/<idA> runs/p/<idB>
+        Op->>CLI: baas env diff <runIdA> <runIdB>
     end
 
     rect rgb(245, 245, 245)

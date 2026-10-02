@@ -147,10 +147,21 @@ free-form `Map<String,String>`, so this SHALL require no schema change.
 - **THEN** both rows are still present in the output
 
 ### Requirement: Environments can be compared field by field
-`baas env diff <resultPathA> <resultPathB>` SHALL fetch both runs' `environment.json` from the results
-bucket and report the fields that differ. It SHALL run under operator credentials, consistent with the
+`baas env diff <runA> <runB>` SHALL fetch both runs' `environment.json` from the results bucket and
+report the fields that differ. Each run SHALL be accepted either as its run id, resolved to the stored
+result path through `requestId-index` exactly as `baas download` resolves one, or as a literal result
+path. A run id that resolves to no stored run SHALL fail naming that id, before any S3 read. It SHALL run under operator credentials, consistent with the
 other read-only day-to-day commands. Command payload SHALL be written to `System.out` so it remains
 pipeable.
+
+
+#### Scenario: Runs named by id
+- **WHEN** `baas env diff <runIdA> <runIdB>` runs for two stored runs
+- **THEN** both resolve to their stored result paths and the differing fields are reported
+
+#### Scenario: An unknown run id
+- **WHEN** one argument has the run-id shape but names no stored run
+- **THEN** the command exits non-zero naming that id, and reads nothing from S3
 
 #### Scenario: Differing fields are reported
 - **WHEN** two runs used different JDK patch levels
