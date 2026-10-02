@@ -32,7 +32,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 2 | S5 | User-data built by concatenation, one value of eleven escaped | Med | **Fixed** |
 | 3 | S6 | `eval` on benchmark parameters | Med | **Fixed** |
 | 4 | S7 | `RunnerRole` can delete the entire results history | Med | **Partly fixed** |
-| 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Open |
+| 5 | S8 | Shared-tag `TerminateInstances` — any runner can kill any other | Med | Accepted (decided 2026-10-02) |
 | 6 | S9 | `OperatorRole` trusts the account root unconditionally | Med | Open |
 | 7 | D1 | `baas results` filtering/grouping documented but not implemented | Med | **Fixed** |
 | 8 | A8 | `yum update -y` per run — unpinned OS under a benchmarking tool | Med | **Fixed** |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: S8.**
+**Next up: S9.**
 
 ---
 
@@ -172,7 +172,7 @@ Optionally scope `PutObject` to `${RESULT_PATH}/*`.
 asserted by a template test, so the runner can no longer sweep the measurement history it writes
 to. Its S3 access to the bucket is unchanged, so the finding does not close.
 
-## 5. S8 — self-termination can terminate everyone else's runs · Med
+## 5. S8 — self-termination can terminate everyone else's runs · ACCEPTED
 
 `${ResourceNamePrefix}-runner-ec2-terminate-policy` (~line 222-231) and the operator equivalent
 (~line 326) gate `ec2:TerminateInstances` on `aws:ResourceTag/baas-role: benchmark-runner`, shared
@@ -181,6 +181,12 @@ by every concurrent runner.
 **Proposed fix:** scope the runner's copy to itself using the `ec2:SourceInstanceARN` policy
 variable in `Resource`. Verify against the account before rollout — the pattern is documented but
 was not tested here.
+
+**Accepted (2026-10-02), recorded in CLAUDE.md's *Accepted risks*.** The only code on a runner
+that could cross-terminate is the benchmark JAR, which only an operator can supply — and
+`OperatorRole` already terminates any runner. The proposed self-only scoping was declined on its
+failure mode: a subtly wrong condition denies the runner its *own* termination, disabling both the
+normal path and the watchdog, and shows up only when a paid run hangs.
 
 ## 6. S9 — `OperatorRole` trusts the account root · Med
 
