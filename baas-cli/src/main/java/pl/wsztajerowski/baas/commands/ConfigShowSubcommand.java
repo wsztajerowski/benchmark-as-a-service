@@ -57,7 +57,9 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append(config.getAws().getOperatorProfile() != null
                 ? config.getAws().getOperatorProfile() + "  (run/results/config)"
                 : "<not set> — run: baas config set --operator-profile <name>").append('\n')
-            .append("  region:                   ").append(config.getAws().getRegion()).append('\n')
+            .append("  region:                   ").append(config.getAws().resolveRegion())
+            .append(config.getAws().getRegion() != null ? "" : "  (not in the file: AWS_REGION, else the default)")
+            .append('\n')
             .append("derived from prefix (not stored):\n")
             .append("  stack:                    ").append(installation(config, BaasConfig::stackName)).append('\n')
             .append("  bucket:                   ").append(installation(config, BaasConfig::bucket)).append('\n')

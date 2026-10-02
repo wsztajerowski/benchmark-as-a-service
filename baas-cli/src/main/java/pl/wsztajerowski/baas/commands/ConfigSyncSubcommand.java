@@ -52,7 +52,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
     /** The named stack's outputs, empty when it does not exist. Overridden by tests, which have no stack. */
     java.util.Map<String, String> stackOutputs(BaasConfig config) {
         var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
         try (var cf = factory.cloudFormation()) {
             return new CloudFormationService(cf).getStackOutputs(name);
         }
@@ -74,7 +74,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
                       List them:  aws cloudformation describe-stacks --query \
                 'Stacks[?starts_with(StackName, `baas-`)].StackName'
                       Or create one: baas admin setup""",
-                name, config.getAws().getRegion());
+                name, config.getAws().resolveRegion());
             return 1;
         }
         if (!outputs.containsKey("ResultsTableName")) {

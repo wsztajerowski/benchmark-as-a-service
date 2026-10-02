@@ -46,7 +46,7 @@ The precedence is always flag over config file over built-in default. What diffe
 
 | Setting | Flag on | `config set` | Environment | Default |
 |---|---|---|---|---|
-| region | `admin setup` only | yes | **not read** (`AWS_REGION` ignored) | `eu-central-1` |
+| region | `admin setup` only | yes | `AWS_REGION`, only when the file names none (F9) | `eu-central-1` |
 | deployer profile | `setup`, `build-image`, `image` | yes | `AWS_PROFILE` only when `aws.profile` is unset | none → default chain |
 | operator profile | — | yes | `AWS_PROFILE` / OIDC when unset | none → default chain |
 | prefix | — | `--prefix` (unchecked) | — | none; `setup` / `config sync` write it |
@@ -162,7 +162,7 @@ stateDiagram-v2
 | U2 | **No CLI path from *Residue* to *Empty*.** The table has no delete flag by design. The four image leftovers (U1) and a table retained by a rolled-back create both need `aws` by hand. The deployer can't even *list* what is left: it lacks `cloudformation:ListStacks`, `s3:ListAllMyBuckets`, `ssm:DescribeParameters` and `dynamodb:ListTables`, and it can't delete the old installation's Image Builder component. | Low | §8 |
 | U3 | **A detached run is invisible.** If the CLI dies without its shutdown hook (SIGKILL, laptop sleep, lost network), no `baas` command lists in-flight runs, reattaches to one, or terminates one. Teardown refuses while one exists, and its advice is "terminate them manually". The watchdog bounds the cost to `timeout + margin` (2 h 05 m by default). | Med | `TeardownCommand`, `RunCommand.poll` |
 | U4 | **`env diff` accepts result paths only.** `results` shows run ids, and `download` accepts either form. A human going from `results` to `env diff` has to hand-compose `runs/<project>/<runId>`, which CLAUDE.md calls the error-prone thing (`RunLayout` is the only builder). Passing a run id fails with a misleading reason: "No environment.json at s3://…/<runId>/environment.json — Runs from before the prebaked-image change carry no environment manifest". | Low | `EnvDiffSubcommand`; §8 |
-| U5 | **Region cannot come from the environment.** `AWS_REGION` is ignored, and `config sync` has no `--region`. CI is right only because `vars.AWS_REGION` happens to equal the default. Another region needs `config set --region` first, which the workflow does not do. | Med | `AwsClientFactory`, `BaasConfig.AwsConfig`, `e2e-cloud-test.yml` |
+| U5 | **Region could not come from the environment.** `AWS_REGION` was ignored and `config sync` had no `--region`, so CI was right only because `vars.AWS_REGION` equalled the default. | Med · **Fixed** | F9 |
 | U6 | **The deployer profile is overridable on three of five admin commands.** `teardown` and `deployer-policy` have no `--aws-profile`. `setup` persists the override while `build-image`/`image` don't. | Low | admin commands |
 | U7 | **`config set --prefix` adopts an installation unchecked** and duplicates `config sync --name` minus its existence check, the check CLAUDE.md says is the reason sync requires the name. | Low | `ConfigSetSubcommand` |
 | U8 | **`runner.sourceRepo` can only be set by hand-editing YAML**, though the error message says that is how to set it. | Info | `RunnerJarResolver.assetUrl` |
@@ -175,6 +175,7 @@ stateDiagram-v2
 | U15 | **The results table formats scores in the JVM's locale** (`9702970,774` under pl-PL). That's right for a human reading it, and JSON/CSV are unaffected (`Locale.ROOT`). Recorded so nobody "fixes" it into a parsing bug: the table is not a machine format. | Info | §8 |
 | U16 | **`--tag project=…` made `RunInstances` fail.** The instance was always tagged `project=baas` and caller tags were appended, so a caller `project` sent the key twice. Confirmed free by a dry-run: `InvalidParameterValue: Duplicate tag key 'project' specified`, a failure after the JAR upload. | Low · **Fixed** | F8 |
 | U17 | **An update run of `admin setup` prints "BaasCliOperatorRole created … Nobody can assume it yet"**, which is true only on create. | Info | 2026-10-02 deploy |
+| U18 | **`config sync` in a region with no installation reports `AccessDenied`, not "no installation".** The operator role may call `DescribeStacks` only in its own region, so the misleading error comes from IAM. Only reachable now that the region can come from the environment. | Info | 2026-10-02 probe |
 
 ## 4. Fixed on this branch
 
@@ -188,6 +189,7 @@ stateDiagram-v2
 | F6 | Stale text: misplaced javadocs in `RunCommand` and `SetupCommand` (including the old caller-ARN hash), "name is fixed by your caller ARN" in setup's own error message, `benchmarkMetadata.tags`, `--ami-id`, a teardown diagram describing an SSM delete and `aws.coreStackName` that no longer exist, and a README E2E section for the deleted `act` harness | Corrected |
 | F7 | U11: the runner shared the image build's security group and its 80/443 internet egress | New `ImageBuildSecurityGroup` (443 + 80) for Image Builder; the runner group dropped port 80. Deployed 2026-10-02 with no replacement (the runner group kept its id), then the image was rebuilt and a run completed on it (§8). Under `--use-existing-vpc` nothing changes |
 | F8 | U16, and more broadly: caller `--tag`s and `instanceType`/`imageVersion` were copied onto the EC2 instance, where nothing reads them | The instance carries only `project=baas`, `baas-role` and `baas-request-id`; `runInstance` no longer accepts extra tags. Result tags reach the result through the runner, as before |
+| F9 | U5: region was read only from the config file, defaulting to `eu-central-1` | `resolveRegion()`: the file, then `AWS_REGION`, then `eu-central-1`. Never stored, so a CI `config sync` writes no region and keeps following the job's. `admin setup` records the region it deployed to. Checked live: a blank config followed `AWS_REGION`, and the synced file held `aws: {}` |
 
 ## 5. Simplifications
 
@@ -198,7 +200,7 @@ In rough order of value:
    deployer policy's vocabulary, and it removes four manual commands plus the *Inherited* state.
 2. **One resolver for "run id or path"** shared by `download` and `env diff` (closes U4). The run-id
    branch already exists in `DownloadCommand`.
-3. **Read region like the AWS CLI does**: config file, then `AWS_REGION`, then the default (closes U5).
+3. ~~Read region from the config file, then `AWS_REGION`, then the default~~: done (F9).
    This removes the need for a `--region` on `sync` and keeps CI correct in any region.
 4. **One inherited `--aws-profile` on `admin`**, replacing the three per-command copies (closes U6).
 5. **Drop `config set --prefix`** (closes U7). `config sync --name` covers it, and so does `--config-path` for by-hand files.

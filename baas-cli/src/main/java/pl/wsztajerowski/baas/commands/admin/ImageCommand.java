@@ -44,7 +44,7 @@ public class ImageCommand implements Callable<Integer> {
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
         // Deployer credentials, consistent with every other `baas admin` subcommand.
-        var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
         String parameterName = config.amiParameterPath();
 
         try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {

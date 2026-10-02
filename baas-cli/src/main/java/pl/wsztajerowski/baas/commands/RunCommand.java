@@ -301,7 +301,7 @@ public class RunCommand implements Callable<Integer> {
 
         operatorCredentialsWarning(config).ifPresent(logger::warn);
         var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
 
         // 1. The JAR is named, never derived. Checked before the image lookup and before any
         //    upload, like every other precondition this command has.
@@ -327,7 +327,7 @@ public class RunCommand implements Callable<Integer> {
                           Build one:  baas admin build-image
                         Nothing was launched — the runner boots from a purpose-built AMI and \
                         there is no boot-time install path.""",
-                    config.getAws().getRegion());
+                    config.getAws().resolveRegion());
                 return 1;
             }
             runnerImage = resolved.get();
@@ -379,7 +379,7 @@ public class RunCommand implements Callable<Integer> {
         Map<String, String> runnerTags =
             buildRunnerTags(benchmarkType, resolvedProject);
         String userData = new UserDataScriptBuilder().build(
-            config.getAws().getRegion(), config.bucket(),
+            config.getAws().resolveRegion(), config.bucket(),
             benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
             resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,

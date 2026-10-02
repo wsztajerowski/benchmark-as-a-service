@@ -364,3 +364,17 @@ absolute wall-clock bound.
 #### Scenario: The absolute option is gone
 - **WHEN** `baas run --max-wall-clock 9000 …` or `baas config set --max-wall-clock 9000` is invoked
 - **THEN** picocli reports an unknown option error
+
+### Requirement: The region resolves from the file, then the environment
+Every command SHALL use the configuration file's `aws.region` when it is set, else the `AWS_REGION`
+environment variable when it is set, else `eu-central-1`. The resolved value SHALL NOT be written back to
+the file by any command except `baas admin setup`, which records the region it deployed to.
+
+#### Scenario: A CI job follows its own region
+- **WHEN** a configuration with no `aws.region` is used with `AWS_REGION=eu-west-1`
+- **THEN** the command addresses `eu-west-1`, and saving that configuration writes no region
+
+#### Scenario: The file wins
+- **WHEN** the file sets `aws.region: eu-central-1` and `AWS_REGION=us-east-1`
+- **THEN** the command addresses `eu-central-1`
+

@@ -55,7 +55,7 @@ public class TeardownCommand implements Callable<Integer> {
     public Integer call() {
         BaasConfig config = configService().load();
 
-        var factory = new AwsClientFactory(config.getAws().getRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
 
         // An explicit --stack-name still wins: it is how a by-hand installation, or one deployed
         // under the old caller-ARN naming, is reached.

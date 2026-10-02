@@ -89,7 +89,7 @@ public class DownloadCommand implements Callable<Integer> {
         }
 
         var factory = new AwsClientFactory(
-            config.getAws().getRegion(), config.getAws().resolveOperatorProfile());
+            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
 
         String resolvedPath = resultPath;
         if (looksLikeRunId(resultPath)) {
