@@ -51,6 +51,22 @@ public class DeployerPolicyCommand implements Callable<Integer> {
             + "baas-<accountId> — e.g. a by-hand development installation.")
     String prefix;
 
+    /**
+     * The region is baked into seven places in the policy, and this command runs before any
+     * configuration exists — the first-run order puts it ahead of `admin setup`. Without the
+     * option a policy for a non-default region could only be had by exporting AWS_REGION, and the
+     * one attached first was usually wrong. Used for this rendering only; nothing is saved.
+     */
+    @Option(names = "--region",
+        description = "Region the installation will live in, as later passed to `baas admin setup "
+            + "--region`. Default: the configured region, else AWS_REGION, else eu-central-1.")
+    String region;
+
+    /** {@code --region} when given, otherwise the region every other command resolves. */
+    String renderedRegion(pl.wsztajerowski.baas.config.BaasConfig config) {
+        return region != null && !region.isBlank() ? region.strip() : config.getAws().resolveRegion();
+    }
+
     private ConfigService configService() {
         return BaasApp.configService(spec);
     }
@@ -59,7 +75,8 @@ public class DeployerPolicyCommand implements Callable<Integer> {
     public Integer call() {
         var renderer = new DeployerPolicyRenderer();
         var config = configService().load();
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
+        String renderedRegion = renderedRegion(config);
+        var factory = new AwsClientFactory(renderedRegion, config.getAws().getProfile());
 
         String accountId;
         if (forAccount != null) {
@@ -71,12 +88,12 @@ public class DeployerPolicyCommand implements Callable<Integer> {
         }
 
         String resolved = renderedPrefix(accountId);
-        logger.info("Policy for installation {} (account {}). Attach it as a customer-managed "
-            + "policy — see infra/README.md.", resolved, accountId);
+        logger.info("Policy for installation {} (account {}, region {}). Attach it as a "
+            + "customer-managed policy — see infra/README.md.", resolved, accountId, renderedRegion);
         // Payload, so the Console, never coloured: `baas admin deployer-policy > policy.json`
         // has to stay clean.
         Console.of(spec.commandLine().getOut())
-            .println(renderer.render(accountId, config.getAws().resolveRegion(), resolved));
+            .println(renderer.render(accountId, renderedRegion, resolved));
         return 0;
     }
 

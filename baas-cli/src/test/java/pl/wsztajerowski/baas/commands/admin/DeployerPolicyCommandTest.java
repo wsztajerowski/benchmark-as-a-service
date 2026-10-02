@@ -55,4 +55,27 @@ class DeployerPolicyCommandTest {
         assertThat(parsed("--prefix", "baas-123456789012-dev").renderedPrefix("123456789012"))
             .isEqualTo("baas-123456789012-dev");
     }
+
+    /** U19: the region is baked into the policy, and this command runs before any config exists. */
+    @Test
+    void anExplicitRegionWinsOverTheConfiguredOne() {
+        var config = new pl.wsztajerowski.baas.config.BaasConfig();
+        config.getAws().setRegion("eu-central-1");
+
+        assertThat(parsed("--region", "us-west-2").renderedRegion(config)).isEqualTo("us-west-2");
+        assertThat(parsed().renderedRegion(config)).isEqualTo("eu-central-1");
+    }
+
+    /** The region reaches the ARNs and the aws:RequestedRegion conditions, not just the log line. */
+    @Test
+    void theRenderedPolicyNamesTheChosenRegion() {
+        String policy = new pl.wsztajerowski.baas.infra.DeployerPolicyRenderer()
+            .render("123456789012", parsed("--region", "us-west-2")
+                .renderedRegion(new pl.wsztajerowski.baas.config.BaasConfig()), "baas-123456789012");
+
+        assertThat(policy)
+            .contains("arn:aws:dynamodb:us-west-2:123456789012:table/baas-123456789012-results")
+            .contains("\"aws:RequestedRegion\": \"us-west-2\"")
+            .doesNotContain("eu-central-1");
+    }
 }

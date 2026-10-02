@@ -189,11 +189,12 @@ Two grants look wrong and are not:
   statement so the stack-scoped `CloudFormation` grant stays scoped to one stack.
 
 ```bash
-# The user renders their own policy...
-baas admin deployer-policy > policy.json
+# The user renders their own policy. The region is baked into it, so name the one you will pass
+# to `baas admin setup --region` (default: eu-central-1, or AWS_REGION when set)...
+baas admin deployer-policy --region eu-central-1 > policy.json
 
-# ...or an administrator renders it for them, without the user running anything
-baas admin deployer-policy --for-arn arn:aws:iam::123456789012:user/alice > policy.json
+# ...or an administrator renders it for them, for that account, without the user running anything
+baas admin deployer-policy --for-account 123456789012 --region eu-central-1 > policy.json
 
 # First time
 aws iam create-policy --policy-name BaasCliDeployerPolicy-alice \

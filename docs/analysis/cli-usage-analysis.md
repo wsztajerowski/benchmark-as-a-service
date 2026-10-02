@@ -27,7 +27,7 @@ Every command also takes `-h`, `-V`, `-v` and the inherited `--config-path <file
 
 | Command | Options | Credentials | Writes config |
 |---|---|---|---|
-| `admin deployer-policy` | `--for-account`, `--prefix` | deployer (`aws.profile`); none with `--for-account` | no |
+| `admin deployer-policy` | `--for-account`, `--prefix`, `--region` | deployer (`aws.profile`); none with `--for-account` | no |
 | `admin setup` | `--region`, `--aws-profile`, `--use-existing-vpc` `--vpc-id` `--subnet-id` `--sg-id`, `--github-org` `--github-repo`… `--oidc-provider-arn`, `--revoke-github-oidc` | deployer | prefix, profile, region |
 | `admin build-image` | — | deployer | no |
 | `admin image` | — | deployer | no |
@@ -46,7 +46,7 @@ The precedence is always flag over config file over built-in default. What diffe
 
 | Setting | Flag on | `config set` | Environment | Default |
 |---|---|---|---|---|
-| region | `admin setup` only | yes | `AWS_REGION`, only when the file names none (F9) | `eu-central-1` |
+| region | `admin setup` (saved), `admin deployer-policy` (render only) | yes | `AWS_REGION`, only when the file names none (F9) | `eu-central-1` |
 | deployer profile | `setup` only (saved) | yes | `AWS_PROFILE` only when `aws.profile` is unset | none → default chain |
 | operator profile | — | yes | `AWS_PROFILE` / OIDC when unset | none → default chain |
 | prefix | — | `--prefix` (unchecked) | — | none; `setup` / `config sync` write it |
@@ -176,6 +176,7 @@ stateDiagram-v2
 | U16 | **`--tag project=…` made `RunInstances` fail.** The instance was always tagged `project=baas` and caller tags were appended, so a caller `project` sent the key twice. Confirmed free by a dry-run: `InvalidParameterValue: Duplicate tag key 'project' specified`, a failure after the JAR upload. | Low · **Fixed** | F8 |
 | U17 | **An update run of `admin setup` prints "BaasCliOperatorRole created … Nobody can assume it yet"**, which is true only on create. | Info · **Fixed** | F10 |
 | U18 | **`config sync` in a region with no installation reports `AccessDenied`, not "no installation".** The operator role may call `DescribeStacks` only in its own region, so the misleading error comes from IAM. Only reachable now that the region can come from the environment. | Info | 2026-10-02 probe |
+| U19 | **`deployer-policy` could not be told the region**, though the region is baked into seven of the policy's ARNs and conditions and the command runs before any config exists. A first deploy outside `eu-central-1` got a policy for the wrong region unless `AWS_REGION` happened to be set; setup's preflight then failed with AccessDenied. | Low · **Fixed** | F13 |
 
 ## 4. Fixed on this branch
 
@@ -193,6 +194,7 @@ stateDiagram-v2
 | F10 | U9, U13, U17 and an unreachable branch | `run` resolves the stack's networking before uploading anything. The shutdown hook no longer terminates (or announces terminating) an instance whose run it saw end; it still covers Ctrl+C and the poll cap. `setup` prints the onboarding steps only when it created the stack ("Installation … is deployed" on an update, checked live). `createOrUpdateStack` became `createStack` |
 | F11 | U4: `env diff` took result paths only | Each argument is a run id or a result path, resolved by `RunReference`, now shared with `download`. An unknown id fails naming itself before S3 is read. Failed runs still need their path until U3 adds the run item. Checked live: two runs diffed by id showed different CPU models on the same `c5.2xlarge` (Xeon 8124M vs 8275CL) |
 | F12 | U6: `--aws-profile` on three of five admin commands, saved by one | Only `setup` takes it, and saves it to `aws.profile`; `build-image` and `image` lost their per-call override and read the config like `teardown` and `deployer-policy`. Nothing used the override. A one-off different deployer goes through `--config-path` |
+| F13 | U19 | `deployer-policy --region`, render-only, over the resolved region. Checked live: all seven region spots rendered as `us-west-2`. Also fixed `infra/README.md` and CLAUDE.md, which still showed the removed `--for-arn` |
 
 ## 5. Simplifications
 
