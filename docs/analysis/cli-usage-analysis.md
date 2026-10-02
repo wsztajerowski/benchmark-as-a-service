@@ -227,7 +227,29 @@ These are deliberately not decided here:
   **Decided 2026-10-01: unconditionally.** The image is cheap to rebuild and git is its archive, while
   a surviving pointer is what lets a later setup run on an inherited image unnoticed. To be
   implemented as its own OpenSpec change.
-- U3: is a run listing worth a command, given the watchdog bound?
+- ~~U3: is a run listing worth a command, given the watchdog bound?~~
+  **Decided 2026-10-02: yes, and run status moves from S3 into DynamoDB**, so the bucket goes back to
+  being write-once storage that nothing polls. Shape agreed:
+  - One table, not a separate `-runs` table, which would need a new retained resource and an edit to
+    the deployer policy, already near its size budget. Run items live in a `RUN#<project>` partition
+    with `sk = <createdAt>#<runId>` and `gsi1pk = <runId>`, so `requestId-index` resolves failed runs
+    and `download <runId>` needs no S3 fallback.
+  - Writers: the CLI writes `launched` and, from its shutdown hook, `cancelled`; the instance's shell
+    writes `running` and then `completed` / `failed:<n>` in place of the `run-status` object. Every
+    write is a conditional `UpdateItem` that never overwrites a terminal status. "Vanished" stays
+    inferred at read time (non-terminal status, instance gone).
+  - IAM: OperatorRole gains `dynamodb:UpdateItem` restricted by `dynamodb:LeadingKeys` to `RUN#*`,
+    its first write right on the table, granted deliberately. RunnerRole gains the same, and its
+    existing `PutItem`/`BatchWriteItem` are narrowed to `RESULT#*` in the same edit (tightens S7).
+    The deployer policy is unchanged.
+  - Every Scan and every `requestId-index` reader must exclude run items, with tests. The project
+    picker derives names from `pk`, so a miss there fails silently.
+  - `baas runs`: one reverse `Query` per project plus `DescribeInstances`; `--terminate <runId>`.
+  - Costs (estimated): about $0.00015 of reads to poll a 2-hour run, against about $0.0002 of S3 GETs
+    today; listing 10,000 runs takes ~0.2 s instead of ~70 s. Effort is two to three times the
+    S3-listing alternative, including an IAM change.
+  To be implemented as its own OpenSpec change. Doing it now means no backfill: the table holds
+  two runs.
 - U11: is a second security group worth a stack replacement of nothing (new resource only)?
 
 ## 8. Paid lifecycle test (2026-10-01)
