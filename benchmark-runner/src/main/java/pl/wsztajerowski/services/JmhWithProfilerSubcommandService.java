@@ -61,6 +61,7 @@ public class JmhWithProfilerSubcommandService {
             logger.info("Saving benchmark profiler(s) process output on S3");
             storageService
                 .saveFile(outputPath.resolve("jmh-profiler-output.txt"), jmhOptions.outputOptions().processOutput());
+            RunLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
