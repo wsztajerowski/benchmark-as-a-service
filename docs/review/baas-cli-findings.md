@@ -41,7 +41,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 11 | A9 | `requestId` collides at second granularity | Low | **Fixed** |
 | 12 | A5 | Sibling-command statics; `validateMongoUri` in three places | Low | **Fixed** |
 | 13 | A3 | Mongo schema read by raw string paths, no shared contract | Low | **Fixed** |
-| 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Open |
+| 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Won't fix (decided 2026-10-02) |
 | 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
 | 16 | U1 | Teardown leaves the AMI pointer, AMI, snapshot and image record — and a later setup inherits them | Med | **Fixed** |
 | 17 | U3 | A run whose CLI died is invisible: no `baas` command lists or stops it | Med | Open |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: S11.**
+**Next up: U12.**
 
 ---
 
@@ -358,10 +358,17 @@ attribute by a locally-declared literal, so a rename breaks compilation instead 
 `baas-model`'s constants by `CoreTemplateTest` against the CloudFormation table definition, so a
 rename cannot silently desync the schema from the infrastructure either.
 
-## 14. S11 — smaller hardening · Low
+## 14. S11 — smaller hardening · WON'T FIX
 
 No bucket policy denying `aws:SecureTransport: false`. `ConfigService` creates `~/.baas` with
 default permissions; 0700 is free.
+
+**Won't fix (2026-10-02).** Neither part protects anything currently exposed. Every bucket client
+— the CLI and runner through the SDK, the instance through `aws s3 cp` — already speaks HTTPS, so
+the deny policy would only guard a hypothetical future client, at the price of a template resource,
+two deployer actions and a live `setup` to prove them. `~/.baas/config.yaml` holds a prefix, a
+region, profile *names* and preferences; the secrets live in `~/.aws`, so 0700 would guard nothing.
+Revisit (a) if a compliance check ever requires it.
 
 ## 15. A10 — the caller-ARN prefix is unnormalised · Med · FIXED
 

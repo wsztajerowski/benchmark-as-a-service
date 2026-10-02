@@ -248,7 +248,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   so on a shared installation a teammate's plain `baas admin setup` submitted `UseExistingVpc=false`
   and rebuilt the networking underneath everyone. Carrying them forward silently would close the
   hole while discarding a flag the operator typed; refusing names both values instead.
-- **`~/.baas/config.yaml` stores credentials, region, `prefix` and preferences — nothing else.**
+- **`~/.baas/config.yaml` stores credential *profile names*, region, `prefix` and preferences — nothing
+  else, and no secret.** The credentials themselves stay in `~/.aws`.
   The bucket, results table and runner instance profile are *derived* from the prefix; the runner
   subnet and security group are *resolved* from the stack's outputs on every run. Neither kind is
   cached, because a stored name can point at one installation while `prefix` names another, and a
