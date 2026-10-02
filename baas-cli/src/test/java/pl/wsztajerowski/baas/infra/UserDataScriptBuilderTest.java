@@ -13,6 +13,7 @@ import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -662,6 +663,37 @@ class UserDataScriptBuilderTest {
         assertThat(process.waitFor(10, TimeUnit.SECONDS)).as("bash -n must not hang").isTrue();
 
         assertThat(process.exitValue()).as("bash -n said: " + output).isZero();
+    }
+
+    /**
+     * S5: only four of the exports were escaped, and the project reached RESULT_PATH and
+     * BENCHMARK_JAR_S3_KEY through two of the others. One stray quote then left bash unable to
+     * parse the script at all — before the watchdog, so nothing would terminate the instance.
+     * Every export now goes through one helper; this feeds a quote into every value that can carry
+     * one and has bash both parse and run the export block.
+     */
+    @Test
+    void everyExportedValueSurvivesAQuoteAsLiteralText() throws Exception {
+        Path marker = tempDir.resolve("PWNED");
+        String hostile = "x';touch " + marker + ";'";
+        String encoded = new UserDataScriptBuilder().build(
+            hostile, hostile, hostile, hostile, "runs/" + hostile + "/id", hostile,
+            "runs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
+            hostile, hostile, hostile, hostile, false,
+            List.of(hostile), Map.of("project", hostile, "branch", hostile));
+        String script = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+        String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
+
+        Process process = new ProcessBuilder("bash", "-c",
+            exports + "printf '%s\\n' \"$RESULT_PATH\" \"$BENCHMARK_JAR_S3_KEY\" \"$AWS_REGION\"")
+            .redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
+
+        assertThat(process.exitValue()).as("bash said: " + output).isZero();
+        assertThat(Files.exists(marker)).as("an exported value must never run as shell").isFalse();
+        assertThat(output.lines()).containsExactly(
+            "runs/" + hostile + "/id", "runs/" + hostile + "/id/input/benchmark.jar", hostile);
     }
 
     /**
