@@ -69,8 +69,11 @@ place" rule as for measurement keys.
 ### Run items are excluded from measurement readers by key, and rejected by the mapper
 
 - Both Scans gain `begins_with(pk, :resultPrefix)` with `RESULT#`.
-- `queryByRequestId` gains a filter expression `#gsi1sk <> :run`. A key condition can't say "not
-  equal", so this has to be a filter.
+- `queryByRequestId` gains the filter expression `attribute_exists(#kind)`. A key condition can't
+  say "not equal", and DynamoDB refuses a filter expression on a key attribute (`gsi1sk` is the
+  index's sort key). `kind` is present on every measurement and absent from every run item.
+  (Changed during apply: `#gsi1sk <> :run` was rejected by DynamoDB, which `ResultsQueryServiceIT`
+  caught.)
 - `MeasurementItemMapper.fromItem` throws on any item whose `pk` is not `RESULT#…`.
 
 A filter that a future reader forgets then fails loudly instead of rendering an empty row or

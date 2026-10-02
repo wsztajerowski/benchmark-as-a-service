@@ -30,7 +30,9 @@ public final class MeasurementItemMapper {
     static final String PROJECT = "project";
     static final String REQUEST_ID = "requestId";
     static final String CREATED_AT = "createdAt";
-    static final String KIND = "kind";
+    /** Public because a measurement always carries it and a run item never does, which is how a
+     * reader of the request-ID index tells them apart without filtering on a key attribute. */
+    public static final String KIND = "kind";
     static final String BENCHMARK_CLASS = "benchmarkClass";
     static final String BENCHMARK_METHOD = "benchmarkMethod";
     static final String MODE = "mode";

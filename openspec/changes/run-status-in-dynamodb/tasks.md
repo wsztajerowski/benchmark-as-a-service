@@ -53,13 +53,13 @@
 
 ## 4. Readers exclude run items (`baas-cli`)
 
-- [ ] 4.1 Restrict `scanAllProjects` and `listVisibleProjects` to `begins_with(pk, RESULT#)`, and add
-  the filter expression `#gsi1sk <> :run` to `queryByRequestId`. Verify with LocalStack integration
+- [x] 4.1 Restrict `scanAllProjects` and `listVisibleProjects` to `begins_with(pk, RESULT#)`, and add
+  the filter expression `attribute_exists(#kind)` to `queryByRequestId` (a filter on `gsi1sk` is refused: it is a key attribute). Verify with LocalStack integration
   tests seeded with run items:
   - `--all-projects` returns only measurements;
   - the picker omits a project that has only run items;
   - `--request-id` returns only measurements.
-- [ ] 4.2 Make `resultPathForRun` read the run item (`gsi1pk = <runId>`, `gsi1sk = RUN`) first and
+- [x] 4.2 Make `resultPathForRun` read the run item (`gsi1pk = <runId>`, `gsi1sk = RUN`) first and
   fall back to a measurement. Update `RunReference`'s "a failed run has no index entry" wording and
   `noSuchRun`. Verify with integration tests:
   - a run with only a run item resolves;

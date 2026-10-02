@@ -26,10 +26,11 @@ final class RunReference {
 
     /**
      * The run's result path, without a trailing slash, or {@code null} when a run id names no
-     * stored run. A run id is looked up with {@code byRunId} (the item's stored
-     * {@code resultPath}, through {@code requestId-index}), which is called only for a run id.
-     * A run that failed before storing a measurement has no index entry yet, so its id does not
-     * resolve; its result path still does.
+     * stored run. A run id is looked up with {@code byRunId} (the stored {@code resultPath},
+     * through {@code requestId-index}), which is called only for a run id. Every run since run
+     * items exist resolves through its run item, failed and never-launched ones included; an
+     * older run resolves through its measurements, so only an older run that stored none needs
+     * its result path.
      */
     static String resolve(String argument, UnaryOperator<String> byRunId) {
         String path = looksLikeRunId(argument) ? byRunId.apply(argument) : argument;
@@ -41,7 +42,8 @@ final class RunReference {
 
     /** What to say when a run id resolves to nothing. */
     static String noSuchRun(String runId) {
-        return "No run found with id '" + runId + "'. A run that failed before storing a "
-            + "measurement has no index entry; pass its result path (runs/<project>/<runId>) instead.";
+        return "No run found with id '" + runId + "'. Check the id with `baas runs list`. A run "
+            + "recorded before run items existed that stored no measurement has no index entry; "
+            + "pass its result path (runs/<project>/<runId>) instead.";
     }
 }

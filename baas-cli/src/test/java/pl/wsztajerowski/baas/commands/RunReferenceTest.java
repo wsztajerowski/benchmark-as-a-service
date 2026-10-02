@@ -39,11 +39,14 @@ class RunReferenceTest {
             .isEqualTo("runs/p/20261002T080250645Z-264f5dfb");
     }
 
-    /** Includes a run that failed before storing a measurement: it has no index entry yet. */
+    /**
+     * Only a run from before run items that stored no measurement has no index entry; every later
+     * run resolves through its run item, so the message points at the run list first.
+     */
     @Test
     void anUnknownRunIdResolvesToNothingAndTheMessageNamesTheWayOut() {
         assertThat(RunReference.resolve("20261002T000000000Z-00000000", this::lookup)).isNull();
         assertThat(RunReference.noSuchRun("20261002T000000000Z-00000000"))
-            .contains("20261002T000000000Z-00000000", "runs/<project>/<runId>");
+            .contains("20261002T000000000Z-00000000", "baas runs list", "runs/<project>/<runId>");
     }
 }
