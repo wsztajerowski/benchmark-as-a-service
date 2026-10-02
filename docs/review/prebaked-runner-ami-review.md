@@ -51,7 +51,7 @@ tracked and is scheduled for `dynamodb-results-store`.
 | 8 | P8 | `tasks.md` §11.3 contradicts the delta spec it verifies | Low | **Closed** (archive left as ticked) |
 | 9 | P9 | Change widened open finding S5 without updating it | Low | **Fixed** (by S5) |
 | 10 | P10 | A corrupt manifest stack-traces where a missing one is handled | Low | **Fixed** (by `reportFailure`) |
-| 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | Open |
+| 11 | P11 | `benchmarkType` in the manifest makes every cross-type `env diff` report a difference | Low | → new OpenSpec change `runs-command` (decided 2026-10-02) |
 | 12 | P12 | Kernel tunables silently default to `0`/`null` on a mistyped key | Low | Open |
 | 13 | P13 | async-profiler install path hardcoded a third time | Low | Open |
 | 14 | P14 | `build()` polls without an upper bound | Low | Open |
@@ -369,13 +369,40 @@ logged as its message alone, the stack trace kept for `-v`. A malformed manifest
 message (S3 location, `baas download` hint) was offered and declined as cosmetic: the heredoc that
 writes the file is now quoting-safe (S5) and run through bash in tests.
 
-## 11. P11 — `benchmarkType` in the manifest makes every cross-type diff report a difference · Low
+## 11. P11 — `benchmarkType` in the manifest makes every cross-type diff report a difference · → `runs-command`
 
 `environment.json` carries `"benchmarkType"`, which is a property of the *run*, not of the
 environment, and `EnvironmentManifest.diff` compares every key. `baas env diff` between a `jmh`
 run and a `jmh-with-async` run therefore always reports a difference even when the two sat on
 byte-identical environments — noise in a command whose output is meant to be read as
 "these are/aren't comparable".
+
+**Wider than written (2026-10-02).** `benchmarkType` is one of five run-identity fields in the
+manifest — with `project`, `branch`, `requestId` and `createdAt` — and `diff` compares them all.
+Any two runs differ on `requestId` and `createdAt`, so `No differences. Both runs measured on the
+same environment.` can never print.
+
+**Moved to a new OpenSpec change, `runs-command` (decided 2026-10-02),** not yet proposed. Decisions
+the proposal starts from:
+
+- `baas env` / `baas env diff` are replaced by `baas runs show <run>` and
+  `baas runs diff [--run | --system | --all] <runA> <runB>`. Both keep accepting a run id **or** a
+  result path through `RunReference` — dropping paths was considered and revoked, so there is no
+  dependency on U3.
+- `show` prints the manifest in two sections; `diff` compares the selected one(s):
+  - **run** — `project`, `branch`, `benchmarkType`, `amiId`, `instanceType`, instance family
+    (derived from the type, e.g. `c5` from `c5.2xlarge`);
+  - **system** — `cpuModel`, `cpuArch`, `cpuCores`, `cpuThreadsPerCore`, `cpuMaxMhz`,
+    `memoryTotalKb`, `swapTotalKb`, `imageVersion`, `jvmVersion`, `perfVersion`,
+    `asyncProfilerVersion`, and the other AMI-baked values: `osVersion`, `kernelRelease`,
+    `perfEventParanoid`, `kptrRestrict`, `transparentHugepages`.
+- `schemaVersion` is its own section, checked on every `diff` whatever is selected, and a mismatch
+  is loud.
+- The manifest stops writing `requestId` and `createdAt` (the result path already identifies the
+  run, and the run id carries the instant), `region` and `awsCliVersion` (irrelevant to a
+  measurement); `schemaVersion` bumps. The spec scenario requiring a crashed run's manifest to
+  record its run id and creation instant changes accordingly.
+- Breaking CLI change: `feat(cli)!`, next major.
 
 ## 12. P12 — kernel tunables silently default to `0`/`null` on a mistyped key · Low
 
