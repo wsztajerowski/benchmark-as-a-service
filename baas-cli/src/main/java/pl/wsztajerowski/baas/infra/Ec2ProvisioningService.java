@@ -48,7 +48,10 @@ public class Ec2ProvisioningService implements RunSession.Instances {
 
         var response = ec2.runInstances(RunInstancesRequest.builder()
             .imageId(amiId)
-            .instanceType(InstanceType.fromValue(instanceType))
+            // The string overload, not InstanceType.fromValue: a type newer than this SDK's enum maps
+            // to UNKNOWN_TO_SDK_VERSION, which serialises as 'null', so EC2 rejected every instance
+            // family released after the SDK was built — found by a forced launch failure.
+            .instanceType(instanceType)
             .minCount(1)
             .maxCount(1)
             .userData(userData)

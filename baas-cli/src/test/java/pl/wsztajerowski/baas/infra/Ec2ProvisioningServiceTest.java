@@ -106,4 +106,15 @@ class Ec2ProvisioningServiceTest {
                 org.assertj.core.groups.Tuple.tuple("tag:baas-request-id", java.util.List.of("run-1")),
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
     }
+
+    /** An instance type newer than the SDK's enum must reach EC2 as typed, not as 'null'. */
+    @Test
+    void anInstanceTypeTheSdkDoesNotKnowIsSentAsTyped() {
+        var ec2 = new CapturingEc2();
+
+        new Ec2ProvisioningService(ec2).runInstance("ami-1", "z99.future-large", "subnet-1", "sg-1",
+            "profile", "#!/bin/bash", "run-1");
+
+        assertThat(ec2.request.instanceTypeAsString()).isEqualTo("z99.future-large");
+    }
 }
