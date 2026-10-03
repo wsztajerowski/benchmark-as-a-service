@@ -48,7 +48,7 @@ public class RunsListSubcommand implements Callable<Integer> {
 
     private static final List<Column> COLUMNS = List.of(
         Column.left("RUN_ID", 28),
-        Column.left("PROJECT", 20),
+        Column.left("PROJECT", 24),
         Column.left("STATUS", 13),
         Column.left("SOURCE", 6),
         Column.left("INSTANCE", 19),
@@ -128,7 +128,7 @@ public class RunsListSubcommand implements Callable<Integer> {
             out.println(inFlight ? "No runs in flight." : "No runs found.");
             return;
         }
-        var table = new Table(out, 136, COLUMNS);
+        var table = new Table(out, 140, COLUMNS);
         table.printHeader();
         for (var row : rows) {
             var run = row.run();
