@@ -14,9 +14,9 @@ sequenceDiagram
     rect rgb(255, 235, 235)
         Note over TD,EC2: Gate 1 -- never tear down under a live run
         TD->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
-        EC2-->>TD: instance IDs
+        EC2-->>TD: instances, with each one's baas-request-id tag
         alt running runner instances found
-            TD-->>User: abort, list the instance IDs, exit 1
+            TD-->>User: abort naming each run id (from the tag), instance and state,<br/>and `baas runs terminate <runId>` -- exit 1. No table read: the deployer has none
         end
     end
 

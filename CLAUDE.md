@@ -33,7 +33,8 @@ recommendations for all of them may be written out together; the *questions* are
 ## What this is
 
 Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to a DynamoDB table,
-one item per measurement; process output, the verbatim result JSON and profiling artifacts go to S3.
+one item per measurement, and each run's status to one run item in the same table; process output,
+the verbatim result JSON and profiling artifacts go to S3.
 
 | Module | Runs where |
 |---|---|
@@ -74,8 +75,8 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
 **User-data generation (`UserDataScriptBuilder`)**
 
 - **No `set -e`.** If the IMDSv2 instance-id fetch fails under `set -e`, the script exits *before*
-  starting the watchdog and orphans the instance. Errors are handled by exit code and the
-  `run-status` sentinel instead. (The Image Builder component rendered by `RunnerImageRenderer`
+  starting the watchdog and orphans the instance. Errors are handled by exit code and the run
+  item's status instead. (The Image Builder component rendered by `RunnerImageRenderer`
   *does* use `set -euxo pipefail` — opposite context: a half-installed toolchain must abort the
   bake, and there is no paid instance to orphan.)
 - **The watchdog starts immediately after `INSTANCE_ID` resolves.** Every later failure has to be
@@ -122,10 +123,16 @@ The watchdog is the only one that survives a deadlocked JVM.
    floor 60). Relative by construction: the absolute `--max-wall-clock` it replaced could be left
    below a raised timeout, so the watchdog killed a benchmark still inside its own budget. The floor
    is there because the watchdog counts from launch and `timeout` from JVM start — below it the
-   instance can die before `run-status` is written. `RunCommand.watchdogBound` is the one place the
-   bound is computed; it is also the CLI's poll cap
+   instance can die before its final status is written. `RunCommand.watchdogBound` is the one place
+   the bound is computed; it is also the CLI's poll cap. The watchdog records `timed-out` before
+   its log upload, through `run_status` — which is why that function is defined *before* the
+   watchdog forks: a subshell sees only the functions defined before it, and `bash -n` would not
+   notice the difference
 2. Process `timeout` around `java -jar benchmark-runner.jar`
-3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C
+3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C, registered *before* `RunInstances` so an
+   interrupt mid-launch still finds the instance by its `baas-request-id` tag. It, the poll cap
+   (`timed-out`) and `baas runs terminate` share `RunSession.stop`: record why under a 5 s timeout,
+   then terminate whatever the write did. A status write never holds a termination back
 
 **The runner image (`infra/runner-image.yaml`, `baas admin build-image`)**
 
@@ -317,11 +324,12 @@ The watchdog is the only one that survives a deadlocked JVM.
   throws, before the benchmark runs. The historical `RESULT#unknown` rows stay where they are; 36
   of them are CI fixture runs against `fake-jmh-benchmarks` and nobody recorded what the rest
   measured.
-- **Absent store configuration is a hard failure, not a silent no-op.** `baas run` resolves the
-  table before the runner-image lookup and before any upload, and `benchmark-runner` rejects a
-  missing selection outright. Discarding measurements takes an explicit `--no-database` on either. The old
-  behaviour — unset URI selects a no-op store, run reports success, numbers vanish — is gone, and
-  reintroducing any fallback brings it back.
+- **Absent store configuration is a hard failure, and nothing discards measurements.** `baas run`
+  resolves the table before the runner-image lookup and before any upload, and `benchmark-runner`
+  rejects a missing selection outright. `--no-database` is gone from both: every run records its
+  status in the table, so a run without one could not be seen at all, and local runs name a
+  LocalStack table. The old behaviour — unset URI selects a no-op store, run reports success,
+  numbers vanish — is gone, and reintroducing any fallback brings it back.
 - **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
   `benchmark-runner` keeps one, selectable by `--mongo-connection-string`, purely so the JAR still
   works standalone against a user's own MongoDB. BaaS itself never selects it.
@@ -523,7 +531,8 @@ non-obvious entries:
 
 | Key | Meaning |
 |---|---|
-| `run-status` | Sentinel written by user-data: `completed` or `failed:<exitCode>`. This is what the CLI polls. |
+| `launch-error.txt` | Only for a run whose `RunInstances` failed: the AWS error code, message and request id, and what was requested. There is no instance and so no boot log; this is what `baas download <runId>` then has to show |
+| `run-status` | **Gone.** Runs before `run-status-in-dynamodb` have one (`completed` / `failed:<n>`), kept as an artifact; status lives on the run item now, and nothing reads the object |
 | `cloud-init-output.log` | Runner boot log, uploaded before self-termination — start here when a run fails before producing output |
 | `environment.json` | The environment the run measured on: `schemaVersion`, image version + AMI, instance type, CPU model/topology, memory, OS + kernel, JVM and tool versions, kernel tunables. Written **before** the benchmark, so it survives a failed run. Read by `baas env diff`. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
@@ -611,14 +620,41 @@ has no such filter, which explains row-count differences against historical outp
 rows that carried no `project` tag at all are in `unknown-migrated`, deliberately not folded into
 `lynx-journal`, since 36 of them are CI fixture runs against `fake-jmh-benchmarks`.
 
+### Run items
+
+Every run since `run-status-in-dynamodb` also has one **run item**: `pk = RUN` (one partition for
+every project — the questions it answers, *what is in flight* and *what happened to my run*, are
+installation-wide), `sk = <createdAt>#<runId>`, `gsi1pk = <runId>`, `gsi1sk = RUN`. Keys come from
+`ResultKeys`, the item from `RunItemMapper`, the status vocabulary and terminal set from `RunStatus`.
+
+- **Only the CLI's `launching` reservation creates it**, with every identity field and the
+  CLI-side tags. It is written before `RunInstances`, and a reservation that cannot be written
+  launches nothing. Every later write — `launched`, `running`, `completed`/`failed:<n>`,
+  `timed-out`, `cancelled`, `launch-failed` — is a conditional `UpdateItem` requiring
+  `attribute_exists(pk)` and refusing to replace a terminal status: the first outcome wins.
+- **The instance writes only `status` and `instanceId`, and no timestamp**, with the key the CLI
+  built (`RUN_SORT_KEY`). The shell never rebuilds the key from `CREATED_AT`, which is
+  `Instant.toString()` and varies in width. Its guard expression is the CLI's own
+  (`DynamoDbRunRecorder.NOT_TERMINAL`), exported verbatim.
+- **`vanished` is never stored**: a non-terminal status whose instance is not pending or running.
+  `baas runs list` decides that from one `DescribeInstances` of the live runners and writes nothing.
+- **Every measurement reader excludes run items**: both Scans filter `begins_with(pk, RESULT#)`, the
+  index query filters `attribute_exists(kind)` — a filter on `gsi1sk` is refused, it is a key
+  attribute — and `MeasurementItemMapper.fromItem` throws on anything else, so a reader that forgets
+  fails loudly. A CLI from before run items does none of this: once one exists, its
+  `--all-projects`, picker and lookups by id fail. Every CLI must be upgraded (accepted 2026-10-02).
+- **IAM**: operator and runner may `UpdateItem` only where `dynamodb:LeadingKeys = RUN`; the runner's
+  `PutItem`/`BatchWriteItem` only `RESULT#*`. Teardown reads no item — it names in-flight runs from
+  their instances' tags, since the deployer holds no read of the table.
+
 ## Adding a benchmark type
 
 A subcommand class in `commands/`, a service + builder in `services/`, an options record in
 `services/options/`, and registration in `TestWrapper`'s `subcommands` list.
 
 Storage is optional at runtime (no `--s3-bucket` → `LocalStorageService`); the results store is
-not. Exactly one of `--results-table`, `--mongo-connection-string` or `--no-database` must be
-named, and both-or-neither is an error. `AWS_ENDPOINT_URL_S3` / `--s3-service-endpoint` and
+not. Exactly one of `--results-table` or `--mongo-connection-string` must be named, and
+both-or-neither is an error. `AWS_ENDPOINT_URL_S3` / `--s3-service-endpoint` and
 `AWS_ENDPOINT_URL_DYNAMODB` / `--dynamodb-endpoint` redirect to LocalStack.
 
 ## Accepted risks

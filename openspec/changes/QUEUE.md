@@ -6,10 +6,9 @@ Set 2026-10-02.
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | [`run-status-in-dynamodb`](run-status-in-dynamodb/proposal.md) | U3 | Proposed: all artifacts, 0 tasks done | `/opsx:apply run-status-in-dynamodb` |
-| 2 | [`custom-runner-image`](custom-runner-image/assumptions.md) | U20 | Stub + `assumptions.md` | `/opsx:explore custom-runner-image` |
-| 3 | `runs-command` | P11 | Decided, no change directory yet. Design in `docs/review/prebaked-runner-ami-review.md` §11 | `/opsx:propose runs-command` |
-| 4 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2, U12 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
+| 1 | [`custom-runner-image`](custom-runner-image/assumptions.md) | U20 | Stub + `assumptions.md` | `/opsx:explore custom-runner-image` |
+| 2 | `runs-command` | P11 | Decided, no change directory yet. Design in `docs/review/prebaked-runner-ami-review.md` §11 | `/opsx:propose runs-command` |
+| 3 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2, U12 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
 
 ## Parked
 

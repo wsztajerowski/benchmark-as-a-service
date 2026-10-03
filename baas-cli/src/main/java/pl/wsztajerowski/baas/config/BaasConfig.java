@@ -153,7 +153,7 @@ public class BaasConfig {
     /**
      * The watchdog counts from launch, the benchmark timeout from JVM start, so the margin has to
      * cover boot plus the final upload. Below this the watchdog can terminate the instance before
-     * {@code run-status} is written, and the run looks like it vanished.
+     * its final status is recorded, and the run looks like it vanished.
      */
     public static final int MIN_WATCHDOG_MARGIN_SECONDS = 60;
 

@@ -48,7 +48,7 @@ sequenceDiagram
     rect rgb(255, 240, 240)
         Note over IA,AWS: 3. Measure (repeatable, see baas-run.mmd)
         Op->>CLI: baas run --benchmark-jar b.jar --project p [--tag k=v]… jmh -- Bench -f 1
-        CLI->>AWS: upload, RunInstances, poll run-status
+        CLI->>AWS: upload, reserve the run item, RunInstances, poll the run item
         CLI-->>Op: run id + result table
         Op->>CLI: baas results [--project p | --all-projects | --request-id id]
         Op->>CLI: baas download <runId>

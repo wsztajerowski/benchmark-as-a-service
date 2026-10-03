@@ -8,6 +8,8 @@ C4Component
         Component(configCmds, "config commands", "ConfigSet / ConfigShow / ConfigSync", "Local file; sync proves the stack exists")
         Component(runCmd, "RunCommand", "picocli", "Preconditions, run naming, upload, launch, poll, JSON summary, shutdown hook")
         Component(queryCmds, "read commands", "ResultsCommand, DownloadCommand, EnvDiffSubcommand", "Operator credentials, read-only")
+        Component(runsCmds, "runs commands", "RunsListSubcommand, RunsTerminateSubcommand", "Operator credentials; list reads, terminate cancels and terminates")
+        Component(runs, "runs package", "RunSession, DynamoDbRunRecorder, RunListing, RunTermination", "Run item writes, the one stop path, poll outcomes, vanished resolution")
 
         Component(cfg, "ConfigService / BaasConfig", "Jackson YAML", "Stores prefix; derives bucket, table, profile, pointer names")
         Component(infra, "infra services", "CloudFormationService, Ec2ProvisioningService, ImageBuilderService, S3UploadService, SsmService, ResultsTableService", "Thin AWS SDK wrappers")
@@ -18,13 +20,17 @@ C4Component
     }
 
     Container_Boundary(model, "baas-model.jar (shared with the runner)") {
-        Component(keys, "RunId, RunLayout, ResultKeys, TagKeys, MeasurementItemMapper", "plain Java", "The only builders of S3 prefixes, DynamoDB keys and the tag vocabulary")
+        Component(keys, "RunId, RunLayout, ResultKeys, TagKeys, MeasurementItemMapper, RunItemMapper, RunStatus", "plain Java", "The only builders of S3 prefixes, DynamoDB keys and the tag vocabulary")
     }
 
     Rel(app, adminCmds, "dispatches")
     Rel(app, configCmds, "dispatches")
     Rel(app, runCmd, "dispatches")
     Rel(app, queryCmds, "dispatches")
+    Rel(app, runsCmds, "dispatches")
+    Rel(runCmd, runs, "reserve, launch, poll, stop")
+    Rel(runsCmds, runs, "list, terminate")
+    Rel(runs, keys, "run keys, status vocabulary")
     Rel(adminCmds, render, "uses")
     Rel(adminCmds, infra, "uses")
     Rel(runCmd, render, "user-data")

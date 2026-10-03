@@ -139,7 +139,7 @@ class S3UploadServiceIT {
 
         s3.putBucketVersioning(r -> r.bucket(bucket)
             .versioningConfiguration(v -> v.status(BucketVersioningStatus.SUSPENDED)));
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/run-status").build(),
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/cloud-init-output.log").build(),
             RequestBody.fromString("completed"));
 
         new S3UploadService(s3).deleteAllObjects(bucket);

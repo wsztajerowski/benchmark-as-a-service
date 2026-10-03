@@ -177,7 +177,7 @@ profilers), `jcstress`.
 > ```
 
 Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--instance-type`,
-`--timeout`, `--watchdog-margin`, `--tag key=value`, `--no-database`.
+`--timeout`, `--watchdog-margin`, `--tag key=value`, `--format json`.
 
 > **`--watchdog-margin` is added to `--timeout`, not a bound of its own.** The instance terminates
 > itself `timeout + margin` seconds after launch (default margin 300, minimum 60), and the CLI stops
@@ -190,16 +190,38 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
 > values the run's own `environment.json` records, so the two can never disagree.
 
-> **A run with nowhere to store its measurements fails before it costs anything.** If the table
-> name is missing from your config, `baas run` stops before any upload — before any AWS call at
-> all — and tells you to run `baas config sync`. To deliberately throw the numbers away, pass
-> `--no-database`.
+> **A run with nowhere to record itself fails before it costs anything.** If no installation is
+> configured, `baas run` stops before any upload — before any AWS call at all — and tells you to run
+> `baas config sync`. There is no option to discard measurements: every run records its status in
+> the results table, so a run without one could not be seen.
+
+> **Every run is recorded before it launches.** `baas run` writes the run to the results table, then
+> launches; if that write fails, nothing is launched. A launch that fails is recorded too, with
+> the AWS error in `launch-error.txt`, so `baas download <runId>` works for it.
 
 `-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved run
 parameters, the AMI, the CloudFormation parameters, and the full generated user-data script. It
 must come before the `--` separator, or it is passed to the benchmark instead.
 
-### 5. Read results
+### 5. See your runs
+
+```bash
+baas runs list                 # the 20 most recent runs, every project and status
+baas runs list --in-flight     # only runs whose instance is still pending or running
+baas runs terminate <runId>    # record it as cancelled and terminate its instance
+```
+
+A run whose CLI died — killed, a laptop gone to sleep, a dropped network — is still listed, and can
+still be stopped. `list` shows `RUN_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE |
+STARTED | ELAPSED`, takes `--limit`, `--project`, `--tag key=value` and `--format table|json|csv`, and
+hides nothing by default, CI runs included. A run whose instance is gone without an outcome shows as
+`vanished`. `terminate` asks first on a terminal; pass `--yes` in scripts.
+
+> **Upgrade every `baas` that points at the installation.** A CLI from before run tracking reads
+> run items as measurements: its `baas results --all-projects`, project picker and lookups by run id
+> fail once one exists. `baas results --project <name>` keeps working.
+
+### 6. Read results
 
 ```bash
 baas results --project my-benchmarks
@@ -228,7 +250,7 @@ groups by `(project, benchmark, branch)` and keeps the best score in each group.
 Every command takes `--config-path <file>` to use a configuration other than `~/.baas/config.yaml` —
 the way to read another installation, such as a torn-down one whose table was retained.
 
-### 6. Fetch everything a run produced
+### 7. Fetch everything a run produced
 
 ```bash
 baas download 20260820T174432812Z-a3f9c21b
@@ -241,7 +263,7 @@ output, logs and profiling artifacts. The stored measurement deliberately drops 
 and `scorePercentiles` — per-iteration numbers dominate a result's size — so this is where you go
 when you need them.
 
-### 7. Check that two results are comparable
+### 8. Check that two results are comparable
 
 Every run records the environment it measured on, in two tiers.
 
@@ -298,6 +320,7 @@ baas run
   ├─ upload --benchmark-jar to s3://<bucket>/runs/<project>/<runId>/input/benchmark.jar
   ├─ seed releases/<version>/benchmark-runner.jar from GitHub Releases, checksum-
   │    verified, the first time that version runs — never overwritten after
+  ├─ record the run (launching) in the results table — no record, no launch
   └─ ec2:RunInstances from that AMI, with a generated user-data script
        ├─ record the environment: environment.json + packages.txt, uploaded
        │    BEFORE the benchmark starts, so a crashed run still says what it
@@ -308,9 +331,10 @@ baas run
        │    └─ launch the benchmark JAR as a subprocess, parse results,
        │       upload output and the verbatim result JSON to S3, then write
        │       one item per measurement, tagged with what it observed
-       ├─ write the run-status sentinel to S3
+       ├─ record running, then completed / failed:<n> on the run item
+       │    (the watchdog records timed-out)
        └─ self-terminate
-  ├─ poll run-status every 15s
+  ├─ poll the run item every 15s
   └─ print this run's measurements from the table
 ```
 
@@ -324,8 +348,8 @@ a table view needs; `rawData` and `scorePercentiles` live only in S3, reachable 
 `baas download`.
 
 **Nothing is silently discarded.** A run with no store configured fails before any upload, and a
-store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. Discarding
-measurements requires `--no-database`.
+store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. No option
+discards measurements.
 
 Design rationale, the invariants the runner depends on, and the open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
@@ -417,9 +441,8 @@ export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib   # .so on Linux
 ```
 
 Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and both write to
-LocalStack S3 and the LocalStack table. Swap `--results-table`/`--dynamodb-endpoint` for
-`--no-database` if you'd rather not create the table — one of the two must be named, since the
-runner treats absent store configuration as an error rather than quietly discarding results.
+LocalStack S3 and the LocalStack table, which has to exist: the runner treats absent store
+configuration as an error rather than quietly discarding results, and no option discards them.
 
 Setting `ASYNC_PATH` also enables `JmhWithAsyncProfilerSubcommandServiceIT`, which is skipped
 without it — so `mvn verify` covers async profiling only when that variable is set.

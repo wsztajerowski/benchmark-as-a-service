@@ -35,7 +35,7 @@ Every command also takes `-h`, `-V`, `-v` and the inherited `--config-path <file
 | `config set` | `--aws-profile`, `--operator-profile`, `--region`, `--instance-type`, `--timeout`, `--watchdog-margin`, `--git-resolve-project` | none | yes |
 | `config show` | — | none | no |
 | `config sync` | `--name` (required) | operator | prefix |
-| `run <type> -- <params>` | `--benchmark-jar` (required), `--runner-jar`, `--project`, `--tag k=v`…, `--instance-type`, `--timeout`, `--watchdog-margin`, `--no-database`, `--format text\|json` | operator | no |
+| `run <type> -- <params>` | `--benchmark-jar` (required), `--runner-jar`, `--project`, `--tag k=v`…, `--instance-type`, `--timeout`, `--watchdog-margin`, `--format text\|json` | operator | no |
 | `results` | `--project` \| `--all-projects` \| `--request-id`, `--benchmark-name`, `--tag`…, `--group-by`, `--all-runs`, `--limit`, `--format table\|json\|csv`, `--watch` | operator | no |
 | `download <runId\|path>` | `-o` | operator | no |
 | `env diff <pathA> <pathB>` | — | operator | no |
@@ -93,7 +93,7 @@ stateDiagram-v2
     Ready --> Dangling: [outside] AMI deregistered
     Dangling --> Ready: admin build-image
     Ready --> Busy: baas run (runner pending/running)
-    Busy --> Ready: run-status + self-terminate<br/>Ctrl+C shutdown hook<br/>watchdog at timeout+margin
+    Busy --> Ready: run item outcome + self-terminate<br/>Ctrl+C shutdown hook<br/>watchdog at timeout+margin
     Busy --> Busy: admin teardown refused
     Deployed --> Residue: admin teardown [--delete-bucket]<br/>(retires the image, F15)
     Ready --> Residue: admin teardown [--delete-bucket]<br/>(retires the image, F15)
@@ -141,13 +141,16 @@ stateDiagram-v2
     Preflight --> Refused: bad --format / type, unreleased build without --runner-jar,<br/>no project, no installation, no JAR, no image
     Preflight --> Uploaded: S3 PutObject benchmark.jar (+runner.jar or seed releases/)
     Uploaded --> Refused: stack outputs missing (after the upload)
-    Uploaded --> Launched: RunInstances
-    Launched --> Completed: run-status = completed
-    Launched --> Failed: run-status = failed:#lt;n#gt;
-    Launched --> Vanished: instance terminated, no run-status
-    Launched --> CapExceeded: poll > timeout+margin
+    Uploaded --> Refused: run item reservation fails (nothing launched)
+    Uploaded --> Launched: reserve run item (launching), RunInstances
+    Uploaded --> LaunchFailed: RunInstances fails — launch-failed + launch-error.txt
+    Launched --> Completed: run item = completed
+    Launched --> Failed: run item = failed:#lt;n#gt;
+    Launched --> Vanished: instance terminated, no outcome on the run item
+    Launched --> CapExceeded: poll > timeout+margin — records timed-out
     Launched --> Detached: CLI killed hard (SIGKILL, sleep, network)
-    Detached --> [*]: watchdog terminates — no baas command can see or stop it
+    Detached --> [*]: watchdog records timed-out and terminates — baas runs list shows it, baas runs terminate stops it
+    LaunchFailed --> [*]
     Completed --> [*]
     Failed --> [*]
     Vanished --> [*]
@@ -160,7 +163,7 @@ stateDiagram-v2
 |---|---|---|---|
 | U1 | **Teardown does not remove the image.** `/<prefix>/runner/ami-id`, the AMI, its 30 GB snapshot and the Image Builder image record all survive, so "remove BaaS from this account" is not reachable with `baas`. Once the table is cleared by hand, a later `setup` lands in *Inherited*: `run` works with no `build-image`, on an AMI whose component the stack deleted. The standing snapshot cost also never stops. | Med · **Fixed** | F15 |
 | U2 | **No CLI path from *Residue* to *Empty*.** The table has no delete flag by design. The four image leftovers (U1) and a table retained by a rolled-back create both need `aws` by hand. The deployer can't even *list* what is left: it lacks `cloudformation:ListStacks`, `s3:ListAllMyBuckets`, `ssm:DescribeParameters` and `dynamodb:ListTables`, and it can't delete the old installation's Image Builder component. | Low · Partly fixed | F15 (image); table and bucket → `export-before-teardown` |
-| U3 | **A detached run is invisible.** If the CLI dies without its shutdown hook (SIGKILL, laptop sleep, lost network), no `baas` command lists in-flight runs, reattaches to one, or terminates one. Teardown refuses while one exists, and its advice is "terminate them manually". The watchdog bounds the cost to `timeout + margin` (2 h 05 m by default). | Med | `TeardownCommand`, `RunCommand.poll` |
+| U3 | ~~**A detached run is invisible.**~~ **Fixed by `run-status-in-dynamodb`:** run status lives on a run item, `baas runs list` shows every run and `baas runs terminate` stops one. If the CLI dies without its shutdown hook (SIGKILL, laptop sleep, lost network), no `baas` command lists in-flight runs, reattaches to one, or terminates one. Teardown refuses while one exists, and its advice is "terminate them manually". The watchdog bounds the cost to `timeout + margin` (2 h 05 m by default). | Med · **Fixed** | `run-status-in-dynamodb` |
 | U4 | **`env diff` accepts result paths only.** `results` shows run ids, and `download` accepts either form. A human going from `results` to `env diff` has to hand-compose `runs/<project>/<runId>`, which CLAUDE.md calls the error-prone thing (`RunLayout` is the only builder). Passing a run id fails with a misleading reason: "No environment.json at s3://…/<runId>/environment.json — Runs from before the prebaked-image change carry no environment manifest". | Low · **Fixed** | F11 |
 | U5 | **Region could not come from the environment.** `AWS_REGION` was ignored and `config sync` had no `--region`, so CI was right only because `vars.AWS_REGION` equalled the default. | Med · **Fixed** | F9 |
 | U6 | **The deployer profile is overridable on three of five admin commands.** `teardown` and `deployer-policy` have no `--aws-profile`. `setup` persists the override while `build-image`/`image` don't. | Low · **Fixed** | F12 |

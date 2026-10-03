@@ -195,7 +195,7 @@
 
 ## 12. Documentation
 
-- [ ] 12.1 Update CLAUDE.md:
+- [x] 12.1 Update CLAUDE.md:
   - the S3 layout table (`run-status` row replaced, `launch-error.txt` added);
   - the *Results table* section (`RUN` items, keys and readers);
   - *Three termination layers* (the watchdog and the poll cap record `timed-out`);
@@ -205,18 +205,18 @@
 
   Verify with `git grep -n 'run-status\|no-database' CLAUDE.md`, which should return only
   intentional mentions.
-- [ ] 12.2 Update the README (`baas runs`, `--no-database` removed, and the run-status passages at
+- [x] 12.2 Update the README (`baas runs`, `--no-database` removed, and the run-status passages at
   lines 311–313 and 421). Update `docs/diagrams/baas-run.mmd`, `baas-ci-e2e.mmd`,
   `baas-lifecycle.mmd`, `c4-2-container.mmd` and `c4-3-component-runner.mmd`, and add
   `docs/diagrams/baas-runs.mmd`. Verify that each diagram renders with `mmdc`.
-- [ ] 12.3 Update the stale code text: the `RunCommand` help footer (lines 68–71), the
+- [x] 12.3 Update the stale code text: the `RunCommand` help footer (lines 68–71), the
   `BaasConfig.java:156` comment, and `S3UploadServiceIT:142`. Update
   `docs/analysis/cli-usage-analysis.md` (U3 done, the §2.3 run state graph) and
   `docs/adr/0001-self-contained-baas-cli.md`. Verify that `git grep -n 'run-status'` returns only
   historical or intentional mentions.
-- [ ] 12.4 Mark U3 **Fixed** and note S7's tightening in `docs/review/baas-cli-findings.md`'s status
+- [x] 12.4 Mark U3 **Fixed** and note S7's tightening in `docs/review/baas-cli-findings.md`'s status
   table. Remove `run-status-in-dynamodb` from `openspec/changes/QUEUE.md`.
-- [ ] 12.5 Commit the `--no-database` removal and the old-CLI incompatibility as `feat(cli)!` with a
+- [x] 12.5 Commit the `--no-database` removal and the old-CLI incompatibility as `feat(cli)!` with a
   `BREAKING CHANGE:` footer naming both. Verify with `git log` that semantic-release will read it
   as a major bump, and that no prose line in the body parses as a second footer.
 
