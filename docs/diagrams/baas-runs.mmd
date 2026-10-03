@@ -1,0 +1,41 @@
+sequenceDiagram
+    actor User as Operator
+    participant RL as RunsListSubcommand
+    participant RT as RunsTerminateSubcommand
+    participant EC2 as AWS EC2
+    participant DDB as DynamoDB<br/><prefix>-results
+
+    rect rgb(240, 248, 255)
+        Note over User,DDB: baas runs list [--limit 20] [--in-flight] [--project p] [--tag k=v]... [--format table|json|csv]
+        User->>RL: baas runs list --in-flight
+        RL->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
+        EC2-->>RL: live instances, each with its baas-request-id tag
+        Note over RL: ONE call, bounded by what is running -- not by how many runs vanished
+        loop pages of 100, newest first, until --limit rows match
+            RL->>DDB: Query pk = RUN, ScanIndexForward=false
+            DDB-->>RL: run items
+        end
+        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its run id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written).<br/>Nothing is hidden: exclude_from_results runs are listed, with their source.
+        RL-->>User: RUN_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE | STARTED | ELAPSED<br/>or "No runs in flight." -- exit 0
+    end
+
+    rect rgb(255, 245, 235)
+        Note over User,DDB: baas runs terminate <runId> [--yes]
+        User->>RT: baas runs terminate 20261003T070025527Z-5bc8461b
+        RT->>DDB: Query requestId-index (gsi1pk = runId, gsi1sk = RUN)
+        alt no run item
+            RT-->>User: "No run found", exit 1
+        end
+        RT->>EC2: describeInstances(instanceId), else by the run-id tag
+        alt terminal status and no live instance
+            RT-->>User: "already ended", exit 0 -- nothing changed
+        end
+        Note over RT: confirm: a terminal prompts [y/N], --yes skips,<br/>no terminal and no --yes refuses
+        RT->>DDB: UpdateItem status cancelled (5 s timeout, never over a terminal status)
+        RT->>EC2: terminateInstances(liveInstance) -- even when the item was already terminal
+        alt termination fails
+            RT-->>User: error naming the instance, exit 1
+        else
+            RT-->>User: terminated, exit 0
+        end
+    end

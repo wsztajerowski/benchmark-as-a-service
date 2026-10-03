@@ -11,7 +11,8 @@ sequenceDiagram
         User->>DL: baas download 20260820T174432812Z-a3f9c21b
         alt argument matches the run-id shape
             DL->>DDB: resultPathForRun(id)
-            alt no item (also: a run that failed before storing anything)
+            Note over DL,DDB: the run item first (gsi1sk = RUN), so a failed or never-launched run<br/>resolves too. A run from before run items resolves through a measurement.
+            alt no item (only: a run from before run items that stored nothing)
                 DL-->>User: "No run found", exit 1 -- nothing written
             end
             DDB-->>DL: stored resultPath (old runs keep their old path)

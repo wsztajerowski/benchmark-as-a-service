@@ -19,16 +19,16 @@ sequenceDiagram
     RC->>CFG: load() -- table = <prefix>-results, or exit 1 "No installation"
 
     alt --request-id id
-        RC->>DDB: Query requestId-index (gsi1pk = id) -- no exclusion filter
+        RC->>DDB: Query requestId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the run item
     else --all-projects
-        RC->>DDB: Scan (exclude_from_results filtered unless --all-runs)
+        RC->>DDB: Scan, begins_with(pk, RESULT#) (exclude_from_results filtered unless --all-runs)
     else project-scoped
         alt --project p
             Note over RC: p
         else git.resolveProject = true and cwd is in a repository
             RC->>Git: repository name of cwd
         else otherwise
-            RC->>DDB: Scan for visible projects
+            RC->>DDB: Scan for visible projects, begins_with(pk, RESULT#) -- run items never offer a project
             alt none
                 RC-->>User: error, exit 1
             else no terminal, or format is json/csv

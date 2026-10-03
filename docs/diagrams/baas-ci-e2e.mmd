@@ -23,7 +23,7 @@ sequenceDiagram
     Job->>CLI: results --project <repo> --all-runs --format json
     Note over Job: asserts it is present
     Job->>CLI: download <run_id> -o ./artifacts
-    Note over Job: asserts environment.json, jmh-result.json, run-status, output, flamegraph, JFR
+    Note over Job: asserts environment.json, jmh-result.json, no run-status object, output, flamegraph, JFR, and the run item reads completed (baas runs list)
     opt failure and a result_path was reported
         Job->>CLI: download <result_path> -o ./failed (by PATH: a failed run has no index entry)
         Job->>Job: print cloud-init-output.log

@@ -44,7 +44,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 14 | S11 | No TLS-only bucket policy; `~/.baas` default permissions | Low | Won't fix (decided 2026-10-02) |
 | 15 | A10 | Caller-ARN prefix is unnormalised, so an SSO identity moves it every session | Med | **Fixed** |
 | 16 | U1 | Teardown leaves the AMI pointer, AMI, snapshot and image record — and a later setup inherits them | Med | **Fixed** |
-| 17 | U3 | A run whose CLI died is invisible: no `baas` command lists or stops it | Med | Open |
+| 17 | U3 | A run whose CLI died is invisible: no `baas` command lists or stops it | Med | **Fixed** (`run-status-in-dynamodb`) |
 | 18 | U5 | Region is never read from the environment; CI is right only because `AWS_REGION` equals the default | Med | **Fixed** |
 | 19 | U11 | Runner shares the image builder's security group, so its 80/443 internet egress is unenforced policy | Med | **Fixed** |
 | 20 | U2 | No CLI path from teardown residue to an empty account; the deployer cannot even list the residue | Low | **Partly fixed** (image); table and bucket → `export-before-teardown` |
@@ -63,7 +63,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
 
-**Next up: none in this file without a decision** — U3 and U20 are decided and await their own changes.
+**Next up: none in this file without a decision** — U20 is decided and awaits its own change (`custom-runner-image`).
 
 ---
 
@@ -171,6 +171,12 @@ Optionally scope `PutObject` to `${RESULT_PATH}/*`.
 `dynamodb:PutItem` + `BatchWriteItem` and nothing else — no `Scan`, no single-item `DeleteItem` —
 asserted by a template test, so the runner can no longer sweep the measurement history it writes
 to. Its S3 access to the bucket is unchanged, so the finding does not close.
+
+**Tightened** by `run-status-in-dynamodb`. The runner's `PutItem`/`BatchWriteItem` are restricted by
+`dynamodb:LeadingKeys` to `RESULT#*`, and its one new grant, `UpdateItem`, to the `RUN` partition:
+it can write measurements and its own run's status, and nothing else in the table. Still not
+closed, for the S3 reason above, and `BatchWriteItem` still carries `DeleteRequest`s within
+`RESULT#`.
 
 ## 5. S8 — self-termination can terminate everyone else's runs · ACCEPTED
 
@@ -412,4 +418,10 @@ Found by the command-surface review and paid lifecycle test in
 entry's evidence, the state graphs that locate it, and the proposed simplification. The table
 above lists the actionable ones; U8, U13, U14, U15, U17 and U18 are informational and live only there.
 F1–F5 were fixed on the `cli-usage-analysis` branch with a test each.
+
+**U3 fixed by `run-status-in-dynamodb` (2026-10-03).** Run status lives on a run item in the results
+table (`pk = RUN`), written by the CLI before and after the launch and by the instance itself.
+`baas runs list` shows every run of every project, with a run whose instance is gone and has no
+outcome shown as vanished. `baas runs terminate` stops one. Teardown's refusal names run ids and
+that command.
 
