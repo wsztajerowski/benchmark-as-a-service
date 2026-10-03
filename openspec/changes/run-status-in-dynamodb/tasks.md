@@ -222,28 +222,28 @@
 
 ## 13. End-to-end verification (manual: no automated test covers the `baas run` path)
 
-- [ ] 13.1 Confirm that 2.2's stack update is live and that an old CLI build can still launch and
+- [x] 13.1 Confirm that 2.2's stack update is live and that an old CLI build can still launch and
   complete a run against it, before any run item exists.
-- [ ] 13.2 Run `baas run jmh` against `fake-jmh-benchmarks`. Verify the item passes through
+- [x] 13.2 Run `baas run jmh` against `fake-jmh-benchmarks`. Verify the item passes through
   `launching` → `launched` → `running` → `completed`, the prefix holds no `run-status` object, and
   `baas runs list` shows the run.
-- [ ] 13.3 Start a run and `kill -9` the CLI. Verify `baas runs list --in-flight` shows it, then
+- [x] 13.3 Start a run and `kill -9` the CLI. Verify `baas runs list --in-flight` shows it, then
   `baas runs terminate <runId>` cancels it, the instance terminates, and the item reads `cancelled`.
 - [ ] 13.4 Exercise the watchdog path: detach the CLI (`kill -9` after launch), with a benchmark
   process that ignores SIGTERM so the process `timeout` cannot end it, and the minimum margin.
   Verify the item reads `timed-out` and the boot log is uploaded. Separately, let an attached CLI
   reach its poll cap, and verify it records `timed-out`, not `cancelled`.
-- [ ] 13.5 Force a launch failure, for example with an instance type the account cannot launch.
+- [x] 13.5 Force a launch failure, for example with an instance type the account cannot launch.
   Verify `launch-failed` with the error code, `launch-error.txt` in the prefix, and that
   `baas download <runId>` fetches it.
-- [ ] 13.6 With a run in flight, run `baas admin teardown` and verify the refusal names the run id
+- [x] 13.6 With a run in flight, run `baas admin teardown` and verify the refusal names the run id
   and `baas runs terminate`. Abort before confirming.
 - [x] 13.7 As the operator, try `aws dynamodb update-item` on a `RESULT#` key and `put-item` on a
   `RUN` key. Verify both return AccessDenied. LocalStack does not enforce IAM, so this live check is
   the only one for the deny scenarios.
-- [ ] 13.8 Confirm that an older CLI fails as the proposal states (`results --all-projects`) and that
+- [x] 13.8 Confirm that an older CLI fails as the proposal states (`results --all-projects`) and that
   `results --project <name>` still works, so the BREAKING note is accurate.
-- [ ] 13.9 Compare 13.2's `fake-jmh-benchmarks` score with the most recent pre-change e2e runs in
+- [x] 13.9 Compare 13.2's `fake-jmh-benchmarks` score with the most recent pre-change e2e runs in
   `baas results`. Record the spread, and investigate any difference outside the recorded CI range
   rather than accepting it. The only change to user-data timing comes before the JVM starts.
 

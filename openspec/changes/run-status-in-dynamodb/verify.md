@@ -108,3 +108,47 @@ credentials for `RunnerRole`, which only the instance profile holds.
   recorded, because the instance writes no timestamp by design (so that "the instance's clock never
   reaches the record" holds). The column became ELAPSED, shown for runs in flight and `—` otherwise.
   A SOURCE column was added, per explore decision 12. The spec was updated.
+
+## Section 13: end-to-end, live (2026-10-03, account 381492019823, eu-central-1)
+
+Three paid runs, plus one launch that failed before any instance existed. Image `1.2.0`,
+`ami-0ae60d9d990dc00df`, `c5.2xlarge`, `fake-jmh-benchmarks` `Incrementing_Synchronized`. Every run
+was tagged `exclude_from_results=true`.
+
+| Task | Run | Result |
+|---|---|---|
+| 13.1 | `20261003T070025527Z-5bc8461b`: `origin/main`'s CLI (`acbbd1f`), `jmh` | ✓ completed, exit 0, 1 measurement stored. The narrowed `PutItem` (`RESULT#*`) accepts today's runners. No run item existed before it |
+| 13.2 | `20261003T070251157Z-eb960685`: this branch, `jmh-with-async` | ✓ sampled `launched` (09:03:04, with the instance id) → `running` (09:03:20) → `completed` (09:03:53). `launching` lasted under the sampler's 3 s. The prefix holds `cloud-init-output.log`, `environment.json`, `jmh-result.json`, the output, the flamegraphs and the JFR, and **no `run-status`** |
+| 13.3 | `20261003T070631715Z-c70ac6f5`: `kill -9` of the CLI 5 s after launch | ✓ `runs list --in-flight` shows it `running` with its instance. `runs terminate --yes` exits 0; the item reads `cancelled` and the instance `shutting-down`. A second `terminate` reports "already ended (cancelled)"; an unknown id exits 1 |
+| 13.4 | — | **Not run live (W1).** See below |
+| 13.5 | `20261003T070410263Z-1f314cba`: `--instance-type x9.notreal`, free | ✓ `launch-failed` with `InvalidParameterValue` on the item and in `runs list`. `baas download <runId>` fetched `launch-error.txt` plus `input/`. Also exposed a real bug, fixed in `7a99dca`: see D5 |
+| 13.6 | during 13.3, deployer credentials, stdin `no` | ✓ "Aborting: 1 run is still in flight", naming the run id from the tag, the instance and its state, and `baas runs terminate <runId>`; exit 1. Gate 2 (typing the stack name) was never reached |
+| 13.7 | — | ✓ recorded under task 2.2 above |
+| 13.8 | `origin/main`'s CLI, after run items existed | ✓ as the proposal states. `results --all-projects --all-runs` and `download <runId>` fail with `NullPointerException: Name is null` at `MeasurementKind.valueOf`; `results --project benchmark-as-a-service --all-runs` returns 5 rows. Nuance: without `--all-runs`, the old exclusion filter hid these run items, because they carry `exclude_from_results=true`. Any non-excluded run item makes it fail |
+| 13.9 | 13.2's score against recent CI runs of the same benchmark and type | ✓ 10,874,619 ops/s, against CI 11,636,619 / 13,118,215 / 10,592,628 (2026-10-02). Inside both that range and the recorded historical spread (10.0M–29.6M). No difference to investigate: the only user-data change on the measurement path happens before the JVM starts |
+
+### W1: the watchdog and the poll cap were not exercised live
+
+Neither path is reachable live with any existing fixture:
+- The watchdog fires at `timeout + margin` after launch. The process `timeout` fires at `timeout`
+  after the JVM starts, which is within about 40 s of launch. The margin is at least 60 s, so the
+  process `timeout` always ends the benchmark first, and the run records `failed:124`.
+- The CLI's poll cap equals the watchdog bound, so the instance's own outcome lands first.
+- Reaching either needs a benchmark process that ignores SIGTERM, which no fixture provides.
+
+Coverage instead:
+- `UserDataScriptBuilderTest.theWatchdogRecordsTimedOutBeforeShippingTheLogAndTerminating`
+  executes the rendered watchdog subshell under bash against a stub `aws`, and asserts the
+  `timed-out` write, then the log upload, then the termination.
+- `RunSessionTest.theCapRecordsATimeoutNotACancellation` covers the poll cap.
+
+Closing W1 would take a SIGTERM-ignoring fixture benchmark. That is a separate change.
+
+### D5: the instance type was sent as `'null'` for any type the SDK's enum does not know
+
+`InstanceType.fromValue("x9.notreal")` becomes `UNKNOWN_TO_SDK_VERSION`, which serialises as
+`'null'`, so EC2 answered "Invalid value 'null' for InstanceType". The bug predates this change, and
+it affects every instance family released after the SDK was built. Fixed in `7a99dca` by passing the
+string, pinned by `Ec2ProvisioningServiceTest.anInstanceTypeTheSdkDoesNotKnowIsSentAsTyped`.
+Cosmetic, fixed in the same commit: `runs list`'s PROJECT column grew from 20 to 24, the width
+`baas results` uses. `benchmark-as-a-service` had shifted the row.
