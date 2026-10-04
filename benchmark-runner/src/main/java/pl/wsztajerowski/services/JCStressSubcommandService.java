@@ -11,6 +11,8 @@ import pl.wsztajerowski.results.JCStressMeasurementMapper;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -39,8 +41,9 @@ public class JCStressSubcommandService {
         Path reportPath = jcStressOptions.reportPath();
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JCStress. Output path: {}", outputPath);
+        int exitCode;
         try {
-            benchmarkProcessBuilder(benchmarkPath)
+            exitCode = benchmarkProcessBuilder(benchmarkPath)
                 .addArgumentWithValue("-r", reportPath)
                 .addArgumentIfValueIsNotNull("-c", jcStressOptions.cpuNumber())
                 .addArgumentIfValueIsNotNull("-f", jcStressOptions.forks())
@@ -66,7 +69,18 @@ public class JCStressSubcommandService {
             .saveFile(outputPath.resolve("jcstress-output.txt"), jcStressOptions.processOutput());
         RunLogs.upload(storageService, outputPath);
 
+        // Not fatal on its own: whether JCStress exits non-zero for failed tests is not something
+        // this runner relies on, and a run whose tests failed must still store its summary. A run
+        // that left no report is what fails — naming the process, not the missing file it implies.
         Path resultFilepath = reportPath.resolve( "index.html");
+        if (exitCode != 0) {
+            logger.warn("JCStress exited with code {}", exitCode);
+        }
+        if (!Files.isRegularFile(resultFilepath)) {
+            logger.error("JCStress output:\n{}", readQuietly(jcStressOptions.processOutput()));
+            throw new JavaWonderlandException(
+                "JCStress exited with exit code %d and wrote no report at %s".formatted(exitCode, resultFilepath));
+        }
         logger.info("Parsing JCStress html output: {}", resultFilepath);
         JCStressResult jcStressResult = getJCStressHtmlResultParser(resultFilepath, outputPath)
             .parse();
@@ -93,5 +107,14 @@ public class JCStressSubcommandService {
 
         logger.info("Storing JCStress summary for request {}", commonOptions.requestId());
         resultsStore.write(measurements);
+    }
+
+    /** Diagnostics on a path that is already failing: an unreadable output must not mask why. */
+    private static String readQuietly(Path file) {
+        try {
+            return Files.readString(file);
+        } catch (IOException | RuntimeException e) {
+            return "(unreadable: " + e.getMessage() + ")";
+        }
     }
 }
