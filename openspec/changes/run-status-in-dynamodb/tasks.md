@@ -88,7 +88,7 @@
   `launch-error.txt` (key built by `RunLayout`), both best effort, then report the original error.
   Verify with tests: the item and object are written, and a test where both writes also fail still
   shows the original error and a non-zero exit.
-- [x] 5.4 Register the shutdown hook as soon as `RunInstances` returns, then write `launched`, best
+- [x] 5.4 Register the shutdown hook before `RunInstances` is called, then write `launched`, best
   effort. When `launched` is refused because the run is already terminal, terminate the instance
   just launched and exit non-zero. Verify with tests:
   - an interrupt raised before `launched` is written still terminates;

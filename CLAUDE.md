@@ -81,6 +81,10 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   bake, and there is no paid instance to orphan.)
 - **The watchdog starts immediately after `INSTANCE_ID` resolves.** Every later failure has to be
   covered by it.
+- **Comment-only lines are stripped from `SCRIPT_BODY` when it is rendered.** EC2 refuses user-data
+  over 16 KB raw, and the comments were most of the script. So a line beginning with `#` never
+  reaches the instance — nothing may depend on one, inside the manifest heredoc included.
+  `aLargeRunStaysWellUnderTheUserDataLimit` holds an outsized run under 12 KB.
 - **User-data installs nothing.** No `yum`, no JDK, no async-profiler download. The toolchain is
   baked into the AMI by `baas admin build-image`; a runner that installed its own would measure on
   a slightly different machine every time, which is the drift this design exists to remove.
@@ -130,9 +134,14 @@ The watchdog is the only one that survives a deadlocked JVM.
    notice the difference
 2. Process `timeout` around `java -jar benchmark-runner.jar`
 3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C, registered *before* `RunInstances` so an
-   interrupt mid-launch still finds the instance by its `baas-request-id` tag. It, the poll cap
+   interrupt mid-launch can look the instance up by its `baas-request-id` tag. That lookup can
+   miss — the instance may not exist yet, and `DescribeInstances` lags — so the instance covers it:
+   its `running` write is refused over the recorded `cancelled`, and a refused `running` means it
+   ships its boot log and terminates without starting the benchmark. It, the poll cap
    (`timed-out`) and `baas runs terminate` share `RunSession.stop`: record why under a 5 s timeout,
-   then terminate whatever the write did. A status write never holds a termination back
+   then terminate whatever the write did — unless the write was refused because the instance had
+   already recorded `completed`/`failed:<n>`, when it is mid-upload and terminates itself. A status
+   write never holds a termination back
 
 **The runner image (`infra/runner-image.yaml`, `baas admin build-image`)**
 
@@ -559,8 +568,9 @@ Never infer the environment of a past run from the declaration in the working tr
 any single stack, which is also why `baas admin setup` pre-checks for a retained table exactly as it
 does for the retained bucket, and why teardown names both.
 
-One item per measurement — per JMH benchmark method, per JCStress *run* (JCStress names only
-non-passing tests, so per-test items would cover failures alone). No derived index items.
+Two kinds of item: one per measurement — per JMH benchmark method, per JCStress *run* (JCStress
+names only non-passing tests, so per-test items would cover failures alone) — and one per run (*Run
+items*, below). No derived index items.
 
 | | |
 |---|---|
