@@ -6,7 +6,7 @@ Set 2026-10-02.
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | CLI usage fixes — one batch, one commit per fix, no OpenSpec change | U22, U23, U24, U25, U26, U27, U29, U30, U32, U34, U35, U38, U39 (`docs/analysis/cli-usage-analysis.md` §3, §7) | Decided 2026-10-04. Unblocked: `custom-runner-image` is on `next-release` (`b6193ec`) | Each row's fix in that file, a test with each, one commit per ID (`fix(cli)`; U27 is `feat(cli)`; U22 removes an option — release type settled then) |
+| 1 | CLI usage fixes — one batch, one commit per fix, no OpenSpec change | U22, U23, U24, U25, U26, U27, U29, U30, U32, U34, U35, U38, U39, U40 (`docs/analysis/cli-usage-analysis.md` §3, §7) | Decided 2026-10-04. Unblocked: `custom-runner-image` is on `next-release` (`b6193ec`) | Each row's fix in that file, a test with each, one commit per ID (`fix(cli)`; U27 is `feat(cli)`; U22 removes an option — release type settled then) |
 | 2 | `runs-command` | P11 | Decided, no change directory yet. Design in `docs/review/prebaked-runner-ami-review.md` §11 | `/opsx:propose runs-command` |
 | 3 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2, U12 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
 | 4 | `narrow-bucket-grants` | baas-cli S14, S15 | Decided 2026-10-04, no change directory yet. Design in `docs/review/baas-cli-findings.md` §47–54: runner S3 grant scoped to `PutObject`/`GetObject` on `runs/*` + `GetObject` on `releases/*`, no `DeleteObject`; the operator's unused `DeleteObject` removed; the runner-JAR seed made an `If-None-Match: *` put. No bucket policy. Installations pick it up on their next `baas admin setup` | `/opsx:propose narrow-bucket-grants` |

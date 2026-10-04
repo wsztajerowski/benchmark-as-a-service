@@ -84,9 +84,9 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 54 | C8 | Repetition worth folding: `AwsClientFactory` ×9, two SHA-256 encoders, two run-item queries | Low | **Fixed** (`review-fixes`, 10771f6) |
 | 55 | U38 | A run that finishes before its `launched` write is reported as cancelled, exits 1 and is terminated again | Low | Decided 2026-10-04: §55's fix (`isRecordedByInstance`), in the queued batch beside U30, own commit |
 | 56 | U39 | `build-image` from a CLI bundling an older base silently downgrades the image, and `admin image` advises it | Med | Decided 2026-10-04: refuse a lower bundled base, no override; `admin image` says upgrade the CLI. In the queued batch, own commit |
-| 57 | U40 | Teardown discards the installation's runner-image extension without a word or a copy | Low | Open — needs a decision (analysis §7) |
+| 57 | U40 | Teardown discards the installation's runner-image extension without a word or a copy | Low | Decided 2026-10-04: save it beside the config before deleting the stack; in the queued batch, own commit |
 
-**Next up: U40 needs a decision** ( asked one at a time from `docs/analysis/cli-usage-analysis.md` §7). U20 and U37 are fixed by `custom-runner-image`.
+**Next up: nothing in this file is undecided.** The CLI usage batch (`openspec/changes/QUEUE.md` item 1) is ready to start.
 
 ---
 
