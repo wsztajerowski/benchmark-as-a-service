@@ -645,7 +645,7 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys; `project` and `source` are caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
+| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and run item take `--project`, and two inputs split one run across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
 | Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--all-runs` (shown faint) and `--request-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
 
