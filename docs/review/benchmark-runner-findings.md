@@ -40,6 +40,15 @@ workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | **Reduced in surface** |
 | 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | **Fixed** |
 | 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | **Fixed** |
+| 12 | A12 | `jmh-with-prof` without `jfr`/`async` fails after the benchmark ran, storing nothing | Med | Decided 2026-10-04: failing `gc`-only IT first, then fix (withdrawn if it passes); review-fixes branch; not yet implemented |
+| 13 | A13 | `LocalStorageService` reads every file as UTF-8 only to trace-log it; binary output throws | Low | Decided 2026-10-04: removed with local mode by C4's change |
+| 14 | A14 | `FileUtils.ensurePathExists` creates a directory at the file's own path | Low | Decided 2026-10-04: inline `Files.createDirectories(path.getParent())` at the four call sites and delete the helper; review-fixes branch |
+| 15 | A15 | JCStress's exit code is discarded | Low | Decided 2026-10-04: log a non-zero code and the process output; fail with a clear message only when `index.html` is missing; review-fixes branch |
+| 16 | S16 | `release.yml` grants `id-token: write` nothing uses; semantic-release installed unpinned | Low | Decided 2026-10-04: drop `id-token`, pin exact versions in the `npm install` line (no lockfile); review-fixes branch; verified by the next real release |
+| 17 | C1 | Mongo-era entities, the disabled `Sandbox` test, and `gson-javatime-serialisers` | Low | Decided 2026-10-04: delete now on the review-fixes branch |
+| 18 | C2 | Runner dead methods, a dead field and unused imports | Low | Decided 2026-10-04: delete now except the Mongo getters (C4) and `S3StorageService.getEndpoint` (kept); `JCStressOptionsBuilder` → src/test; review-fixes branch |
+| 19 | C3 | Unreferenced scripts under `scripts/` | Low | Decided 2026-10-04: delete all three on the review-fixes branch |
+| 20 | C4 | MongoDB retirement: the largest removal left, and every service IT runs on the Mongo adapter | — | Decided 2026-10-04: retire Mongo and local storage mode in one OpenSpec change, ITs onto LocalStack DynamoDB first; not yet proposed |
 
 ### How `cli-driven-ci-workflows` closed them
 
@@ -259,6 +268,141 @@ params, <group tag>)`, orders a variant's rows together, keeps `benchmarkName` p
 `params` line above a now-labelled `tags` line — never in a column, since a sweep can declare many.
 
 ---
+
+## 12–20. Whole-repository pass (A12–A15, S16, C1–C4) · 2026-10-04
+
+Same pass as `baas-cli-findings.md` §47–54, covering the runner, CI and `scripts/`. `C` marks
+cleanup. The near-identical JMH services are not re-raised: A1 declined that refactor.
+
+### A12 — `jmh-with-prof` without `jfr`/`async` fails after the benchmark ran · Med
+
+`JmhWithProfilerSubcommandService.uploadProfilerArtifacts` calls `Files.list` on
+`<resultPath>/<benchmark>-<Mode>` for every result. Only `async` and `jfr` get a `dir=` option
+(`getProfilerOutputOptionName`), so only they create that directory. With `-pr gc`, `-pr perfnorm`
+or any other profiler alone, `list` throws `NoSuchFileException`, which becomes a
+`JavaWonderlandException`. That happens after the paid benchmark finished and its output was
+uploaded, but **before `resultsStore.write`**, so the run records `failed:1` and stores no
+measurement. `JmhWithProfilerSubcommandServiceIT` always includes `jfr` alongside `gc`/`comp`/`cl`,
+which is why it passes. This is read from the code, not reproduced. A local run with `-pr gc` alone
+would confirm it. **Proposed fix:** skip a missing directory, i.e. upload artifacts only for
+profilers that write them, and add an IT case with `gc` alone.
+
+**Decided (2026-10-04):** write the `gc`-only IT case first. If it fails as predicted, apply the fix;
+if it passes, withdraw the finding. It goes on the same review-fixes branch as baas-cli S13.
+
+### A13 — `LocalStorageService` reads every file as UTF-8 to trace-log it · Low
+
+`saveFile` evaluates `Files.readString(localPath)` as the argument of `logger.trace` whatever the
+level, so every saved file is read twice, and a binary one (`profile.jfr`, a `.bin.gz`) throws
+`MalformedInputException`, failing the run. This affects local mode only (no `--s3-bucket`), the
+mode the LocalStack scripts exist to exercise. **Proposed fix:** drop the line. `createDirectories(targetPath)`
+followed by a `REPLACE_EXISTING` copy over the empty directory it just made works only by accident.
+It should be `createDirectories(targetPath.getParent())`.
+
+No script, test or README section uses local mode; both LocalStack scripts pass `--s3-bucket`, and
+only CLAUDE.md's *Adding a benchmark type* mentions the fallback. **Decided (2026-10-04):** this goes
+with C4. If standalone use is retired, `--s3-bucket` becomes required and `LocalStorageService` is
+deleted; if it is kept, the two-line fix applies.
+
+### A14 — `FileUtils.ensurePathExists` creates a directory at the file's path · Low
+
+When the parent is missing it calls `Files.createDirectories(path)`, which creates a directory named
+like the file (`jmh-results.json/`). JMH and `ProcessBuilder.redirectOutput` then cannot write there.
+It is latent today because every caller's parent is the working directory. **Proposed fix:**
+`Files.createDirectories(path.getParent())`, or delete the helper and do that inline at its four call sites.
+
+**Decided (2026-10-04):** inline it and delete the helper. All four call sites already sit inside a
+`try` that handles `IOException`, so inlining adds no new error handling.
+
+### A15 — JCStress's exit code is discarded · Low
+
+`JCStressSubcommandService` calls `.waitFor()` and ignores the result, so a JCStress that crashed
+(a bad JAR, an OOM) goes on to parse an `index.html` that may not exist and fails with a jsoup
+`IOException` naming a file rather than the process. The JMH services log the exit code and the
+process output. **Proposed fix:** the same, deciding first which non-zero codes JCStress uses for
+"tests failed", which must not fail the run.
+
+**Decided (2026-10-04):** log a non-zero exit code and the process output, and fail, naming the
+process, only when the report is missing. A run whose tests failed still stores its summary, so
+JCStress's exact exit-code semantics need not be settled.
+
+### S16 — `release.yml` permissions and unpinned tooling · Low
+
+The release job grants `id-token: write` "for npm provenance", but nothing is published to npm and
+no step federates anywhere, so the grant is unused. The same job, holding `contents: write` and
+`packages: write`, runs `npm install --no-save semantic-release @semantic-release/…` with every
+package but one unpinned and no lockfile, so each release executes whatever those packages resolve
+to that day. S10 covered actions on mutable tags, not this. The two compound. `OperatorRole`'s federated trust is
+`repo:<org>/<repo>:*`, which includes this job on `main`, so a malicious npm package installed here
+could mint a token and assume `OperatorRole` today. Without that, it still holds `contents: write`
+over the release that publishes `benchmark-runner.jar` and its `.sha256` together, and it could swap
+both, which `RunnerJarResolver`'s checksum check would not notice. **Proposed fix:** drop `id-token`;
+pin the semantic-release packages (versions in the command, or a committed `package-lock.json` with
+`npm ci`).
+
+**Decided (2026-10-04):** drop `id-token: write`; pin exact versions in the existing `npm install`
+line, keeping the `^9` preset constraint's reasoning. No lockfile: the plugins' transitive dependencies
+still float, and upgrades become deliberate edits. Nothing runs this job before a real release, so the
+next push to `main` verifies it.
+
+### C1 — Mongo-era entities, the disabled `Sandbox`, `gson-javatime-serialisers` · Low
+
+`entities/jmh/JmhBenchmark`, `JmhBenchmarkId` and `BenchmarkMetadata`, and
+`entities/jcstress/JCStressTest` and `JCStressTestMetadata`, are the pre-`StoredMeasurement`
+document shapes. No main code references them; only `src/test/.../Sandbox.java` does, a 302-line
+`@Disabled` scratch class. They are not inert, since Morphia's `mapPackage("pl.wsztajerowski.entities")`
+maps them on every Mongo start. Their `LocalDateTime` fields are the only reason
+`ResultLoaderService` registers `Converters.registerLocalDateTime`, so deleting them also makes the
+`gson-javatime-serialisers` dependency removable. `JCStressResult.hasUnsuccessfulTests()` is unused
+and returns `true` when every test *passed*; delete rather than fix.
+
+### C2 — runner dead methods, a dead field, unused imports · Low
+
+`HtmlParser.getTextOfNextParentSibling` and `getListOfAttributeValuesForSelector`;
+`ApiCommonSharedOptions.getResultsTableName`, `getDynamoDbEndpoint` and `getMongoConnectionString`
+(tests only); `MongoMeasurementDocument.getId`/`getMeasurement`; the `@Spec` field in
+`JmhWithProfilerSubcommand`. `JCStressOptionsBuilder` is main code that only tests construct (keep
+it as a test helper under `src/test`, or delete it). Unused imports: `Instant` in
+`JCStressSubcommandService`; `Files` and `StandardCopyOption` in `BenchmarkProcessBuilder`.
+`S3StorageService.getEndpoint` exists only to build a log line, and builds a console URL rather than
+an endpoint.
+
+**Decided (2026-10-04):** delete the dead methods, the `@Spec` field and the unused imports now, and
+move `JCStressOptionsBuilder` to `src/test`. `getMongoConnectionString` and
+`MongoMeasurementDocument`'s getters go with C4. **`S3StorageService.getEndpoint` stays:** the
+endpoint in the startup log is intended.
+
+### C3 — unreferenced scripts under `scripts/` · Low
+
+`get-version-property-simple.sh` is a scratch driver: its usage block is commented out and it looks
+up `org.junit:junit-bom` and `maven-compiler-plugin` hard-coded. Nothing references it,
+`get-version-property.sh`, which it sources, or `update-dependencies.sh`: no workflow, no README, no
+other script. They may be manual tooling; if they are not, they go. `install.sh` and `tests/` are
+live (`install-test.yml`).
+
+### C4 — MongoDB retirement · Decision
+
+The largest removal left in the repository is the Mongo adapter: `MongoResultsStore`,
+`MongoMeasurementDocument`, `ResultsStoreBuilder.mongoStore`, the `--mongo-connection-string`/`-m`
+option and its `MONGO_CONNECTION_STRING` default (which the LocalStack scripts must warn about), the
+`mongodb-driver-sync`, `morphia-core` and `testcontainers-mongodb` dependencies, the `mongo` service
+in `docker-compose.yaml`, and with them C1. CLAUDE.md's *Accepted risks* already records that no live
+user is known and calls retirement an open decision deserving its own change.
+
+One fact from this pass bears on it. **Every service IT (`Jmh*SubcommandServiceIT`,
+`JCStressSubcommandServiceIT`) stores through `MongoResultsStore`**, via
+`TestcontainersWithS3AndMongoBaseIT`. The DynamoDB adapter, which is the only one BaaS uses, is
+exercised by the shared store contract suite but by no end-to-end runner test. Keeping Mongo
+therefore costs test fidelity as well as code, and moving the ITs onto LocalStack's DynamoDB is
+the first step either way.
+
+**Decided (2026-10-04): retire it, as its own OpenSpec change**, queued after the current changes.
+The order inside the change: first move the service ITs onto LocalStack DynamoDB, so the production
+path is the one tested end to end. Then delete the Mongo adapter, `-m`/`MONGO_CONNECTION_STRING`,
+Morphia, the driver, the Mongo testcontainer and the compose service. Local storage mode goes too
+(A13), so `--results-table` and `--s3-bucket` become required. The change also updates CLAUDE.md:
+the *Accepted risks* MongoDB row, the Morphia and connection-string gotchas, and *Adding a benchmark
+type*.
 
 ## What is genuinely well done
 
