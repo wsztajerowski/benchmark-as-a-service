@@ -40,15 +40,15 @@ workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | **Reduced in surface** |
 | 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | **Fixed** |
 | 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | **Fixed** |
-| 12 | A12 | `jmh-with-prof` without `jfr`/`async` fails after the benchmark ran, storing nothing | Med | Decided 2026-10-04: failing `gc`-only IT first, then fix (withdrawn if it passes); review-fixes branch; not yet implemented |
-| 13 | A13 | `LocalStorageService` reads every file as UTF-8 only to trace-log it; binary output throws | Low | Decided 2026-10-04: removed with local mode by C4's change |
-| 14 | A14 | `FileUtils.ensurePathExists` creates a directory at the file's own path | Low | Decided 2026-10-04: inline `Files.createDirectories(path.getParent())` at the four call sites and delete the helper; review-fixes branch |
-| 15 | A15 | JCStress's exit code is discarded | Low | Decided 2026-10-04: log a non-zero code and the process output; fail with a clear message only when `index.html` is missing; review-fixes branch |
-| 16 | S16 | `release.yml` grants `id-token: write` nothing uses; semantic-release installed unpinned | Low | Decided 2026-10-04: drop `id-token`, pin exact versions in the `npm install` line (no lockfile); review-fixes branch; verified by the next real release |
-| 17 | C1 | Mongo-era entities, the disabled `Sandbox` test, and `gson-javatime-serialisers` | Low | Decided 2026-10-04: delete now on the review-fixes branch |
-| 18 | C2 | Runner dead methods, a dead field and unused imports | Low | Decided 2026-10-04: delete now except the Mongo getters (C4) and `S3StorageService.getEndpoint` (kept); `JCStressOptionsBuilder` → src/test; review-fixes branch |
-| 19 | C3 | Unreferenced scripts under `scripts/` | Low | Decided 2026-10-04: delete all three on the review-fixes branch |
-| 20 | C4 | MongoDB retirement: the largest removal left, and every service IT runs on the Mongo adapter | — | Decided 2026-10-04: retire Mongo and local storage mode in one OpenSpec change, ITs onto LocalStack DynamoDB first; not yet proposed |
+| 12 | A12 | `jmh-with-prof` without `jfr`/`async` fails after the benchmark ran, storing nothing | Med | **Fixed** (`review-fixes`, c187d4c); confirmed first by a `gc`-only IT failing with `NoSuchFileException` |
+| 13 | A13 | `LocalStorageService` reads every file as UTF-8 only to trace-log it; binary output throws | Low | Decided 2026-10-04 → `retire-mongodb` (QUEUE.md), which removes local mode |
+| 14 | A14 | `FileUtils.ensurePathExists` creates a directory at the file's own path | Low | **Fixed** (`review-fixes`, 2165cce) |
+| 15 | A15 | JCStress's exit code is discarded | Low | **Fixed** (`review-fixes`, 8558649) |
+| 16 | S16 | `release.yml` grants `id-token: write` nothing uses; semantic-release installed unpinned | Low | **Fixed** (`review-fixes`, 59248d1); the next real release is its only end-to-end test |
+| 17 | C1 | Mongo-era entities, the disabled `Sandbox` test, and `gson-javatime-serialisers` | Low | **Fixed** (`review-fixes`, 4f05522) |
+| 18 | C2 | Runner dead methods, a dead field and unused imports | Low | **Fixed** (`review-fixes`, bb432cf); `S3StorageService.getEndpoint` kept; Mongo getters → `retire-mongodb` |
+| 19 | C3 | Unreferenced scripts under `scripts/` | Low | **Fixed** (`review-fixes`, cef6aef) |
+| 20 | C4 | MongoDB retirement: the largest removal left, and every service IT runs on the Mongo adapter | — | Decided 2026-10-04 → `retire-mongodb` (QUEUE.md) |
 
 ### How `cli-driven-ci-workflows` closed them
 
