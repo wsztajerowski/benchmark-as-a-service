@@ -74,6 +74,14 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 44 | U32 | Teardown's confirmation crashes without a terminal and exits 0 on abort | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
 | 45 | U34 | Networking ids without `--use-existing-vpc` are silently ignored on create | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
 | 46 | U37 | (uncommitted apply) the parent lookup omits deprecated AMIs, so a pinned release stops resolving | Low | **Fixed** in `custom-runner-image` before it shipped: `includeDeprecated(true)`; the pinned parent's `DeprecationTime` is 2026-11-01 |
+| 47 | S13 | `baas download` writes outside its output directory for a key containing `../` | Med | Decided 2026-10-04: direct fix (normalise + refuse, literal path too, unit test), own branch off `next-release`, no OpenSpec change; not yet implemented |
+| 48 | S14 | `RunnerRole` can overwrite the pinned runner JAR every later run executes | Med | Decided 2026-10-04: scope the runner grant + conditional seed, with S15, as one small OpenSpec change; no bucket policy; not yet proposed |
+| 49 | S15 | `OperatorRole` (so CI too) holds bucket-wide `s3:DeleteObject` that no command uses | Low | Decided 2026-10-04: removed in S14's change |
+| 50 | A16 | `retireQuietly` catches only `Ec2Exception`, so a network error fails a published build | Low | Decided 2026-10-04: catch `SdkException` + unit test; review-fixes branch; not yet implemented |
+| 51 | C5 | Installation names hand-built in five places beside `BaasConfig`'s derivations | Low | Decided 2026-10-04: no dedicated work; the next change that adds a resource name introduces the helper and moves these onto it |
+| 52 | C6 | `SetupCommand` carries an alias, repeats its reads, and duplicates `loadTemplate()` | Low | Decided 2026-10-04: drop the `resolvedStack` alias, share `loadTemplate()`; repeated DescribeStacks left; review-fixes branch |
+| 53 | C7 | CLI dead code: an unused method, an unreachable branch, unused imports, stale comments | Low | Decided 2026-10-04: remove all, `STORE_ARGS` included; review-fixes branch |
+| 54 | C8 | Repetition worth folding: `AwsClientFactory` ×9, two SHA-256 encoders, two run-item queries | Low | Decided 2026-10-04: all four now (generic client builder, `HexFormat`, reuse `find`, drop the two wrappers); review-fixes branch |
 | 55 | U38 | A run that finishes before its `launched` write is reported as cancelled, exits 1 and is terminated again | Low | Open — needs a decision (§55) |
 
 **Next up: U38 needs a decision; nothing else in this file is undecided.** U20 and U37 are fixed by `custom-runner-image`.
@@ -438,6 +446,139 @@ table (`pk = RUN`), written by the CLI before and after the launch and by the in
 `baas runs list` shows every run of every project, with a run whose instance is gone and has no
 outcome shown as vanished. `baas runs terminate` stops one. Teardown's refusal names run ids and
 that command.
+
+## 47–54. Whole-repository pass (S13–S15, A16, C5–C8) · 2026-10-04
+
+Static read of every main source file, the templates, both policies, the workflows and `scripts/`,
+looking for security issues, dead code and simplifications. The then-uncommitted `custom-runner-image`
+work was read but is not judged here — it has its own verify. Excluded on purpose: everything in
+CLAUDE.md's *Accepted risks*, the JMH-service template refactor A1 declined, and
+`teardown --delete-bucket` destroying results now that `runs/` holds them (`export-before-teardown`
+removes the flag). `C` marks cleanup: dead code or a simplification with no behaviour change.
+
+### S13 — `baas download` writes outside its output directory · Med
+
+`DownloadCommand.call()` resolves each listed key's suffix with
+`destinationRoot.resolve(key.substring(prefix.length()))` and writes there, without normalising.
+An S3 key is an arbitrary string, so `runs/p/<runId>/../../../.zshrc` is a legal key under the run's
+prefix, and `S3UploadService.download` writes it to `./<runId>/../../../.zshrc`, which is outside
+the output directory. Anything holding `s3:PutObject` on the bucket can plant such a key:
+`RunnerRole`, i.e. any code in a benchmark JAR or its dependencies, and `OperatorRole`, i.e. every
+workflow CI federates. The operator who later runs `baas download` usually holds deployer
+credentials in `~/.aws`, so this crosses the trust boundary from a throwaway instance to the laptop.
+This is the zip-slip pattern.
+
+**Proposed fix:** `Path target = destinationRoot.resolve(suffix).normalize()`, then refuse and log
+any key whose target does not `startsWith(destinationRoot.normalize())`, plus a unit test with a
+`../` key. `RunReference` should apply the same check to a literal `<resultPath>` argument.
+
+**Decided (2026-10-04):** as proposed, as a direct fix on its own branch from `next-release`, with no
+OpenSpec change (no behaviour change for a well-formed key).
+
+### S14 — `RunnerRole` can overwrite the pinned runner JAR · Med
+
+`${prefix}-policy-runner-s3` grants `s3:PutObject` on `${ResourceNamePrefix}/*`, which includes
+`releases/<version>/benchmark-runner.jar`. CLAUDE.md rests the whole pinning argument on that object
+being "seeded once and never overwritten", but that holds only by CLI convention:
+`RunnerJarResolver.resolve` treats any object already present as trusted and never re-verifies it.
+So code in one benchmark JAR can replace the runner that **every later run of that version
+executes**, under `RunnerRole`, for as long as the version is in use. That persists across runs,
+which S7 (deleting history) does not cover. Versioning is `Suspended`, so the original cannot be
+recovered.
+
+**Proposed fix:**
+1. Scope the runner's S3 grant to what it actually does. `PutObject` and `GetObject` go on `runs/*`.
+   `GetObject` also goes on `releases/*`, for user-data's `aws s3 cp` of the runner. Drop
+   `DeleteObject` entirely, since no runner code path deletes. That also closes S7's S3 half, apart
+   from overwriting another run's objects under `runs/*`, which has no per-run IAM scope to use.
+   Pin it in `CoreTemplateTest`.
+2. Make the seed itself non-overwriting: `PutObject` with `If-None-Match: *` in
+   `RunnerJarResolver`, which also removes the head-then-put race between two first runs of a new
+   version. A bucket-policy condition enforcing conditional writes on `releases/*` would make it
+   server-side for the operator too. Confirm that the `s3:if-none-match` condition key exists before
+   relying on it.
+
+**Decided (2026-10-04):** step 1 plus the conditional seed of step 2, together with S15, as one small
+OpenSpec change. One template edit means one `baas admin setup` re-run per installation. The
+bucket-policy enforcement is left out as extra mechanism.
+
+### S15 — `OperatorRole` holds bucket-wide `s3:DeleteObject` that no command uses · Low
+
+`${prefix}-policy-operator-s3` and `operator-policy.json` grant `s3:DeleteObject` on the whole
+bucket. Nothing in `baas-cli` running under the operator role deletes an object (the only delete is
+`S3UploadService.deleteAllObjects`, called by teardown under deployer credentials). CI federates into
+this role on `pull_request`, so any same-repository branch's workflow can wipe every run's
+artifacts, unrecoverably (versioning is `Suspended`). The `cli-driven-ci-workflows` note under S3 in
+the runner file already called it "unexercised". **Proposed fix:** remove it from both documents.
+`OperatorPolicyDriftTest` keeps them in step.
+
+### A16 — `retireQuietly` catches only `Ec2Exception` · Low
+
+`ImageBuilderService.publish` repoints the pointer and then calls `retireQuietly`, whose contract is
+that retiring the replaced AMI "must not fail a command whose paid work has succeeded" (P2). It
+catches `Ec2Exception` only, so an `SdkClientException` (timeout, DNS, expired session) from
+`describeImages`/`deregisterImage` propagates and `build-image` exits non-zero over a published
+image, which invites the needless ~15-minute rebuild P2 was fixed to prevent. **Proposed fix:**
+catch `SdkException`, as `retireInstallation` already does.
+
+### C5 — installation names hand-built beside `BaasConfig`'s derivations · Low
+
+CLAUDE.md: *every resource name is `<prefix>` or `<prefix>-<type>-<name>`, one rule*. `BaasConfig`
+derives the table, profile and pointer path, but the same strings are rebuilt by hand in
+`RunCommand.resolveRunnerImage` (`"/" + prefix + "/runner/ami-id"`), `BuildImageCommand`
+(pointer path and `-component-runner`), `TeardownCommand` (pointer path, `-results`,
+`-recipe-runner`) and `DeployerPreflight` (pointer ARN, `-role-runner`, `-role-operator`,
+`-results`). Teardown needs names for a prefix other than the configured one, which is presumably
+why. **Proposed fix:** one `InstallationNames.of(prefix)` (or static methods on `BaasConfig` taking
+the prefix) that every caller uses, the same move `RunLayout` made for S3 keys.
+
+No live bug: every copy matches today. The risk is silent drift, e.g. teardown "retiring" a pointer
+that does not exist, which brings U1 back. Names are effectively frozen by deployed installations, so
+drift is likeliest when a *new* name is added by copying the pattern. **Decided (2026-10-04):** no
+dedicated work. The next change that adds a resource name introduces the helper and moves the
+existing copies onto it.
+
+### C6 — `SetupCommand` duplication · Low
+
+*Corrected 2026-10-04:* the original entry also listed a duplicated `params.put("ResourceNamePrefix", …)`.
+There is none. The review's own view printed one line twice from overlapping ranges.
+
+In `deploy()`: `resolvedStack` is an alias of `resolvedPrefix` threaded through two methods; the update branch calls
+`getStackParameters(resolvedStack)` twice and `stackExists` is asked twice in one invocation, across
+four separately built CloudFormation clients. `loadTemplate()` is copied verbatim in
+`BuildImageCommand`. **Proposed fix:** one client and one `describeStack` per invocation; move
+`loadTemplate()` beside `CloudFormationService`.
+
+### C7 — CLI dead code, an unreachable branch, stale text · Low
+
+- `SsmService.putSecureParameter`: no caller. It is the last trace of the Mongo connection-string
+  parameter.
+- `DownloadCommand`: the run-id block that calls `config.resultsTable()` inside a `try` can never
+  catch. `config.bucket()` above it already ran `requirePrefix()`, the only thing `resultsTable()` can
+  throw from. `tableUnresolvable()` is called only by tests.
+- `RunCommand.resolveResultsTable` re-implements `requirePrefix()`'s check with a second message;
+  `jarPath` is an alias of `benchmarkJar`.
+- Unused imports: `SsmService` in `RunCommand`, `MessageDigest` in `SetupCommand`.
+- Stale comments: `Ec2ProvisioningService.instanceState` ("before writing its sentinel" — the S3
+  `run-status` object is gone); `UserDataScriptBuilder.build` ("`benchmarkMetadata.tags` is the query
+  surface" — the item's top-level `tags` map is).
+- `UserDataScriptBuilder`'s `STORE_ARGS` is a one-element array that no longer has alternatives;
+  inline `--results-table "${RESULTS_TABLE}"`.
+
+### C8 — repetition worth folding (optional) · Low
+
+`AwsClientFactory` repeats the same three builder-and-profile lines nine times; one generic
+`configure(builder)` helper removes them. `RunnerJarResolver.sha256Hex` hand-rolls the hex encoding
+`RunnerImageExtension.hash` gets from `HexFormat`. `ResultsQueryService.resultPathForRun` and
+`DynamoDbRunRecorder.find` issue the same `gsi1sk = RUN` query. `Ec2ProvisioningService.state` only
+delegates to `instanceState`, and `RunSession.stop` only to `stopWith`. None of these is worth a
+change on its own; fold them into whichever change next touches the file.
+
+**Decided (2026-10-04): all four now.** The fixes:
+- `AwsClientFactory` gets one generic `build(builder)` that sets the region and profile, and each method becomes one line.
+- `sha256Hex` becomes `HexFormat`.
+- `resultPathForRun` reuses `DynamoDbRunRecorder.find`.
+- `instanceState` is renamed to `state`, and `stop` returns the status so `stopWith` can go.
 
 ## 55. U38 — a run that finished before its `launched` write is reported as cancelled · Low
 
