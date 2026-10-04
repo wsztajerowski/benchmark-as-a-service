@@ -33,6 +33,8 @@ class FakeEc2 implements Ec2Client {
     String describeImagesErrorCode;
     /** When set, deregisterImage fails with this error code. */
     String deregisterErrorCode;
+    /** When set, deregisterImage fails client-side, as a timeout or an expired session does. */
+    RuntimeException deregisterClientFailure;
     /** When set, deleteSnapshot fails with this error code. */
     String deleteSnapshotErrorCode;
 
@@ -84,6 +86,9 @@ class FakeEc2 implements Ec2Client {
     @Override
     public DeregisterImageResponse deregisterImage(DeregisterImageRequest request) {
         calls.add("deregisterImage:" + request.imageId());
+        if (deregisterClientFailure != null) {
+            throw deregisterClientFailure;
+        }
         if (deregisterErrorCode != null) {
             throw (Ec2Exception) Ec2Exception.builder()
                 .message(deregisterErrorCode)

@@ -155,6 +155,22 @@ class ImageBuilderServiceTest {
             .containsEntry(POINTER, NEW_AMI);
     }
 
+    /** Same promise for a failure that never reaches EC2: a timeout or an expired session (A16). */
+    @Test
+    void aClientSideFailureWhileRetiringDoesNotFailTheBuild() throws Exception {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+        ec2.deregisterClientFailure = software.amazon.awssdk.core.exception.SdkClientException.create(
+            "Unable to execute HTTP request: Read timed out");
+
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
+
+        assertThat(published).isEqualTo(NEW_AMI);
+        assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
+    }
+
     @Test
     void identityTagsAreLeftAloneWhenTheDistributionConfigurationAlreadySetThem() throws Exception {
         imageBuilder.amiId = NEW_AMI;

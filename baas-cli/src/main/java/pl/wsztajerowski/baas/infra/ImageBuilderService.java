@@ -117,7 +117,9 @@ public class ImageBuilderService {
     private void retireQuietly(String amiId) {
         try {
             retire(amiId);
-        } catch (Ec2Exception e) {
+        } catch (SdkException e) {
+            // SdkException, not Ec2Exception: a timeout or an expired session never reaches EC2
+            // and arrives as a client-side exception, and it is just as harmless here.
             logger.warn("Could not retire replaced image {}: {}. The new image is published and "
                 + "in use; the old one may need removing by hand.", amiId, e.getMessage());
         }
