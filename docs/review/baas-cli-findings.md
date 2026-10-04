@@ -62,6 +62,18 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 32 | U16 | `--tag project=…` duplicated the instance's `project` tag and failed `RunInstances` | Low | **Fixed** |
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
+| 35 | U21 | Only `eu-central-1` can reach a built image: setup submits the bundled parent AMI and build-image refuses other regions | Med | Open → `custom-runner-image` (uncommitted apply); live check deferred in `openspec/changes/QUEUE.md` |
+| 36 | U23 | `setup --region B` on an account installed in A blames a "retained" bucket and advises `aws s3 rb --force` on the live one | Med | Decided 2026-10-04: detect the bucket's region; not yet implemented |
+| 37 | U22 | `config set --region` re-aims a machine without checking an installation is there | Low | Decided 2026-10-04: remove it; `config sync` derives the region from the bucket (also closes U18); not yet implemented |
+| 38 | U24 | `--project A --tag project=B` stores measurements under B while the run item and S3 prefix say A | Low | Decided 2026-10-04: reject `--tag project=` outright; not yet implemented |
+| 39 | U25 | A reserved `--tag` key is rejected only after the JAR upload, stranding an unlisted `input/` | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
+| 40 | U26 | `--timeout` unvalidated: `0` disables the process timeout, a negative value fails the run as `failed:125` | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
+| 41 | U27 | `run --format json` reports only `completed`/`failed`, never the stored status | Low | Decided 2026-10-04: add a `runStatus` field; not yet implemented |
+| 42 | U28 | No lookup of one run by id; CI lists 50 runs and filters with `jq` | Low | Decided 2026-10-04 → `runs-command`: `runs show` prints the run item (prebaked review §11) |
+| 43 | U30 | `runs terminate` cuts off the boot-log upload of a run whose instance already recorded its outcome | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
+| 44 | U32 | Teardown's confirmation crashes without a terminal and exits 0 on abort | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
+| 45 | U34 | Networking ids without `--use-existing-vpc` are silently ignored on create | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
+| 46 | U37 | (uncommitted apply) the parent lookup omits deprecated AMIs, so a pinned release stops resolving | Low | Open → `custom-runner-image` |
 
 **Next up: none in this file without a decision** — U20 is decided and awaits its own change (`custom-runner-image`).
 
@@ -411,12 +423,13 @@ incomparable measurements. The prefix is now `baas-<accountId>[-dev]`, derived f
 
 ---
 
-## 16–34. CLI usage analysis (U*, F*) · 2026-10-01
+## 16–46. CLI usage analysis (U*, F*) · 2026-10-01, refreshed 2026-10-04
 
 Found by the command-surface review and paid lifecycle test in
 [`docs/analysis/cli-usage-analysis.md`](../analysis/cli-usage-analysis.md), which holds each
 entry's evidence, the state graphs that locate it, and the proposed simplification. The table
-above lists the actionable ones; U8, U13, U14, U15, U17 and U18 are informational and live only there.
+above lists the actionable ones; U8, U13, U14, U15, U17, U18, U29, U31, U33, U35 and U36 are
+informational and live only there. Rows 35–46 come from the 2026-10-04 static refresh of that file.
 F1–F5 were fixed on the `cli-usage-analysis` branch with a test each.
 
 **U3 fixed by `run-status-in-dynamodb` (2026-10-03).** Run status lives on a run item in the results
