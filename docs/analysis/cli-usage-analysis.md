@@ -280,7 +280,7 @@ boot log; the hook and the poll cap leave it alone, `runs terminate` does not (U
 | U36 | **Teardown's in-flight gate is region-wide, not per installation.** It lists every `baas-role=benchmark-runner` instance, so a by-hand `-dev` installation and the account's own block each other's teardown. | Info | `Ec2ProvisioningService.listRunningBenchmarkInstances` |
 | U37 | **(uncommitted `custom-runner-image`) the parent lookup will stop finding a pinned release once AWS deprecates it.** `DescribeImages` by owner and name omits deprecated AMIs unless `IncludeDeprecated` is set; public AMIs get a deprecation time (two years after creation by default). After that, `setup` on a new account or region fails "not published in <region>" though the image still exists. | Low · **Fixed** before `custom-runner-image` shipped: `includeDeprecated(true)` | `ParentImageResolver.resolve` |
 | U38 | **A run that finishes before its `launched` write is reported as cancelled.** When `RunInstances` answers after the instance has already recorded `completed`, `confirmLaunched` reads the refusal as "stopped while launching", terminates the self-terminating instance and exits 1 over a good run. Observed live; filed by `custom-runner-image`'s verify (W5). Same missing rule as U30. | Low · decision pending (review §55) | `RunSession.confirmLaunched` |
-| U39 | **`build-image` from a CLI with an older bundled base silently downgrades the image.** It always submits the running CLI's base and version (`renderer.renderBase()`, `imageVersion`); the preflight only rejects a *differing* component at the same version, and the newer component was deleted by replacement, so the older one registers cleanly. The extension got a stale-push guard for exactly this "another admin reverts it unnoticed" risk (U20's third point); the base did not. Worse, `admin image` run from that older CLI warns "This CLI bundles … base X, but the published image is built on Y — run `baas admin build-image` to publish it", i.e. it advises the downgrade. Results then carry an older `imageVersion` with nothing flagging it. | Med | `BuildImageCommand.call`, `ImageCommand` drift warning, `ImageBuilderService.preflightVersion` |
+| U39 | **`build-image` from a CLI with an older bundled base silently downgrades the image.** It always submits the running CLI's base and version (`renderer.renderBase()`, `imageVersion`); the preflight only rejects a *differing* component at the same version, and the newer component was deleted by replacement, so the older one registers cleanly. The extension got a stale-push guard for exactly this "another admin reverts it unnoticed" risk (U20's third point); the base did not. Worse, `admin image` run from that older CLI warns "This CLI bundles … base X, but the published image is built on Y — run `baas admin build-image` to publish it", i.e. it advises the downgrade. Results then carry an older `imageVersion` with nothing flagging it. | Med · Decided: refuse an older base | `BuildImageCommand.call`, `ImageCommand` drift warning, `ImageBuilderService.preflightVersion` |
 | U40 | **Teardown discards the installation's extension without saying so.** The extension exists only as the stack parameter `RunnerImageExtensionData` ("the stack keeps no earlier copy"); deleting the stack deletes it, and teardown's notices list the image, bucket and table but not this. A later setup starts from the empty starter. | Low | `TeardownCommand`; `RunnerImageExtension.requireCurrent` message |
 | U41 | **A mistyped `--extension` path reports only the path.** `Files.readString` throws `NoSuchFileException`, whose message is the bare path, so the error line reads `ERROR ext.yml` with no "not found". | Info | `BuildImageCommand.call` |
 
@@ -465,11 +465,13 @@ Recommendations are in the rows above; the decisions are the user's, to be asked
 
 To be asked one at a time, highest consequence first:
 
-1. **U39**: guard `build-image` against an older bundled base — refuse when the bundled base version is
-   lower than the deployed one (semantic comparison of `RunnerImageVersion`), naming both and the CLI
-   upgrade, and turn `admin image`'s drift warning into "upgrade the CLI" in that direction?
-   Recommendation: yes, refuse; no override flag. Rebuilding an older base is the accepted-risk
-   "re-measure a historical environment" path, which already needs a checkout.
+1. ~~**U39**: guard `build-image` against an older bundled base?~~ **Decided 2026-10-04: refuse.**
+   `build-image` compares the bundled base version with the deployed `RunnerImageVersion`
+   semantically, before any stack change; lower is refused naming both versions and "upgrade the CLI",
+   with no override flag. Rebuilding an older base stays the accepted-risk "re-measure a historical
+   environment" path, from a checkout. `admin image`'s drift warning splits by direction: bundled
+   newer → "run `baas admin build-image` to publish it", as now; bundled older → "upgrade the CLI",
+   never a build. Equal versions are unaffected. Joins the queued batch as its own commit.
 2. **U38 with U30**: fix both with the one rule (`RunStatus.isRecordedByInstance`), as two commits in
    the queued batch? Recommendation: yes; review §55's proposed fix is that rule.
 3. **U40**: should teardown print the deployed extension (or save it beside the config) before

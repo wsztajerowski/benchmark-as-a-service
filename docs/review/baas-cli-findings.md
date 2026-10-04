@@ -83,10 +83,10 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 53 | C7 | CLI dead code: an unused method, an unreachable branch, unused imports, stale comments | Low | **Fixed** (`review-fixes`, ccaa35a) |
 | 54 | C8 | Repetition worth folding: `AwsClientFactory` ×9, two SHA-256 encoders, two run-item queries | Low | **Fixed** (`review-fixes`, 10771f6) |
 | 55 | U38 | A run that finishes before its `launched` write is reported as cancelled, exits 1 and is terminated again | Low | Open — needs a decision (§55) |
-| 56 | U39 | `build-image` from a CLI bundling an older base silently downgrades the image, and `admin image` advises it | Med | Open — needs a decision (analysis §7) |
+| 56 | U39 | `build-image` from a CLI bundling an older base silently downgrades the image, and `admin image` advises it | Med | Decided 2026-10-04: refuse a lower bundled base, no override; `admin image` says upgrade the CLI. In the queued batch, own commit |
 | 57 | U40 | Teardown discards the installation's runner-image extension without a word or a copy | Low | Open — needs a decision (analysis §7) |
 
-**Next up: U39, U38 and U40 need a decision** (U39 first; asked one at a time from `docs/analysis/cli-usage-analysis.md` §7). U20 and U37 are fixed by `custom-runner-image`.
+**Next up: U38 and U40 need a decision** (U38 first; asked one at a time from `docs/analysis/cli-usage-analysis.md` §7). U20 and U37 are fixed by `custom-runner-image`.
 
 ---
 
