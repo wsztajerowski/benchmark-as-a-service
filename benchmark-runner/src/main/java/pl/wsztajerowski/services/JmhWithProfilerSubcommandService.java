@@ -23,7 +23,6 @@ import java.util.stream.Stream;
 
 import static java.nio.file.Files.list;
 import static java.text.MessageFormat.format;
-import static pl.wsztajerowski.FileUtils.ensurePathExists;
 import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
 import static pl.wsztajerowski.services.JmhUtils.getProfilerOutputDirSuffix;
@@ -50,7 +49,7 @@ public class JmhWithProfilerSubcommandService {
         // Build process
         logger.info("Running JMH with profiler(s). Output path: {}", outputPath);
         try {
-            ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
+            Files.createDirectories(jmhOptions.outputOptions().machineReadableOutput().toAbsolutePath().getParent());
             BenchmarkProcessBuilder benchmarkProcessBuilder = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions);
             profilerOptions.forEach((profilerName, profilerOptions) ->
                 benchmarkProcessBuilder.addArgumentWithValue("-prof", createProfilerCommand(profilerName, profilerOptions)));

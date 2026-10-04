@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static java.text.MessageFormat.format;
-import static pl.wsztajerowski.FileUtils.ensurePathExists;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
 
 public class JmhSubcommandService {
@@ -37,7 +36,7 @@ public class JmhSubcommandService {
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JMH. Output path: {}", outputPath);
         try {
-            ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
+            Files.createDirectories(jmhOptions.outputOptions().machineReadableOutput().toAbsolutePath().getParent());
             int exitCode = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions)
                 .buildAndStartProcess()
                 .waitFor();
