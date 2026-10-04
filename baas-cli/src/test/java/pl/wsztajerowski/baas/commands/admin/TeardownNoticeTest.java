@@ -69,4 +69,38 @@ class TeardownNoticeTest {
             .contains("baas runs terminate <runId>")
             .doesNotContain("terminate them manually");
     }
+
+    // ─── the extension, saved before the stack goes (U40) ────────────────────────
+
+    @org.junit.jupiter.api.io.TempDir
+    Path dir;
+
+    @Test
+    void aDeployedExtensionIsSavedWithItsMarkerSoItCanBePushedBack() throws Exception {
+        String extension = "name: extra\nphases:\n  - name: build\n    steps: []";
+
+        var saved = TeardownCommand.saveExtension(extension, dir, "baas-123456789012-dev");
+
+        assertThat(saved).contains(dir.resolve("runner-image-extension.baas-123456789012-dev.yaml"));
+        var parsed = pl.wsztajerowski.baas.infra.RunnerImageExtension.parse(
+            java.nio.file.Files.readString(saved.orElseThrow()));
+        assertThat(parsed.content().strip()).isEqualTo(extension);
+        assertThat(parsed.baseMarker())
+            .contains(pl.wsztajerowski.baas.infra.RunnerImageExtension.hash(extension));
+    }
+
+    @Test
+    void anInstallationWithoutAnExtensionWritesNothing() throws Exception {
+        assertThat(TeardownCommand.saveExtension("", dir, "p")).isEmpty();
+        assertThat(TeardownCommand.saveExtension(null, dir, "p")).isEmpty();
+        try (var files = java.nio.file.Files.list(dir)) {
+            assertThat(files).isEmpty();
+        }
+    }
+
+    @Test
+    void theSavedNoticeSaysHowToPushItBack() {
+        assertThat(TeardownCommand.extensionSavedNotice(Path.of("/h/.baas/runner-image-extension.p.yaml")))
+            .contains("baas admin build-image --extension /h/.baas/runner-image-extension.p.yaml");
+    }
 }
