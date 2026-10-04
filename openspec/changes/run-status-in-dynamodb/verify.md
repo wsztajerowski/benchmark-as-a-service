@@ -101,13 +101,45 @@ credentials for `RunnerRole`, which only the instance profile holds.
   and `completionExitsZero`.
 - **D3, task 6.3's "hang" case.** A stub `aws` cannot exercise the AWS CLI's own connect and read
   timeouts, so the bound is asserted instead:
-  `UserDataScriptBuilderTest.retrySettingsApplyToTheStatusCommandOnly` checks for
-  `AWS_MAX_ATTEMPTS=3`, `--cli-connect-timeout 5` and `--cli-read-timeout 10`, which give 45 s
-  against the 60 s floor. The other three outcomes run against the stub.
+  `UserDataScriptBuilderTest.retrySettingsApplyToTheStatusCommandOnly` checks the attempt cap,
+  `--cli-connect-timeout 5` and `--cli-read-timeout 10`. The other three outcomes run against the
+  stub. *Corrected after the post-apply review (finding 6):* the original "3 × 15 s = 45 s" left out
+  standard-mode backoff (up to 2 s, then 4 s), so 3 attempts cost ~51 s. And the right comparison
+  is not one write against the 60 s floor: that margin has to cover everything before the JVM starts
+  (boot, IMDS, the manifest, four `s3 cp`) as well. The `running` write, the only one on that path,
+  now makes 2 attempts (~32 s); the terminal writes keep 3, since nothing waits on them.
 - **D4, the duration column.** The spec asked for a duration. An ended run's end time is not
   recorded, because the instance writes no timestamp by design (so that "the instance's clock never
   reaches the record" holds). The column became ELAPSED, shown for runs in flight and `—` otherwise.
   A SOURCE column was added, per explore decision 12. The spec was updated.
+
+## Post-apply review (2026-10-04)
+
+A reviewer agent read `origin/main...HEAD` and found one High, two Medium and six Low findings, no
+Blocker. All nine are fixed in this change:
+
+| # | Finding | Fix | Pinned by |
+|---|---|---|---|
+| 1 High | A Ctrl+C while `RunInstances` is in flight records `cancelled`, but the tag lookup can miss an instance AWS has not created yet or `DescribeInstances` does not show yet. The instance's refused `running` write was "expected", so the cancelled run went on to run the whole benchmark, paid, and hidden from `--in-flight` | A refused `running` write makes the instance ship its boot log and terminate without starting the benchmark. Design, spec, CLAUDE.md layer 3 and `baas-run.mmd` no longer claim that the tag lookup is guaranteed | `UserDataScriptBuilderTest.aRefusedRunningWriteShipsTheLogAndTerminatesInsteadOfRunningTheBenchmark`, `aRecordedOrFailedRunningWriteLetsTheBenchmarkStart`, `RunSessionTest.anInterruptWhoseInstanceIsNotYetVisibleStillRecordsTheCancellation` |
+| 2 Medium | User-data reached 14,113 bytes raw for a representative CI run, against EC2's 16,384 | Comment-only lines are stripped from the body when it is rendered. The same outsized run is now 8,247 bytes | `aLargeRunStaysWellUnderTheUserDataLimit` (under 12 KB), `commentLinesAreNotRendered` |
+| 3 Medium | `baas runs terminate` failed with "No run found" on a run launched by a pre-change CLI, though teardown points at it | With no item, it falls back to the run-id tag, confirms, and terminates without recording anything | `RunTerminationTest.aRunWithNoItemIsStoppedByItsInstanceTag`, `…LeftAloneWhenTheConfirmationIsDeclined` |
+| 4 Low | The poll cap checked the clock before reading the item, so it could report `timed-out` for a run that had just completed, and cut off its log upload | The cap reads the item first. If its own write is refused, it reports the status that stands | `RunSessionTest.theCapHonoursAnOutcomeRecordedDuringTheLastSleep`, `theCapReportsAnOutcomeThatBeatItsOwnWrite` |
+| 5 Low | `stop` terminated even when its write was refused over `completed`/`failed:<n>` (D2's hazard, from the hook) | On a refusal, `stop` reads the item and leaves an instance that recorded its own outcome alone (`RunStatus.isRecordedByInstance`) | `RunSessionTest.anInterruptAfterTheInstanceRecordedItsOutcomeLeavesItToTerminateItself`, `anInterruptAfterACancellationFromElsewhereStillTerminates` |
+| 6 Low | D3's arithmetic | See D3 above. The `running` write makes 2 attempts | `retrySettingsApplyToTheStatusCommandOnly` |
+| 7 Low | A user-data comment broke off mid-sentence | Rewritten | — |
+| 8 Low | `runs list --in-flight` pages the whole `RUN` partition | A note in design.md *Risks*, with the bound to add if it ever matters | — |
+| 9 Low | CLAUDE.md's *Results table* opened with "one item per measurement" only | Now names both kinds of item | — |
+
+`mvn verify` over the whole reactor: baas-model 73 unit tests; baas-cli 525 unit tests and 40 ITs;
+benchmark-runner 39 unit tests and 17 ITs. 0 failures. The `ASYNC_PATH` IT is skipped as usual.
+
+Two live runs with the new user-data (`c5.2xlarge`, image `1.2.0`, both tagged
+`exclude_from_results=true`):
+
+| Check | Run | Result |
+|---|---|---|
+| A normal run still completes (comment stripping, `run_status running 2`) | `20261004T092343834Z-95bfb59f` | ✓ `completed`, exit 0, 1 measurement stored |
+| Finding 1, live: cancelled before the instance boots, with no CLI left to terminate it | `20261004T092538415Z-acda115b`: CLI `kill -9`'d at `Run ID`; `cancelled` written as the operator 12 s after launch, conditioned on `launching`/`launched`; the instance left alone | ✓ boot log: `run_status: running not recorded: …` then `Run already has an outcome, or has no run item: not starting the benchmark.` The instance was `shutting-down` 24 s after launch. The prefix holds `cloud-init-output.log` and `input/` only, with no `environment.json` and no JMH output. The item stays `cancelled`. Before the fix, this run would have executed all 18 iterations |
 
 ## Section 13: end-to-end, live (2026-10-03, account 381492019823, eu-central-1)
 

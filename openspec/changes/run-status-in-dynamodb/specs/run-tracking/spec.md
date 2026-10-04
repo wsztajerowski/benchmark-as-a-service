@@ -91,7 +91,8 @@ watchdog has started. It SHALL record `completed` when the benchmark process exi
 terminating the instance. The instance SHALL write only the status, and the instance identifier when the
 item lacks one. It SHALL write no timestamp. It SHALL write only to an item that already exists, so a
 key the instance gets wrong is refused rather than creating a second item. A write that is refused by
-the terminal-status rule SHALL be treated as expected. A write that fails for any other reason SHALL be
+the terminal-status rule SHALL be treated as expected; when it is the `running` write, the instance SHALL
+NOT start the benchmark, and SHALL upload the boot log and terminate. A write that fails for any other reason SHALL be
 retried by the AWS CLI's retry policy and then logged, and SHALL NOT stop the script before the instance
 terminates. Each status write, retries included, SHALL give up within a bound shorter than the minimum
 watchdog margin, and its retry settings SHALL NOT reach the benchmark process. There SHALL be no
@@ -113,6 +114,12 @@ fallback status written to S3.
 #### Scenario: An unreachable table does not hold up the benchmark
 - **WHEN** the `running` write cannot reach DynamoDB at all
 - **THEN** it gives up within its bound and the benchmark starts
+
+#### Scenario: A run cancelled during its launch does not run
+- **WHEN** the run was recorded `cancelled` before its instance booted, and no instance was found to
+  terminate
+- **THEN** the instance's `running` write is refused, the benchmark does not start, the boot log is in
+  the run's S3 prefix, and the instance terminates
 
 #### Scenario: A wrong key creates nothing
 - **WHEN** the instance writes a status to a key that holds no item
@@ -168,7 +175,9 @@ record `cancelled` and terminate. The status write SHALL be bounded by a short t
 instance SHALL be terminated whether or not the write succeeded. When the poll finds a `cancelled` or
 `timed-out` that this CLI did not write, `baas run` SHALL still terminate the instance if it is pending or
 running. A `completed` or `failed:<n>` is written by the instance itself, which terminates on its own
-after uploading its boot log, so the CLI SHALL NOT terminate it.
+after uploading its boot log, so the CLI SHALL NOT terminate it — neither when the poll reads it nor
+when it is the reason the CLI's own status write was refused. A poll cap reached after the instance
+recorded its outcome SHALL report that outcome, not `timed-out`.
 
 #### Scenario: Interrupt cancels the run
 - **WHEN** the operator presses Ctrl+C while the benchmark is running
@@ -181,6 +190,14 @@ after uploading its boot log, so the CLI SHALL NOT terminate it.
 #### Scenario: A failed cancel write still terminates
 - **WHEN** the operator presses Ctrl+C and the `cancelled` write fails or times out
 - **THEN** the instance is terminated anyway
+
+#### Scenario: Interrupt just after the run completed
+- **WHEN** the operator presses Ctrl+C after the instance recorded `completed` and before the next poll
+- **THEN** `cancelled` is refused, the item keeps `completed`, and the CLI does not terminate the instance
+
+#### Scenario: The poll cap is reached as the run completes
+- **WHEN** the poll cap is reached and the instance has already recorded `completed`
+- **THEN** `baas run` reports `completed`, exits zero, and does not terminate the instance
 
 #### Scenario: Cancelled from elsewhere
 - **WHEN** another operator runs `baas runs terminate` on a run that this `baas run` is polling
@@ -229,12 +246,18 @@ until it has the requested number of matching rows or the runs are exhausted.
 interactive terminal it SHALL ask for confirmation first; `--yes` SHALL skip the prompt, and without a
 terminal and without `--yes` it SHALL refuse. It SHALL leave a terminal status unchanged. It SHALL still
 terminate the run's instance when that instance is pending or running, whatever the item says. It SHALL
-exit non-zero when the termination request fails, and SHALL fail naming the identifier when no such run
-exists.
+exit non-zero when the termination request fails. A run with no item but a pending or running instance
+carrying its run id — launched by a CLI from before run items — SHALL have that instance terminated, with
+nothing recorded. When neither exists, it SHALL fail naming the identifier.
 
 #### Scenario: Terminating an in-flight run
 - **WHEN** `baas runs terminate <runId> --yes` names a running run
 - **THEN** the item reads `cancelled` and the instance is terminated
+
+#### Scenario: A run launched before run items existed
+- **WHEN** `baas runs terminate <runId> --yes` names a run that has no item but whose instance carries
+  its run id and is running
+- **THEN** the instance is terminated, no item is created, and the command exits zero
 
 #### Scenario: A finished run is left alone
 - **WHEN** `baas runs terminate` names a run whose status is `completed` and whose instance is gone

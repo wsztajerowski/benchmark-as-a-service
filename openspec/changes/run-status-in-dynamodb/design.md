@@ -150,10 +150,19 @@ A failed reservation stops the launch because an instance without a record is ex
 invisibility U3 removes. It also follows the CLI's rule of detecting every failure it can before
 money is spent.
 
-The hook is registered as soon as `RunInstances` returns, before any further write. If the
+The hook is registered after the reservation and before `RunInstances` is called. If the
 `launched` write threw, or Ctrl+C arrived during its retries, there would otherwise be no hook, and a
 paid instance would run on with no one terminating it. `launched` is best effort because the
 instance's `running` write fills in `instanceId` anyway.
+
+An interrupt while `RunInstances` is in flight has no instance id yet, so the hook looks the
+instance up by its `baas-request-id` tag. That lookup can miss: AWS may not have created the
+instance yet, and `DescribeInstances` is eventually consistent. **The instance closes that gap
+itself.** Its `running` write is refused over the recorded `cancelled`, and a refusal can only mean
+"already terminal" or "no item at this key", both of which mean "do not run". So it skips the
+benchmark, ships its boot log and terminates. The same covers `baas runs terminate` on a
+`launching` run whose instance no tag lookup could see yet. (Added after the post-apply review,
+finding 1.)
 
 **A refused `launched`** means the item went terminal during the launch. In practice that is
 `baas runs terminate` on a `launching` run that had no instance yet to stop. The CLI then terminates
@@ -369,6 +378,11 @@ Results recorded before and after this change are therefore directly comparable.
   declares none, and history is retained.
   → At 10,000 runs the default listing still reads the partition newest-first and stops at the
   limit. Only `--in-flight` and `--tag` read further. This is acceptable at the expected volume.
+  **`--in-flight` reads the whole partition on every call** whenever fewer runs are in flight than
+  `--limit`, which is the normal case, so its cost grows with all history: about 30 pages of 100
+  at 3 KB each by 10,000 runs. Nothing is cleaned up, because `vanished` is never written back. If
+  that ever matters, the bound is to stop paging at a `createdAt` older than the longest watchdog
+  bound: no run older than that can still have a live instance. (Post-apply review, finding 8.)
 - **[`--no-database` removal breaks a standalone runner user]** The runner can no longer run with
   no store at all; LocalStack becomes the minimum. No such user is known (*Accepted risks*,
   MongoDB row).
