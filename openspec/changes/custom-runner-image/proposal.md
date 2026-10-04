@@ -29,8 +29,9 @@ the normal case, so this is no longer a developer edge case.
     version and `kernelRelease` (internal: only the bundled copy is ever read);
   - the AWS CLI is no longer installed or pinned; the parent's own copy is used;
   - Corretto, async-profiler and the kernel-tunable defaults stay pinned.
-- The **extension** is stored verbatim in a fourth stack parameter, `RunnerImageExtensionData`
-  (≤ 4096 bytes). `baas admin setup` writes a starter `~/.baas/runner-image-extension.yaml` (never
+- The **extension** is stored as written in a fourth stack parameter, `RunnerImageExtensionData`
+  (≤ 4096 bytes, ASCII only, trailing whitespace dropped — the stack reads nothing else back as
+  written). `baas admin setup` writes a starter `~/.baas/runner-image-extension.yaml` (never
   overwriting one); `baas admin image --extension` pulls the deployed copy; `baas admin build-image
   --extension <file>` pushes one. A file of comments only means no extension.
 - **A stale push is refused.** A pulled file carries `# baas-extension-base: <hash|none>`. When the
@@ -83,7 +84,7 @@ specifies.
   parameter, the recipe's component list).
 - **IAM:** none expected. The new components fall under the deployer's existing
   `imagebuilder:…:*/<prefix>-*` scope; the extension rides a stack parameter, so the deployer gains no
-  `s3:PutObject`. To be confirmed for the `test` phase.
+  `s3:PutObject`. Confirmed live: the `test` phase needed no IAM change.
 - **Cost:** no new standing cost — the extension is a stack parameter, and the one-image rule still
   bounds snapshots to one. Each bake gains the `test` phase's instance time (minutes of a `c5.large`,
   cents per build; to be measured). `build-image` runs a few times a year.

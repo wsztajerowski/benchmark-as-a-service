@@ -7,11 +7,22 @@ sequenceDiagram
     participant EC2 as AWS EC2
     participant SSM as AWS SSM
 
-    User->>BIC: baas admin build-image
+    User->>BIC: baas admin build-image [--extension ext.yaml]
     Note over BIC: ConfigService.load()<br/>deployer credentials (aws.profile), NOT aws.operatorProfile --<br/>this needs imagebuilder:*, ssm:PutParameter and a widened iam:PassRole
+    opt --extension
+        Note over BIC: read the file, strip its # baas-extension-base marker,<br/>comments only = no extension, over 4096 bytes -> exit 1<br/>before any AWS call
+    end
     BIC->>RIR: render /templates/runner-image.yaml
-    RIR-->>BIC: imageVersion, parentAmiId, AWSTOE component document
-    Note over BIC: fail fast if runner-image.yaml pins a parent AMI<br/>in a different region than the stack -- an AMI ID<br/>means nothing outside its own region
+    RIR-->>BIC: base version, parent AMI name, base AWSTOE document
+
+    BIC->>CF: describeStacks -> deployed image parameters
+    CF-->>BIC: extension, derived versions, base, parent, contract
+    opt --extension
+        Note over BIC: deployed extension H and the file's marker is not H -><br/>exit 1, nothing submitted. The stack holds the only copy,<br/>so a stale push would discard someone else's extension.<br/>No extension deployed -> any file is accepted.
+    end
+    BIC->>EC2: describeImages(owner=amazon, name=<parent AMI name>, x86_64)
+    EC2-->>BIC: exactly one image in this region, else exit 1 naming release and region
+    Note over BIC: RunnerImageParameters.plan: label = base or base+ext.sha256[0:8],<br/>contract rendered with the label and the runner's Java floor,<br/>extension and recipe versions = deployed + 1 when their content changed
 
     BIC->>IB: listComponents(owner=Self, filter name=<prefix>-component-runner)
     Note over BIC,IB: deliberately WITHOUT byName: that collapses every version into<br/>one row with no version field and an ARN ending in a literal x.x.x,<br/>so the version filter matches nothing and the preflight passes blind
@@ -22,8 +33,8 @@ sequenceDiagram
         Note over BIC: content differs -> exit 1 naming imageVersion in<br/>infra/runner-image.yaml. No build is started: a component<br/>is immutable at a version, so the stack update would be<br/>rejected ~1 minute in, naming the resource and not the fix.
     end
 
-    BIC->>CF: updateStack(core template, 3 image parameters)
-    Note over BIC,CF: only the image parameters are sent, and every other parameter is<br/>carried forward with UsePreviousValue, or a stack deployed with<br/>--use-existing-vpc would silently flip back to building a VPC
+    BIC->>CF: updateStack(core template, 8 image parameters)
+    Note over BIC,CF: only the image parameters are sent, and every other parameter is<br/>carried forward with UsePreviousValue, or a stack deployed with<br/>--use-existing-vpc would silently flip back to building a VPC.<br/>Without --extension the deployed extension is re-sent unchanged.
     CF-->>BIC: UPDATE_COMPLETE (or "no updates are to be performed")
     BIC->>CF: describeStacks -> RunnerImagePipelineArn
     CF-->>BIC: pipeline ARN (via !GetAtt .Arn, never !Ref)
@@ -33,7 +44,7 @@ sequenceDiagram
 
     BIC->>IB: startImagePipelineExecution(pipelineArn)
     IB-->>BIC: imageBuildVersionArn
-    Note over IB,EC2: Image Builder launches a c5.large build host under<br/>ImageBuildRole, runs the component (dnf install of the pinned<br/>Corretto/perf/awscli, async-profiler tarball, sysctl + grubby<br/>tunables, smoke test), snapshots it, terminates the host
+    Note over IB,EC2: Image Builder launches a c5.large build host under ImageBuildRole and<br/>runs the base (pinned Corretto, perf for uname -r, async-profiler,<br/>sysctl + grubby tunables), the extension if any, then the contract's<br/>build phase (writes the label). It snapshots the AMI, then boots a<br/>test instance from it and runs the contract's test phase: Java floor,<br/>aws, async-profiler, perf = kernel, label, the two sysctls.<br/>Any failed check fails the build.
     loop poll every 30s
         BIC->>IB: getImage(imageBuildVersionArn)
         IB-->>BIC: CREATING | BUILDING | DISTRIBUTING | AVAILABLE | FAILED
@@ -43,7 +54,7 @@ sequenceDiagram
     BIC->>EC2: describeImages(newAmiId)
     EC2-->>BIC: tags set by the DistributionConfiguration
     opt identity tags absent
-        BIC->>EC2: createTags(baas-image-version, baas-parent-ami)
+        BIC->>EC2: createTags(baas-image-version = label, baas-parent-ami)
     end
 
     BIC->>SSM: putParameter(/<prefix>/runner/ami-id = newAmiId, String)
@@ -53,4 +64,4 @@ sequenceDiagram
         BIC->>EC2: deregisterImage(previousAmiId)
         BIC->>EC2: deleteSnapshot(each) -- else the snapshots bill forever
     end
-    BIC-->>User: new AMI id, image version, parent AMI, pointer path -- exit 0
+    BIC-->>User: label, new AMI id, parent AMI, extension hash, pointer path -- exit 0

@@ -27,11 +27,13 @@ Parameters:
     Description: Existing security group ID (used when UseExistingVpc=true).
     Type: String
     Default: ""
-  # The three below are rendered from infra/runner-image.yaml by RunnerImageRenderer. Both
-  # `baas admin setup` and `baas admin build-image` render them from the same classpath
-  # resource, so the two commands always submit identical values.
+  # The runner image's parameters, planned by RunnerImageParameters. `baas admin build-image`
+  # submits all of them; `baas admin setup` submits them on create and, on update, only those the
+  # deployed stack lacks, carrying the rest forward — so a plain setup never reverts an image.
+  # Their defaults are placeholders the CLI never lets stand: a placeholder registered at a
+  # version would make Image Builder refuse the real document at that same version.
   RunnerImageVersion:
-    Description: Semantic version of the runner image; versions the Component and ImageRecipe.
+    Description: Semantic version of the base component, from infra/runner-image.yaml.
     Type: String
     Default: "1.0.0"
     AllowedPattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
@@ -55,6 +57,44 @@ Parameters:
               inputs:
                 commands:
                   - "true"
+  RunnerImageExtensionData:
+    Description: >-
+      The operator's AWSTOE extension document, stored as written. Empty deploys no extension.
+    Type: String
+    Default: ""
+  RunnerImageExtensionVersion:
+    Description: Version of the extension component; derived by the CLI when the extension changes.
+    Type: String
+    Default: "1.0.0"
+    AllowedPattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+  RunnerImageContractData:
+    Description: Rendered AWSTOE component document that checks the booted image for BaaS's needs.
+    Type: String
+    Default: |
+      name: baas-runner-contract
+      description: Placeholder; replaced by the rendered component on every CLI deploy.
+      schemaVersion: 1.0
+      phases:
+        - name: build
+          steps:
+            - name: Noop
+              action: ExecuteBash
+              inputs:
+                commands:
+                  - "true"
+  RunnerImageRecipeVersion:
+    Description: >-
+      Version of the recipe and the contract component; derived by the CLI whenever the base, the
+      extension, the contract or the parent changes.
+    Type: String
+    Default: "1.0.0"
+    AllowedPattern: "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+  RunnerImageLabel:
+    Description: >-
+      The image's label, `<base version>` or `<base version>+ext.<hash>`; tagged on the AMI and
+      recorded by every run as imageVersion.
+    Type: String
+    Default: "1.0.0"
 
   # ─── GitHub OIDC federation (optional) ───────────────────────────────────────
   # Supplying these declares a federated principal on OperatorRole's trust policy, so a workflow
@@ -93,6 +133,7 @@ Conditions:
     - !Not [!Equals [!Ref GitHubOidcProviderArn, ""]]
     - !Not [!Equals [!Ref GitHubOrg, ""]]
     - !Not [!Equals [!Join ["", !Ref GitHubRepo], ""]]
+  HasRunnerImageExtension: !Not [!Equals [!Ref RunnerImageExtensionData, ""]]
 
 Resources:
 
@@ -463,11 +504,41 @@ Resources:
       Tags:
         project: !Sub ${ResourceNamePrefix}
 
+  # The operator's extension, run between the base and the contract. Exists only while one is
+  # deployed. Its version is derived by the CLI, so an operator never versions it by hand.
+  RunnerImageExtensionComponent:
+    Type: AWS::ImageBuilder::Component
+    Condition: HasRunnerImageExtension
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-component-extension
+      Description: The installation's own additions to the runner image.
+      Platform: Linux
+      Version: !Ref RunnerImageExtensionVersion
+      Data: !Ref RunnerImageExtensionData
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
+  # Runs last. Writes the image label and, in its test phase on an instance booted from the new
+  # image, fails the build when anything a BaaS workflow depends on is missing — whatever the
+  # extension did. Versioned with the recipe: it carries the label, which moves only with it.
+  RunnerImageContractComponent:
+    Type: AWS::ImageBuilder::Component
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-component-contract
+      Description: Checks the runner image for everything BaaS relies on.
+      Platform: Linux
+      Version: !Ref RunnerImageRecipeVersion
+      Data: !Ref RunnerImageContractData
+      Tags:
+        project: !Sub ${ResourceNamePrefix}
+
   RunnerImageRecipe:
     Type: AWS::ImageBuilder::ImageRecipe
     Properties:
       Name: !Sub ${ResourceNamePrefix}-recipe-runner
-      Version: !Ref RunnerImageVersion
+      # Derived, not the base's: Components is create-only, so any change to the list or to a
+      # component's version replaces the recipe, and the replacement needs an unused version.
+      Version: !Ref RunnerImageRecipeVersion
       ParentImage: !Ref RunnerParentAmiId
       Components:
         # GetAtt .Arn for the cross-resource references only — this one and the pipeline's three
@@ -476,7 +547,13 @@ Resources:
         # the pipeline ARN is handed straight to StartImagePipelineExecution.
         # The Refs elsewhere in this block are correct and must stay: InstanceProfileName takes a
         # name, SubnetId/SecurityGroupIds take ids, the rest are template parameters.
+        # Order is the contract: base, then the extension, then the checks.
         - ComponentArn: !GetAtt RunnerImageComponent.Arn
+        - !If
+          - HasRunnerImageExtension
+          - ComponentArn: !GetAtt RunnerImageExtensionComponent.Arn
+          - !Ref AWS::NoValue
+        - ComponentArn: !GetAtt RunnerImageContractComponent.Arn
       BlockDeviceMappings:
         # 30 GB, matching what Ec2ProvisioningService requests at launch. The AL2023
         # default of 8 GB is exhausted by profiling artifacts.
@@ -522,7 +599,7 @@ Resources:
             AmiTags:
               project: !Sub ${ResourceNamePrefix}
               baas-role: runner-image
-              baas-image-version: !Ref RunnerImageVersion
+              baas-image-version: !Ref RunnerImageLabel
               baas-parent-ami: !Ref RunnerParentAmiId
       Tags:
         project: !Sub ${ResourceNamePrefix}
@@ -537,8 +614,12 @@ Resources:
       Status: ENABLED
       # No Schedule block: builds are operator-triggered. An image that rebuilt itself on a
       # timer would move the measurement environment under results nobody was looking at.
+      # Enabled for the contract: its test phase runs on an instance booted from the new image,
+      # the only place applied sysctls, the THP kernel argument and an upgraded kernel are visible.
+      # A failed test fails the build, so the pointer never moves to an image that broke BaaS.
       ImageTestsConfiguration:
-        ImageTestsEnabled: false
+        ImageTestsEnabled: true
+        TimeoutMinutes: 60
       Tags:
         project: !Sub ${ResourceNamePrefix}
 

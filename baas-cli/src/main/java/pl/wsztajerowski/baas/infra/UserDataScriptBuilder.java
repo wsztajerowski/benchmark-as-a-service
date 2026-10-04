@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 3;
+    public static final int MANIFEST_SCHEMA_VERSION = 4;
 
     /**
      * EC2 refuses user-data over 16 KB raw, and the launch then fails outright. The comments below
@@ -155,6 +155,15 @@ public class UserDataScriptBuilder {
         # jdk tag: same observation as JVM_VERSION_RAW above, projected to the bare version
         # number (e.g. "25") instead of the full escaped line — not a second `java -version`.
         JDK_VERSION=$(printf '%s' "$JVM_VERSION_RAW" | sed -n 's/.*"\\(.*\\)".*/\\1/p')
+        # Who built the JVM. The banner above names only the version, so Corretto 25.0.4 and
+        # another vendor's 25.0.4 read the same there — and an image extension may install either.
+        # One JVM call yields every property; each is then picked out by its exact key.
+        JVM_PROPS=$(java -XshowSettings:properties -version 2>&1)
+        jvm_prop() { printf '%s\\n' "$JVM_PROPS" | awk -F' = ' -v key="$1" '{ sub(/^ +/, "", $1) } $1 == key { print $2; exit }'; }
+        JVM_VENDOR_RAW=$(jvm_prop java.vendor)
+        JVM_VENDOR=$(json_escape "$JVM_VENDOR_RAW")
+        JVM_VENDOR_VERSION=$(json_escape "$(jvm_prop java.vendor.version)")
+        JVM_NAME=$(json_escape "$(jvm_prop java.vm.name)")
         # Capture, then default: `cmd | head -1 || echo absent` never reaches the echo, because a
         # pipeline's status is head's, and head succeeds on empty input. A missing tool then recorded
         # "" — and asprof, through 2>&1, bash's "No such file" as its version. No pipefail: this
@@ -193,6 +202,9 @@ public class UserDataScriptBuilder {
           "osVersion": "${OS_VERSION}",
           "kernelRelease": "${KERNEL_RELEASE}",
           "jvmVersion": "${JVM_VERSION}",
+          "jvmVendor": "${JVM_VENDOR}",
+          "jvmVendorVersion": "${JVM_VENDOR_VERSION}",
+          "jvmName": "${JVM_NAME}",
           "perfVersion": "${PERF_VERSION}",
           "awsCliVersion": "${AWS_CLI_VERSION}",
           "asyncProfilerVersion": "${ASYNC_PROFILER_VERSION}",
@@ -235,10 +247,10 @@ public class UserDataScriptBuilder {
         # BENCHMARK_PARAMS_ARRAY and RUNNER_TAGS_ARRAY are array literals written by build(),
         # one quoted element per argument, so bash parses them once, as data — no eval.
         # RunCommand.buildRunnerTags already rejects a caller tag whose key is
-        # machine-observed (imageVersion, instanceType, jdk, cpuModel, cpuArch, type), so
-        # the caller tags should never actually collide with the five observed --tag lines
+        # machine-observed (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type),
+        # so the caller tags should never actually collide with the six observed --tag lines
         # below.
-        # The five --tag lines below reach the item's tags map, so `baas results` can filter
+        # The six --tag lines below reach the item's tags map, so `baas results` can filter
         # and group by the environment without fetching anything from S3. They are the values
         # OBSERVED above, not the ones the CLI passed down, so a result's tags cannot
         # disagree with its own environment.json. They are listed AFTER the caller-tags
@@ -257,6 +269,7 @@ public class UserDataScriptBuilder {
           --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
           --tag "instanceType=${INSTANCE_TYPE}" \\
           --tag "jdk=${JDK_VERSION}" \\
+          --tag "jvmVendor=${JVM_VENDOR_RAW}" \\
           --tag "cpuModel=${CPU_MODEL_RAW}" \\
           --tag "cpuArch=${CPU_ARCH}" \\
           "${BENCHMARK_PARAMS_ARRAY[@]}"

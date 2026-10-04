@@ -81,7 +81,29 @@ class ImageBuilderServiceTest {
         assertThat(ssm.parameters)
             .as("a failed build must not strand runs on an image that was never produced")
             .containsEntry(POINTER, PREVIOUS_AMI);
-        assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage"));
+        assertThat(calls).doesNotContain("deregisterImage:" + PREVIOUS_AMI);
+    }
+
+    /**
+     * Found live: a build that fails its test stage — the contract — has already registered its AMI,
+     * and Image Builder leaves it, snapshot and all. Nothing else names it.
+     */
+    @Test
+    void anImageThatFailedItsTestsIsRetiredAndThePointerKept() {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        imageBuilder.terminalStatus = ImageStatus.FAILED;
+        imageBuilder.failureReason = "component-contract failed";
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-failed"));
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+
+        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent"))
+            .hasMessageContaining("component-contract failed");
+
+        assertThat(calls)
+            .contains("deregisterImage:" + NEW_AMI, "deleteSnapshot:snap-failed")
+            .doesNotContain("deregisterImage:" + PREVIOUS_AMI);
+        assertThat(ssm.parameters).containsEntry(POINTER, PREVIOUS_AMI);
     }
 
     /**

@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Option;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.BaasApp;
@@ -13,22 +14,31 @@ import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.ImageBuilderService;
+import pl.wsztajerowski.baas.infra.ParentImageResolver;
+import pl.wsztajerowski.baas.infra.RunnerImageExtension;
+import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 @Command(
     name = "build-image",
     mixinStandardHelpOptions = true,
-    description = "Build the runner AMI from infra/runner-image.yaml and publish it.",
+    description = "Build the runner AMI — the bundled base, the installation's extension, the BaaS contract — and publish it.",
     footer = {
         "",
-        "Takes ~15 minutes. Bump imageVersion in infra/runner-image.yaml whenever you",
-        "change a tool version — an Image Builder component is immutable at a version,",
-        "and this command refuses to start a build the stack would reject."
+        "Takes ~15 minutes. Without --extension the deployed extension is kept as it is.",
+        "To change it:  baas admin image --extension > ext.yaml, edit, then",
+        "               baas admin build-image --extension ext.yaml",
+        "A file pulled before someone else pushed is refused rather than allowed to discard",
+        "their extension."
     }
 )
 public class BuildImageCommand implements Callable<Integer> {
@@ -37,6 +47,10 @@ public class BuildImageCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
+    @Option(names = "--extension", paramLabel = "<file>",
+        description = "Replace the installation's runner-image extension with this AWSTOE document. "
+            + "A file of comments only removes it.")
+    Path extensionFile;
 
     @Spec CommandSpec spec;
 
@@ -49,81 +63,94 @@ public class BuildImageCommand implements Callable<Integer> {
         BaasConfig config = configService().load();
 
         String prefix = config.requirePrefix();
+        String region = config.getAws().resolveRegion();
         var renderer = new RunnerImageRenderer();
         var definition = renderer.definition();
-        String imageVersion = definition.imageVersion();
-        String parentAmiId = definition.parentImage().amiId();
+        String baseVersion = definition.imageVersion();
+        String base = renderer.renderBase();
 
-        if (!config.getAws().resolveRegion().equals(definition.parentImage().region())) {
-            // An AMI ID means nothing outside its own region, so this would fail deep inside the
-            // stack update with a message about an image that "does not exist".
-            logger.error("""
-                    infra/runner-image.yaml pins a parent AMI in {}, but this stack is in {}.
-                    Set parentImage.region and parentImage.amiId to an AL2023 image in {}.""",
-                definition.parentImage().region(), config.getAws().resolveRegion(), config.getAws().resolveRegion());
-            return 1;
+        // Read before any AWS call: a file that cannot be pushed fails without a round trip.
+        Optional<RunnerImageExtension.WorkingCopy> pushed = Optional.empty();
+        if (extensionFile != null) {
+            var file = RunnerImageExtension.parse(Files.readString(extensionFile));
+            try {
+                RunnerImageExtension.requireStorable(file.content());
+            } catch (IllegalStateException e) {
+                logger.error(e.getMessage());
+                return 1;
+            }
+            pushed = Optional.of(file);
         }
 
         // Deployer credentials, like every other `baas admin` subcommand: building an image needs
         // imagebuilder:*, ssm:PutParameter and a widened iam:PassRole, none of which an operator
         // holds. See RunCommand for the other half of that split.
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(region, config.getAws().getProfile());
 
         String componentName = prefix + "-component-runner";
         try (var imageBuilderClient = factory.imageBuilder();
              var ec2 = factory.ec2();
-             var ssm = factory.ssm()) {
+             var ssm = factory.ssm();
+             var cf = factory.cloudFormation()) {
 
-            var service = new ImageBuilderService(imageBuilderClient, ec2, ssm);
+            var cloudFormation = new CloudFormationService(cf);
+            if (!cloudFormation.stackExists(prefix)) {
+                logger.error("Stack {} does not exist. Run `baas admin setup` first.", prefix);
+                return 1;
+            }
+            Map<String, String> deployed = cloudFormation.getStackParameters(prefix);
+            String deployedExtension = deployed.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
 
-            // Before the stack update, not after: a rejected component version costs a minute of
-            // CloudFormation rollback, and the message names the resource rather than the fix.
+            String extension = deployedExtension;
+            String parentAmiId;
             try {
-                service.preflightVersion(componentName, imageVersion, renderer.renderComponent());
+                if (pushed.isPresent()) {
+                    RunnerImageExtension.requireCurrent(pushed.get(), deployedExtension);
+                    extension = pushed.get().content();
+                }
+                parentAmiId = new ParentImageResolver(ec2).resolve(definition.parentImage().amiName(), region);
             } catch (IllegalStateException e) {
                 logger.error(e.getMessage());
                 return 1;
             }
 
-            logger.info("Registering runner image {} (parent {})...", imageVersion, parentAmiId);
-            updateStack(factory, prefix, renderer);
+            var plan = RunnerImageParameters.plan(renderer, baseVersion, base, parentAmiId, extension, deployed);
+            var service = new ImageBuilderService(imageBuilderClient, ec2, ssm);
 
-            String pipelineArn;
-            try (var cf = factory.cloudFormation()) {
-                var outputs = new CloudFormationService(cf).getStackOutputs(prefix);
-                pipelineArn = outputs.get("RunnerImagePipelineArn");
-                if (pipelineArn == null || pipelineArn.isEmpty()) {
-                    logger.error("Stack {} has no RunnerImagePipelineArn output. Run `baas admin setup` first.",
-                        prefix);
-                    return 1;
-                }
+            // Before the stack update, not after: a rejected component version costs a minute of
+            // CloudFormation rollback, and the message names the resource rather than the fix. Only
+            // the base is checked — its version is the one written by hand; the others are derived
+            // from the deployed stack and cannot collide.
+            try {
+                service.preflightVersion(componentName, baseVersion, base);
+            } catch (IllegalStateException e) {
+                logger.error(e.getMessage());
+                return 1;
+            }
+
+            logger.info("Registering runner image {} (parent {})...", plan.label(), parentAmiId);
+            // Every image parameter is sent; everything else — the networking choices in
+            // particular — is carried forward from the deployed stack.
+            cloudFormation.updateStackParameters(prefix, loadTemplate(), plan.values());
+
+            String pipelineArn = cloudFormation.getStackOutputs(prefix).get("RunnerImagePipelineArn");
+            if (pipelineArn == null || pipelineArn.isEmpty()) {
+                logger.error("Stack {} has no RunnerImagePipelineArn output. Run `baas admin setup` first.",
+                    prefix);
+                return 1;
             }
 
             String parameterName = "/" + prefix + "/runner/ami-id";
-            String amiId = service.publish(pipelineArn, parameterName, imageVersion, parentAmiId);
+            String amiId = service.publish(pipelineArn, parameterName, plan.label(), parentAmiId);
 
             logger.info("""
                 Runner image {} built and published.
-                  AMI:     {}
-                  Parent:  {}
-                  Pointer: {}""", imageVersion, amiId, parentAmiId, parameterName);
+                  AMI:       {}
+                  Parent:    {}
+                  Extension: {}
+                  Pointer:   {}""", plan.label(), amiId, parentAmiId,
+                RunnerImageExtension.identity(extension), parameterName);
             return 0;
-        }
-    }
-
-    /**
-     * Re-submits the core template carrying the freshly rendered component and version. The image
-     * definition reaches the stack only through these parameters, so a build without this update
-     * would bake the previously registered recipe.
-     *
-     * <p>Only the three image parameters are sent; everything else — the networking choices in
-     * particular — is carried forward from the deployed stack.
-     */
-    private void updateStack(AwsClientFactory factory, String stackName, RunnerImageRenderer renderer)
-        throws IOException {
-        try (var cf = factory.cloudFormation()) {
-            new CloudFormationService(cf).updateStackParameters(
-                stackName, loadTemplate(), renderer.stackParameters());
         }
     }
 

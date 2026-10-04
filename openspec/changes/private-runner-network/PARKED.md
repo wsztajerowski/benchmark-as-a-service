@@ -19,3 +19,9 @@ have since landed:
   `--use-existing-vpc`.
 - The template already has a `DynamoDbGatewayEndpoint` (`cf-template-core.yaml:182`). Check which
   networking tasks are still needed.
+- **Runner-image extensions download during the bake** (`custom-runner-image`, 2026-10-04). An
+  installation's extension is an arbitrary AWSTOE document, and its documented use is installing
+  agents and tools — which today relies on `ImageBuildSecurityGroup`'s 443/80 internet egress. A
+  private build subnet would cut that too. The design has to decide whether the bake keeps egress
+  (it is not the measurement host) or extensions lose downloads, and say so in `infra/README.md`'s
+  *Extending the runner image*.

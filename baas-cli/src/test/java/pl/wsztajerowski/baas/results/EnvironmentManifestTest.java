@@ -39,6 +39,24 @@ class EnvironmentManifestTest {
     }
 
     /**
+     * Two vendors' builds of one Java version share the jvmVersion banner; only the vendor fields
+     * tell them apart, and that is the difference an image extension makes reachable.
+     */
+    @Test
+    void sameVersionFromAnotherVendorIsReportedByVendor() {
+        String corretto = BASE.replace("\"kernelRelease\"", "\"jvmVendor\": \"Amazon.com Inc.\",\n  \"kernelRelease\"");
+        var a = EnvironmentManifest.parse("runs/p/a", corretto);
+        var b = EnvironmentManifest.parse("runs/p/b", corretto.replace("Amazon.com Inc.", "Eclipse Adoptium"));
+
+        assertThat(EnvironmentManifest.diff(a, b))
+            .containsOnlyKeys("jvmVendor")
+            .hasEntrySatisfying("jvmVendor", difference -> {
+                assertThat(difference.left()).isEqualTo("Amazon.com Inc.");
+                assertThat(difference.right()).isEqualTo("Eclipse Adoptium");
+            });
+    }
+
+    /**
      * A field only one side carries is a difference in the environment record, and hiding it is
      * how a manifest schema change gets mistaken for a stable environment.
      */

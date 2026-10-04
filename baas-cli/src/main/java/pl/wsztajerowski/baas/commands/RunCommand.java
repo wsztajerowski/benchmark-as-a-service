@@ -130,7 +130,7 @@ public class RunCommand implements Callable<Integer> {
 
     @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
         + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
-        + "machine-observed keys (imageVersion, instanceType, jdk, cpuModel, cpuArch, type) — those are "
+        + "machine-observed keys (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type) — those are "
         + "captured on the instance so a result's tags can't disagree with its own environment.json.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 

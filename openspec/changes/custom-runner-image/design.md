@@ -2,8 +2,8 @@
 
 ## Context
 
-See `proposal.md` for the motivation, and `assumptions.md` for the code facts this was explored from
-(2026-10-04 explore session).
+See `proposal.md` for the motivation. The code facts it was explored from (2026-10-04) were in a
+pre-explore `assumptions.md`, removed once this design superseded it (`git log` on this directory).
 
 The image definition reaches AWS only as stack parameters: `RunnerImageRenderer` renders the bundled
 `runner-image.yaml` into `RunnerImageVersion`, `RunnerParentAmiId` and `RunnerImageComponentData`.
@@ -114,10 +114,14 @@ replacing `!Ref RunnerImageVersion` there, and `ImageBuilderService.ensureIdenti
 *Rejected:* an operator-chosen name in the label. More to supply, and the hash would still be needed to
 tell two edits apart. The steps' names, shown by `baas admin image`, give readability.
 
-### The extension lives verbatim in the stack parameter `RunnerImageExtensionData`
+### The extension lives in the stack parameter `RunnerImageExtensionData`, ASCII only
 
-Read back with `DescribeStacks`, it is exactly what was pushed, comments included, so a pull returns the
-operator's own text. An empty value sets `HasExtension` false, and the extension component and its
+Read back with `DescribeStacks`, it is what was pushed, comments included, so a pull returns the
+operator's own text — on two conditions found live (Resolved Questions, task 1.5): trailing whitespace
+is not stored, and the content is ASCII. `DescribeStacks` returns every non-ASCII character as `?`
+although the component receives it intact, so a non-ASCII extension would make every reader hash
+different bytes from the ones the image was baked and labelled with. The push therefore strips
+trailing whitespace and refuses non-ASCII, naming the line and column. An empty value sets `HasExtension` false, and the extension component and its
 recipe entry are omitted (`AWS::NoValue`). A file of only comments and blank lines is sent as empty.
 
 The parameter's 4096-byte cap is checked by `build-image` before anything is submitted. A few hundred
@@ -167,7 +171,7 @@ does the same for the extension parameter.
 
 ### The parent is resolved from a pinned AL2023 release name
 
-`runner-image.yaml` names the release (`parentImage.release`). `build-image` and `setup` (on create)
+`runner-image.yaml` names the release by its AMI name (`parentImage.amiName`). `build-image` and `setup` (on create)
 call `DescribeImages` with owner `amazon`, filtered by that name and `x86_64`, in the stack's region,
 and require exactly one result. The resolved ID goes to `RunnerParentAmiId` and the `baas-parent-ami`
 tag as now. The deployer already holds `ec2:Describe*`. The region check at `BuildImageCommand.java:57`
@@ -228,6 +232,10 @@ a tag, the dimension someone comparing JVMs groups by.
   label.
 - [The base component nears its cap] → It shrinks here (awscli install removed; label moved to the
   contract). The existing size test stays and gains one for the contract.
+- [The pinned parent is deprecated on 2026-11-01, and a search omits deprecated AMIs] → The resolver
+  sets `includeDeprecated(true)` (U37, found by the 2026-10-04 analysis refresh). Deprecation hides
+  an AMI from searches only; whether Image Builder accepts a deprecated parent is confirmed by the
+  first bake after that date, or by moving the pin to a newer release first.
 - [`UsePreviousValue` on a parameter the deployed stack lacks is rejected by CloudFormation] → That is
   the "render what is absent" rule; a unit test covers a pre-change parameter set.
 
@@ -243,9 +251,43 @@ a tag, the dimension someone comparing JVMs groups by.
    best-effort, not a supported path; the published image keeps working throughout, because `baas run`
    reads only the pointer.
 
+## Resolved Questions
+
+- **The AL2023 AMI name for release `2023.12.20260803.3`** (task 1.1, 2026-10-04):
+  `al2023-ami-2023.12.20260803.3-kernel-6.1-x86_64`, owner alias `amazon` (`137112412989`).
+  `DescribeImages --owners amazon` filtered by that name and `x86_64` returns exactly one image per
+  region: `ami-070cc8ab883065d64` in `eu-central-1` (the currently pinned parent) and
+  `ami-07a5b367e8dc8bd92` in `us-east-1`. The deployer's `ec2:Describe*` is conditioned on the
+  installation's region, so the lookup works only there, which is the only region it is ever done in.
+- **Versions are numeric, and a component-list change needs a new recipe version** (task 1.2,
+  2026-10-04). Image Builder's API model gives `VersionNumber` the pattern `^[0-9]+\.[0-9]+\.[0-9]+$`,
+  so no suffix fits. The CloudFormation registry schema lists `Components`, `Version`, `ParentImage`
+  and `Name` among `ImageRecipe`'s `createOnlyProperties`, and `Data`, `Version` and `Description`
+  among `Component`'s, so any of them changing replaces the resource. With a fixed `Name`, the
+  replacement is created before the old one is deleted and needs a version that is not registered yet,
+  which is what deriving the recipe version on every change provides.
+
+- **A stack parameter does not round-trip byte-exact** (task 1.5, found live in task 8.3,
+  2026-10-04). `DescribeStacks` drops the trailing newline and returns each non-ASCII character as
+  `?`, while `GetComponent` on the resulting component shows the original bytes. The first extension
+  push carried an em dash from the starter's own comment: the image was labelled `+ext.a8df0fc0`
+  (the bytes sent), while `baas admin image` hashed the stack's copy as `da9ee39b`. Fixed by storing
+  the content trimmed, refusing non-ASCII, and an ASCII-only starter.
+- **The rendered documents' trailing newline made every rebuild look changed** (found live in task
+  8.3, 2026-10-04). A plain `build-image` with no edit moved the recipe from 1.2.4 to 1.2.5: the base
+  and contract end with a newline, `DescribeStacks` returns them without, and the plan compared
+  exactly. It now compares every document ignoring trailing whitespace.
+- **A build that fails its contract leaves its AMI** (found live in task 8.4, 2026-10-04). Image
+  Builder registers the AMI before the test stage and keeps it when a test fails; the failed image
+  still lists it in `outputResources`. Until this change no failure came after the AMI existed. Now
+  `ImageBuilderService.build` retires a failed build's output AMI and snapshots before reporting the
+  failure; the one left by the first contract failure was removed by hand.
+- **`UpdateStack` takes values for parameters a stack lacks alongside `UsePreviousValue` for the rest**
+  (task 1.4, live in task 8.1). The first new-CLI setup on the `1.2.0` installation sent the five
+  missing image parameters and carried the rest forward. The rejection of `UsePreviousValue` on an
+  absent key was not provoked: no code path sends it.
+
 ## Open Questions
 
-- The exact AL2023 AMI name for release `2023.12.20260803.3` and that it resolves to one image per
-  region (task 1). It changes the value written in `runner-image.yaml`, not the approach.
 - Whether the `test` phase needs any IAM beyond the build-instance role (task 1). Expected not: it reuses
   the infrastructure configuration.

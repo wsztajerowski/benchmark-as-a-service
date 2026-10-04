@@ -275,17 +275,97 @@ class CoreTemplateTest {
             .containsEntry("InfrastructureConfigurationArn", "RunnerImageInfrastructure.Arn")
             .containsEntry("DistributionConfigurationArn", "RunnerImageDistribution.Arn");
 
-        var components = (List<Map<String, Object>>)
+        var components = (List<Object>)
             InfraFixtures.properties(template, "RunnerImageRecipe").get("Components");
-        assertThat(components)
-            .singleElement()
-            .satisfies(component ->
-                assertThat(component).containsEntry("ComponentArn", "RunnerImageComponent.Arn"));
+        assertThat(components.getFirst()).isEqualTo(Map.of("ComponentArn", "RunnerImageComponent.Arn"));
+        assertThat(components.getLast()).isEqualTo(Map.of("ComponentArn", "RunnerImageContractComponent.Arn"));
+        assertThat((List<Object>) components.get(1))
+            .contains(Map.of("ComponentArn", "RunnerImageExtensionComponent.Arn"));
 
         var outputs = (Map<String, Object>) template.get("Outputs");
         assertThat((Map<String, Object>) outputs.get("RunnerImagePipelineArn"))
             .as("baas admin build-image passes this value verbatim to StartImagePipelineExecution")
             .containsEntry("Value", "RunnerImagePipeline.Arn");
+    }
+
+    /**
+     * Base, then the operator's extension, then the contract — last, so whatever the extension did,
+     * the checks see the result. The extension's entry is conditional: no extension, no component.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theRecipeRunsBaseThenExtensionThenContract() {
+        var components = (List<Object>)
+            InfraFixtures.properties(template, "RunnerImageRecipe").get("Components");
+
+        assertThat(components).hasSize(3);
+        assertThat((List<Object>) components.get(1))
+            .as("!If [HasRunnerImageExtension, <extension>, AWS::NoValue]")
+            .containsExactly("HasRunnerImageExtension",
+                Map.of("ComponentArn", "RunnerImageExtensionComponent.Arn"), "AWS::NoValue");
+
+        assertThat(InfraFixtures.resource(template, "RunnerImageExtensionComponent"))
+            .containsEntry("Condition", "HasRunnerImageExtension");
+        var conditions = (Map<String, Object>) template.get("Conditions");
+        assertThat(conditions.get("HasRunnerImageExtension"))
+            .as("an empty extension parameter means no extension")
+            .isEqualTo(List.of(List.of("RunnerImageExtensionData", "")));
+    }
+
+    /**
+     * Components and Version are create-only on a recipe, so a changed component list replaces it,
+     * and the replacement needs an unused version: the recipe's is derived, never the base's.
+     */
+    @Test
+    void derivedVersionsVersionTheRecipeAndTheContract() {
+        assertThat(InfraFixtures.properties(template, "RunnerImageRecipe"))
+            .containsEntry("Version", "RunnerImageRecipeVersion");
+        assertThat(InfraFixtures.properties(template, "RunnerImageContractComponent"))
+            .as("the contract carries the label, which moves only with the recipe")
+            .containsEntry("Version", "RunnerImageRecipeVersion")
+            .containsEntry("Data", "RunnerImageContractData");
+        assertThat(InfraFixtures.properties(template, "RunnerImageExtensionComponent"))
+            .containsEntry("Version", "RunnerImageExtensionVersion")
+            .containsEntry("Data", "RunnerImageExtensionData");
+        assertThat(InfraFixtures.properties(template, "RunnerImageComponent"))
+            .as("the base alone keeps the hand-bumped version")
+            .containsEntry("Version", "RunnerImageVersion");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theAmiIsTaggedWithTheLabel() {
+        var distributions = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "RunnerImageDistribution").get("Distributions");
+        var amiTags = (Map<String, Object>)
+            ((Map<String, Object>) distributions.getFirst().get("AmiDistributionConfiguration")).get("AmiTags");
+
+        assertThat(amiTags)
+            .as("baas admin image and every run read the image's identity from this tag; with an "
+                + "extension it must name the extension too, or the image passes for a stock one")
+            .containsEntry("baas-image-version", "RunnerImageLabel");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void imageTestsRunSoTheContractCanFailTheBuild() {
+        var tests = (Map<String, Object>)
+            InfraFixtures.properties(template, "RunnerImagePipeline").get("ImageTestsConfiguration");
+
+        assertThat(tests)
+            .as("the contract's checks live in its test phase; with tests disabled they never run "
+                + "and an image that broke BaaS is published")
+            .containsEntry("ImageTestsEnabled", true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void everyImageParameterThePlanSendsIsDeclared() {
+        var parameters = (Map<String, Object>) template.get("Parameters");
+
+        assertThat(parameters)
+            .as("a planned parameter the template does not declare is rejected by CloudFormation")
+            .containsKeys(RunnerImageParameters.ALL.toArray(String[]::new));
     }
 
     @Test

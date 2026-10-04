@@ -98,6 +98,12 @@
             <resource>
                 <directory>src/main/resources</directory>
             </resource>
+            <!-- Filtered, and kept apart so nothing else is: the runner's compile target is the
+                 lowest Java the runner-image contract accepts, and this is its only copy. -->
+            <resource>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
             <resource>
                 <directory>${project.basedir}/../infra</directory>
                 <targetPath>templates</targetPath>

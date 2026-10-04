@@ -115,7 +115,8 @@ fixed. Items already in *Accepted risks* below are excluded from both files on p
   `baas-request-id` (`Ec2ProvisioningService.instanceTags`, which takes no extra tags on purpose): a
   copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
   was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
-  machine-observed key (`imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch`, `type`) is
+  machine-observed key (`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`,
+  `type`) is
   rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
 
@@ -148,9 +149,10 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **`baas run` has no fallback.** No AMI at `/<prefix>/runner/ami-id` → the runner-image lookup
   fails there, before any upload. Two provisioning paths would produce silently incomparable
   results.
-- **Exactly one image, rebuilt in place.** No slots, no AMI history, no second pointer. The archive
-  is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to reconstruct — from
-  1.2.0 onward; 1.0.0 and 1.1.0 predate the file and cannot be rebuilt.
+- **Exactly one image, rebuilt in place.** No slots, no AMI history, no second pointer. The base's
+  archive is git: `git log -p infra/runner-image.yaml`, and `git checkout <sha> -- …` to
+  reconstruct — from 1.2.0 onward; 1.0.0 and 1.1.0 predate the file and cannot be rebuilt. An
+  extension has no archive: the stack holds only the current one.
 - **The pointer is repointed *before* the replaced AMI is deregistered.** Retiring first aims the
   pointer at a deleted AMI for the whole ~15-minute build, failing every run launched in that window.
 - **Teardown retires the image, always, and only after the stack is gone.** The pointer, the AMI,
@@ -161,20 +163,49 @@ The watchdog is the only one that survives a deadlocked JVM.
   inherit, while a leftover AMI is only a cost leak. No step fails the teardown; leftovers are named
   with the command that removes each. `--stack-name` retires *that* installation's image.
   `build-image` itself still leaves one Image Builder record per build, which cost nothing.
-- **`infra/runner-image.yaml` is the only place a tool version is declared**, ships in the JAR as
-  `/templates/runner-image.yaml`, and any edit needs `imageVersion` bumped — Image Builder
-  components are immutable at a version.
-- **`baas admin setup` renders the same image parameters `build-image` does.** Both call
-  `RunnerImageRenderer`. If setup let the template's placeholder component stand, it would register
-  a no-op at the declared version and Image Builder would then refuse the real one at that same
-  version — immutability, hit from a direction nobody would think to look.
+- **The image is three components: base, extension, contract — in that order.** The base is
+  rendered from the bundled `infra/runner-image.yaml`, the only place a *base* tool version is
+  declared; any edit needs `imageVersion` bumped, because Image Builder components are immutable at
+  a version. The extension is an operator's raw AWSTOE document; the contract runs last and fails
+  the bake when a BaaS workflow would break. Only the base's version is hand-bumped: the extension's
+  and the recipe's are derived from the deployed stack (`RunnerImageParameters`), and the contract
+  shares the recipe's because it carries the label.
+- **The contract lives in the AWSTOE `test` phase, so `ImageTestsEnabled` must stay `true`.** With
+  tests off the checks never run and an image that broke BaaS is published silently. A build-phase
+  check would be cheaper and wrong: sysctls are applied, and THP and an upgraded kernel take effect,
+  only on the booted image. A test-stage failure comes *after* Image Builder registered the AMI, and
+  Image Builder keeps it, so `build()` retires a failed build's output AMI — without that, every
+  contract failure leaked a snapshot no command would ever name.
+- **The base writes nothing that depends on the extension** — the label in
+  `/etc/baas-image-version` included, which the contract writes. Otherwise every extension edit
+  would change the base and demand a hand-bumped version.
+- **The extension is stored verbatim in the stack parameter `RunnerImageExtensionData`, and only
+  `build-image --extension` changes it.** It is the only copy — overwritten, it cannot be recovered
+  from AWS — so a push whose `# baas-extension-base:` marker no longer names the deployed extension
+  is refused. With none deployed, any file is accepted (a file kept across a teardown), and a file a
+  teammate deliberately emptied can come back that way: accepted. Two pushes in the same seconds are
+  not guarded, as for concurrent builds below. Anyone with `DescribeStacks` can read it, so it must
+  never hold a credential. **ASCII only, trailing whitespace dropped:** `DescribeStacks` returns
+  each non-ASCII character as `?` (the component itself gets the real bytes) and drops the trailing
+  newline, so anything else makes the stack's copy — which the pull, the guard, the change detection
+  and `admin image` all hash — differ from what was baked. Found live: an em dash in the starter's
+  own comment.
+- **`baas admin setup` submits rendered image parameters only for what the stack lacks.** On create
+  that is all of them — letting the template's placeholders stand would register a no-op at a
+  version and Image Builder would then refuse the real one at that same version. On update every
+  deployed image parameter is carried forward, so a plain setup can neither revert the base nor drop
+  an extension; a parameter a pre-change stack lacks still gets a real value.
 - **The preflight must not query components with `byName`.** That collapses every version into one
   row with no version field and an ARN ending in a literal `x.x.x`, so the version filter matches
   nothing, the preflight concludes the version is free, and a doomed build proceeds. Cost a real
   9-minute build to find.
-- **`perf`'s pinned version must match the parent AMI's kernel** — the RPM is built from that kernel
-  build. They are pinned together and the component smoke-tests `perf`, so a mismatch fails the
-  bake rather than a benchmark.
+- **`perf` is never pinned; the base installs the running kernel's build.** The RPM is built from one
+  kernel build, the build instance boots the parent, so `uname -r` names the only right one and a pin
+  could only disagree with it. The contract checks it still matches on the booted image, which is
+  what catches an extension that upgraded the kernel.
+- **The parent is an AL2023 release named by AMI name (`parentImage.amiName`), never an AMI ID.**
+  An ID binds the definition to one region; the name resolves to the same release — kernel and
+  repository — in every region, and exactly one Amazon-owned match is required.
 - **Image Builder authorises reads against the collection, writes against the named resource.**
   `GetComponent`/`List*` cannot be prefix-scoped (they evaluate against `component/*`); pipeline
   writes can. Hence the split `ImageBuilderRead` (`Resource: "*"`) / `ImageBuilder` statements in
@@ -459,18 +490,19 @@ is no `cf-template-main.yaml` and no bootstrap stack.
   `ImageRecipe`, `InfrastructureConfiguration`, `DistributionConfiguration`, `ImagePipeline`) plus
   the build-instance role. Deployed by `baas admin setup`, bundled into the CLI as the
   classpath resource `/templates/cf-template-core.yaml`. `UseExistingVpc` + `ExistingVpcId` /
-  `ExistingSubnetId` / `ExistingSecurityGroupId` reuse existing networking. Three parameters —
-  `RunnerImageVersion`, `RunnerParentAmiId`, `RunnerImageComponentData` — are rendered from
-  `infra/runner-image.yaml` by `RunnerImageRenderer`; the component travels as a parameter value,
-  so it must stay under CloudFormation's 4096-byte cap (guarded by a unit test). Three more —
+  `ExistingSubnetId` / `ExistingSecurityGroupId` reuse existing networking. Eight parameters
+  describe the runner image (`RunnerImageParameters.ALL`): the base, parent, extension and contract
+  documents and their versions, and the label. Each component travels as a parameter value, so it
+  must stay under CloudFormation's 4096-byte cap — unit-tested for base and contract, refused before
+  submission for an extension. Three more —
   `GitHubOidcProviderArn`, `GitHubOrg`, `GitHubRepo` — declare the conditional federated principal
   on `OperatorRole`'s trust policy and create no resource. `GitHubRepo` is a `CommaDelimitedList`
   of **already-composed** `repo:<org>/<name>:*` subject patterns: `SetupCommand` builds them,
   because CloudFormation cannot iterate a list and every in-template trick for it leans on
   `Fn::Sub` re-scanning text substituted into it, which it does not do.
-- **`runner-image.yaml`** — the measurement environment: image version, pinned parent AMI and tool
-  versions, kernel tunables. Ships in the JAR as `/templates/runner-image.yaml` because both
-  `setup` and `build-image` render it at runtime.
+- **`runner-image.yaml`** — the measurement environment's base: base version, pinned parent
+  release, Corretto and async-profiler versions, kernel tunables. Ships in the JAR as
+  `/templates/runner-image.yaml` because both `setup` and `build-image` render it at runtime.
 - **`cf-template-ci.yaml`** — the `GithubOidc` identity provider and **nothing else**. **Not
   deployed by the CLI** — deploy by hand, with an identity above the deployer, since
   `deployer-policy.json` scopes `iam:Get*`/`iam:List*` to roles and never to `oidc-provider/*`.
@@ -608,10 +640,16 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 
 | Group | Keys | Set by |
 |---|---|---|
-| Machine-observed | `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
+| Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
 | Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys; `project` and `source` are caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
 | Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--all-runs` (shown faint) and `--request-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
+
+`imageVersion` is the image's *label*: the base version (`1.3.0`), or `1.3.0+ext.<sha256[0:8]>` when
+the installation has an extension. A filter on `1.3.0` therefore never returns an extended image's
+results, and one extension is labelled alike in every installation. `jvmVendor` exists because an
+extension may swap the JDK for another vendor's build of the same version, which `jdk` cannot tell
+apart.
 
 `branch` used to survive only as a segment of the result path and was stored nowhere. The unified
 prefix drops that segment, so what the path stopped carrying the tags now carry — which is the

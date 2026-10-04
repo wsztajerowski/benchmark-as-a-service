@@ -569,7 +569,8 @@ class UserDataScriptBuilderTest {
             Map<String, Object> parsed = new ObjectMapper().readValue(resolved, Map.class);
             assertThat(parsed)
                 .containsKeys("schemaVersion", "imageVersion", "amiId", "instanceType",
-                    "cpuModel", "kernelRelease", "jvmVersion", "perfEventParanoid");
+                    "cpuModel", "kernelRelease", "jvmVersion", "jvmVendor", "jvmVendorVersion", "jvmName",
+                    "perfEventParanoid");
         }).doesNotThrowAnyException();
     }
 
@@ -656,7 +657,63 @@ class UserDataScriptBuilderTest {
 
     @Test
     void manifestSchemaVersionIsBumpedForTheNewField() {
-        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION).isEqualTo(3);
+        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION)
+            .as("4 added jvmVendor, jvmVendorVersion and jvmName")
+            .isEqualTo(4);
+    }
+
+    // ─── JVM vendor ──────────────────────────────────────────────────────────────
+    //
+    // An image extension may replace Corretto with another vendor's build of the same version, and
+    // the `java -version` banner names only the version. The vendor is observed once, recorded in
+    // the manifest, and tagged from the same variable.
+
+    @Test
+    void theManifestRecordsWhoBuiltTheJvm() {
+        assertThat(script())
+            .contains("\"jvmVendor\": \"${JVM_VENDOR}\"")
+            .contains("\"jvmVendorVersion\": \"${JVM_VENDOR_VERSION}\"")
+            .contains("\"jvmName\": \"${JVM_NAME}\"")
+            .as("a vendor string can contain a double quote or backslash")
+            .contains("JVM_VENDOR=$(json_escape \"$JVM_VENDOR_RAW\")");
+    }
+
+    @Test
+    void theVendorTagIsTheObservedValue() {
+        String script = script();
+
+        assertThat(script.indexOf("--tag \"jvmVendor=${JVM_VENDOR_RAW}\""))
+            .as("tagged from the same capture the manifest uses, after it is made")
+            .isGreaterThan(script.indexOf("JVM_VENDOR_RAW=$("))
+            .isGreaterThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
+        assertThat(script.split("-XshowSettings:properties", -1))
+            .as("one JVM call for every property, not one per field")
+            .hasSize(2);
+    }
+
+    @Test
+    void jvmPropertiesArePickedOutByTheirExactKey() throws Exception {
+        String function = script().lines()
+            .filter(line -> line.strip().startsWith("jvm_prop()"))
+            .findFirst().orElseThrow().strip();
+        String props = """
+            Property settings:
+                java.vendor = Eclipse Adoptium
+                java.vendor.url = https://adoptium.net/
+                java.vendor.version = Temurin-25.0.4+7
+                java.vm.name = OpenJDK 64-Bit Server VM
+            openjdk version "25.0.4" 2026-07-15
+            """;
+        String probe = "JVM_PROPS=$(cat <<'P'\n" + props + "P\n)\n" + function + "\n"
+            + "printf '%s|%s|%s' \"$(jvm_prop java.vendor)\" \"$(jvm_prop java.vendor.version)\" \"$(jvm_prop java.vm.name)\"\n";
+
+        var process = new ProcessBuilder("bash", "-c", probe).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(process.waitFor()).isZero();
+        assertThat(output)
+            .as("java.vendor must not match java.vendor.url or java.vendor.version")
+            .isEqualTo("Eclipse Adoptium|Temurin-25.0.4+7|OpenJDK 64-Bit Server VM");
     }
 
     @Test

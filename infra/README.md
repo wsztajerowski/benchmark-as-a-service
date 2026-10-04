@@ -32,16 +32,23 @@ via `StartImagePipelineExecution`.
 `<bucket>/image-builds/*`. The build host installs packages and writes its own logs; it never
 reads results, launches instances, or touches IAM.
 
-Three stack parameters carry the image definition in from `infra/runner-image.yaml`:
-`RunnerImageVersion`, `RunnerParentAmiId`, and `RunnerImageComponentData` (the rendered AWSTOE
-document). `baas admin setup` and `baas admin build-image` both render them from the same
-classpath resource, so the two commands always submit identical values — if setup let the
-template's placeholder default stand, it would register a no-op component at the declared version
-and Image Builder would then reject the real one at that same version.
+The recipe runs three components in order: the **base**, rendered from the bundled
+`infra/runner-image.yaml`; the installation's optional **extension** (below); and the BaaS
+**contract**, which writes the image label and, in its `test` phase on an instance booted from the
+new image, fails the build when Java ≥ the runner's version, the AWS CLI, async-profiler, a `perf`
+matching the kernel, `perf_event_paranoid ≤ 1` or `kptr_restrict = 0` is missing. Image tests are
+enabled on the pipeline for that reason; a failed contract leaves the pointer on the previous image.
 
-Deploying this template **by hand** with `aws cloudformation deploy` leaves those three parameters
-at their defaults, which registers the placeholder component. Use `baas admin setup` unless you
-are deliberately deploying without an image and intend to pass the parameters yourself.
+Eight stack parameters describe the image (`RunnerImageParameters.ALL`). `baas admin build-image`
+plans and submits all of them. `baas admin setup` submits all of them on create — letting the
+template's placeholder defaults stand would register a no-op component at a version, and Image
+Builder would then reject the real one at that same version — and on update only those the stack
+lacks, carrying the rest forward, so a plain setup never reverts an image or drops an extension.
+
+Deploying this template **by hand** with `aws cloudformation deploy` leaves those parameters at
+their defaults, which registers the placeholder components. Use `baas admin setup` unless you are
+deliberately deploying without an image and intend to pass the parameters yourself; the next
+`baas admin build-image` replaces the placeholders.
 
 If this is the first Image Builder pipeline in the account, the deploying identity needs
 `iam:CreateServiceLinkedRole` for `imagebuilder.amazonaws.com` — the service provisions
@@ -65,6 +72,40 @@ aws cloudformation describe-stacks \
   --stack-name baas-core \
   --query 'Stacks[0].Outputs'
 ```
+
+### Extending the runner image
+
+An installation can add anything to its runner image — an observability agent, another profiler, a
+native library — without a checkout. The extension is a raw
+[AWSTOE component document](https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-use-documents.html),
+run after the base and before the contract, stored in the stack exactly as written.
+
+```bash
+baas admin image --extension > ext.yaml       # pull: the deployed extension, or a commented starter
+$EDITOR ext.yaml
+baas admin build-image --extension ext.yaml   # push, then bake (~15 minutes)
+baas admin image                              # label, extension hash, size, step names
+```
+
+`baas admin setup` also writes the starter to `~/.baas/runner-image-extension.yaml` the first time,
+never overwriting it.
+
+- **Keep the first line.** `# baas-extension-base: <hash|none>` names the extension the file was
+  pulled from. A push from a copy someone else has since replaced is refused — the stack keeps no
+  earlier version, so the push would discard theirs. Pull again and re-apply the edit. With no
+  extension deployed, any file is accepted.
+- **4096 bytes, comments included.** It travels as a stack parameter. Longer logic fits as a step
+  that downloads and runs a script.
+- **A file of comments only removes the extension.**
+- **Never put a credential in it.** Anyone who can describe the stack can read it.
+- **Results stay distinguishable.** The image label becomes `<base>+ext.<hash>`, so results from an
+  extended image never share an `imageVersion` tag with a stock image's, and every run records the
+  JVM vendor, kernel tunables and packages it measured on in `environment.json` / `packages.txt`.
+- **What the contract does not constrain** is yours to change: another JDK vendor or a newer Java,
+  transparent hugepages, swap. async-profiler is checked for presence only; on OpenJ9 it works
+  only partly, so `jmh-with-async` profiles there are weaker.
+- **The bake may reach the internet** (the build security group allows 443 and 80), which is what
+  lets an extension download things.
 
 ## Stack 2: `baas-ci` — the GitHub Actions identity provider
 
@@ -360,7 +401,8 @@ Three things worth knowing before you use it:
   component at whatever `infra/runner-image.yaml` declares. This works only while those two
   versions differ — if `runner-image.yaml` is ever set to `1.0.0`, the placeholder occupies that
   version and Image Builder will refuse the real one, because components are immutable at a
-  version. Bump `imageVersion` before doing dev work at `1.0.0`.
+  version. Bump `imageVersion` before doing dev work at `1.0.0`. The contract's placeholder needs no
+  such care: its version is derived, and moves past the placeholder's on the first build.
 - **Teardown retains the bucket and the results table** unless you pass `--delete-bucket`, and
   there is no flag for the table. A dev installation left half-removed will block the next deploy
   of the same prefix with a CloudFormation error that never mentions which resource; delete
