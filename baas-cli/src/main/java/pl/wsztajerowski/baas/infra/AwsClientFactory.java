@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.infra;
 
 import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
+import software.amazon.awssdk.awscore.client.builder.AwsClientBuilder;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
@@ -23,29 +24,13 @@ public class AwsClientFactory {
         this.profile = profile;
     }
 
-    public Ec2Client ec2() {
-        var b = Ec2Client.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public Ec2Client ec2() { return build(Ec2Client.builder()); }
 
-    public SsmClient ssm() {
-        var b = SsmClient.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public SsmClient ssm() { return build(SsmClient.builder()); }
 
-    public S3Client s3() {
-        var b = S3Client.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public S3Client s3() { return build(S3Client.builder()); }
 
-    public DynamoDbClient dynamoDb() {
-        var b = DynamoDbClient.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public DynamoDbClient dynamoDb() { return build(DynamoDbClient.builder()); }
 
     /**
      * A DynamoDB client that gives up after {@code apiCallTimeout}, retries included. For the
@@ -53,35 +38,27 @@ public class AwsClientFactory {
      * a CLI dies — the SDK's default retries would hold the termination back.
      */
     public DynamoDbClient dynamoDb(Duration apiCallTimeout) {
-        var b = DynamoDbClient.builder()
-            .region(region)
-            .overrideConfiguration(o -> o.apiCallTimeout(apiCallTimeout));
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
+        return build(DynamoDbClient.builder().overrideConfiguration(o -> o.apiCallTimeout(apiCallTimeout)));
     }
 
-    public CloudFormationClient cloudFormation() {
-        var b = CloudFormationClient.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public CloudFormationClient cloudFormation() { return build(CloudFormationClient.builder()); }
 
-    public StsClient sts() {
-        var b = StsClient.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public StsClient sts() { return build(StsClient.builder()); }
 
-    public ImagebuilderClient imageBuilder() {
-        var b = ImagebuilderClient.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
-    }
+    public ImagebuilderClient imageBuilder() { return build(ImagebuilderClient.builder()); }
 
     /** IAM is global; the region only selects the endpoint. */
-    public IamClient iam() {
-        var b = IamClient.builder().region(region);
-        if (profile != null) b.credentialsProvider(ProfileCredentialsProvider.create(profile));
-        return b.build();
+    public IamClient iam() { return build(IamClient.builder()); }
+
+    /**
+     * Every client gets the region, and the named profile when there is one; with none, the default
+     * credential chain applies, so {@code AWS_PROFILE} and ambient credentials still work.
+     */
+    private <B extends AwsClientBuilder<B, C>, C> C build(B builder) {
+        builder.region(region);
+        if (profile != null) {
+            builder.credentialsProvider(ProfileCredentialsProvider.create(profile));
+        }
+        return builder.build();
     }
 }

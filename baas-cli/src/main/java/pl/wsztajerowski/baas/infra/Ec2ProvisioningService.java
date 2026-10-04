@@ -94,7 +94,8 @@ public class Ec2ProvisioningService implements RunSession.Instances {
      * <p>A persistent failure here (denied permission, expired session) silently
      * disables that fail-fast, so the first one is reported rather than swallowed.
      */
-    public String instanceState(String instanceId) {
+    @Override
+    public String state(String instanceId) {
         try {
             var response = ec2.describeInstances(r -> r.instanceIds(instanceId));
             return response.reservations().stream()
@@ -135,10 +136,6 @@ public class Ec2ProvisioningService implements RunSession.Instances {
             .toList();
     }
 
-    @Override
-    public String state(String instanceId) {
-        return instanceState(instanceId);
-    }
 
     /** The pending or running instance of one run, found by its {@code baas-request-id} tag. */
     @Override
