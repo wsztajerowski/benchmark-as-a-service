@@ -1,6 +1,8 @@
 package pl.wsztajerowski.services;
 
 import dev.morphia.annotations.Entity;
+import org.bson.BsonDocument;
+import org.bson.BsonString;
 import org.json.JSONArray;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -99,5 +101,55 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
             .anySatisfy(o -> assertThat(o)
                 .asString()
                 .endsWith("/jmh-profiler-output.txt"));
+    }
+
+    /**
+     * Only {@code async} and {@code jfr} write artifacts into a per-benchmark directory; the profilers
+     * reporting secondary metrics alone ({@code gc}, {@code comp}, {@code cl}, ...) create none. The
+     * test above always includes {@code jfr}, which is how a run with {@code gc} alone could fail
+     * after the benchmark finished, before its measurements were stored (finding A12).
+     */
+    @Test
+    void a_profiler_that_writes_no_artifacts_still_stores_its_measurements() throws IOException {
+        // given
+        Path jmhTestBenchmark = Path.of("..", "fake-jmh-benchmarks", "target", "fake-jmh-benchmarks.jar").toAbsolutePath();
+        Path result = Files.createTempFile("results", "jmh.json");
+        Path output = Files.createTempFile("outputs", "jmh.txt");
+        Path profileResults = Files.createTempDirectory("prof-results");
+        JmhWithProfilerSubcommandService sut = JmhWithProfilerSubcommandServiceBuilder.serviceBuilder()
+            .withResultsStore(new MongoResultsStore(datastore()))
+            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
+            .withCommonOptions(new CommonSharedOptions(profileResults, "req-gc-only", Instant.now(), "test-project", Map.of()))
+            .withProfilerOptions(Map.of("gc", ""))
+            .withJmhOptions( new JmhOptions(
+                jmhBenchmarkOptionsBuilder()
+                    .withBenchmarkPath(jmhTestBenchmark)
+                    .withForks(1)
+                    .build(),
+                jmhOutputOptionsBuilder()
+                    .withMachineReadableOutput(result)
+                    .withProcessOutput(output)
+                    .build(),
+                jmhWarmupOptionsBuilder()
+                    .withWarmupIterations(0)
+                    .build(),
+                jmhIterationOptionsBuilder()
+                    .withIterations(1)
+                    .build(),
+                jmhJvmOptionsBuilder().build()))
+            .build();
+
+        // when
+        sut.executeCommand();
+
+        // then
+        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
+        helper.assertFindResult(collectionName,
+            new BsonDocument("measurement.requestId", new BsonString("req-gc-only")), documents ->
+                assertThat(documents.first())
+                    .isNotNull()
+                    .extracting("measurement", as(MAP))
+                    .extracting("secondaryMetrics", as(MAP))
+                    .containsKeys("gc.count"));
     }
 }
