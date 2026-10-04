@@ -403,6 +403,14 @@ the proposal starts from:
   measurement); `schemaVersion` bumps. The spec scenario requiring a crashed run's manifest to
   record its run id and creation instant changes accordingly.
 - Breaking CLI change: `feat(cli)!`, next major.
+- **`show` is also the lookup of one run by id (U28, decided 2026-10-04).** Above the manifest it
+  prints the run item: stored status, resolved status (`vanished` when the instance is gone without an
+  outcome), instance id and type, `createdAt`, result path, `errorCode`, tags. A run with no manifest
+  (`launch-failed`, cancelled before boot, any pre-prebaked-image run) still shows its item and says
+  the manifest is absent, rather than failing. A run from before run items shows its manifest only.
+  `--format json` prints both as one object, so CI's `runs list --limit 50 | jq select` step in
+  `e2e-cloud-test.yml` becomes `runs show <id> --format json`. Resolution through `RunReference`,
+  like the rest of this command. See `docs/analysis/cli-usage-analysis.md` U28.
 
 ## 12. P12 — kernel tunables silently default to `0`/`null` on a mistyped key · FIXED
 
