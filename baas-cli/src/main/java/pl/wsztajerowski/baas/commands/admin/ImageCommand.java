@@ -100,10 +100,9 @@ public class ImageCommand implements Callable<Integer> {
             // The base this CLI bundles is not necessarily the one deployed, and a difference
             // between them is the usual reason a result carries an unexpected imageVersion tag.
             String bundled = new RunnerImageRenderer().definition().imageVersion();
-            String deployedBase = baseOf(image.imageVersion());
-            if (deployedBase != null && !bundled.equals(deployedBase)) {
-                logger.warn("This CLI bundles runner-image base {}, but the published image is built on {} — "
-                    + "run `baas admin build-image` to publish it.", bundled, deployedBase);
+            String warning = driftWarning(bundled, baseOf(image.imageVersion()));
+            if (warning != null) {
+                logger.warn("{}", warning);
             }
             return 0;
         }
@@ -132,6 +131,23 @@ public class ImageCommand implements Callable<Integer> {
     }
 
     /** {@code 1.3.0} from {@code 1.3.0+ext.3f9a1c2e}; null for an image with no version tag. */
+    /**
+     * What to do about a bundled base that differs from the published one, by direction. Newer:
+     * build it. Older: upgrading the CLI is the fix — build-image refuses an older base, and saying
+     * "build" here once advised exactly the downgrade it now refuses.
+     */
+    static String driftWarning(String bundledBase, String deployedBase) {
+        if (deployedBase == null || bundledBase.equals(deployedBase)) {
+            return null;
+        }
+        if (RunnerImageParameters.compareVersions(bundledBase, deployedBase) > 0) {
+            return "This CLI bundles runner-image base " + bundledBase + ", but the published image is built on "
+                + deployedBase + " — run `baas admin build-image` to publish it.";
+        }
+        return "This CLI bundles runner-image base " + bundledBase + ", older than the published image's "
+            + deployedBase + " — upgrade the CLI (~/.local/share/baas/install.sh --update); build-image refuses an older base.";
+    }
+
     static String baseOf(String label) {
         if (label == null || label.isEmpty()) {
             return null;

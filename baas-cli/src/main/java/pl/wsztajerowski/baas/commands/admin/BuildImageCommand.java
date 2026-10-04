@@ -40,6 +40,24 @@ import java.util.concurrent.Callable;
 )
 public class BuildImageCommand implements Callable<Integer> {
 
+    /**
+     * Why this CLI must not build, or {@code null} when it may. A CLI bundling an older base than
+     * the installation's would submit that base and replace the newer component — the older version
+     * no longer exists once replaced, so nothing else refuses it — silently moving every later
+     * result onto the older environment. There is no override: rebuilding a historical base is
+     * done from a checkout of that commit, as re-measuring a past environment always was.
+     */
+    static String olderBaseRefusal(String bundledBase, String deployedBase, String installation) {
+        if (deployedBase == null || RunnerImageParameters.compareVersions(bundledBase, deployedBase) >= 0) {
+            return null;
+        }
+        return """
+            This CLI bundles runner-image base %s, but installation %s is built on %s.
+              Building would move every later result onto the older environment.
+              Upgrade the CLI first:  ~/.local/share/baas/install.sh --update
+            Nothing was changed.""".formatted(bundledBase, installation, deployedBase);
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(BuildImageCommand.class);
 
     @Mixin LoggingMixin loggingMixin;
@@ -96,6 +114,11 @@ public class BuildImageCommand implements Callable<Integer> {
                 return 1;
             }
             Map<String, String> deployed = cloudFormation.getStackParameters(prefix);
+            String refusal = olderBaseRefusal(baseVersion, deployed.get(RunnerImageParameters.IMAGE_VERSION), prefix);
+            if (refusal != null) {
+                logger.error(refusal);
+                return 1;
+            }
             String deployedExtension = deployed.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
 
             String extension = deployedExtension;

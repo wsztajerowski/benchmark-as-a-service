@@ -83,6 +83,23 @@ public record RunnerImageParameters(Map<String, String> values, String label) {
         return extension.isEmpty() ? baseVersion : baseVersion + "+ext." + RunnerImageExtension.hash(extension);
     }
 
+    /**
+     * Orders two {@code x.y.z} versions numerically — {@code 1.10.0} after {@code 1.9.0}, which a
+     * string comparison gets wrong. The stack's {@code AllowedPattern} guarantees the shape.
+     */
+    public static int compareVersions(String a, String b) {
+        String[] left = a.split("\\.");
+        String[] right = b.split("\\.");
+        for (int i = 0; i < Math.max(left.length, right.length); i++) {
+            int l = i < left.length ? Integer.parseInt(left[i]) : 0;
+            int r = i < right.length ? Integer.parseInt(right[i]) : 0;
+            if (l != r) {
+                return Integer.compare(l, r);
+            }
+        }
+        return 0;
+    }
+
     /** The parameters a deployed stack does not have yet — the only ones setup sends on an update. */
     public Map<String, String> absentFrom(Map<String, String> deployed) {
         Map<String, String> absent = new LinkedHashMap<>(values);
