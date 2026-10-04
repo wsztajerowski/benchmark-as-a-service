@@ -12,6 +12,12 @@ new and answers "which required value can a user not obtain". The uncommitted `c
 apply in the same working tree is not analysed as current behaviour; where it changes a finding, the
 row says so.
 
+**Re-checked 2026-10-04** against `origin/next-release` at `9a84a18` (branch `cli-usage-reanalysis`),
+which by then carried `custom-runner-image` (`b6193ec`) and the whole-repository review fixes. Every
+row's code anchor was re-read there. U21 and U37 are fixed in code; every other open row still holds
+unchanged. New: U38 (filed by that change's verify, review §55) is placed in §2.4, and the
+`--extension` surface adds U39–U41. §2.2, §2.4 and §3.1 are updated to match.
+
 Diagrams this document leans on, all Mermaid sources in [`docs/diagrams/`](../diagrams/):
 
 | Diagram | What it shows |
@@ -36,8 +42,8 @@ Every command also takes `-h`, `-V`, `-v` and the inherited `--config-path <file
 |---|---|---|---|
 | `admin deployer-policy` | `--for-account`, `--prefix`, `--region` | deployer (`aws.profile`); none with `--for-account` | no |
 | `admin setup` | `--region`, `--aws-profile`, `--use-existing-vpc` `--vpc-id` `--subnet-id` `--sg-id`, `--github-org` `--github-repo`… `--oidc-provider-arn`, `--revoke-github-oidc` | deployer | prefix, profile, region |
-| `admin build-image` | — | deployer | no |
-| `admin image` | — | deployer | no |
+| `admin build-image` | `--extension <file>` (replaces the installation's extension; comments only removes it) | deployer | no |
+| `admin image` | `--extension` (prints the deployed extension, or the starter, with its marker) | deployer | no |
 | `admin teardown` | `--stack-name`, `--yes`, `--delete-bucket` | deployer | no |
 | `config set` | `--aws-profile`, `--operator-profile`, `--region`, `--instance-type`, `--timeout`, `--watchdog-margin`, `--git-resolve-project` | none | yes |
 | `config show` | — | none | no |
@@ -121,12 +127,11 @@ stateDiagram-v2
     Empty --> Authorised: [outside] attach rendered deployer policy
     Authorised --> Deployed: admin setup
     Authorised --> RolledBack: admin setup, create fails
-    Authorised --> OtherRegion: admin setup --region ≠ eu-central-1
-    OtherRegion: ⚠ OtherRegion (U21)<br/>stack names the eu-central-1 parent AMI<br/>build-image refuses the region
     RolledBack --> Residue: admin teardown
     Deployed --> Ready: admin build-image
     Deployed --> Deployed: admin setup (update)
-    Ready --> Ready: admin build-image (rebuild in place)<br/>admin setup (update, federation)
+    Ready --> Ready: admin build-image [--extension f] (rebuild in place)<br/>admin setup (update, federation, image carried forward)
+    Ready --> Ready: build-image from a CLI with an older base — ⚠ silent downgrade (U39)
     Ready --> Ready: admin setup --region B — ⚠ refused, blames a "retained" bucket (U23)
     Ready --> Dangling: [outside] AMI deregistered
     Dangling --> Ready: admin build-image
@@ -143,6 +148,10 @@ stateDiagram-v2
         kept: results table (always)<br/>bucket (unless --delete-bucket)
     }
 ```
+
+Any region now reaches *Ready*: setup and build-image resolve the pinned AL2023 release's AMI in the
+installation's region (U21, fixed; live check deferred). The image is the bundled base plus the
+installation's extension, which lives only in the stack parameter `RunnerImageExtensionData`.
 
 Orthogonal flag on `Deployed`/`Ready`: **federated** ↔ **not federated**, set by `setup --github-org
 --github-repo --oidc-provider-arn`, cleared by `setup --revoke-github-oidc`, carried forward by a plain
@@ -197,7 +206,7 @@ stateDiagram-v2
     Uploaded --> Launching: C reserves the item
     Launching --> Launched: C, after RunInstances<br/>(only while still launching)
     Launching --> LaunchFailed: C, RunInstances error<br/>(+ launch-error.txt)
-    Launching --> Running: I, when C's launched write was lost or late
+    Launching --> Running: I, when C's launched write was lost or late<br/>⚠ later than completed: C reports cancelled, exits 1 (U38)
     Launching --> Cancelled: H Ctrl+C mid-launch · T
     Launched --> Running: I, after the watchdog starts
     Launched --> Cancelled: H · T
@@ -220,6 +229,10 @@ Never stored, computed by readers:
 | `vanished` | Non-terminal status and no pending/running instance tagged with the run id | `runs list` (one `DescribeInstances`), `baas run`'s poll |
 | `status-lost` | As `vanished`, but measurements exist under the run id | `baas run`'s poll only |
 | `completed`/`failed` | The only two values `baas run --format json` reports, whatever the item says (U27) | `RunCommand.printRunSummary` |
+
+U38 and U30 are one rule missing in two places: a refusal or a terminal status that only the instance
+can write (`completed`, `failed:<n>`) means the instance got there first and terminates itself.
+`RunSession.stop` applies it; `RunSession.confirmLaunched` and `RunTermination` do not.
 
 A launching run whose instance is not yet visible to `DescribeInstances` lists as `vanished` for a few
 seconds (U31). An instance that recorded `completed`/`failed:<n>` keeps running while it uploads its
@@ -249,7 +262,7 @@ boot log; the hook and the poll cap leave it alone, `runs terminate` does not (U
 | U18 | **`config sync` in a region with no installation reports `AccessDenied`, not "no installation".** The operator role may call `DescribeStacks` only in its own region, so the misleading error comes from IAM. Only reachable now that the region can come from the environment. | Info | 2026-10-02 probe |
 | U19 | **`deployer-policy` could not be told the region**, though the region is baked into seven of the policy's ARNs and conditions and the command runs before any config exists. A first deploy outside `eu-central-1` got a policy for the wrong region unless `AWS_REGION` happened to be set; setup's preflight then failed with AccessDenied. | Low · **Fixed** | F13 |
 | U20 | **An installed CLI cannot bake a changed runner image.** `build-image` reads only the copy of `infra/runner-image.yaml` bundled into the JAR at build time (`RunnerImageRenderer`, classpath only, since `e65e251`); the installer ships only the JAR. Customising the image works only from a checkout with a rebuilt CLI. A fix has to settle three things: `admin setup` re-submits the bundled image parameters on every update, so it would revert a custom component; a definition held on one admin's laptop lets another admin's plain `build-image` revert the installation unnoticed (the stack's `RunnerImageComponentData` parameter could be the record instead); and users need a way to export the shipped definition to start from. `admin image`'s drift warning also says "infra/runner-image.yaml declares X" while comparing against the bundled copy. | Med | Planned as its own OpenSpec change (`/opsx:explore`); README corrected 2026-10-02 |
-| U21 | **Only `eu-central-1` can reach *Ready*, though `--region` is offered.** At `4e90834`, `setup` always submits the bundled `RunnerParentAmiId` (`ami-070cc8ab883065d64`, an `eu-central-1` AMI: `RunnerImageRenderer.stackParameters`), and `build-image` refuses when the resolved region differs from `parentImage.region` (`BuildImageCommand`, "pins a parent AMI in …"). The definition is bundled, so a released CLI cannot change either. `deployer-policy --region` and `setup --region` therefore lead into *OtherRegion*: at best a stack that can never get an image, at worst (not exercised) an `ImageRecipe` create that rejects a foreign AMI, rolls back, and lands in U12. This is the "required value no option supplies" case: the parent AMI for any other region. | Med · → `custom-runner-image`; live check deferred (`QUEUE.md`) | Static. The uncommitted apply resolves the parent by release name per region (`ParentImageResolver`, task 2.4); no task yet creates an installation outside `eu-central-1` to prove it |
+| U21 | **Only `eu-central-1` can reach *Ready*, though `--region` is offered.** At `4e90834`, `setup` always submits the bundled `RunnerParentAmiId` (`ami-070cc8ab883065d64`, an `eu-central-1` AMI: `RunnerImageRenderer.stackParameters`), and `build-image` refuses when the resolved region differs from `parentImage.region` (`BuildImageCommand`, "pins a parent AMI in …"). The definition is bundled, so a released CLI cannot change either. `deployer-policy --region` and `setup --region` therefore lead into *OtherRegion*: at best a stack that can never get an image, at worst (not exercised) an `ImageRecipe` create that rejects a foreign AMI, rolls back, and lands in U12. This is the "required value no option supplies" case: the parent AMI for any other region. | Med · **Fixed** in code (`b6193ec`); live check deferred (`QUEUE.md`) | Static. The uncommitted apply resolves the parent by release name per region (`ParentImageResolver`, task 2.4); no task yet creates an installation outside `eu-central-1` to prove it |
 | U22 | **`config set --region` re-aims a machine unchecked**, the same defect class U7 removed for `--prefix`. Moved away from its installation's region, `run` says "No runner image is published … Build one: `baas admin build-image`" — advice that sends a deployer to build in a region with no stack — and `results`/`runs list` fail on a missing table. `config sync` verifies the stack, but takes no `--region` and reads the region only from the file or `AWS_REGION`. | Low · Decided: remove `config set --region`; `config sync` derives the region from the bucket | `ConfigSetSubcommand`, `RunCommand` image-lookup message |
 | U23 | **A second region is refused with destructive advice.** `setup --region B` on an account installed in A: the bucket name is global, `HeadBucket` answers 301, `bucketExists` treats every non-404 as "exists", and setup reports "A previous teardown retained it … Then remove it: `aws s3 rb s3://… --force`" — the *live* installation's bucket, holding every run's artifacts. One installation per account is enforced, but only by accident and with the wrong reason. | Med · Decided: detect the bucket's region | `SetupCommand.deploy` pre-check, `S3UploadService.bucketExists` |
 | U24 | **`--project A --tag project=B` splits one run.** `buildRunnerTags` puts the caller's tags last, so `project=B` reaches the runner, whose `getProject()` reads the tag (user-data passes no `--project`). Measurements land in `RESULT#B`; the S3 prefix and the run item say A. `results --project A` shows nothing while `runs list --project A` shows the run, and B bypasses the `PROJECT_NAME` check `--project` gets. One value with two inputs and silent precedence; CLAUDE.md's "caller-overridable by design" predates `--project`. | Low · Decided: reject `--tag project=` | `RunCommand.buildRunnerTags`, `ApiCommonSharedOptions.getProject` |
@@ -265,7 +278,11 @@ boot log; the hook and the poll cap leave it alone, `runs terminate` does not (U
 | U34 | **`--vpc-id`/`--subnet-id`/`--sg-id` without `--use-existing-vpc` are silently ignored on create** (`UseExistingVpc=false` builds new networking); on update they are refused as "different networking". Federation options get a partial-set check; networking gets none. | Low | `SetupCommand.networkingParameters` |
 | U35 | **Option and exit-code edges disagree across commands.** An unknown run type exits 1, an unknown `--format` 2. `results --limit -1` means unlimited and `--limit 0` prints nothing, while `runs list --limit 0` exits 2. `--group-by` and `--all-runs` are silently ignored with `--request-id`, and `--group-by` with `--all-runs`, though `--request-id` refuses every other filter. | Info | `RunCommand.execute`, `ResultsCommand` |
 | U36 | **Teardown's in-flight gate is region-wide, not per installation.** It lists every `baas-role=benchmark-runner` instance, so a by-hand `-dev` installation and the account's own block each other's teardown. | Info | `Ec2ProvisioningService.listRunningBenchmarkInstances` |
-| U37 | **(uncommitted `custom-runner-image`) the parent lookup will stop finding a pinned release once AWS deprecates it.** `DescribeImages` by owner and name omits deprecated AMIs unless `IncludeDeprecated` is set; public AMIs get a deprecation time (two years after creation by default). After that, `setup` on a new account or region fails "not published in <region>" though the image still exists. | Low · for the apply | `ParentImageResolver.resolve`; verify the release's actual `DeprecationTime` |
+| U37 | **(uncommitted `custom-runner-image`) the parent lookup will stop finding a pinned release once AWS deprecates it.** `DescribeImages` by owner and name omits deprecated AMIs unless `IncludeDeprecated` is set; public AMIs get a deprecation time (two years after creation by default). After that, `setup` on a new account or region fails "not published in <region>" though the image still exists. | Low · **Fixed** before `custom-runner-image` shipped: `includeDeprecated(true)` | `ParentImageResolver.resolve` |
+| U38 | **A run that finishes before its `launched` write is reported as cancelled.** When `RunInstances` answers after the instance has already recorded `completed`, `confirmLaunched` reads the refusal as "stopped while launching", terminates the self-terminating instance and exits 1 over a good run. Observed live; filed by `custom-runner-image`'s verify (W5). Same missing rule as U30. | Low · decision pending (review §55) | `RunSession.confirmLaunched` |
+| U39 | **`build-image` from a CLI with an older bundled base silently downgrades the image.** It always submits the running CLI's base and version (`renderer.renderBase()`, `imageVersion`); the preflight only rejects a *differing* component at the same version, and the newer component was deleted by replacement, so the older one registers cleanly. The extension got a stale-push guard for exactly this "another admin reverts it unnoticed" risk (U20's third point); the base did not. Worse, `admin image` run from that older CLI warns "This CLI bundles … base X, but the published image is built on Y — run `baas admin build-image` to publish it", i.e. it advises the downgrade. Results then carry an older `imageVersion` with nothing flagging it. | Med | `BuildImageCommand.call`, `ImageCommand` drift warning, `ImageBuilderService.preflightVersion` |
+| U40 | **Teardown discards the installation's extension without saying so.** The extension exists only as the stack parameter `RunnerImageExtensionData` ("the stack keeps no earlier copy"); deleting the stack deletes it, and teardown's notices list the image, bucket and table but not this. A later setup starts from the empty starter. | Low | `TeardownCommand`; `RunnerImageExtension.requireCurrent` message |
+| U41 | **A mistyped `--extension` path reports only the path.** `Files.readString` throws `NoSuchFileException`, whose message is the bare path, so the error line reads `ERROR ext.yml` with no "not found". | Info | `BuildImageCommand.call` |
 
 ### 3.1 Required values, and whether a user can obtain them
 
@@ -284,16 +301,17 @@ command can supply? Columns: where the value comes from, and whether a **release
 | `run` | benchmark JAR | `--benchmark-jar` | ✓ | ✓ |
 | `run` | runner JAR | released: `releases/<v>/` seeded from GitHub `runner.sourceRepo`; reactor: `--runner-jar` | ✓; a fork's `sourceRepo` only by hand-editing YAML (U8) | ✓ |
 | `run` | runner AMI | `admin build-image` only | ✓ in `eu-central-1` | ✗ by design (needs a deployer once) |
-| `build-image`, `setup` | **parent AMI for any other region** | bundled `runner-image.yaml` only | **✗ (U21)** | — |
-| `build-image` | changed image definition | bundled `runner-image.yaml` only | **✗ (U20)**; `--extension` in the uncommitted apply | — |
+| `build-image`, `setup` | parent AMI for the installation's region | resolved from the pinned release name per region | ✓ (U21 fixed; live check deferred) | — |
+| `build-image` | changed image definition | extension: `image --extension` → edit → `build-image --extension`; base: only by upgrading the CLI | ✓ extension; base newer-only by intent, but older is unguarded (U39) | — |
 | `run` | subnet, security group | stack outputs, resolved per run | ✓ | ✓ |
 | `runs terminate`, `download`, `env diff` | run id | `run` output, `runs list` | ✓; an older run only by raising `--limit` (U28) | ✓ |
 | `download`, `env diff` | result path of a run from before run items that stored no measurement | nothing in `baas`; `aws s3 ls` | ✗ (historical runs only) | ✗ |
 | `results` without `--project` | a project to read | `--project`, git, picker (terminal + table format only) | ✓ | ✓ with `--project` |
 
-Two inputs no option can supply, both about the runner image: the parent AMI outside `eu-central-1`
-(U21) and a changed image definition (U20). Both are what `custom-runner-image` is for. Everything
-else is reachable, though three values are reachable only with caveats (U8, U22, U28).
+At `4e90834` two inputs no option could supply, both about the runner image: the parent AMI outside
+`eu-central-1` (U21) and a changed image definition (U20). On `next-release` both are reachable, so no
+required input is unobtainable any more, except historical result paths. Four values are reachable only
+with caveats (U8, U22, U28, and U39 for the base).
 
 ## 4. Fixed on this branch
 
@@ -442,6 +460,22 @@ Recommendations are in the rows above; the decisions are the user's, to be asked
    commit each.
 7. **U37** goes to whoever finishes the `custom-runner-image` apply: `includeDeprecated(true)` in
    `ParentImageResolver`, after checking the pinned release's `DeprecationTime`.
+
+### Raised by the re-check on `next-release`
+
+To be asked one at a time, highest consequence first:
+
+1. **U39**: guard `build-image` against an older bundled base — refuse when the bundled base version is
+   lower than the deployed one (semantic comparison of `RunnerImageVersion`), naming both and the CLI
+   upgrade, and turn `admin image`'s drift warning into "upgrade the CLI" in that direction?
+   Recommendation: yes, refuse; no override flag. Rebuilding an older base is the accepted-risk
+   "re-measure a historical environment" path, which already needs a checkout.
+2. **U38 with U30**: fix both with the one rule (`RunStatus.isRecordedByInstance`), as two commits in
+   the queued batch? Recommendation: yes; review §55's proposed fix is that rule.
+3. **U40**: should teardown print the deployed extension (or save it beside the config) before
+   deleting the stack? Recommendation: save it as `runner-image-extension.<prefix>.yaml` next to the
+   config file and name it in the notices; `export-before-teardown` may later absorb it.
+4. **U41**: folded into the batch as a one-line message fix. Recommendation: yes.
 
 ## 8. Paid lifecycle test (2026-10-01)
 
