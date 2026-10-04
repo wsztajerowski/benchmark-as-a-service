@@ -62,7 +62,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 32 | U16 | `--tag project=…` duplicated the instance's `project` tag and failed `RunInstances` | Low | **Fixed** |
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
 | 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | **Fixed** (`custom-runner-image`: operator extension; live check is its task 8.3) |
-| 35 | U21 | Only `eu-central-1` can reach a built image: setup submits the bundled parent AMI and build-image refuses other regions | Med | Open → `custom-runner-image` (uncommitted apply); live check deferred in `openspec/changes/QUEUE.md` |
+| 35 | U21 | Only `eu-central-1` can reach a built image: setup submits the bundled parent AMI and build-image refuses other regions | Med | **Fixed** in code by `custom-runner-image` (`b6193ec`, `ParentImageResolver`); live check deferred in `openspec/changes/QUEUE.md` |
 | 36 | U23 | `setup --region B` on an account installed in A blames a "retained" bucket and advises `aws s3 rb --force` on the live one | Med | Decided 2026-10-04: detect the bucket's region; not yet implemented |
 | 37 | U22 | `config set --region` re-aims a machine without checking an installation is there | Low | Decided 2026-10-04: remove it; `config sync` derives the region from the bucket (also closes U18); not yet implemented |
 | 38 | U24 | `--project A --tag project=B` stores measurements under B while the run item and S3 prefix say A | Low | Decided 2026-10-04: reject `--tag project=` outright; not yet implemented |
@@ -83,8 +83,10 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 53 | C7 | CLI dead code: an unused method, an unreachable branch, unused imports, stale comments | Low | **Fixed** (`review-fixes`, ccaa35a) |
 | 54 | C8 | Repetition worth folding: `AwsClientFactory` ×9, two SHA-256 encoders, two run-item queries | Low | **Fixed** (`review-fixes`, 10771f6) |
 | 55 | U38 | A run that finishes before its `launched` write is reported as cancelled, exits 1 and is terminated again | Low | Open — needs a decision (§55) |
+| 56 | U39 | `build-image` from a CLI bundling an older base silently downgrades the image, and `admin image` advises it | Med | Open — needs a decision (analysis §7) |
+| 57 | U40 | Teardown discards the installation's runner-image extension without a word or a copy | Low | Open — needs a decision (analysis §7) |
 
-**Next up: U38 needs a decision; nothing else in this file is undecided.** U20 and U37 are fixed by `custom-runner-image`.
+**Next up: U39, U38 and U40 need a decision** (U39 first; asked one at a time from `docs/analysis/cli-usage-analysis.md` §7). U20 and U37 are fixed by `custom-runner-image`.
 
 ---
 
@@ -438,7 +440,8 @@ Found by the command-surface review and paid lifecycle test in
 [`docs/analysis/cli-usage-analysis.md`](../analysis/cli-usage-analysis.md), which holds each
 entry's evidence, the state graphs that locate it, and the proposed simplification. The table
 above lists the actionable ones; U8, U13, U14, U15, U17, U18, U29, U31, U33, U35 and U36 are
-informational and live only there. Rows 35–46 come from the 2026-10-04 static refresh of that file.
+informational and live only there. Rows 35–46 come from the 2026-10-04 static refresh of that file;
+rows 56–57 (and the informational U41) from its re-check against `next-release` the same day.
 F1–F5 were fixed on the `cli-usage-analysis` branch with a test each.
 
 **U3 fixed by `run-status-in-dynamodb` (2026-10-03).** Run status lives on a run item in the results
