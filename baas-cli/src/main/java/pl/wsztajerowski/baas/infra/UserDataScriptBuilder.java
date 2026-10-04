@@ -15,8 +15,16 @@ public class UserDataScriptBuilder {
     /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
     public static final int MANIFEST_SCHEMA_VERSION = 3;
 
+    /**
+     * EC2 refuses user-data over 16 KB raw, and the launch then fails outright. The comments below
+     * document the script for whoever reads this file, not for the instance, so comment-only lines
+     * are dropped before the script is rendered — they were most of its size. Nothing in the body
+     * may therefore depend on a comment line surviving; the heredoc holds none.
+     */
+    static final int USER_DATA_LIMIT_BYTES = 16 * 1024;
+
     // Static script body — variables are prepended by build()
-    private static final String SCRIPT_BODY = """
+    private static final String SCRIPT_BODY = withoutCommentLines("""
         # Run status lives on the run item (pk = RUN) in the results table, not in S3. Defined
         # first, before anything else runs: the watchdog below is a forked subshell, which sees
         # only the functions defined before the fork, and `run_status timed-out` runs in it. A
@@ -27,11 +35,15 @@ public class UserDataScriptBuilder {
         # expression). Every value spliced into the JSON is constrained: the sort key is a fixed
         # timestamp plus the run id, the status comes from a fixed set, the instance id from IMDS.
         # Retries and timeouts are set on this one command and exported nowhere — the runner's Java
-        # SDK reads the same variables — and bounded so that a table it cannot reach costs well
-        # under the 60 s minimum watchdog margin. A failure is logged and never stops the script:
-        # the boot log upload and the termination after it must still run.
+        # SDK reads the same variables. Each attempt is bounded at 5 s to connect and 10 s to read;
+        # the second argument caps the attempts (default 3). Standard-mode backoff adds up to 2 s
+        # after the first attempt and 4 s after the second, so 3 attempts cost at most ~51 s and 2
+        # cost ~32 s. A failure is logged and never stops the script: the boot log upload and the
+        # termination after it must still run. Returns 0 when the status was recorded, 2 when the
+        # condition refused it (the run already has an outcome, or there is no run item at this
+        # key), and 1 on any other failure.
         run_status() {
-          local status="$1" update names values err rc
+          local status="$1" attempts="${2:-3}" update names values err rc
           if [[ -n "${INSTANCE_ID}" ]]; then
             update='SET #status = :s, #instanceId = if_not_exists(#instanceId, :iid)'
             names='{"#status":"status","#instanceId":"instanceId"}'
@@ -41,7 +53,7 @@ public class UserDataScriptBuilder {
             names='{"#status":"status"}'
             values='{":s":{"S":"'"${status}"'"},'"${RUN_STATUS_GUARD_VALUES}"'}'
           fi
-          err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=3 aws dynamodb update-item \
+          err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS="${attempts}" aws dynamodb update-item \
             --region "${AWS_REGION}" --table-name "${RESULTS_TABLE}" \
             --key '{"pk":{"S":"RUN"},"sk":{"S":"'"${RUN_SORT_KEY}"'"}}' \
             --update-expression "${update}" \
@@ -52,12 +64,13 @@ public class UserDataScriptBuilder {
           rc=$?
           if [[ $rc -eq 0 ]]; then
             echo "run_status: ${status}"
+            return 0
           elif [[ "${err}" == *ConditionalCheckFailedException* ]]; then
             echo "run_status: ${status} not recorded: status already terminal, or no run item at this key"
-          else
-            echo "run_status: ${status} not recorded (exit ${rc}): ${err}"
+            return 2
           fi
-          return 0
+          echo "run_status: ${status} not recorded (exit ${rc}): ${err}"
+          return 1
         }
 
         TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \\
@@ -80,8 +93,23 @@ public class UserDataScriptBuilder {
         WATCHDOG_PID=$!
 
         # After the watchdog, never before it. Fills in the instance id when the CLI's own
-        # `launched` write did not land.
-        run_status running
+        # `launched` write did not land. Two attempts rather than three: everything before the JVM
+        # starts has to fit in the watchdog margin, whose floor is 60 s.
+        # A refusal means the run already has an outcome — cancelled by a Ctrl+C or `baas runs
+        # terminate` that could not find this instance while it was still launching — or that
+        # there is no run item at this key. Either way nobody wants this benchmark, so it is not
+        # run: the instance ships its boot log and terminates. Without this, a cancelled run whose
+        # instance the CLI missed would run to its timeout, paid, and hidden from `--in-flight`.
+        # Any other failure is not a refusal, and the run goes ahead unrecorded.
+        run_status running 2
+        if [[ $? -eq 2 ]]; then
+          echo "Run already has an outcome, or has no run item: not starting the benchmark."
+          aws s3 cp /var/log/cloud-init-output.log \\
+            "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
+          kill $WATCHDOG_PID 2>/dev/null || true
+          aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
+          exit 0
+        fi
 
         # Nothing is installed here. Corretto, perf, the AWS CLI and async-profiler are baked
         # into the AMI by `baas admin build-image` from infra/runner-image.yaml — a runner that
@@ -199,9 +227,8 @@ public class UserDataScriptBuilder {
         # Results store. The table name is not a secret — unlike the Mongo connection string
         # this replaced, it carries no credentials, so it travels in user-data instead of being
         # fetched from SSM at boot. Access is granted by RunnerRole, not by knowing the name.
-        # Exactly one of the two is configured: `baas run` resolves the table from the stack
-        # output and fails before provisioning when it cannot, so an empty table here means the
-        # Every run names the table: run status lives there too, so there is no run without one.
+        # Every run names the table: `baas run` resolves it before provisioning and fails when it
+        # cannot, and run status lives there too, so there is no run without one.
         STORE_ARGS=(--results-table "${RESULTS_TABLE}")
 
         # Layer 2: benchmark process with its own timeout
@@ -247,7 +274,7 @@ public class UserDataScriptBuilder {
         # Cleanup
         kill $WATCHDOG_PID 2>/dev/null || true
         aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
-        """;
+        """);
 
     public String build(String region, String bucket, String benchmarkType,
                         String requestId, String resultPath, String createdAt,
@@ -296,6 +323,12 @@ public class UserDataScriptBuilder {
             SCRIPT_BODY;
 
         return Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String withoutCommentLines(String body) {
+        return body.lines()
+            .filter(line -> !line.stripLeading().startsWith("#"))
+            .collect(java.util.stream.Collectors.joining("\n", "", "\n"));
     }
 
     /**
