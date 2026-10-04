@@ -18,6 +18,7 @@ import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 /**
@@ -105,6 +106,14 @@ public class DownloadCommand implements Callable<Integer> {
         logger.debug("{} resolves to {}", resultPath, resolvedPath);
         String prefix = resolvedPath.endsWith("/") ? resolvedPath : resolvedPath + "/";
 
+        Path destinationRoot;
+        try {
+            destinationRoot = outputDir != null ? outputDir : defaultRoot(resolvedPath);
+        } catch (IllegalArgumentException e) {
+            logger.error("{} Nothing was written.", e.getMessage());
+            return 1;
+        }
+
         try (var s3 = factory.s3()) {
             var storage = new S3UploadService(s3);
             List<String> keys = storage.listKeys(bucket, prefix);
@@ -117,22 +126,56 @@ public class DownloadCommand implements Callable<Integer> {
                 return 1;
             }
 
-            Path destinationRoot = outputDir != null ? outputDir : Path.of(lastSegment(resolvedPath));
+            int refused = 0;
             for (String key : keys) {
-                Path destination = destinationRoot.resolve(key.substring(prefix.length()));
-                logger.debug("Downloading {} -> {}", key, destination);
-                storage.download(bucket, key, destination);
+                var destination = destinationFor(destinationRoot, prefix, key);
+                if (destination.isEmpty()) {
+                    logger.warn("Skipped {}: it would be written outside {}.", key,
+                        destinationRoot.toAbsolutePath().normalize());
+                    refused++;
+                    continue;
+                }
+                logger.debug("Downloading {} -> {}", key, destination.get());
+                storage.download(bucket, key, destination.get());
             }
             logger.info("Downloaded {} artifact(s) for run '{}' to {}",
-                keys.size(), resultPath, destinationRoot.toAbsolutePath().normalize());
+                keys.size() - refused, resultPath, destinationRoot.toAbsolutePath().normalize());
+            // A key that climbs out of the run's directory was never written by BaaS, so the run's
+            // prefix has been tampered with — worth a non-zero exit, not just a log line.
+            if (refused > 0) {
+                logger.error("{} key(s) under {} point outside the output directory and were not "
+                    + "written. Inspect them with: aws s3 ls --recursive s3://{}/{}",
+                    refused, prefix, bucket, prefix);
+                return 1;
+            }
         }
         return 0;
     }
 
-    /** The last segment of a run prefix is the run identifier, which is what names the directory. */
-    private static String lastSegment(String path) {
-        String trimmed = path.endsWith("/") ? path.substring(0, path.length() - 1) : path;
-        int slash = trimmed.lastIndexOf('/');
-        return slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
+    /**
+     * Where a key lands under {@code root}, or empty when it would land anywhere else. An S3 key is
+     * an arbitrary string, and anything holding {@code s3:PutObject} on the bucket — the runner role,
+     * so any code in a benchmark JAR — can write one under a run's prefix; {@code ../} or a leading
+     * {@code /} in it must not choose where this command writes on the operator's machine.
+     */
+    static Optional<Path> destinationFor(Path root, String prefix, String key) {
+        Path base = root.toAbsolutePath().normalize();
+        Path target = base.resolve(key.substring(prefix.length())).normalize();
+        return target.startsWith(base) && !target.equals(base) ? Optional.of(target) : Optional.empty();
+    }
+
+    /**
+     * The run prefix's last segment — the run identifier — names the directory. A literal path
+     * ending in {@code .} or {@code ..} names none, and would otherwise make the working directory
+     * or its parent the root.
+     */
+    static Path defaultRoot(String resolvedPath) {
+        String trimmed = resolvedPath.endsWith("/") ? resolvedPath.substring(0, resolvedPath.length() - 1) : resolvedPath;
+        String last = trimmed.substring(trimmed.lastIndexOf('/') + 1);
+        if (last.isEmpty() || last.equals(".") || last.equals("..")) {
+            throw new IllegalArgumentException(
+                "'" + resolvedPath + "' does not end in a run directory; name one with --output-dir.");
+        }
+        return Path.of(last);
     }
 }

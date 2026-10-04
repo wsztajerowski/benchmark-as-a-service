@@ -24,8 +24,15 @@ sequenceDiagram
             DL-->>User: "No artifacts found", exit 1 -- nothing written
         end
         loop each key, input/ JARs included
-            DL->>S3: GetObject
-            DL->>FS: write under -o, default ./<last path segment>
+            alt key resolves outside the output directory (../ or a leading /)
+                Note over DL: skipped and logged, never written
+            else
+                DL->>S3: GetObject
+                DL->>FS: write under -o, default ./<last path segment>
+            end
+        end
+        opt any key skipped
+            DL-->>User: exit 1 -- the run's prefix holds keys BaaS never wrote
         end
     end
 
