@@ -97,7 +97,7 @@ metric name to score and unit. The item SHALL NOT contain `rawData` or `scorePer
 - **THEN** its item carries `totalTests`, `passedTests` and the failed, error and interesting test maps
 
 ### Requirement: Tags are the queryable dimensions, with a shared known-key vocabulary
-The runner SHALL record `project`, `type`, `jdk`, `cpuModel`, `cpuArch`, `instanceType` and
+The runner SHALL record `project`, `type`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`, `instanceType` and
 `imageVersion` as tags on every measurement. It SHALL record `commit`, `branch` and `source` on every
 measurement for which they are supplied, and SHALL omit them otherwise rather than storing a
 placeholder value standing in for an unknown one. These key names SHALL be defined once as constants
@@ -106,13 +106,24 @@ caller-supplied, like `project` and `commit`, rather than machine-observed. `com
 supplied only as caller tags; `baas run` SHALL NOT derive them. `source` SHALL identify
 how the run was triggered; `baas run` SHALL derive it as `ci` when it detects a continuous-integration
 environment and `local` otherwise, and an explicitly supplied value SHALL win over the derived one.
+`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` and `type` SHALL NOT be
+settable by the caller: `baas run` SHALL reject a `--tag` naming any of them before launching anything.
 Tag keys outside the vocabulary SHALL be permitted, and a query naming an unknown key SHALL produce a
 warning rather than silently returning nothing.
 
 #### Scenario: Environment tags are observed on the instance
 - **WHEN** a benchmark runs on an instance
-- **THEN** its stored measurement carries `jdk`, `cpuModel`, `cpuArch` and `instanceType` values matching
-  that run's `environment.json`
+- **THEN** its stored measurement carries `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` and `instanceType`
+  values matching that run's `environment.json`
+
+#### Scenario: Results can be grouped by JVM vendor
+- **WHEN** results measured on two vendors' builds of the same Java version exist for one benchmark and
+  `jvmVendor` is the grouping tag
+- **THEN** they are reported as separate groups rather than merged
+
+#### Scenario: A caller cannot set the JVM vendor
+- **WHEN** `baas run --tag jvmVendor=Acme jmh -- MyBenchmark` is invoked
+- **THEN** the command exits non-zero naming `jvmVendor` as reserved, and no instance is launched
 
 #### Scenario: Branch is recorded as a tag
 - **WHEN** a run is launched with `--tag branch=main`
