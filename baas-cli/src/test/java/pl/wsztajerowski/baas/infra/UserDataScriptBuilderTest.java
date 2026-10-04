@@ -101,7 +101,7 @@ class UserDataScriptBuilderTest {
     void watchdogShipsTheLogBeforeHardKillingTheInstance() {
         String script = script();
 
-        int watchdogStart = script.indexOf("# Layer 1: background watchdog");
+        int watchdogStart = script.indexOf("sleep ${WALL_CLOCK_HARD_KILL}");
         int watchdogTerminate = script.indexOf("terminate-instances", watchdogStart);
         int uploadInWatchdog = script.indexOf("cloud-init-output.log", watchdogStart);
 
@@ -290,7 +290,7 @@ class UserDataScriptBuilderTest {
         assertThat(script.indexOf("run_status() {"))
             .isPositive()
             .isLessThan(script.indexOf("INSTANCE_ID=$("))
-            .isLessThan(script.indexOf("# Layer 1: background watchdog"));
+            .isLessThan(script.indexOf("sleep ${WALL_CLOCK_HARD_KILL}"));
     }
 
     @Test
@@ -320,10 +320,90 @@ class UserDataScriptBuilderTest {
         assertThat(script.lines().map(String::strip))
             .noneMatch(l -> l.startsWith("export AWS_MAX_ATTEMPTS") || l.startsWith("export AWS_RETRY_MODE"));
         assertThat(script).contains(
-            "err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=3 aws dynamodb update-item");
-        // 3 attempts x (5 s connect + 10 s read) = 45 s, under the 60 s minimum watchdog margin, so
-        // an unreachable table delays the benchmark start but cannot outlast the watchdog's floor.
+            "err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=\"${attempts}\" aws dynamodb update-item");
+        assertThat(script).contains("local status=\"$1\" attempts=\"${2:-3}\"");
+        // 2 attempts x (5 s connect + 10 s read) + up to 2 s of standard-mode backoff = ~32 s for the
+        // one write on the path to the JVM, inside the 60 s minimum watchdog margin. Three attempts
+        // would be ~51 s, leaving the boot, the manifest and four downloads under 10 s.
         assertThat(script).contains("--cli-connect-timeout 5 --cli-read-timeout 10");
+        assertThat(script).contains("run_status running 2\n");
+    }
+
+    /**
+     * Executes the rendered block after the {@code running} write against a stub {@code aws}. A
+     * refusal — the run was cancelled while its instance was launching, or has no item — must stop
+     * the instance before the benchmark: the CLI may have cancelled it without finding the instance,
+     * and nothing else would then end it before its timeout.
+     */
+    @Test
+    void aRefusedRunningWriteShipsTheLogAndTerminatesInsteadOfRunningTheBenchmark() throws Exception {
+        String block = runningWriteBlock(script());
+
+        List<String> calls = runAgainstStubAws(script(), "conditional",
+            "INSTANCE_ID=i-0abc\n" + block + "\necho benchmark-started >> \"$STUB_CALLS\"\n");
+
+        assertThat(calls).hasSize(3);
+        assertThat(calls.get(0)).startsWith("dynamodb update-item").contains("running");
+        assertThat(calls.get(1)).startsWith("s3 cp /var/log/cloud-init-output.log");
+        assertThat(calls.get(2)).startsWith("ec2 terminate-instances").contains("i-0abc");
+    }
+
+    /** Only a refusal stops the run; a table that cannot be reached is no reason to waste the instance. */
+    @Test
+    void aRecordedOrFailedRunningWriteLetsTheBenchmarkStart() throws Exception {
+        String block = runningWriteBlock(script());
+
+        for (String mode : List.of("ok", "fail")) {
+            List<String> calls = runAgainstStubAws(script(), mode,
+                "INSTANCE_ID=i-0abc\n" + block + "\necho benchmark-started >> \"$STUB_CALLS\"\n");
+
+            assertThat(calls).as(mode).hasSize(2);
+            assertThat(calls.get(0)).as(mode).startsWith("dynamodb update-item");
+            assertThat(calls.get(1)).as(mode).isEqualTo("benchmark-started");
+        }
+    }
+
+    private static String runningWriteBlock(String script) {
+        int start = script.indexOf("run_status running 2");
+        assertThat(start).as("running write").isPositive();
+        return script.substring(start, script.indexOf("\nfi\n", start) + "\nfi\n".length());
+    }
+
+    /**
+     * EC2 rejects user-data over 16 KB raw, and every such run ends {@code launch-failed}. A long
+     * {@code -p} sweep or a large {@code --tag options=...} is what grows it, so this renders an
+     * outsized but plausible run and holds it well under the limit.
+     */
+    @Test
+    void aLargeRunStaysWellUnderTheUserDataLimit() {
+        Map<String, String> tags = new java.util.LinkedHashMap<>();
+        tags.put("project", "benchmark-as-a-service");
+        tags.put("branch", "feature/some-fairly-long-branch-name-for-a-change");
+        tags.put("commit", "0123456789abcdef0123456789abcdef01234567");
+        tags.put("source", "ci");
+        tags.put("exclude_from_results", "true");
+        tags.put("options", "-prof async:event=cpu;output=flamegraph;dir=/app/async-output -jvmArgs -Xmx4g");
+        List<String> params = List.of("pl.wsztajerowski.SomeBenchmark.measure", "-f", "3", "-wi", "5", "-i", "10",
+            "-p", "size=1,10,100,1000,10000,100000", "-p", "implementation=synchronized,reentrant,stamped,atomic",
+            "-p", "threads=1,2,4,8,16", "-jvmArgs", "-XX:+UseG1GC -Xms4g -Xmx4g");
+        String encoded = new UserDataScriptBuilder().build(
+            "eu-central-1", "baas-381492019823", "jmh-with-async",
+            "20260724T120000000Z-a3f9c21b",
+            "runs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b",
+            "2026-07-24T12:00:00.123Z",
+            "runs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
+            7200, 7500, "1.2.0", "ami-0ae60d9d990dc00df", "releases/6.1.0/benchmark-runner.jar",
+            "baas-381492019823-results", RUN_SORT_KEY, params, tags);
+        int rawBytes = Base64.getDecoder().decode(encoded).length;
+
+        assertThat(rawBytes).isLessThan(UserDataScriptBuilder.USER_DATA_LIMIT_BYTES * 3 / 4);
+    }
+
+    /** The comments are most of the source's size, and the instance has no use for them. */
+    @Test
+    void commentLinesAreNotRendered() {
+        assertThat(script().lines().skip(2).map(String::stripLeading))
+            .noneMatch(line -> line.startsWith("#"));
     }
 
     /**
