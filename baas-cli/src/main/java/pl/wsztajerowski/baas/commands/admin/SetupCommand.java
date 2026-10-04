@@ -24,8 +24,6 @@ import pl.wsztajerowski.baas.infra.ResultsTableService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 
 import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
@@ -127,7 +125,6 @@ public class SetupCommand implements Callable<Integer> {
         }
         logger.debug("Caller ARN: {}", callerArn);
         String resolvedPrefix = computePrefix(accountId);
-        String resolvedStack = resolvedPrefix;
 
         config.setPrefix(resolvedPrefix);
 
@@ -146,7 +143,7 @@ public class SetupCommand implements Callable<Integer> {
         }
 
         try {
-            return deploy(factory, config, resolvedPrefix, resolvedStack);
+            return deploy(factory, config, resolvedPrefix);
         } catch (IllegalStateException e) {
             // A refused precondition — the networking-immutability check most of all. It is an
             // expected outcome, so it exits 1 with its own message rather than surfacing through
@@ -192,9 +189,9 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
-    private Integer deploy(AwsClientFactory factory, BaasConfig config, String resolvedPrefix,
-                           String resolvedStack) throws Exception {
-        String templateBody = loadTemplate();
+    /** The stack is named by the prefix: the stack is the installation. */
+    private Integer deploy(AwsClientFactory factory, BaasConfig config, String resolvedPrefix) throws Exception {
+        String templateBody = CloudFormationService.coreTemplate();
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("ResourceNamePrefix", resolvedPrefix);
@@ -215,7 +212,7 @@ public class SetupCommand implements Callable<Integer> {
             // lives inside the prefix value now.
             String bucketName = config.bucket();
             String tableName = config.resultsTable();
-            boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedStack);
+            boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedPrefix);
 
             if (stackMissing && new S3UploadService(s3).bucketExists(bucketName)) {
                 logger.error("""
@@ -224,7 +221,7 @@ public class SetupCommand implements Callable<Integer> {
                           that is already there, and the name is fixed by this AWS account.
                           Keep the old results:  aws s3 sync s3://{} ./backup
                           Then remove it:        aws s3 rb s3://{} --force""",
-                    bucketName, resolvedStack, bucketName, bucketName);
+                    bucketName, resolvedPrefix, bucketName, bucketName);
                 return 1;
             }
 
@@ -235,7 +232,7 @@ public class SetupCommand implements Callable<Integer> {
                           retained: benchmark history outlives any single stack.
                           Keep the old results:  aws dynamodb scan --table-name {} > backup.json
                           Then remove it:        aws dynamodb delete-table --table-name {}""",
-                    tableName, resolvedStack, tableName, tableName);
+                    tableName, resolvedPrefix, tableName, tableName);
                 return 1;
             }
         }
@@ -243,12 +240,12 @@ public class SetupCommand implements Callable<Integer> {
         boolean created;
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
-            created = !cloudFormation.stackExists(resolvedStack);
+            created = !cloudFormation.stackExists(resolvedPrefix);
             if (!created) {
                 // Networking is fixed at creation. Checked before anything is submitted, so a
                 // refused update leaves the stack untouched rather than rolling back.
                 requireNetworkingUnchanged(
-                    networkingParameters(), cloudFormation.getStackParameters(resolvedStack));
+                    networkingParameters(), cloudFormation.getStackParameters(resolvedPrefix));
 
                 // Only the parameters this command owns are sent; every other one — the three
                 // federation parameters above all — is carried forward with UsePreviousValue, so
@@ -259,9 +256,9 @@ public class SetupCommand implements Callable<Integer> {
                 // base, parent, extension — is carried forward, so a plain setup never reverts an
                 // image or drops an extension. Only parameters the stack lacks are sent, which is
                 // how an installation from before a parameter existed gets a real value for it.
-                Map<String, String> deployed = cloudFormation.getStackParameters(resolvedStack);
+                Map<String, String> deployed = cloudFormation.getStackParameters(resolvedPrefix);
                 params.putAll(imageParameters(factory, config.getAws().resolveRegion(), deployed).absentFrom(deployed));
-                cloudFormation.updateStackParameters(resolvedStack, templateBody, params);
+                cloudFormation.updateStackParameters(resolvedPrefix, templateBody, params);
             } else {
                 // UsePreviousValue is rejected on stack creation and on any parameter with no
                 // previous value, so a first deploy sends explicit values — the ones this
@@ -273,7 +270,7 @@ public class SetupCommand implements Callable<Integer> {
                 // Image Builder would then refuse the real one at that same version —
                 // immutability, hit from a direction nobody would think to look.
                 params.putAll(imageParameters(factory, config.getAws().resolveRegion(), Map.of()).values());
-                cloudFormation.createStack(resolvedStack, templateBody, params);
+                cloudFormation.createStack(resolvedPrefix, templateBody, params);
             }
         }
 
@@ -284,7 +281,7 @@ public class SetupCommand implements Callable<Integer> {
         String operatorRoleArn;
         try (var cf = factory.cloudFormation()) {
             operatorRoleArn = new CloudFormationService(cf)
-                .getStackOutputs(resolvedStack).getOrDefault("OperatorRoleArn", "");
+                .getStackOutputs(resolvedPrefix).getOrDefault("OperatorRoleArn", "");
         }
 
         configService().save(config);
@@ -529,12 +526,5 @@ public class SetupCommand implements Callable<Integer> {
                 "Expected a 12-digit AWS account id, got: " + accountId);
         }
         return "baas-" + accountId;
-    }
-
-    private String loadTemplate() throws IOException {
-        try (InputStream is = getClass().getResourceAsStream("/templates/cf-template-core.yaml")) {
-            if (is == null) throw new IllegalStateException("CF template not found in classpath");
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
-        }
     }
 }
