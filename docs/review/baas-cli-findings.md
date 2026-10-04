@@ -74,14 +74,14 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 44 | U32 | Teardown's confirmation crashes without a terminal and exits 0 on abort | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
 | 45 | U34 | Networking ids without `--use-existing-vpc` are silently ignored on create | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
 | 46 | U37 | (uncommitted apply) the parent lookup omits deprecated AMIs, so a pinned release stops resolving | Low | **Fixed** in `custom-runner-image` before it shipped: `includeDeprecated(true)`; the pinned parent's `DeprecationTime` is 2026-11-01 |
-| 47 | S13 | `baas download` writes outside its output directory for a key containing `../` | Med | Decided 2026-10-04: direct fix (normalise + refuse, literal path too, unit test), own branch off `next-release`, no OpenSpec change; not yet implemented |
-| 48 | S14 | `RunnerRole` can overwrite the pinned runner JAR every later run executes | Med | Decided 2026-10-04: scope the runner grant + conditional seed, with S15, as one small OpenSpec change; no bucket policy; not yet proposed |
-| 49 | S15 | `OperatorRole` (so CI too) holds bucket-wide `s3:DeleteObject` that no command uses | Low | Decided 2026-10-04: removed in S14's change |
-| 50 | A16 | `retireQuietly` catches only `Ec2Exception`, so a network error fails a published build | Low | Decided 2026-10-04: catch `SdkException` + unit test; review-fixes branch; not yet implemented |
+| 47 | S13 | `baas download` writes outside its output directory for a key containing `../` | Med | **Fixed** (`review-fixes`, 62ff9f6) |
+| 48 | S14 | `RunnerRole` can overwrite the pinned runner JAR every later run executes | Med | Decided 2026-10-04 → `narrow-bucket-grants` (QUEUE.md) |
+| 49 | S15 | `OperatorRole` (so CI too) holds bucket-wide `s3:DeleteObject` that no command uses | Low | Decided 2026-10-04 → `narrow-bucket-grants` (QUEUE.md) |
+| 50 | A16 | `retireQuietly` catches only `Ec2Exception`, so a network error fails a published build | Low | **Fixed** (`review-fixes`, 9292366) |
 | 51 | C5 | Installation names hand-built in five places beside `BaasConfig`'s derivations | Low | Decided 2026-10-04: no dedicated work; the next change that adds a resource name introduces the helper and moves these onto it |
-| 52 | C6 | `SetupCommand` carries an alias, repeats its reads, and duplicates `loadTemplate()` | Low | Decided 2026-10-04: drop the `resolvedStack` alias, share `loadTemplate()`; repeated DescribeStacks left; review-fixes branch |
-| 53 | C7 | CLI dead code: an unused method, an unreachable branch, unused imports, stale comments | Low | Decided 2026-10-04: remove all, `STORE_ARGS` included; review-fixes branch |
-| 54 | C8 | Repetition worth folding: `AwsClientFactory` ×9, two SHA-256 encoders, two run-item queries | Low | Decided 2026-10-04: all four now (generic client builder, `HexFormat`, reuse `find`, drop the two wrappers); review-fixes branch |
+| 52 | C6 | `SetupCommand` carries an alias, repeats its reads, and duplicates `loadTemplate()` | Low | **Fixed** (`review-fixes`, cb43137); the duplicated `put` it once listed did not exist |
+| 53 | C7 | CLI dead code: an unused method, an unreachable branch, unused imports, stale comments | Low | **Fixed** (`review-fixes`, 9b52484) |
+| 54 | C8 | Repetition worth folding: `AwsClientFactory` ×9, two SHA-256 encoders, two run-item queries | Low | **Fixed** (`review-fixes`, b197a6f) |
 | 55 | U38 | A run that finishes before its `launched` write is reported as cancelled, exits 1 and is terminated again | Low | Open — needs a decision (§55) |
 
 **Next up: U38 needs a decision; nothing else in this file is undecided.** U20 and U37 are fixed by `custom-runner-image`.
