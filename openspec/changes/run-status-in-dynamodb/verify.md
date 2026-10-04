@@ -184,3 +184,56 @@ it affects every instance family released after the SDK was built. Fixed in `7a9
 string, pinned by `Ec2ProvisioningServiceTest.anInstanceTypeTheSdkDoesNotKnowIsSentAsTyped`.
 Cosmetic, fixed in the same commit: `runs list`'s PROJECT column grew from 20 to 24, the width
 `baas results` uses. `benchmark-as-a-service` had shifted the row.
+
+## Task 14.1: `/opsx:verify` (2026-10-04)
+
+Run after the post-apply review fixes (`b7577c8`, `561105a`). `openspec validate` passes. Tasks:
+45/46 once this entry is recorded. 13.4 stays open, see W1.
+
+### Requirement → code → test
+
+`RS` = `RunSessionTest`, `RT` = `RunTerminationTest`, `UD` = `UserDataScriptBuilderTest`,
+`REC` = `DynamoDbRunRecorderIT`, `RQ` = `ResultsQueryServiceIT`, `CT` = `CoreTemplateTest`.
+
+| Spec · requirement | Code | Tests | Gap |
+|---|---|---|---|
+| run-tracking · one item in one `RUN` partition | `ResultKeys.runSortKey`, `RunItemMapper`, `DynamoDbRunRecorder.reserve` | `RunItemMapperTest` (6), `ResultKeysTest.runSortKey*`, `noMeasurementIndexSortKeyCanEqualTheRunItems`, `REC.theReservationCreatesACompleteItem`, `REC.listingIsNewestFirstAcrossProjects…`, `REC.aRunIsFoundByItsIdThroughTheIndex` | *Observed tags stay off the run item* holds by construction (W3) |
+| run-tracking · reserved before launch | `RunCommand` (reserve, hook, `RunInstances`), `RunSession.reserve/confirmLaunched` | `RS.aFailedReservationThrows…`, `aConfirmedLaunchRecordsTheInstance`, `aFailedLaunchedWriteProceeds…`, `aRunCancelledWhileLaunching…`, `aLateLaunchedWrite…`, `REC.aSecondReservationOfTheSameRunIsRefused`, `launchedNeverMovesTheStatusBackwards`. *A refused run leaves no item*: `RunCommandTest` refusals all fail before AWS | — |
+| run-tracking · failed launch recorded | `RunCommand` launch-failure branch, `RunLayout.launchErrorKey`, `RunSession.recordLaunchFailed` | `RS.aFailedLaunchIsRecordedAndEndsTheSession`, `REC.aFailedLaunchKeepsItsErrorCode`; live 13.5 | `launch-error.txt` and *the recording itself fails* have no JVM test (W2) |
+| run-tracking · instance reports progress | `UserDataScriptBuilder.run_status`, watchdog, `running` block | `UD.runStatusIsDefinedBeforeTheWatchdogForks`, `recordsRunningOnlyAfterTheWatchdogStarts`, `recordsTheOutcomeWhere…`, `theWatchdogRecordsTimedOut…` (executes it), `aRefusedStatusWrite…`, `theStatusWriteWorksWithoutAnInstanceId`, `retrySettings…`, `aRefusedRunningWrite…`, `aRecordedOrFailedRunningWrite…`; live 13.2 and the review's check B | Watchdog firing live (W1) |
+| run-tracking · first terminal wins | `DynamoDbRunRecorder.NOT_TERMINAL`, exported verbatim to the shell | `REC.theFirstTerminalStatusWins`, `aFailedOutcomeIsTerminalByPrefix`, `noWriteButTheReservationCreatesAnItem`, `UD.theTerminalGuardIsTheCLIsOwn`; live 1.3 | — |
+| run-tracking · vanished inferred | `RunListing.resolve`, `Ec2ProvisioningService` live-runner lookup | `RunListingTest.anInFlightStatusWithNoLiveInstanceVanished`, `aLaunchingRunWithoutAnInstanceIdResolvesThroughTheTag`, `Ec2ProvisioningServiceTest.eachLiveRunnerCarriesItsRunIdFromTheTag` | — |
+| run-tracking · lost final status | `RunSession.await` | `RS.aGoneInstanceWithStoredMeasurements…`, `aGoneInstanceWithNothingStoredVanished`, `aStatusWrittenJustBeforeTermination…` | — |
+| run-tracking · CLI records why, then terminates | `RunSession.stop/stopWith/await/finish` | `RS.stopRecordsTheReason…`, `aThrowingStatusWriteStillTerminates`, `theCapRecordsATimeout…`, `theCapHonoursAnOutcome…`, `theCapReportsAnOutcomeThatBeatItsOwnWrite`, `anInterruptAfterTheInstanceRecordedItsOutcome…`, `aCancellationFromElsewhere…`; live 13.3 | — |
+| run-tracking · `runs list` | `RunsListSubcommand`, `RunListing`, `DynamoDbRunRecorder.newestFirst` | `RunsCommandTest` (6 list cases), `RunListingTest` (7), `REC.listingIsNewestFirst…PagesUntilEnoughMatch` | — |
+| run-tracking · `runs terminate` | `RunTermination`, `RunsTerminateSubcommand` | `RT` (9, including the pre-item fallback), `RunsCommandTest.terminate*` (3); live 13.3 | — |
+| run-tracking · `runs` group | `RunsCommand` | `RunsCommandTest.theBareGroupPrintsUsageNamingBothSubcommands` | — |
+| run-tracking · run items never measurements | `ResultsQueryService` filters, `MeasurementItemMapper.fromItem` | `RQ.everyProjectIgnoresRunItems`, `thePickerDoesNotOffer…`, `aLookupByRunIdReturnsTheMeasurementsNotTheRunItem`, `MeasurementItemMapperTest.aRunItemIsRefusedAsAMeasurement` | — |
+| run-tracking · writes limited to `RUN` | `cf-template-core.yaml`, `operator-policy.json` | `CT.theRunnerPutsOnlyMeasurementsAndUpdatesOnlyRunItems`, `theOperatorUpdatesOnlyRunItems`; simulation 2.2, live 13.7 | — |
+| benchmark-results-query · download | `RunReference`, `ResultsQueryService.resultPathForRun` | `RunReferenceTest` (4), `RQ.aRunThatStoredNothingResolves…`, `aRunFromBeforeRunItems…`, `anUnknownRunIdResolvesToNoPath`; live 13.5 | — |
+| cli-command-structure · `run` always resolves the table, `runs` top-level | `RunCommand`, `BaasApp` | `RunCommandTest.refusesToRunWhenNoInstallationIsConfigured`, `theDiscardOptionIsUnknown`, `RunsCommandTest` | — |
+| core-stack-provisioning · teardown gate | `TeardownCommand.inFlightRefusal`, `Ec2ProvisioningService` | `TeardownNoticeTest.theInFlightRefusalNamesEachRunAndHowToStopIt`, `Ec2ProvisioningServiceTest.theTeardownGateCountsBootingRunnersAsLive`; live 13.6 | — |
+| core-stack-provisioning · operator, runner and diagnostics | template, user-data | `CT` (DynamoDB grants), `UD.shipsCloudInitLog…`, `watchdogShipsTheLog…`, `RS.aGoneInstance…` | — |
+| results-store-schema · every run names a store | `ResultsStoreBuilder`, `ApiCommonSharedOptions` | `ResultsStoreBuilderTest` (5), `ApiCommonSharedOptionsTest.theDiscardOptionIsUnknown`, the runner's LocalStack ITs | — |
+| run-artifact-layout · one prefix, CI layout | `RunLayout`, `e2e-cloud-test.yml` | `UD.writesNoRunStatusObjectToS3`, `theBenchmarkJarComesFromTheRunsOwnInputPrefix`; live 13.2 and 13.5 | — |
+
+### Design adherence
+
+Followed throughout. Two passages had drifted after the review fixes and were corrected in this
+pass: *User-data writes status through one shell function* (attempt counts, and the refused `running`
+write now acts) and *The CLI always terminates* (the finding 4 and 5 exceptions). `baas-runs.mmd`'s
+terminate branch now shows the pre-item fallback. tasks.md 6.1's `AWS_MAX_ATTEMPTS=3` is left as the
+historical task text; D3 records the change.
+
+### Warnings
+
+- **W1** (open, carried): the watchdog and the poll cap have not fired live. Task 13.4 stays
+  unchecked. Closing it needs a SIGTERM-ignoring fixture, which is a separate change.
+- **W2** (new): `RunCommand`'s launch-failure branch — `launch-error.txt`'s content and upload,
+  and *the recording itself fails* — runs in no JVM test. Live 13.5 covered the success case of both
+  writes. The branch sits inside `call()`, which CLAUDE.md already lists as executed by no JVM test.
+  Covering it means extracting the report and the two best-effort writes from `call()`.
+- **W3** (new, suggestion): *Observed tags stay off the run item* holds by construction. The run
+  item is built from `buildRunnerTags`, which rejects every observed key
+  (`RunCommandTest.rejectsACallerTagThatCollidesWithAMachineObservedKey`), but no test asserts on a
+  stored run item's tags after a run.
