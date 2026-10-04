@@ -8,7 +8,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
-import pl.wsztajerowski.entities.jmh.JmhBenchmark;
 import pl.wsztajerowski.entities.MongoMeasurementDocument;
 import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;

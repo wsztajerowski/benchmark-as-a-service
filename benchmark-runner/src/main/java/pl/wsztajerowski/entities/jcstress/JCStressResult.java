@@ -20,10 +20,6 @@ public record JCStressResult (
     Map<String, String> testsWithErrorResults,
     Map<String, String> testsWithInterestingResults) {
 
-    public boolean hasUnsuccessfulTests(){
-        return totalTests == passedTests;
-    }
-
     public Map<String, String> getAllUnsuccessfulTest(){
         HashMap<String, String> tests = new HashMap<>();
         tests.putAll(testsWithErrorResults);
