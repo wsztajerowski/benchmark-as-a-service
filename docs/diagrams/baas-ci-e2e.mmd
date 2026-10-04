@@ -10,7 +10,7 @@ sequenceDiagram
     Job->>STS: AssumeRoleWithWebIdentity(vars.OPERATOR_ROLE_ARN, 9000 s)
     STS-->>Job: operator credentials in the environment (no profile)
     Job->>CLI: config sync --name vars.CORE_STACK_NAME
-    Note over Job,CLI: The fresh config names no region, so baas follows AWS_REGION,<br/>which configure-aws-credentials exported from vars.AWS_REGION
+    Note over Job,CLI: sync finds the installation's region from its bucket and stores it,<br/>so the job follows the installation whatever vars.AWS_REGION says
     CLI->>AWS: DescribeStacks
     Job->>CLI: run jmh-with-async --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
     CLI->>AWS: upload, launch, poll (see baas-run.mmd)

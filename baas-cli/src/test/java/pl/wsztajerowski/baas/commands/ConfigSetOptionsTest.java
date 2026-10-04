@@ -18,4 +18,15 @@ class ConfigSetOptionsTest {
             .parseArgs("config", "set", "--prefix", "baas-123456789012"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
+
+    /**
+     * The region is the installation's: setup chooses it and sync finds it from the bucket. Set by
+     * hand it aimed a machine at a region with no installation.
+     */
+    @Test
+    void theRegionCannotBeSetByHand() {
+        assertThatThrownBy(() -> new CommandLine(new BaasApp())
+            .parseArgs("config", "set", "--region", "us-east-1"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
+    }
 }

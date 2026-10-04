@@ -13,6 +13,7 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
+import pl.wsztajerowski.baas.infra.S3UploadService;
 
 import java.util.concurrent.Callable;
 
@@ -49,10 +50,22 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         return BaasApp.configService(spec);
     }
 
-    /** The named stack's outputs, empty when it does not exist. Overridden by tests, which have no stack. */
-    java.util.Map<String, String> stackOutputs(BaasConfig config) {
+    /**
+     * The region the installation's bucket lives in, empty when there is no such bucket. The bucket
+     * is named by the prefix and bucket names are global, so this answers from a client in any
+     * region. Overridden by tests, which have no bucket.
+     */
+    java.util.Optional<String> bucketRegion(BaasConfig config) {
         var factory = new AwsClientFactory(
             config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
+        try (var s3 = factory.s3()) {
+            return new S3UploadService(s3).bucketRegion(name);
+        }
+    }
+
+    /** The named stack's outputs in that region, empty when it does not exist. Overridden by tests. */
+    java.util.Map<String, String> stackOutputs(BaasConfig config, String region) {
+        var factory = new AwsClientFactory(region, config.getAws().resolveOperatorProfile());
         try (var cf = factory.cloudFormation()) {
             return new CloudFormationService(cf).getStackOutputs(name);
         }
@@ -63,18 +76,30 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         BaasConfig config = configService().loadOrEmpty();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
+        // The region is the installation's, chosen once by `baas admin setup`, so it is found
+        // rather than asked for: the bucket carries the prefix's name, names are global, and S3
+        // says where it lives. A machine re-pointed at a rebuilt installation is re-adopted by this
+        // same command, and CI follows the installation rather than whatever AWS_REGION it set.
+        var region = bucketRegion(config);
+        if (region.isEmpty()) {
+            logger.error("""
+                    No installation named '{}' in this account: there is no bucket of that name.
+                      The name is the one `baas admin setup` printed, e.g. baas-123456789012.
+                      Or create one: baas admin setup""", name);
+            return 1;
+        }
+
         // The stack is read to prove the installation exists, not to harvest values from it.
         // Everything the CLI needs is either derived from the prefix or resolved from this same
         // stack at the moment it is used, so copying outputs into the file would only create a
         // second, staler source of truth.
-        var outputs = stackOutputs(config);
+        var outputs = stackOutputs(config, region.get());
         if (outputs.isEmpty()) {
             logger.error("""
-                    No installation named '{}' in {}.
-                      List them:  aws cloudformation describe-stacks --query \
-                'Stacks[?starts_with(StackName, `baas-`)].StackName'
-                      Or create one: baas admin setup""",
-                name, config.getAws().resolveRegion());
+                    No installation named '{}': its bucket is in {}, but no stack of that name is.
+                      A teardown retains the bucket. Create the installation again: \
+                baas admin setup --region {}""",
+                name, region.get(), region.get());
             return 1;
         }
         if (!outputs.containsKey("ResultsTableName")) {
@@ -83,14 +108,15 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         }
 
         config.setPrefix(name);
+        config.getAws().setRegion(region.get());
         configService().save(config);
 
         logger.info("""
-            Adopted installation {}.
+            Adopted installation {} in {}.
               Config: {}
               Bucket: {}
               Table:  {}""",
-            name, configService().configFilePath(), config.bucket(), config.resultsTable());
+            name, region.get(), configService().configFilePath(), config.bucket(), config.resultsTable());
         return 0;
     }
 }
