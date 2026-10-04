@@ -98,11 +98,11 @@ class S3UploadServiceIT {
     void detectsWhetherABucketNameIsTaken() {
         var service = new S3UploadService(s3);
 
-        assertThat(service.bucketExists(bucket)).isTrue();
-        assertThat(service.bucketExists("baas-definitely-not-created-" + UUID.randomUUID())).isFalse();
+        assertThat(service.bucketRegion(bucket)).isPresent();
+        assertThat(service.bucketRegion("baas-definitely-not-created-" + UUID.randomUUID())).isEmpty();
 
         service.deleteBucket(bucket);
-        assertThat(service.bucketExists(bucket)).isFalse();
+        assertThat(service.bucketRegion(bucket)).isEmpty();
     }
 
     @Test

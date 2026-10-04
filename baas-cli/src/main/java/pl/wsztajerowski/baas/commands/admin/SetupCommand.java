@@ -30,6 +30,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -134,6 +135,18 @@ public class SetupCommand implements Callable<Integer> {
             return 1;
         }
 
+        // Before the preflight: a deployer's grants name one region, so in another region the
+        // preflight would print a policy for it and invite granting a second installation that
+        // cannot exist. The stack creates the bucket in its own region, so a bucket elsewhere means
+        // the installation is elsewhere — no stack lookup is needed, and HeadBucket is global.
+        try (var s3 = factory.s3()) {
+            Optional<String> bucketRegion = new S3UploadService(s3).bucketRegion(config.bucket());
+            if (bucketRegion.isPresent() && !bucketRegion.get().equals(resolvedRegion)) {
+                logger.error(bucketBlocksSetup(config.bucket(), resolvedPrefix, bucketRegion.get(), resolvedRegion));
+                return 1;
+            }
+        }
+
         try {
             preflight(factory, callerArn, accountId, resolvedRegion, resolvedPrefix);
         } catch (IllegalStateException e) {
@@ -213,14 +226,11 @@ public class SetupCommand implements Callable<Integer> {
             String tableName = config.resultsTable();
             boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedPrefix);
 
-            if (stackMissing && new S3UploadService(s3).bucketExists(bucketName)) {
-                logger.error("""
-                        Bucket {} already exists, but stack {} does not.
-                          A previous teardown retained it — the stack cannot recreate a bucket
-                          that is already there, and the name is fixed by this AWS account.
-                          Keep the old results:  aws s3 sync s3://{} ./backup
-                          Then remove it:        aws s3 rb s3://{} --force""",
-                    bucketName, resolvedPrefix, bucketName, bucketName);
+            Optional<String> bucketRegion = stackMissing
+                ? new S3UploadService(s3).bucketRegion(bucketName) : Optional.empty();
+            if (bucketRegion.isPresent()) {
+                logger.error(bucketBlocksSetup(bucketName, resolvedPrefix, bucketRegion.get(),
+                    config.getAws().resolveRegion()));
                 return 1;
             }
 
@@ -291,6 +301,30 @@ public class SetupCommand implements Callable<Integer> {
         logger.info("{}", nextSteps(created, operatorRoleArn, resolvedPrefix));
 
         return 0;
+    }
+
+    /**
+     * Why an existing bucket blocks a create. Bucket names are global, so the bucket answers from
+     * any region. In another region it is the account's installation — this setup was simply aimed
+     * at the wrong region — and the advice once given here, {@code aws s3 rb --force}, would have
+     * deleted that installation's results. Only a bucket in this region is a retained leftover
+     * worth copying out and removing; if the other region holds a leftover too, a setup aimed there
+     * says so in turn.
+     */
+    static String bucketBlocksSetup(String bucket, String installation, String bucketRegion, String region) {
+        if (!bucketRegion.equals(region)) {
+            return """
+                Installation %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket
+                  names are global, so an account holds one installation.
+                  Address it there:  baas admin setup --region %2$s
+                Nothing was deployed.""".formatted(installation, bucketRegion, region, bucket);
+        }
+        return """
+            Bucket %1$s already exists, but stack %2$s does not.
+              A previous teardown retained it — the stack cannot recreate a bucket
+              that is already there, and the name is fixed by this AWS account.
+              Keep the old results:  aws s3 sync s3://%1$s ./backup
+              Then remove it:        aws s3 rb s3://%1$s --force""".formatted(bucket, installation);
     }
 
     static final String EXTENSION_STARTER_FILE = "runner-image-extension.yaml";

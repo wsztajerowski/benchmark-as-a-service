@@ -121,14 +121,29 @@ public class S3UploadService {
      * A 403 counts as existing: the name is taken either way, which is all the caller needs
      * to know, and treating it as absent would send them into a create that cannot succeed.
      */
-    public boolean bucketExists(String bucket) {
+    /**
+     * The region a bucket lives in, or empty when no bucket has that name. Bucket names are global,
+     * so this answers from a client in any region: a wrong-region request is refused with 301 or
+     * 400 and still carries {@code x-amz-bucket-region} (checked live, 2026-10-04), and so does a
+     * 403 for a bucket the caller cannot read. Needs only {@code s3:ListBucket}, which HeadBucket
+     * is authorised against.
+     */
+    public Optional<String> bucketRegion(String bucket) {
         try {
-            s3.headBucket(r -> r.bucket(bucket));
-            return true;
+            return Optional.ofNullable(s3.headBucket(r -> r.bucket(bucket)).bucketRegion());
         } catch (NoSuchBucketException e) {
-            return false;
+            return Optional.empty();
         } catch (S3Exception e) {
-            return e.statusCode() != 404;
+            Optional<String> header = e.awsErrorDetails() == null || e.awsErrorDetails().sdkHttpResponse() == null
+                ? Optional.empty()
+                : e.awsErrorDetails().sdkHttpResponse().firstMatchingHeader("x-amz-bucket-region");
+            if (header.isPresent()) {
+                return header;
+            }
+            if (e.statusCode() == 404) {
+                return Optional.empty();
+            }
+            throw e;
         }
     }
 }
