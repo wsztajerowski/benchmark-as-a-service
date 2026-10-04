@@ -13,9 +13,9 @@ public class ResultsTableService {
     }
 
     /**
-     * Mirrors {@code S3UploadService.bucketExists}: a genuine "not there" is false, and anything
-     * else — most importantly an access denial — is treated as "there", so the setup pre-check
-     * never waves through a table it merely failed to see.
+     * The setup pre-check's table half, beside {@code S3UploadService.bucketRegion}: a genuine
+     * "not there" is false, and anything else — most importantly an access denial — is treated as
+     * "there", so the pre-check never waves through a table it merely failed to see.
      */
     public boolean tableExists(String tableName) {
         try {

@@ -27,9 +27,12 @@ sequenceDiagram
     rect rgb(255, 244, 230)
         Note over SC,DDB: Collision pre-check. The bucket AND the results table are both<br/>DeletionPolicy Retain, so a previous teardown can leave either behind,<br/>and CloudFormation would then fail with an opaque error naming neither.<br/>Both are checked: fixing only the bucket then fails again on the table.
         SC->>CF: describeStacks(stackName) -- stackExists?
-        SC->>S3: headBucket(bucketName) -- bucketExists?
+        SC->>S3: headBucket(bucketName) -- bucketRegion?
+        Note over SC,S3: names are global: a wrong-region request answers 301/400<br/>and still carries x-amz-bucket-region, and 404 = no bucket
         SC->>DDB: describeTable(tableName) -- tableExists?
-        alt stack absent BUT bucket present
+        alt stack absent BUT bucket in ANOTHER region
+            SC-->>User: the installation lives there -- setup --region <it>, exit 1, no delete advice (U23)
+        else stack absent BUT bucket in this region
             SC-->>User: explain the retained bucket, print recovery commands, exit 1
         else stack absent BUT table present
             SC-->>User: explain the retained table, print recovery commands, exit 1
