@@ -130,7 +130,8 @@ public class RunCommand implements Callable<Integer> {
     @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
         + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
         + "machine-observed keys (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type) — those are "
-        + "captured on the instance so a result's tags can't disagree with its own environment.json.")
+        + "captured on the instance so a result's tags can't disagree with its own environment.json — "
+        + "and for project, which --project names.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
     @Option(names = "--project", description = "Project name for the results partition. Required unless "
@@ -731,10 +732,11 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * Extracted from call() so it can be tested without AWS. Caller tags come first so a
-     * deliberate --tag project=... still wins over the derived value. A caller tag colliding with
-     * a {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or
-     * allowed to override — a silently discarded tag is its own surprise.
+     * Extracted from call() so it can be tested without AWS. A caller tag colliding with a
+     * {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or allowed
+     * to override — a silently discarded tag is its own surprise. So is {@code project}: it names
+     * the S3 prefix and the run item through {@code --project}, and the measurements' partition
+     * through this tag, so a second input for it split one run across two projects.
      */
     Map<String, String> buildRunnerTags(String benchmarkType, String project) {
         return buildRunnerTags(benchmarkType, project, System.getenv());
@@ -754,7 +756,13 @@ public class RunCommand implements Callable<Integer> {
                     + " observed on the instance (or derived from the benchmark type), and a "
                     + "caller override would let a result's tags disagree with its own "
                     + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
-                    + ". project, commit, branch and source remain caller-settable.");
+                    + ". commit, branch and source remain caller-settable.");
+        }
+        if (extraTags.containsKey(TagKeys.PROJECT)) {
+            throw new IllegalArgumentException(
+                "--tag project cannot be set: the project is named by --project (or derived from git "
+                    + "when git.resolveProject is on), and a second value would store the measurements "
+                    + "under a different project than the run. Pass --project <name> instead.");
         }
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put(TagKeys.PROJECT, project);

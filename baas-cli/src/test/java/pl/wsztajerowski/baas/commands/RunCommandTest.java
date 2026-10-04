@@ -156,13 +156,27 @@ class RunCommandTest {
             .containsEntry("experiment", "gc-tuning");
     }
 
+    /**
+     * The runner reads the project from this tag, while the S3 prefix and the run item take
+     * --project: a caller value stored the measurements under one project and the run under another.
+     */
     @Test
-    void anExplicitTagOverridesTheDerivedValue() {
+    void aProjectTagIsRejectedInFavourOfTheProjectOption() {
         var command = new RunCommand();
         command.extraTags.put("project", "explicit");
 
-        assertThat(command.buildRunnerTags("jmh", "derived"))
-            .containsEntry("project", "explicit");
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "derived"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("--project");
+    }
+
+    @Test
+    void aProjectTagIsRejectedEvenWhenItAgreesWithTheProject() {
+        var command = new RunCommand();
+        command.extraTags.put("project", "same");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "same"))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     /**
@@ -338,7 +352,7 @@ class RunCommandTest {
             .hasMessageContaining("type");
     }
 
-    /** design.md deliberately specifies that the caller wins for project and commit. */
+    /** The caller supplies commit; it is never derived. */
     @Test
     void stillAllowsCommitToBeOverriddenByTheCaller() {
         var command = new RunCommand();
