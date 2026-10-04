@@ -139,13 +139,10 @@ public final class RunSession {
      * the instance is looked up by its run-id tag, which may not be visible yet. A miss is covered
      * on the instance: its {@code running} write is refused over the recorded outcome, and it
      * terminates itself without starting the benchmark.
+     *
+     * @return the status the run ends with: {@code reason}, unless it already had one
      */
-    public void stop(String reason) {
-        stopWith(reason);
-    }
-
-    /** {@link #stop}, returning the status the run ends with: {@code reason}, unless it already had one. */
-    private String stopWith(String reason) {
+    public String stop(String reason) {
         if (ended) {
             return reason;
         }
@@ -192,7 +189,7 @@ public final class RunSession {
                     return finish(last.get());
                 }
                 logger.error("Client-side poll cap exceeded ({}s); recording the run as timed out.", capSeconds);
-                String status = stopWith(RunStatus.TIMED_OUT);
+                String status = stop(RunStatus.TIMED_OUT);
                 return new Outcome(status, RunStatus.COMPLETED.equals(status) ? 0 : 1);
             }
 

@@ -2,7 +2,8 @@ package pl.wsztajerowski.baas.results;
 
 import pl.wsztajerowski.baas.model.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.baas.model.RunItemMapper;
+import pl.wsztajerowski.baas.model.RunItem;
+import pl.wsztajerowski.baas.runs.DynamoDbRunRecorder;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
@@ -193,19 +194,8 @@ public class ResultsQueryService implements AutoCloseable {
      * measurement. A run from before that has only measurements, which the second query reads.
      */
     public String resultPathForRun(String runId) {
-        var runItem = client.query(QueryRequest.builder()
-            .tableName(tableName)
-            .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
-            .keyConditionExpression("#pk = :pk AND #sk = :run")
-            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK, "#sk", MeasurementItemMapper.GSI1SK))
-            .expressionAttributeValues(Map.of(
-                ":pk", AttributeValue.fromS(ResultKeys.requestIndexPartitionKey(runId)),
-                ":run", AttributeValue.fromS(ResultKeys.RUN_INDEX_SORT_KEY)))
-            .build());
-        var fromRunItem = runItem.items().stream()
-            .map(item -> RunItemMapper.fromItem(item).resultPath())
-            .filter(java.util.Objects::nonNull)
-            .findFirst();
+        var fromRunItem = new DynamoDbRunRecorder(client, tableName).find(runId)
+            .map(RunItem::resultPath);
         if (fromRunItem.isPresent()) {
             return fromRunItem.get();
         }
