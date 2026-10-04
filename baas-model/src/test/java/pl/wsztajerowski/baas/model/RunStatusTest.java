@@ -24,6 +24,17 @@ class RunStatusTest {
     }
 
     /** Vanished is computed, never stored, so it is neither an outcome a write guards nor progress. */
+    /** Only these leave the instance to terminate itself; the CLI stops it on any other outcome. */
+    @Test
+    void onlyCompletedAndFailedAreRecordedByTheInstance() {
+        assertThat(RunStatus.isRecordedByInstance(RunStatus.COMPLETED)).isTrue();
+        assertThat(RunStatus.isRecordedByInstance(RunStatus.failed(3))).isTrue();
+        assertThat(RunStatus.isRecordedByInstance(RunStatus.CANCELLED)).isFalse();
+        assertThat(RunStatus.isRecordedByInstance(RunStatus.TIMED_OUT)).isFalse();
+        assertThat(RunStatus.isRecordedByInstance(RunStatus.LAUNCH_FAILED)).isFalse();
+        assertThat(RunStatus.isRecordedByInstance(null)).isFalse();
+    }
+
     @Test
     void vanishedAndAbsentAreNeither() {
         assertThat(RunStatus.isTerminal(RunStatus.VANISHED)).isFalse();

@@ -30,6 +30,8 @@ class RunSessionTest {
         RuntimeException failReserve;
         RuntimeException failLaunched;
         RuntimeException failStop;
+        /** Runs just before a stop write, as an instance's own write racing it would. */
+        Runnable beforeStop = () -> { };
 
         @Override
         public void reserve(RunItem run) {
@@ -57,6 +59,7 @@ class RunSessionTest {
         @Override
         public Write stop(RunItem run, String s) {
             if (failStop != null) throw failStop;
+            beforeStop.run();
             writes.add("stop:" + s);
             return guarded(s);
         }
@@ -217,6 +220,52 @@ class RunSessionTest {
         assertThat(instances.terminated).containsExactly("i-tagged");
     }
 
+    /**
+     * The tag is not visible yet — AWS has not created the instance, or DescribeInstances lags
+     * RunInstances. Nothing is terminated here; the instance's own {@code running} write is refused
+     * over {@code cancelled}, and it terminates itself before the benchmark (UserDataScriptBuilder).
+     */
+    @Test
+    void anInterruptWhoseInstanceIsNotYetVisibleStillRecordsTheCancellation() {
+        session.reserve();
+
+        session.stop(RunStatus.CANCELLED);
+
+        assertThat(instances.terminated).isEmpty();
+        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.instanceWrites(RunStatus.RUNNING)).isEqualTo(RunRecorder.Write.REFUSED);
+    }
+
+    /** Ctrl+C between the instance's final write and the next poll: its log upload must finish. */
+    @Test
+    void anInterruptAfterTheInstanceRecordedItsOutcomeLeavesItToTerminateItself() {
+        for (String outcome : List.of(RunStatus.COMPLETED, RunStatus.failed(3))) {
+            FakeRecorder recorder = new FakeRecorder();
+            FakeInstances instances = new FakeInstances();
+            RunSession session = new RunSession(RUN, recorder, recorder, instances);
+            session.reserve();
+            session.confirmLaunched("i-1");
+            recorder.instanceWrites(outcome);
+
+            session.stop(RunStatus.CANCELLED);
+
+            assertThat(instances.terminated).as(outcome).isEmpty();
+            assertThat(recorder.status).as(outcome).isEqualTo(outcome);
+        }
+    }
+
+    /** Refused because someone else stopped it first: that guarantees nothing about the instance. */
+    @Test
+    void anInterruptAfterACancellationFromElsewhereStillTerminates() {
+        session.reserve();
+        session.confirmLaunched("i-1");
+        recorder.stop(RUN, RunStatus.CANCELLED);
+
+        session.stop(RunStatus.CANCELLED);
+
+        assertThat(instances.terminated).containsExactly("i-1");
+    }
+
     @Test
     void aFailedTerminationIsLoggedNotThrownFromTheHook() {
         session.reserve();
@@ -294,6 +343,32 @@ class RunSessionTest {
         assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.TIMED_OUT, 1));
         assertThat(recorder.status).isEqualTo(RunStatus.TIMED_OUT);
         assertThat(instances.terminated).containsExactly("i-1");
+    }
+
+    /** The instance completed during the last sleep: the cap must report that, not a timeout. */
+    @Test
+    void theCapHonoursAnOutcomeRecordedDuringTheLastSleep() throws Exception {
+        launched();
+
+        var outcome = await(60, false, () -> {
+            if (clock.get() > 60_000) recorder.instanceWrites(RunStatus.COMPLETED);
+        });
+
+        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
+        assertThat(instances.terminated).isEmpty();
+    }
+
+    /** The instance's write lands between the cap's read and its own: the refused timeout is not reported. */
+    @Test
+    void theCapReportsAnOutcomeThatBeatItsOwnWrite() throws Exception {
+        launched();
+        recorder.beforeStop = () -> recorder.instanceWrites(RunStatus.COMPLETED);
+
+        var outcome = await(60, false, () -> { });
+
+        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
+        assertThat(recorder.status).isEqualTo(RunStatus.COMPLETED);
+        assertThat(instances.terminated).isEmpty();
     }
 
     @Test

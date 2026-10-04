@@ -61,6 +61,24 @@ class RunTerminationTest {
         assertThat(termination.terminate("no-such-run", () -> true)).isEqualTo(1);
     }
 
+    /** Launched by a CLI from before run items: only the instance's tag knows the run id. */
+    @Test
+    void aRunWithNoItemIsStoppedByItsInstanceTag() {
+        instances.byRunId.put("20261001T000000000Z-0badc0de", "i-old");
+
+        assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> true)).isZero();
+        assertThat(instances.terminated).containsExactly("i-old");
+        assertThat(recorder.writes).as("there is no item to write").isEmpty();
+    }
+
+    @Test
+    void aRunWithNoItemIsLeftAloneWhenTheConfirmationIsDeclined() {
+        instances.byRunId.put("20261001T000000000Z-0badc0de", "i-old");
+
+        assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> false)).isEqualTo(1);
+        assertThat(instances.terminated).isEmpty();
+    }
+
     @Test
     void aDeclinedConfirmationChangesNothing() {
         runningOn("i-1");

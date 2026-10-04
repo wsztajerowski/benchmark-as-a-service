@@ -41,6 +41,14 @@ public final class RunStatus {
         return status != null && (EXACT_TERMINAL.contains(status) || status.startsWith(FAILED_PREFIX));
     }
 
+    /**
+     * An outcome only the instance writes — {@code completed} or {@code failed:<n>} — after which it
+     * uploads its boot log and terminates itself. Terminating it from the CLI could cut that off.
+     */
+    public static boolean isRecordedByInstance(String status) {
+        return COMPLETED.equals(status) || (status != null && status.startsWith(FAILED_PREFIX));
+    }
+
     /** Not yet at an outcome: the only statuses a write may move on from. */
     public static boolean isInFlight(String status) {
         return LAUNCHING.equals(status) || LAUNCHED.equals(status) || RUNNING.equals(status);
