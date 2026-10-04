@@ -236,14 +236,12 @@ public class UserDataScriptBuilder {
 
         aws s3 cp "s3://${S3_BUCKET}/${BENCHMARK_JAR_S3_KEY}" /app/benchmark-under-test.jar
 
-        # Results store. The table name is not a secret — unlike the Mongo connection string
-        # this replaced, it carries no credentials, so it travels in user-data instead of being
-        # fetched from SSM at boot. Access is granted by RunnerRole, not by knowing the name.
-        # Every run names the table: `baas run` resolves it before provisioning and fails when it
-        # cannot, and run status lives there too, so there is no run without one.
-        STORE_ARGS=(--results-table "${RESULTS_TABLE}")
-
         # Layer 2: benchmark process with its own timeout
+        # --results-table: the table name is not a secret — unlike the Mongo connection string it
+        # replaced, it carries no credentials, so it travels in user-data instead of being fetched
+        # from SSM at boot. Access is granted by RunnerRole, not by knowing the name. Every run
+        # names the table: `baas run` resolves it before provisioning and fails when it cannot, and
+        # run status lives there too, so there is no run without one.
         # BENCHMARK_PARAMS_ARRAY and RUNNER_TAGS_ARRAY are array literals written by build(),
         # one quoted element per argument, so bash parses them once, as data — no eval.
         # RunCommand.buildRunnerTags already rejects a caller tag whose key is
@@ -264,7 +262,7 @@ public class UserDataScriptBuilder {
           --result-path    "${RESULT_PATH}" \\
           --s3-bucket      "${S3_BUCKET}" \\
           --benchmark-path /app/benchmark-under-test.jar \\
-          "${STORE_ARGS[@]}" \\
+          --results-table  "${RESULTS_TABLE}" \\
           "${RUNNER_TAGS_ARRAY[@]}" \\
           --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
           --tag "instanceType=${INSTANCE_TYPE}" \\
@@ -312,7 +310,7 @@ public class UserDataScriptBuilder {
             export("CREATED_AT", createdAt) +
             export("BENCHMARK_JAR_S3_KEY", benchmarkJarS3Key) +
             // Only the manifest reads these two; the runner receives them as --tag instead, since
-            // benchmarkMetadata.tags is the query surface baas results has.
+            // the item's top-level tags map is the query surface baas results has.
             export("PROJECT_NAME", project(runnerTags)) +
             export("BRANCH_NAME", branch(runnerTags)) +
             export("BENCHMARK_TIMEOUT", benchmarkTimeoutSeconds) +

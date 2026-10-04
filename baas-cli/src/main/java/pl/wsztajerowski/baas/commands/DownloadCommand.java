@@ -52,11 +52,6 @@ public class DownloadCommand implements Callable<Integer> {
         description = "Local directory to write into. Default: ./<last path segment>.")
     Path outputDir;
 
-    /** Split out from {@link #call()} so the guard is reachable without AWS credentials. */
-    boolean tableUnresolvable(String table) {
-        return table == null || table.isBlank();
-    }
-
     @Spec CommandSpec spec;
 
     private ConfigService configService() {
@@ -79,21 +74,8 @@ public class DownloadCommand implements Callable<Integer> {
         var factory = new AwsClientFactory(
             config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
 
-        if (RunReference.looksLikeRunId(resultPath)) {
-            // Only the run-id branch needs the table; a literal path resolves without it, so this
-            // is checked here rather than beside the bucket check above.
-            try {
-                config.resultsTable();
-            } catch (IllegalStateException noInstallation) {
-                logger.error("""
-                    No installation is configured, so run id '{}' cannot be resolved to a path.
-                      Adopt one:  baas config sync --name baas-<accountId>
-                      Or pass the run's result path directly, or name another installation's
-                      configuration with --config-path.
-                    Nothing was written.""", resultPath);
-                return 1;
-            }
-        }
+        // No separate table check: config.bucket() above has already required the installation,
+        // which is the only thing config.resultsTable() could fail on.
         String resolvedPath;
         try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
             resolvedPath = RunReference.resolve(resultPath, results::resultPathForRun);

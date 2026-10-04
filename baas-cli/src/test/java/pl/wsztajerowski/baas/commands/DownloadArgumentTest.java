@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class DownloadArgumentTest {
 
@@ -34,22 +33,6 @@ class DownloadArgumentTest {
     void nothingIsNotARunIdentifier() {
         assertThat(RunReference.looksLikeRunId(null)).isFalse();
         assertThat(RunReference.looksLikeRunId("")).isFalse();
-    }
-
-    /**
-     * The run-id branch needs the results table to resolve a path; the literal-path branch does
-     * not. Without this guard an unsynced config turned `baas download <runId>` into a raw SDK
-     * validation error, while the sibling bucket check one block above reported its own absence
-     * with the command that fixes it.
-     */
-    @Test
-    void anUnresolvableResultsTableIsReportedRatherThanPassedToTheSdk() {
-        var command = new DownloadCommand();
-        command.resultPath = "20260820T174432812Z-a3f9c21b";
-
-        assertThat(command.tableUnresolvable(null)).isTrue();
-        assertThat(command.tableUnresolvable("   ")).isTrue();
-        assertThat(command.tableUnresolvable("baas-a1b2c3d4-results")).isFalse();
     }
 
     @Test
