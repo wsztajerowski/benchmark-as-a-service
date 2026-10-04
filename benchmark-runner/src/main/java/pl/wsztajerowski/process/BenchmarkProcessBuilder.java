@@ -2,7 +2,6 @@ package pl.wsztajerowski.process;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.FileUtils;
 import pl.wsztajerowski.JavaWonderlandException;
 
 import java.io.IOException;
@@ -65,7 +64,7 @@ public class BenchmarkProcessBuilder {
         try {
             logger.debug("Running process: {}", processBuilder.command());
             processBuilder.redirectErrorStream(true); // redirect error stream to standard output stream
-            FileUtils.ensurePathExists(outputPath);
+            Files.createDirectories(outputPath.toAbsolutePath().getParent());
             processBuilder.redirectOutput(outputPath.toFile());
             Process process = processBuilder.start();
             return process;
