@@ -99,6 +99,23 @@ class RunCommandSummaryTest {
         assertThat(parsed.get("runId").asText()).isEqualTo("20260820T174432812Z-a3f9c21b");
     }
 
+    /**
+     * {@code status} says only completed or failed. A consumer that needs to tell a timeout from a
+     * cancellation or a benchmark's own exit code used to list runs and filter them by id.
+     */
+    @Test
+    void theStoredStatusRidesAlongsideTheVerdict() throws Exception {
+        var command = new RunCommand();
+        command.format = "json";
+        command.summaryRunId = "20260820T174432812Z-a3f9c21b";
+        command.summaryRunStatus = "timed-out";
+
+        JsonNode parsed = JSON.readTree(printSummary(command, 1));
+
+        assertThat(parsed.get("status").asText()).isEqualTo("failed");
+        assertThat(parsed.get("runStatus").asText()).isEqualTo("timed-out");
+    }
+
     @Test
     void aRunThatFailsBeforeLaunchingStillWritesOneParseableObject() throws Exception {
         var captured = run("run", "--format", "json", "--benchmark-jar", "/nonexistent.jar", "not-a-type");
@@ -109,6 +126,9 @@ class RunCommandSummaryTest {
         assertThat(parsed.get("exitCode").asInt()).isNotZero();
         assertThat(parsed.get("runId").isNull())
             .as("no run was named, and a placeholder would be indistinguishable from a real id")
+            .isTrue();
+        assertThat(parsed.get("runStatus").isNull())
+            .as("nothing was recorded, so there is no stored status to report")
             .isTrue();
     }
 
