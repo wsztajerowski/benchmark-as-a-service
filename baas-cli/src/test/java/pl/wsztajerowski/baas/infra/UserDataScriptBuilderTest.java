@@ -205,8 +205,7 @@ class UserDataScriptBuilderTest {
         String script = script();
 
         assertThat(script).contains("export RESULTS_TABLE='baas-a1b2c3d4-results'");
-        assertThat(script).contains("STORE_ARGS=(--results-table \"${RESULTS_TABLE}\")");
-        assertThat(script).contains("\"${STORE_ARGS[@]}\"");
+        assertThat(script).contains("--results-table  \"${RESULTS_TABLE}\" \\");
     }
 
     /**
@@ -230,21 +229,12 @@ class UserDataScriptBuilderTest {
      * and the runner is never told to discard measurements.
      */
     @Test
-    void alwaysPassesTheResultsTableAndNeverDiscards() throws Exception {
+    void alwaysPassesTheResultsTableAndNeverDiscards() {
         String script = script();
         assertThat(script).doesNotContain("NO_DATABASE").doesNotContain("--no-database");
-
-        String harness = script.lines()
-            .filter(l -> l.startsWith("export RESULTS_TABLE="))
-            .collect(Collectors.joining("\n"))
-            + "\n"
-            + script.lines().filter(l -> l.strip().startsWith("STORE_ARGS=(")).findFirst().orElseThrow().strip()
-            + "\nfor element in \"${STORE_ARGS[@]}\"; do printf '%s\\n' \"$element\"; done\n";
-        Process process = new ProcessBuilder("bash", "-c", harness).start();
-        String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-        assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
-        assertThat(process.exitValue()).isZero();
-        assertThat(stdout.lines().toList()).containsExactly("--results-table", "baas-a1b2c3d4-results");
+        assertThat(script.lines().filter(l -> l.strip().startsWith("--results-table")))
+            .as("the runner is named exactly one store, unconditionally")
+            .hasSize(1);
     }
 
     // ─── Run status on the run item ──────────────────────────────────────────────

@@ -89,7 +89,7 @@ public class Ec2ProvisioningService implements RunSession.Instances {
 
     /**
      * Current EC2 state name, or "unknown" if the instance cannot be described.
-     * Used to fail a run fast when the runner dies before writing its sentinel.
+     * Used to fail a run fast when the runner dies before recording its outcome on the run item.
      *
      * <p>A persistent failure here (denied permission, expired session) silently
      * disables that fail-fast, so the first one is reported rather than swallowed.

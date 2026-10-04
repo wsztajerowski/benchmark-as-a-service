@@ -22,7 +22,6 @@ import pl.wsztajerowski.baas.infra.ImageBuilderService;
 import pl.wsztajerowski.baas.infra.RunnerImage;
 import pl.wsztajerowski.baas.infra.RunnerJarResolver;
 import pl.wsztajerowski.baas.infra.S3UploadService;
-import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
 import pl.wsztajerowski.baas.model.RunId;
 import pl.wsztajerowski.baas.model.RunItem;
@@ -318,7 +317,6 @@ public class RunCommand implements Callable<Integer> {
                 benchmarkJar);
             return 1;
         }
-        Path jarPath = benchmarkJar;
 
         // 2. Resolve the runner image, before anything is uploaded or launched. A missing image
         //    is a hard stop — there is no fallback to AL2023 + yum, since two provisioning paths
@@ -366,7 +364,7 @@ public class RunCommand implements Callable<Integer> {
         logger.info("Uploading benchmark JAR to S3...");
         String benchmarkJarKey = RunLayout.benchmarkJarKey(resolvedProject, runId);
         try (var s3 = factory.s3()) {
-            new S3UploadService(s3).upload(jarPath, config.bucket(), benchmarkJarKey);
+            new S3UploadService(s3).upload(benchmarkJar, config.bucket(), benchmarkJarKey);
         }
 
         // The instance's only runner-JAR source. A --runner-jar override stays per-run under the
@@ -728,13 +726,7 @@ public class RunCommand implements Callable<Integer> {
      * discarded measurements had outlived any use.
      */
     static String resolveResultsTable(BaasConfig config) {
-        if (config.getPrefix() == null || config.getPrefix().isBlank()) {
-            throw new IllegalStateException("""
-                No installation is configured, so this run has nowhere to record its status or \
-                store its measurements.
-                  Adopt one:  baas config sync --name baas-<accountId>
-                Nothing was built or launched.""");
-        }
+        // Throws, naming the command that adopts an installation, when none is configured.
         return config.resultsTable();
     }
 
