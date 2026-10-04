@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.entities.jcstress.JCStressTest;
 import pl.wsztajerowski.entities.MongoMeasurementDocument;
 import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
