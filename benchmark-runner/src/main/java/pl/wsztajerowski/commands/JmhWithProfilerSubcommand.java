@@ -6,16 +6,11 @@ import picocli.CommandLine.Option;
 
 import java.util.Map;
 
-import static picocli.CommandLine.Model.CommandSpec;
-import static picocli.CommandLine.Spec;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhWithProfilerSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = "jmh-with-prof", description = "Run JHM benchmarks with profiler")
 public class JmhWithProfilerSubcommand implements Runnable {
-    @Spec
-    CommandSpec spec;
-
     @Mixin
     LoggingMixin loggingMixin;
 

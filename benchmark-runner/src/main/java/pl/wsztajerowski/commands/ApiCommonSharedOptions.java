@@ -119,14 +119,6 @@ public class ApiCommonSharedOptions {
             "Cannot determine the project: pass --project <name> (or --tag project=<name>).");
     }
 
-    public String getResultsTableName() {
-        return resultsTableName;
-    }
-
-    public URI getDynamoDbEndpoint() {
-        return dynamoDbEndpoint;
-    }
-
     public URI getMongoConnectionString() {
         return mongoConnectionString;
     }
