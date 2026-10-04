@@ -71,15 +71,25 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 `--yes`), and SHALL retain both the S3 bucket and the DynamoDB results table by default. The bucket
 is deletable with `--delete-bucket`, the table by no flag at all. It SHALL name both retained
 resources on exit. Both gates SHALL pass before anything is deleted, the runner image included.
+When it aborts over in-flight runs, it SHALL name each run by the identifier in its instance's
+`baas-request-id` tag, alongside the instance identifier and state, and SHALL name
+`baas runs terminate <runId>` as the way to stop one. It SHALL read those identifiers from the
+instances, not from the results table.
 
 #### Scenario: Abort when a run is in flight
 - **WHEN** `baas admin teardown` runs while a `baas-role=benchmark-runner` instance is `running`
-- **THEN** the command exits with an error listing the running instance ID(s) and performs no destructive action
+- **THEN** the command exits with an error listing each in-flight run's identifier, instance ID and
+  state, names `baas runs terminate <runId>`, and performs no destructive action
 
 #### Scenario: Abort when a run is still booting
 - **WHEN** `baas admin teardown` runs while a `baas-role=benchmark-runner` instance is `pending`
-- **THEN** the command exits with an error listing that instance ID and performs no destructive
-  action, so a run launched moments earlier does not lose its role, subnet or image mid-boot
+- **THEN** the command exits with an error listing that run's identifier and instance ID and performs
+  no destructive action, so a run launched moments earlier does not lose its role, subnet or image
+  mid-boot
+
+#### Scenario: The gate needs no table access
+- **WHEN** `baas admin teardown` runs under the deployer policy, which grants no read of the results table
+- **THEN** the in-flight check and its message succeed
 
 #### Scenario: Bucket retained unless explicitly deleted
 - **WHEN** `baas admin teardown --yes` runs without `--delete-bucket`
@@ -148,11 +158,11 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
 - **THEN** the account-root principal remains, and the federated statement is present alongside it
 
 ### Requirement: Operator role permissions
-`BaasCliOperatorRole` SHALL cover: `ec2:RunInstances`/`Describe*` to launch and observe benchmark runner instances, tag-scoped `ec2:TerminateInstances` (condition `aws:ResourceTag/baas-role=benchmark-runner`), `ec2:CreateTags` scoped to the `RunInstances` create action, `ssm:GetParameter` on the runner AMI pointer path (`/<prefix>/runner/ami-id`) and no SSM write of any kind, `dynamodb:Query`/`GetItem` on the results table and its index with no write action, `ec2:DescribeImages` to validate the resolved AMI, S3 object access scoped to the core stack's bucket, and `iam:PassRole` scoped to `RunnerRole` only. It SHALL NOT cover the public AL2023 AMI lookup path (`/aws/service/ami-amazon-linux-latest/*`), which is no longer used now that the runner boots from a purpose-built image. `baas run`/`baas results`/`baas config`/`baas env` SHALL succeed when invoked by an identity that has assumed `BaasCliOperatorRole`.
+`BaasCliOperatorRole` SHALL cover: `ec2:RunInstances`/`Describe*` to launch and observe benchmark runner instances, tag-scoped `ec2:TerminateInstances` (condition `aws:ResourceTag/baas-role=benchmark-runner`), `ec2:CreateTags` scoped to the `RunInstances` create action, `ssm:GetParameter` on the runner AMI pointer path (`/<prefix>/runner/ami-id`) and no SSM write of any kind, `dynamodb:Query`/`Scan`/`GetItem` on the results table and its index, `dynamodb:UpdateItem` on the results table restricted to the `RUN` partition and no other write action, `ec2:DescribeImages` to validate the resolved AMI, S3 object access scoped to the core stack's bucket, and `iam:PassRole` scoped to `RunnerRole` only. It SHALL NOT cover the public AL2023 AMI lookup path (`/aws/service/ami-amazon-linux-latest/*`), which is no longer used now that the runner boots from a purpose-built image. `baas run`/`baas runs`/`baas results`/`baas config`/`baas env` SHALL succeed when invoked by an identity that has assumed `BaasCliOperatorRole`.
 
 #### Scenario: Operator role suffices for daily use
-- **WHEN** an identity that has assumed `BaasCliOperatorRole` runs `baas run jmh -- ...`, `baas results`, or `baas env diff`
-- **THEN** every AWS API call made succeeds under that role's permissions, including the SSM read of `/<prefix>/runner/ami-id` needed to resolve the runner's AMI ID
+- **WHEN** an identity that has assumed `BaasCliOperatorRole` runs `baas run jmh -- ...`, `baas runs list`, `baas runs terminate`, `baas results`, or `baas env diff`
+- **THEN** every AWS API call made succeeds under that role's permissions, including the SSM read of `/<prefix>/runner/ami-id` needed to resolve the runner's AMI ID and the run-item writes
 
 #### Scenario: Public AMI lookup path is no longer granted
 - **WHEN** `infra/operator-policy.json` is inspected
@@ -192,18 +202,26 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
 - **THEN** subsequent `baas run`, `baas results` and `baas admin` invocations address that installation
 
 ### Requirement: Failed runs leave diagnosable output
-The user-data script SHALL upload `/var/log/cloud-init-output.log` into the run's S3 prefix, alongside the run's other artifacts, before terminating the instance, on both the success and failure paths.
+The user-data script SHALL upload `/var/log/cloud-init-output.log` into the run's S3 prefix, alongside the run's other artifacts, before terminating the instance, on the success path, the failure path and the watchdog path.
 
 #### Scenario: Log survives self-termination
 - **WHEN** a benchmark run exits non-zero and the instance self-terminates
-- **THEN** the run's S3 prefix contains `cloud-init-output.log` alongside `run-status`
+- **THEN** the run's S3 prefix contains `cloud-init-output.log`, and the run item reads `failed:<exitCode>`
+
+#### Scenario: Log survives the watchdog
+- **WHEN** the watchdog terminates the instance
+- **THEN** the run's S3 prefix contains `cloud-init-output.log`, and the run item reads `timed-out`
 
 ### Requirement: Poll loop detects a dead instance
-`baas run` SHALL check the runner instance's state while polling and SHALL abort with a non-zero exit as soon as the instance reaches `terminated` or `shutting-down` without a `run-status` sentinel, rather than waiting for the poll cap of `timeout + watchdog margin`.
+`baas run` SHALL check the runner instance's state while polling and SHALL stop polling with a non-zero exit as soon as the instance reaches `terminated` or `shutting-down` while the run item holds no terminal status, rather than waiting for the poll cap of `timeout + watchdog margin`. Before reporting, it SHALL re-read the run item once, so a final status written moments before termination is not reported as a failure.
 
 #### Scenario: Boot failure fails fast
-- **WHEN** the runner instance terminates before writing `run-status`
+- **WHEN** the runner instance terminates before recording a terminal status
 - **THEN** `baas run` reports the instance state and exits non-zero well before `timeout + watchdog margin` elapses
+
+#### Scenario: A status written just before termination is honoured
+- **WHEN** the instance records `completed` and terminates between two polls
+- **THEN** `baas run` reports the run as completed
 
 ### Requirement: Core stack declares the image build pipeline
 `cf-template-core.yaml` SHALL declare `AWS::ImageBuilder::Component`,
@@ -336,11 +354,20 @@ NOT change, since editing it replaces the group.
 
 ### Requirement: The runner can write results but not read them
 `RunnerRole` SHALL be granted `dynamodb:PutItem` and `dynamodb:BatchWriteItem` on the results table ARN
-and nothing else on that table. It SHALL NOT be granted `Query`, `Scan`, `GetItem`, or any delete action.
+restricted to `RESULT#` partitions, and `dynamodb:UpdateItem` restricted to the `RUN` partition, and
+nothing else on that table. It SHALL NOT be granted `Query`, `Scan`, `GetItem`, or any delete action.
 
 #### Scenario: Runner can store a result
 - **WHEN** an instance using the runner instance profile writes a measurement
 - **THEN** the write succeeds
+
+#### Scenario: Runner can record its run's status
+- **WHEN** that instance updates its run item in the `RUN` partition
+- **THEN** the write succeeds
+
+#### Scenario: Runner cannot put items outside the measurement partitions
+- **WHEN** that instance attempts `dynamodb:PutItem` on a key in the `RUN` partition
+- **THEN** the request is denied
 
 #### Scenario: Runner cannot read the results history
 - **WHEN** that instance attempts `dynamodb:Scan` on the results table
@@ -351,8 +378,10 @@ and nothing else on that table. It SHALL NOT be granted `Query`, `Scan`, `GetIte
 - **THEN** the request is denied
 
 ### Requirement: The operator can read results but not write them
-`BaasCliOperatorRole` SHALL be granted `dynamodb:Query` and `dynamodb:GetItem` on the results table ARN
-and its index ARN, and SHALL NOT be granted write or delete actions on either.
+`BaasCliOperatorRole` SHALL be granted `dynamodb:Query`, `dynamodb:Scan` and `dynamodb:GetItem` on the
+results table ARN and its index ARN, and `dynamodb:UpdateItem` on the table restricted to the `RUN`
+partition. It SHALL NOT be granted any other write action, any write in a `RESULT#` partition, or any
+delete action.
 
 #### Scenario: Operator can query results
 - **WHEN** an identity that has assumed the operator role runs `baas results`
@@ -362,8 +391,12 @@ and its index ARN, and SHALL NOT be granted write or delete actions on either.
 - **WHEN** that identity runs `baas results --request-id <id>`
 - **THEN** the index query succeeds
 
+#### Scenario: Operator can record a run's status
+- **WHEN** that identity runs `baas run`, which reserves and updates the run item
+- **THEN** the writes succeed
+
 #### Scenario: Operator cannot mutate results
-- **WHEN** that identity attempts `dynamodb:PutItem` on the results table
+- **WHEN** that identity attempts `dynamodb:PutItem` on the results table, or `dynamodb:UpdateItem` on a key in a `RESULT#` partition
 - **THEN** the request is denied
 
 ### Requirement: Deployer policy covers the table lifecycle

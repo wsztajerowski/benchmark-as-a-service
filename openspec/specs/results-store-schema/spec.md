@@ -182,12 +182,12 @@ converge to the same item set rather than creating duplicates.
 
 ### Requirement: S3 is written before the store, and store failure fails the run
 The runner SHALL upload result artifacts to S3 before writing to the results store. It SHALL retry the
-store write with backoff, and when the write ultimately fails it SHALL exit non-zero so the `run-status`
-sentinel records a failure and the S3 artifacts remain available for re-import.
+store write with backoff, and when the write ultimately fails it SHALL exit non-zero so the run item
+records a failure and the S3 artifacts remain available for re-import.
 
 #### Scenario: Store failure is not reported as success
 - **WHEN** every store write attempt fails
-- **THEN** the runner exits non-zero and `run-status` in S3 reads `failed:<exitCode>`
+- **THEN** the runner exits non-zero and the run item reads `failed:<exitCode>`
 
 #### Scenario: Artifacts survive a store failure
 - **WHEN** the store write fails after the S3 upload succeeded
@@ -241,18 +241,6 @@ NOT be able to select it.
 - **WHEN** the store contract test suite is run against the DynamoDB adapter and the MongoDB adapter
 - **THEN** both pass it
 
-### Requirement: Discarding results requires an explicit opt-in
-A no-op store SHALL be selected only when `--no-database` is passed. Missing or empty store configuration
-SHALL be a hard failure before any benchmark is executed.
-
-#### Scenario: Missing configuration fails fast
-- **WHEN** the runner is invoked with no table name, no connection string and no `--no-database`
-- **THEN** it exits non-zero before running any benchmark, naming the missing configuration
-
-#### Scenario: Explicit opt-in discards results
-- **WHEN** the runner is invoked with `--no-database`
-- **THEN** the benchmark runs, no store write is attempted, and the run reports success
-
 ### Requirement: `project` is supplied explicitly or derived from the benchmark JAR's repository
 `baas run` SHALL take `project` from `--project`, or — only when `git.resolveProject` is enabled — from
 the name of the git repository containing the benchmark JAR, resolving the main repository rather than a
@@ -271,3 +259,20 @@ runner SHALL reject an unresolved `project` outright rather than substituting a 
 #### Scenario: The runner refuses an unresolved project
 - **WHEN** `benchmark-runner` is invoked with no project value and no `project` tag
 - **THEN** it exits non-zero rather than storing a measurement under a placeholder project
+
+### Requirement: Every run names a results store
+The runner SHALL require exactly one of `--results-table` or `--mongo-connection-string`, and SHALL fail
+before executing any benchmark when neither or both are given. No option SHALL select a store that
+discards measurements. Local runs SHALL name a table on a local endpoint such as LocalStack.
+
+#### Scenario: Missing configuration fails fast
+- **WHEN** the runner is invoked with no table name and no connection string
+- **THEN** it exits non-zero before running any benchmark, naming the missing configuration
+
+#### Scenario: The discard option is gone
+- **WHEN** the runner is invoked with `--no-database`
+- **THEN** it rejects the option as unknown and runs no benchmark
+
+#### Scenario: A local run names a local table
+- **WHEN** a benchmark is run locally with `--results-table` and a DynamoDB endpoint override
+- **THEN** its measurements are written to that local table

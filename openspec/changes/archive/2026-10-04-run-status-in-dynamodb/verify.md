@@ -227,8 +227,10 @@ historical task text; D3 records the change.
 
 ### Warnings
 
-- **W1** (open, carried): the watchdog and the poll cap have not fired live. Task 13.4 stays
-  unchecked. Closing it needs a SIGTERM-ignoring fixture, which is a separate change.
+- **W1** (open, carried): the watchdog and the poll cap have not fired live. Task 13.4 is closed
+  as *won't implement in this change* (2026-10-04) and tracked under *Deferred checks* in
+  `openspec/changes/QUEUE.md`. A larger benchmark is not enough on its own: the process `timeout`
+  fires `margin` seconds before the watchdog does, so the benchmark must also outlive SIGTERM.
 - **W2** (new): `RunCommand`'s launch-failure branch — `launch-error.txt`'s content and upload,
   and *the recording itself fails* — runs in no JVM test. Live 13.5 covered the success case of both
   writes. The branch sits inside `call()`, which CLAUDE.md already lists as executed by no JVM test.

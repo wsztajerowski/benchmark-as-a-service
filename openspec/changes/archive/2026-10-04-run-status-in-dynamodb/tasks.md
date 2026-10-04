@@ -229,7 +229,9 @@
   `baas runs list` shows the run.
 - [x] 13.3 Start a run and `kill -9` the CLI. Verify `baas runs list --in-flight` shows it, then
   `baas runs terminate <runId>` cancels it, the instance terminates, and the item reads `cancelled`.
-- [ ] 13.4 Exercise the watchdog path: detach the CLI (`kill -9` after launch), with a benchmark
+- [x] 13.4 **Won't implement in this change (2026-10-04): deferred until a fixture can reach the
+  watchdog.** See verify.md W1 and `openspec/changes/QUEUE.md` *Deferred checks*. Unit tests cover
+  both paths in the meantime. Original task: exercise the watchdog path: detach the CLI (`kill -9` after launch), with a benchmark
   process that ignores SIGTERM so the process `timeout` cannot end it, and the minimum margin.
   Verify the item reads `timed-out` and the boot log is uploaded. Separately, let an attached CLI
   reach its poll cap, and verify it records `timed-out`, not `cancelled`.
