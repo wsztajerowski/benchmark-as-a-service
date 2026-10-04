@@ -130,22 +130,45 @@ public final class RunSession {
 
     /**
      * Records why the CLI is stopping the run, then terminates its instance — whatever the write
-     * did. Never throws: it runs from the shutdown hook and the poll cap, where nothing is left to
-     * handle an exception.
+     * did, with one exception: a write refused because the instance already recorded its own
+     * outcome ({@code completed} or {@code failed:<n>}) leaves the instance alone, since it is
+     * uploading its boot log and terminates itself. Never throws: it runs from the shutdown hook and
+     * the poll cap, where nothing is left to handle an exception.
+     *
+     * <p>When there is no instance id yet — an interrupt while {@code RunInstances} is in flight —
+     * the instance is looked up by its run-id tag, which may not be visible yet. A miss is covered
+     * on the instance: its {@code running} write is refused over the recorded outcome, and it
+     * terminates itself without starting the benchmark.
      */
     public void stop(String reason) {
+        stopWith(reason);
+    }
+
+    /** {@link #stop}, returning the status the run ends with: {@code reason}, unless it already had one. */
+    private String stopWith(String reason) {
         if (ended) {
-            return;
+            return reason;
         }
         ended = true;
-        writeStopQuietly(reason);
+        String standing = reason;
+        if (writeStopQuietly(reason) == RunRecorder.Write.REFUSED) {
+            Optional<RunItem> current = readQuietly(stopRecorder);
+            if (current.isPresent() && current.get().isTerminal()) {
+                standing = current.get().status();
+                if (RunStatus.isRecordedByInstance(standing)) {
+                    logger.info("Run {} already ended ({}); its instance terminates itself.", run.runId(), standing);
+                    return standing;
+                }
+            }
+        }
         String target = instanceId != null ? instanceId : findLiveQuietly().orElse(null);
         if (target == null) {
             logger.info("Run {}: no instance to terminate.", run.runId());
-            return;
+            return standing;
         }
         logger.info("Terminating instance {} ...", target);
         terminateQuietly(target);
+        return standing;
     }
 
     /**
@@ -163,9 +186,14 @@ public final class RunSession {
         while (true) {
             long elapsedSeconds = (clockMillis.getAsLong() - start) / 1000;
             if (elapsedSeconds > capSeconds) {
+                // The instance may have recorded its outcome during the last sleep.
+                Optional<RunItem> last = readQuietly();
+                if (last.isPresent() && last.get().isTerminal()) {
+                    return finish(last.get());
+                }
                 logger.error("Client-side poll cap exceeded ({}s); recording the run as timed out.", capSeconds);
-                stop(RunStatus.TIMED_OUT);
-                return new Outcome(RunStatus.TIMED_OUT, 1);
+                String status = stopWith(RunStatus.TIMED_OUT);
+                return new Outcome(status, RunStatus.COMPLETED.equals(status) ? 0 : 1);
             }
 
             Optional<RunItem> current = readQuietly();
@@ -211,19 +239,27 @@ public final class RunSession {
         return new Outcome(status, RunStatus.COMPLETED.equals(status) ? 0 : 1);
     }
 
-    private void writeStopQuietly(String reason) {
+    /** The write's result, or {@code null} when it failed. */
+    private RunRecorder.Write writeStopQuietly(String reason) {
         try {
-            if (stopRecorder.stop(run, reason) == RunRecorder.Write.REFUSED) {
+            RunRecorder.Write write = stopRecorder.stop(run, reason);
+            if (write == RunRecorder.Write.REFUSED) {
                 logger.debug("Run {} already had an outcome; {} was not recorded.", run.runId(), reason);
             }
+            return write;
         } catch (RuntimeException e) {
             logger.warn("Could not record {} on the run item ({}); terminating anyway.", reason, e.getMessage());
+            return null;
         }
     }
 
     private Optional<RunItem> readQuietly() {
+        return readQuietly(recorder);
+    }
+
+    private Optional<RunItem> readQuietly(RunRecorder from) {
         try {
-            return recorder.read(run);
+            return from.read(run);
         } catch (RuntimeException e) {
             logger.debug("Could not read the run item: {}", e.getMessage());
             return Optional.empty();

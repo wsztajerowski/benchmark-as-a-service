@@ -35,8 +35,7 @@ public final class RunTermination {
     public int terminate(String runId, BooleanSupplier confirm) {
         Optional<RunItem> found = recorder.find(runId);
         if (found.isEmpty()) {
-            logger.error("No run found with id '{}'. List runs with: baas runs list", runId);
-            return 1;
+            return terminateUnrecorded(runId, confirm);
         }
         RunItem run = found.get();
         String live = liveInstance(run);
@@ -66,6 +65,31 @@ public final class RunTermination {
             return 1;
         }
         logger.info("Terminated instance {} of run {}.", live, runId);
+        return 0;
+    }
+
+    /**
+     * A run with no item: launched by a CLI from before run items, whose instance carries the run-id
+     * tag and nothing more. Teardown names such runs from that tag and points at this command, so it
+     * has to stop them. There is nothing to record.
+     */
+    private int terminateUnrecorded(String runId, BooleanSupplier confirm) {
+        Optional<String> live = instances.findLive(runId);
+        if (live.isEmpty()) {
+            logger.error("No run found with id '{}'. List runs with: baas runs list", runId);
+            return 1;
+        }
+        if (!confirm.getAsBoolean()) {
+            logger.info("Nothing was changed.");
+            return 1;
+        }
+        try {
+            instances.terminate(live.get());
+        } catch (RuntimeException e) {
+            logger.error("Failed to terminate instance {} of run {}: {}", live.get(), runId, e.getMessage());
+            return 1;
+        }
+        logger.info("Terminated instance {} of run {}, which has no run item to record it on.", live.get(), runId);
         return 0;
     }
 
