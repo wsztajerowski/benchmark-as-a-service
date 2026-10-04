@@ -237,6 +237,8 @@ public class RunCommand implements Callable<Integer> {
     String summaryProject;
     String summaryResultPath;
     String summaryInstanceId;
+    /** The run item's status as the run ended; see {@link RunSession#endStatus()}. */
+    String summaryRunStatus;
 
     boolean jsonSummary() {
         return "json".equalsIgnoreCase(format);
@@ -258,6 +260,10 @@ public class RunCommand implements Callable<Integer> {
             // carries nulls; a consumer still gets one parseable object saying it failed rather
             // than empty output it has to special-case.
             if (jsonSummary()) {
+                var ended = session;
+                if (ended != null) {
+                    summaryRunStatus = ended.endStatus();
+                }
                 printRunSummary(exitCode);
             }
         }
@@ -824,6 +830,10 @@ public class RunCommand implements Callable<Integer> {
      * {@code baas run --format json | jq} is not corrupted by a timestamped log line — including
      * under {@code -v}.
      *
+     * <p>{@code status} is the command's own verdict, kept for existing consumers; {@code runStatus}
+     * is what the run item says — {@code timed-out}, {@code cancelled}, {@code failed:<n>} and the
+     * rest — or {@code vanished}/{@code status-lost}, or {@code null} before a run was recorded.
+     *
      * <p>Printed on both outcomes. A failed run is precisely when a continuous-integration job
      * needs the id: to {@code baas download} it and surface {@code cloud-init-output.log}, the
      * documented place to start when a run dies before producing output. The command's exit code
@@ -835,9 +845,10 @@ public class RunCommand implements Callable<Integer> {
     void printRunSummary(int exitCode) {
         console().printf(
             "{\"runId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
-                + "\"exitCode\":%d,\"instanceId\":%s}%n",
+                + "\"runStatus\":%s,\"exitCode\":%d,\"instanceId\":%s}%n",
             jsonString(summaryRunId), jsonString(summaryProject), jsonString(summaryResultPath),
-            exitCode == 0 ? "completed" : "failed", exitCode, jsonString(summaryInstanceId));
+            exitCode == 0 ? "completed" : "failed", jsonString(summaryRunStatus), exitCode,
+            jsonString(summaryInstanceId));
     }
 
     /** A JSON string literal, or the {@code null} literal — absent is not the empty string. */

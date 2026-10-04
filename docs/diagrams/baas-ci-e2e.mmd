@@ -15,7 +15,7 @@ sequenceDiagram
     Job->>CLI: run jmh-with-async --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
     CLI->>AWS: upload, launch, poll (see baas-run.mmd)
     CLI-->>Job: one JSON object on stdout, success or failure
-    Job->>Job: GITHUB_OUTPUT run_id, result_path, project
+    Job->>Job: GITHUB_OUTPUT run_id, result_path, project, run_status
     Job->>CLI: results --request-id <id> --format json
     Note over Job: asserts imageVersion, instanceType, project, branch, commit, source=ci
     Job->>CLI: results --project <repo> --group-by commit --format json
@@ -23,7 +23,7 @@ sequenceDiagram
     Job->>CLI: results --project <repo> --all-runs --format json
     Note over Job: asserts it is present
     Job->>CLI: download <run_id> -o ./artifacts
-    Note over Job: asserts environment.json, jmh-result.json, no run-status object, output, flamegraph, JFR, and the run item reads completed (baas runs list)
+    Note over Job: asserts environment.json, jmh-result.json, no run-status object, output, flamegraph, JFR, and the summary runStatus reads completed (the run item, as polled)
     opt failure and a result_path was reported
         Job->>CLI: download <result_path> -o ./failed (by PATH: a failed run has no index entry)
         Job->>Job: print cloud-init-output.log

@@ -122,6 +122,7 @@ jobs:
             echo "run_id=$run_id"
             echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
             echo "project=$(jq -r '.project // empty' summary.json)"
+            echo "run_status=$(jq -r '.runStatus // empty' summary.json)"
           } >> "$GITHUB_OUTPUT"
           # An unparseable summary must fail here, naming itself. Without this the empty id flows
           # into `baas results --request-id ""`, which fails in DynamoDB as "The AttributeValue for
@@ -186,13 +187,12 @@ jobs:
           find ./artifacts -name '*.jfr' | grep -q . || {
             echo "no JFR recording produced"; exit 1; }
 
-      # The outcome as recorded on the run item, which is what `baas run` polled and what
-      # `baas runs list` shows any operator — including one whose CLI never launched this run.
+      # The outcome as recorded on the run item: the summary's runStatus is the item's status as
+      # the poll ended, so it needs no second lookup by id.
       - name: The run item recorded the outcome
         run: |
-          $BAAS runs list --project "$PROJECT" --limit 50 --format json > runs.json
-          test "$(jq -r --arg id "${{ steps.run.outputs.run_id }}" \
-            '.[] | select(.runId == $id) | .status' runs.json)" = "completed"
+          test "${{ steps.run.outputs.run_status }}" = "completed" || {
+            echo "::error::run item status is '${{ steps.run.outputs.run_status }}', expected completed"; exit 1; }
 
       - name: Publish the run's artifacts
         if: always()

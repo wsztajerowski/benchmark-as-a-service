@@ -57,6 +57,7 @@ public final class RunSession {
 
     private volatile String instanceId;
     private volatile boolean ended;
+    private volatile String endStatus;
 
     /**
      * @param stopRecorder the recorder {@link #stop} writes through — one whose client gives up
@@ -75,6 +76,15 @@ public final class RunSession {
 
     public String instanceId() {
         return instanceId;
+    }
+
+    /**
+     * The status the run ended with as this CLI last saw it: a stored terminal status, or
+     * {@code vanished}/{@code status-lost} when the poll computed one. {@code null} while the run is
+     * still going, or when the CLI never learned an outcome.
+     */
+    public String endStatus() {
+        return endStatus;
     }
 
     /** Whether the run has reached an outcome this CLI no longer needs to act on. */
@@ -111,6 +121,7 @@ public final class RunSession {
             logger.error("Run {} was stopped ({}) while it was launching; terminating {}.",
                 run.runId(), current.get().status(), launchedInstanceId);
             ended = true;
+            endStatus = current.get().status();
             terminateQuietly(launchedInstanceId);
             return Confirmation.CANCELLED_WHILE_LAUNCHING;
         }
@@ -121,6 +132,7 @@ public final class RunSession {
     /** Best effort: the caller reports the launch error whether or not this lands. */
     public void recordLaunchFailed(String errorCode) {
         ended = true;
+        endStatus = RunStatus.LAUNCH_FAILED;
         try {
             recorder.launchFailed(run, errorCode);
         } catch (RuntimeException e) {
@@ -147,6 +159,11 @@ public final class RunSession {
             return reason;
         }
         ended = true;
+        endStatus = stopAndTerminate(reason);
+        return endStatus;
+    }
+
+    private String stopAndTerminate(String reason) {
         String standing = reason;
         if (writeStopQuietly(reason) == RunRecorder.Write.REFUSED) {
             Optional<RunItem> current = readQuietly(stopRecorder);
@@ -207,9 +224,8 @@ public final class RunSession {
                 if (late.isPresent() && late.get().isTerminal()) {
                     return finish(late.get());
                 }
-                return measurementsStored.getAsBoolean()
-                    ? new Outcome(Outcome.STATUS_LOST, 1)
-                    : new Outcome(Outcome.VANISHED, 1);
+                endStatus = measurementsStored.getAsBoolean() ? Outcome.STATUS_LOST : Outcome.VANISHED;
+                return new Outcome(endStatus, 1);
             }
             progress.accept(state, elapsedSeconds);
             sleeper.sleep(pollMillis);
@@ -226,6 +242,7 @@ public final class RunSession {
     private Outcome finish(RunItem item) {
         ended = true;
         String status = item.status();
+        endStatus = status;
         if ((RunStatus.CANCELLED.equals(status) || RunStatus.TIMED_OUT.equals(status)) && instanceId != null) {
             String state = instances.state(instanceId);
             if ("pending".equals(state) || "running".equals(state)) {

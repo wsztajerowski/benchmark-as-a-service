@@ -160,6 +160,7 @@ class RunSessionTest {
         assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CANCELLED_WHILE_LAUNCHING);
         assertThat(instances.terminated).containsExactly("i-1");
         assertThat(session.ended()).isTrue();
+        assertThat(session.endStatus()).isEqualTo(RunStatus.CANCELLED);
     }
 
     /** The instance's `running` landed first; the late `launched` must not move it backwards. */
@@ -182,6 +183,7 @@ class RunSessionTest {
         assertThat(recorder.status).isEqualTo(RunStatus.LAUNCH_FAILED);
         assertThat(recorder.writes).contains("launch-failed:InsufficientInstanceCapacity");
         assertThat(session.ended()).as("the shutdown hook then has nothing to stop").isTrue();
+        assertThat(session.endStatus()).isEqualTo(RunStatus.LAUNCH_FAILED);
     }
 
     // ─── stop ────────────────────────────────────────────────────────────────────
@@ -196,6 +198,15 @@ class RunSessionTest {
         assertThat(recorder.writes).containsSubsequence("stop:cancelled");
         assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
         assertThat(instances.terminated).containsExactly("i-1");
+        assertThat(session.endStatus()).isEqualTo(RunStatus.CANCELLED);
+    }
+
+    @Test
+    void aRunStillGoingHasNoEndStatus() {
+        session.reserve();
+        session.confirmLaunched("i-1");
+
+        assertThat(session.endStatus()).isNull();
     }
 
     @Test
@@ -313,6 +324,7 @@ class RunSessionTest {
 
         assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
         assertThat(instances.terminated).as("the instance terminates itself after its log upload").isEmpty();
+        assertThat(session.endStatus()).isEqualTo(RunStatus.COMPLETED);
     }
 
     @Test
@@ -322,6 +334,7 @@ class RunSessionTest {
         var outcome = await(600, false, () -> recorder.instanceWrites(RunStatus.failed(3)));
 
         assertThat(outcome).isEqualTo(new RunSession.Outcome("failed:3", 1));
+        assertThat(session.endStatus()).isEqualTo("failed:3");
     }
 
     @Test
@@ -341,6 +354,7 @@ class RunSessionTest {
         var outcome = await(60, false, () -> { });
 
         assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.TIMED_OUT, 1));
+        assertThat(session.endStatus()).isEqualTo(RunStatus.TIMED_OUT);
         assertThat(recorder.status).isEqualTo(RunStatus.TIMED_OUT);
         assertThat(instances.terminated).containsExactly("i-1");
     }
@@ -400,6 +414,7 @@ class RunSessionTest {
         var outcome = await(600, true, () -> instances.states.put("i-1", "terminated"));
 
         assertThat(outcome).isEqualTo(new RunSession.Outcome(RunSession.Outcome.STATUS_LOST, 1));
+        assertThat(session.endStatus()).isEqualTo(RunSession.Outcome.STATUS_LOST);
     }
 
     @Test
@@ -410,5 +425,6 @@ class RunSessionTest {
 
         assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.VANISHED, 1));
         assertThat(session.ended()).isTrue();
+        assertThat(session.endStatus()).isEqualTo(RunStatus.VANISHED);
     }
 }
