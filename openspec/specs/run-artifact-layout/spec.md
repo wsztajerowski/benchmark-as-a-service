@@ -8,8 +8,9 @@ TBD - created by archiving change unified-run-prefix. Update Purpose after archi
 ### Requirement: One run occupies one S3 prefix
 Every artifact belonging to a benchmark run SHALL live under `runs/<project>/<runId>/` in the
 working bucket — the uploaded inputs, the environment manifest, the process output, the verbatim
-result JSON, the profiling artifacts, the collected logs, the boot log and the `run-status`
-sentinel. No artifact of a run SHALL be written outside that prefix.
+result JSON, the profiling artifacts, the collected logs, the boot log and, for a run whose instance
+could not be launched, `launch-error.txt`. No artifact of a run SHALL be written outside that prefix.
+The run's status SHALL NOT be written to the prefix; it lives on the run item in the results table.
 
 #### Scenario: A completed run is one prefix
 - **WHEN** a run completes
@@ -18,11 +19,15 @@ sentinel. No artifact of a run SHALL be written outside that prefix.
 
 #### Scenario: A failed run is still one prefix
 - **WHEN** the benchmark process exits non-zero and the instance self-terminates
-- **THEN** `runs/<project>/<runId>/` contains the environment manifest, the boot log and a
-  `run-status` sentinel recording the failure
+- **THEN** `runs/<project>/<runId>/` contains the environment manifest and the boot log, and the run
+  item records the failure
+
+#### Scenario: A failed launch is still one prefix
+- **WHEN** the instance request fails
+- **THEN** `runs/<project>/<runId>/` contains the uploaded inputs and `launch-error.txt`
 
 #### Scenario: The project segment identifies an unmeasured run
-- **WHEN** a run dies before storing any measurement, so no tags exist for it anywhere
+- **WHEN** a run dies before storing any measurement
 - **THEN** its project and the instant it started are still readable from its S3 prefix alone
 
 #### Scenario: Two projects share one bucket without collision
@@ -62,8 +67,8 @@ distinct run with its own identifier.
 
 #### Scenario: Two CI jobs do not share a prefix
 - **WHEN** a CI workflow runs two benchmark jobs
-- **THEN** each writes its own `run-status` under its own run prefix, and neither overwrites the
-  other
+- **THEN** each writes its artifacts under its own run prefix and records its status on its own run
+  item, and neither overwrites the other
 
 #### Scenario: CI runs are attributed
 - **WHEN** a CI run stores a measurement

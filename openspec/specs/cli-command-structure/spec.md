@@ -17,11 +17,11 @@ The `baas` command tree SHALL group `setup` and `teardown` under a nested `admin
 - **THEN** picocli reports an unknown command error
 
 ### Requirement: Daily-use commands remain top-level
-`run`, `results`, and `config` (with its `set`/`show` subcommands) SHALL remain directly reachable from the `baas` root command, unaffected by the `admin` grouping.
+`run`, `runs` (with its `list`/`terminate` subcommands), `results`, and `config` (with its `set`/`show` subcommands) SHALL remain directly reachable from the `baas` root command, unaffected by the `admin` grouping.
 
 #### Scenario: Top-level commands unchanged
-- **WHEN** a user runs `baas run jmh -- MyBenchmark -f 1`, `baas results`, or `baas config show`
-- **THEN** each resolves to the same command implementation as before this change, with no `admin` prefix required
+- **WHEN** a user runs `baas run jmh -- MyBenchmark -f 1`, `baas runs list`, `baas results`, or `baas config show`
+- **THEN** each resolves to its command implementation with no `admin` prefix required
 
 ### Requirement: `baas admin build-image` builds the runner image
 `baas admin build-image` SHALL render the recipe from `infra/runner-image.yaml`, update the stack when the
@@ -99,18 +99,6 @@ a fixed key, which EC2 rejects for the whole launch, and would be subject to EC2
 #### Scenario: Environment tags are still forwarded
 - **WHEN** user-data is rendered
 - **THEN** it still forwards `imageVersion` and `instanceType` observed on the instance
-
-### Requirement: Discarding results requires an explicit flag on the run path
-`baas run` SHALL expose a `--no-database` pass-through that selects the no-op store on the runner.
-Without it, an unresolvable table name SHALL fail before any instance is launched.
-
-#### Scenario: Unresolvable table fails before provisioning
-- **WHEN** `baas run jmh -- MyBenchmark` is invoked with no table name in config and no `--no-database`
-- **THEN** the command exits non-zero and no EC2 instance is launched
-
-#### Scenario: Explicit opt-in is honoured
-- **WHEN** `baas run --no-database jmh -- MyBenchmark` is invoked
-- **THEN** the run proceeds and the runner performs no database write
 
 ### Requirement: Results filters cover the supported query patterns
 `baas results` SHALL accept `--request-id`, `--benchmark-name`, `--tag <key>=<value>` (repeatable),
@@ -389,3 +377,15 @@ the file by any command except `baas admin setup`, which records the region it d
 - **WHEN** the file sets `aws.region: eu-central-1` and `AWS_REGION=us-east-1`
 - **THEN** the command addresses `eu-central-1`
 
+### Requirement: `baas run` always resolves the results table
+`baas run` SHALL resolve the installation's results table on every invocation, before the runner-image
+lookup and before any upload, and SHALL pass it to the runner. An unresolvable table SHALL fail before any
+instance is launched. `baas run` SHALL NOT offer an option that discards measurements.
+
+#### Scenario: Unresolvable table fails before provisioning
+- **WHEN** `baas run jmh -- MyBenchmark` is invoked with no installation configured
+- **THEN** the command exits non-zero and no EC2 instance is launched
+
+#### Scenario: The discard option is gone
+- **WHEN** `baas run --no-database jmh -- MyBenchmark` is invoked
+- **THEN** picocli reports an unknown option and nothing is uploaded or launched
