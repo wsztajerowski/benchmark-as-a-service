@@ -88,6 +88,25 @@ public class ImageBuilderService {
     }
 
     /**
+     * A build that fails in its test stage — the contract rejecting what an extension did — has
+     * already registered its AMI, and Image Builder leaves it. Nothing else ever names it, so it
+     * would bill for its snapshot indefinitely. The pointer has not moved, so this can only ever be
+     * an image no run uses. Found live: the first contract failure left one.
+     */
+    private void retireFailedOutput(software.amazon.awssdk.services.imagebuilder.model.Image image) {
+        if (image.outputResources() == null) {
+            return;
+        }
+        image.outputResources().amis().stream()
+            .map(software.amazon.awssdk.services.imagebuilder.model.Ami::image)
+            .filter(amiId -> amiId != null && describeImage(amiId).isPresent())
+            .forEach(amiId -> {
+                logger.info("Retiring {}, produced by the failed build", amiId);
+                retireQuietly(amiId);
+            });
+    }
+
+    /**
      * Retirement is cleanup, and by this point the pointer already names the replacement — so a
      * failure here must not fail a command whose paid work has succeeded.
      *
@@ -127,6 +146,7 @@ public class ImageBuilderService {
                         "Image build " + buildArn + " reported AVAILABLE but distributed no AMI"));
             }
             if (!IN_PROGRESS.contains(status)) {
+                retireFailedOutput(image);
                 throw new IllegalStateException("Image build %s: %s%s".formatted(
                     image.state().statusAsString(), buildArn,
                     image.state().reason() != null ? " — " + image.state().reason() : ""));

@@ -3,15 +3,23 @@
 ## ADDED Requirements
 
 ### Requirement: Setup carries the image parameters forward on an existing installation
-When `baas admin setup` updates an existing stack, it SHALL leave the runner image's parameters — the
-base version, the parent AMI, the base component and the extension — at their deployed values. It SHALL
-submit rendered image parameters only when it creates the stack, where the template's placeholder
-defaults would otherwise be registered.
+When `baas admin setup` creates a stack, it SHALL submit a rendered value for every runner image
+parameter, so that none of the template's placeholder defaults is registered. When it updates an
+existing stack, it SHALL leave every image parameter the deployed stack has at its deployed value, and
+SHALL submit the rendered value only for an image parameter the deployed stack lacks. The image
+parameters are the base version, the parent AMI, the base component, the extension and its version,
+the contract, the recipe version and the label.
 
 #### Scenario: A plain setup does not revert an extended image
 - **WHEN** an installation holds an extension and a newer base, and `baas admin setup` runs again
   without options
 - **THEN** the stack's image parameters are unchanged after the update
+
+#### Scenario: Setup upgrades an installation from before the extension
+- **WHEN** the deployed stack has only the base version, parent AMI and base component parameters, and
+  `baas admin setup` runs with a CLI that declares the rest
+- **THEN** those three keep their deployed values, and the extension, its version, the contract, the
+  recipe version and the label are submitted with rendered values
 
 #### Scenario: Setup on a new installation registers the bundled base
 - **WHEN** `baas admin setup` creates a stack

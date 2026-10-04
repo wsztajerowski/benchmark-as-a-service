@@ -16,6 +16,9 @@ import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.DeployerPolicyRenderer;
 import pl.wsztajerowski.baas.infra.DeployerPreflight;
+import pl.wsztajerowski.baas.infra.ParentImageResolver;
+import pl.wsztajerowski.baas.infra.RunnerImageExtension;
+import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
 import pl.wsztajerowski.baas.infra.ResultsTableService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
@@ -23,6 +26,8 @@ import pl.wsztajerowski.baas.infra.S3UploadService;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -197,11 +202,6 @@ public class SetupCommand implements Callable<Integer> {
         // what let a plain `baas admin setup` rebuild a shared installation's networking; see
         // networkingParameters().
         params.putAll(networkingParameters());
-        // The same rendering `baas admin build-image` submits. Letting the template's placeholder
-        // default stand here would register a no-op component at the declared version, and Image
-        // Builder would then refuse the real one at that same version — immutability, hit from a
-        // direction nobody would think to look.
-        params.putAll(new RunnerImageRenderer().stackParameters());
 
         // The bucket and the results table are both declared DeletionPolicy: Retain, so deleting
         // the stack leaves them behind — and the prefix is derived from the account, so the next
@@ -255,6 +255,12 @@ public class SetupCommand implements Callable<Integer> {
                 // a setup run for an unrelated reason cannot silently revoke CI's access. Same
                 // mechanism, and the same failure, as the `UseExistingVpc` case its Javadoc names.
                 params.putAll(federationParameters());
+                // The image is `baas admin build-image`'s to change: everything it deployed —
+                // base, parent, extension — is carried forward, so a plain setup never reverts an
+                // image or drops an extension. Only parameters the stack lacks are sent, which is
+                // how an installation from before a parameter existed gets a real value for it.
+                Map<String, String> deployed = cloudFormation.getStackParameters(resolvedStack);
+                params.putAll(imageParameters(factory, config.getAws().resolveRegion(), deployed).absentFrom(deployed));
                 cloudFormation.updateStackParameters(resolvedStack, templateBody, params);
             } else {
                 // UsePreviousValue is rejected on stack creation and on any parameter with no
@@ -262,6 +268,11 @@ public class SetupCommand implements Callable<Integer> {
                 // invocation named, or empty when it named none. Carry-forward governs updates
                 // only.
                 params.putAll(federationParametersForCreate());
+                // The same plan `baas admin build-image` submits. Letting the template's
+                // placeholder defaults stand would register a no-op component at a version, and
+                // Image Builder would then refuse the real one at that same version —
+                // immutability, hit from a direction nobody would think to look.
+                params.putAll(imageParameters(factory, config.getAws().resolveRegion(), Map.of()).values());
                 cloudFormation.createStack(resolvedStack, templateBody, params);
             }
         }
@@ -278,10 +289,57 @@ public class SetupCommand implements Callable<Integer> {
 
         configService().save(config);
         logger.info("Configuration written to {}", configService().configFilePath());
+        writeExtensionStarter(configService().configFilePath()
+            .toAbsolutePath().getParent().resolve(EXTENSION_STARTER_FILE));
 
         logger.info("{}", nextSteps(created, operatorRoleArn, resolvedPrefix));
 
         return 0;
+    }
+
+    static final String EXTENSION_STARTER_FILE = "runner-image-extension.yaml";
+
+    /**
+     * The image parameters for this submission. Deployed values win wherever they exist, so the
+     * plan describes the image the installation already has; the bundled base and a freshly
+     * resolved parent fill in only what is missing, which on a create is everything.
+     */
+    private RunnerImageParameters imageParameters(AwsClientFactory factory, String region, Map<String, String> deployed) {
+        var renderer = new RunnerImageRenderer();
+        String parentAmiId = deployed.get(RunnerImageParameters.PARENT_AMI_ID);
+        if (parentAmiId == null) {
+            try (var ec2 = factory.ec2()) {
+                parentAmiId = new ParentImageResolver(ec2)
+                    .resolve(renderer.definition().parentImage().amiName(), region);
+            }
+        }
+        return RunnerImageParameters.plan(renderer,
+            deployed.getOrDefault(RunnerImageParameters.IMAGE_VERSION, renderer.definition().imageVersion()),
+            deployed.getOrDefault(RunnerImageParameters.COMPONENT_DATA, renderer.renderBase()),
+            parentAmiId,
+            deployed.getOrDefault(RunnerImageParameters.EXTENSION_DATA, ""),
+            deployed);
+    }
+
+    /**
+     * The operator's starting point for extending the runner image — the same document a pull of an
+     * installation without an extension prints. Never overwritten: it may hold edits, and the
+     * stale-push guard makes an old copy harmless rather than something to refresh.
+     */
+    static void writeExtensionStarter(Path file) {
+        if (Files.exists(file)) {
+            return;
+        }
+        try {
+            Files.writeString(file, RunnerImageExtension.withMarker(""));
+            logger.info("""
+                Runner-image extension starter written to {}
+                  Edit it, then: baas admin build-image --extension {}""", file, file);
+        } catch (IOException e) {
+            // A convenience, not part of the installation: the pull prints the same document.
+            logger.warn("Could not write {}: {}. `baas admin image --extension` prints the same starter.",
+                file, e.getMessage());
+        }
     }
 
     /**

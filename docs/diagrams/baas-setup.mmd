@@ -39,6 +39,7 @@ sequenceDiagram
     SC->>CF: describeStacks(stackName) -- exists?
     alt stack exists (update)
         Note over SC: networking params sent only if this invocation named them,<br/>and refused if they differ from the deployed values.<br/>Federation params carried forward unless named or revoked.
+        Note over SC: image parameters: only those the deployed stack lacks.<br/>Base, parent and extension are carried forward, so a plain<br/>setup never reverts an image or drops an extension
         SC->>CFSvc: updateStackParameters(stack, template, changed params)
         alt status ROLLBACK_COMPLETE
             CFSvc-->>User: refuse -- delete it first with<br/>baas admin teardown --stack-name X --yes
@@ -51,6 +52,7 @@ sequenceDiagram
             end
         end
     else stack absent (create)
+        Note over SC: every image parameter is planned (parent resolved by<br/>DescribeImages in this region), never left at a template placeholder
         SC->>CFSvc: createStack(stack, template, explicit params incl. federation or empty)
         CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
         CFSvc->>CF: waiter.waitUntilStackCreateComplete()
@@ -58,6 +60,7 @@ sequenceDiagram
 
     SC->>CF: describeStacks() -- OperatorRoleArn output, to print only
     SC->>FS: ConfigService.save() -- prefix, aws.profile, resolved aws.region
+    SC->>FS: write runner-image-extension.yaml beside config.yaml, only if absent
     Note over SC,FS: nothing derivable or resolvable is stored
 
     alt created

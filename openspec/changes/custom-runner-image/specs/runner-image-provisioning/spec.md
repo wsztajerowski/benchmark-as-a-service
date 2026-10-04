@@ -92,16 +92,24 @@ installation.
 - **THEN** the new image's label differs from the previous one
 
 ### Requirement: The extension is held by the installation and changed only by an explicit push
-The deployed extension SHALL be stored verbatim in the installation's stack, so that it can be read
-back exactly as it was written. It SHALL be at most 4096 bytes; a larger file SHALL be refused before
-any stack change is submitted, naming its size and the limit. A file consisting only of comments and
+The deployed extension SHALL be stored in the installation's stack as written, apart from trailing
+whitespace, so that it can be read back exactly as stored. It SHALL be at most 4096 bytes and SHALL
+contain only printable ASCII, tabs and line breaks, because the stack does not read other characters
+back as written; a file that breaks either rule SHALL be refused before any stack change is
+submitted, naming its size and the limit, or the offending character's line and column. A file consisting only of comments and
 blank lines SHALL mean that no extension is deployed. Only `baas admin build-image --extension <file>`
 SHALL change the deployed extension; every other `build-image` and every `baas admin setup` on an
 existing installation SHALL leave it unchanged.
 
 #### Scenario: Pull returns what was pushed
 - **WHEN** an extension with comments is pushed and then pulled
-- **THEN** the pulled document matches the pushed one apart from the base marker line
+- **THEN** the pulled document matches the pushed one apart from the base marker line and trailing
+  whitespace
+
+#### Scenario: A non-ASCII character is refused up front
+- **WHEN** `baas admin build-image --extension` is given a file containing an em dash
+- **THEN** the command exits non-zero naming the character's line and column, and no stack change is
+  submitted
 
 #### Scenario: An oversized extension is refused up front
 - **WHEN** `baas admin build-image --extension` is given a 5000-byte file
@@ -226,6 +234,10 @@ maintain named slots, an AMI history, or any second pointer. Each AMI SHALL carr
 #### Scenario: A failed build leaves the previous image in place
 - **WHEN** an image build fails, including a failure of the contract
 - **THEN** `/<prefix>/runner/ami-id` is unchanged and the previous AMI is still registered
+
+#### Scenario: A build that fails its contract leaves no image of its own
+- **WHEN** an image build fails in its test stage, after its AMI was registered
+- **THEN** that AMI is deregistered and its snapshots deleted, so only the published image remains
 
 ### Requirement: The image version is bumped by hand and validated before building
 The base's version SHALL be the `imageVersion` declared in `infra/runner-image.yaml`, bumped by hand

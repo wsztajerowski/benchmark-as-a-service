@@ -309,6 +309,21 @@ class RunCommandTest {
     }
 
     /**
+     * An image extension may swap Corretto for another vendor's build, so the vendor is observed on
+     * the instance like the version is — and a caller value would let a result claim a JVM it did
+     * not run on.
+     */
+    @Test
+    void rejectsACallerTagForTheJvmVendor() {
+        var command = new RunCommand();
+        command.extraTags.put("jvmVendor", "Acme");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("jvmVendor");
+    }
+
+    /**
      * type is derived from the executed subcommand — overriding it would make a JMH run report
      * type=jcstress while the manifest and the actual subcommand disagree, the same defect class
      * as the other five reserved keys.

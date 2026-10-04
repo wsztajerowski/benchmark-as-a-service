@@ -61,7 +61,7 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 31 | F5 | Denied `DescribeImages` reported as "no image" | Low | **Fixed** |
 | 32 | U16 | `--tag project=…` duplicated the instance's `project` tag and failed `RunInstances` | Low | **Fixed** |
 | 33 | U19 | `deployer-policy` could not be told the region it renders for | Low | **Fixed** |
-| 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | Open |
+| 34 | U20 | An installed CLI cannot bake a changed runner image: the definition is read only from the JAR | Med | **Fixed** (`custom-runner-image`: operator extension; live check is its task 8.3) |
 | 35 | U21 | Only `eu-central-1` can reach a built image: setup submits the bundled parent AMI and build-image refuses other regions | Med | Open → `custom-runner-image` (uncommitted apply); live check deferred in `openspec/changes/QUEUE.md` |
 | 36 | U23 | `setup --region B` on an account installed in A blames a "retained" bucket and advises `aws s3 rb --force` on the live one | Med | Decided 2026-10-04: detect the bucket's region; not yet implemented |
 | 37 | U22 | `config set --region` re-aims a machine without checking an installation is there | Low | Decided 2026-10-04: remove it; `config sync` derives the region from the bucket (also closes U18); not yet implemented |
@@ -73,9 +73,10 @@ Homebrew tap, jpackage bundles, a native image, a Docker image.
 | 43 | U30 | `runs terminate` cuts off the boot-log upload of a run whose instance already recorded its outcome | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
 | 44 | U32 | Teardown's confirmation crashes without a terminal and exits 0 on abort | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
 | 45 | U34 | Networking ids without `--use-existing-vpc` are silently ignored on create | Low | Decided 2026-10-04: queued batch after `custom-runner-image`, own commit |
-| 46 | U37 | (uncommitted apply) the parent lookup omits deprecated AMIs, so a pinned release stops resolving | Low | Open → `custom-runner-image` |
+| 46 | U37 | (uncommitted apply) the parent lookup omits deprecated AMIs, so a pinned release stops resolving | Low | **Fixed** in `custom-runner-image` before it shipped: `includeDeprecated(true)`; the pinned parent's `DeprecationTime` is 2026-11-01 |
+| 55 | U38 | A run that finishes before its `launched` write is reported as cancelled, exits 1 and is terminated again | Low | Open — needs a decision (§55) |
 
-**Next up: none in this file without a decision** — U20 is decided and awaits its own change (`custom-runner-image`).
+**Next up: U38 needs a decision; nothing else in this file is undecided.** U20 and U37 are fixed by `custom-runner-image`.
 
 ---
 
@@ -438,3 +439,27 @@ table (`pk = RUN`), written by the CLI before and after the launch and by the in
 outcome shown as vanished. `baas runs terminate` stops one. Teardown's refusal names run ids and
 that command.
 
+## 55. U38 — a run that finished before its `launched` write is reported as cancelled · Low
+
+Observed live 2026-10-04 during `custom-runner-image` verify (its `verify.md`, W5), run
+`20261004T162557253Z-1cf464a0`. On a very slow connection `RunInstances` answered about five minutes
+late. By then the instance had booted, run the benchmark, stored its measurement and recorded
+`completed`. The CLI's conditional `launched` write was then refused, correctly, because the status was
+terminal. But `RunSession.confirmLaunched` reads *any* terminal status after a refusal as "stopped
+while it was launching". So it logged `Run … was stopped (completed) while it was launching`,
+terminated an instance that was already terminating itself, and `RunCommand` exited 1. The run had
+succeeded, and its run item and measurement are correct. Only the CLI's exit code and message are
+wrong, but CI would show a red job for a good run.
+
+The case the branch exists for is `cancelled` (and `timed-out`/`launch-failed`) written by this CLI's
+own shutdown hook or a `baas runs terminate` while `RunInstances` was in flight. `completed` and
+`failed:<n>` can only come from the instance, so they mean that the instance got there first, not
+that the run was stopped.
+
+**Proposed fix:** in `confirmLaunched`, treat a refusal over `completed`/`failed:<n>` as confirmed and
+let the poll report the outcome it finds (the poll already handles a terminal status on its first
+read). Keep `CANCELLED_WHILE_LAUNCHING` for the statuses the CLI side writes. Do not terminate in the
+first case: the instance is mid-upload and terminates itself, which is the same rule `RunSession.stop`
+already follows. Add a unit test with a recorder that refuses `launched` over `completed`. This
+belongs to `run-status-in-dynamodb`'s logic (archived), so it is a direct fix with no OpenSpec change
+unless the spec's scenario names this path.
