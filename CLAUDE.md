@@ -51,7 +51,11 @@ contract is *install the CLI*, not *call our reusable workflow*.
 
 Sequence diagrams for the main CLI commands and the C4 views: [`docs/diagrams/`](docs/diagrams/) (Mermaid sources,
 no checked-in SVGs — update the `.mmd` when a command changes; `mmdc` rejects a `;` in sequence-diagram text, it
-ends the statement). State graph and gap list: [`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md). Design rationale and open risks:
+ends the statement). **Every `.mmd` edit is rendered and looked at before it is committed:**
+`mmdc -i docs/diagrams/<file>.mmd -o <scratch>/<file>.png`, then open the PNG and check the change reads as
+intended — a clean exit only proves it parsed, not that the arrow landed in the right branch. The render stays out
+of the repository. Mermaid CLI is installed globally (`npm install -g @mermaid-js/mermaid-cli`); nothing in CI
+renders these files, so a broken diagram is otherwise found by its next reader. State graph and gap list: [`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md). Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
