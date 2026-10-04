@@ -10,13 +10,14 @@ sequenceDiagram
     User->>BIC: baas admin build-image [--extension ext.yaml]
     Note over BIC: ConfigService.load()<br/>deployer credentials (aws.profile), NOT aws.operatorProfile --<br/>this needs imagebuilder:*, ssm:PutParameter and a widened iam:PassRole
     opt --extension
-        Note over BIC: read the file, strip its # baas-extension-base marker,<br/>comments only = no extension, over 4096 bytes -> exit 1<br/>before any AWS call
+        Note over BIC: read the file, strip its #35; baas-extension-base marker,<br/>comments only = no extension, over 4096 bytes -> exit 1<br/>before any AWS call
     end
     BIC->>RIR: render /templates/runner-image.yaml
     RIR-->>BIC: base version, parent AMI name, base AWSTOE document
 
     BIC->>CF: describeStacks -> deployed image parameters
     CF-->>BIC: extension, derived versions, base, parent, contract
+    Note over BIC: bundled base version lower than the deployed RunnerImageVersion -><br/>exit 1 naming both and the CLI upgrade, nothing submitted (U39).<br/>Replacing the component deletes the newer version, so nothing else would refuse it.
     opt --extension
         Note over BIC: deployed extension H and the file's marker is not H -><br/>exit 1, nothing submitted. The stack holds the only copy,<br/>so a stale push would discard someone else's extension.<br/>No extension deployed -> any file is accepted.
     end
