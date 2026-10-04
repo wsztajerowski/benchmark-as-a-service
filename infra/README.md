@@ -337,6 +337,10 @@ account's installation and fails much later, after something has been provisione
 setup` prints the name; `baas config sync --name` adopts it. Use `--name baas-<accountId>-dev` to
 point a machine at the development installation.
 
+Sync also finds the installation's region — from its bucket, whose name is global — and stores it,
+so a machine never needs a region typed. The region is chosen once, by `baas admin setup --region`;
+there is no `config set --region`.
+
 Every `baas admin setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
 ARN. [`operator-policy.json`](./operator-policy.json) is a static reference copy of the same
 permission statements — useful for review, or as `put-role-policy` content if you need to

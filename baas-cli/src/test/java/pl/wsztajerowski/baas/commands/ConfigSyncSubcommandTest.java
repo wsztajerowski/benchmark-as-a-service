@@ -56,7 +56,7 @@ class ConfigSyncSubcommandTest {
         String defaultBefore = Files.exists(ConfigService.DEFAULT_PATH)
             ? Files.readString(ConfigService.DEFAULT_PATH) : null;
 
-        int exit = new CommandLine(new BaasApp(), stackExists(Map.of("ResultsTableName", "t")))
+        int exit = new CommandLine(new BaasApp(), installation("eu-central-1", Map.of("ResultsTableName", "t")))
             .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
@@ -69,14 +69,42 @@ class ConfigSyncSubcommandTest {
     void aMissingStackWritesNothing(@TempDir Path dir) {
         Path file = dir.resolve("dev.yaml");
 
-        int exit = new CommandLine(new BaasApp(), stackExists(Map.of()))
+        int exit = new CommandLine(new BaasApp(), installation("eu-central-1", Map.of()))
+            .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-nope");
+
+        assertThat(exit).as("a bucket a teardown retained is not an installation").isNotZero();
+        assertThat(file).doesNotExist();
+    }
+
+    @Test
+    void noBucketMeansNoInstallationAndWritesNothing(@TempDir Path dir) {
+        Path file = dir.resolve("dev.yaml");
+
+        int exit = new CommandLine(new BaasApp(), installation(null, Map.of("ResultsTableName", "t")))
             .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-nope");
 
         assertThat(exit).isNotZero();
         assertThat(file).doesNotExist();
     }
 
-    private static CommandLine.IFactory stackExists(Map<String, String> outputs) {
+    /**
+     * The region is found from the bucket and stored, whatever region the machine started in: the
+     * installation's region is a fact about it, so a machine or a CI job aimed elsewhere follows it.
+     */
+    @Test
+    void syncStoresTheRegionTheInstallationLivesIn(@TempDir Path dir) throws Exception {
+        Path file = dir.resolve("c.yaml");
+        Files.writeString(file, "aws:\n  region: \"eu-west-1\"\n");
+
+        int exit = new CommandLine(new BaasApp(), installation("us-east-1", Map.of("ResultsTableName", "t")))
+            .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-123456789012-dev");
+
+        assertThat(exit).isZero();
+        assertThat(ConfigService.at(file).load().getAws().getRegion()).isEqualTo("us-east-1");
+    }
+
+    /** A bucket in {@code bucketRegion} (none when null) and a stack there with {@code outputs}. */
+    private static CommandLine.IFactory installation(String bucketRegion, Map<String, String> outputs) {
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
         return new CommandLine.IFactory() {
             @Override
@@ -85,8 +113,13 @@ class ConfigSyncSubcommandTest {
                 if (cls == ConfigSyncSubcommand.class) {
                     return (K) new ConfigSyncSubcommand() {
                         @Override
-                        Map<String, String> stackOutputs(pl.wsztajerowski.baas.config.BaasConfig config) {
-                            return outputs;
+                        java.util.Optional<String> bucketRegion(pl.wsztajerowski.baas.config.BaasConfig config) {
+                            return java.util.Optional.ofNullable(bucketRegion);
+                        }
+
+                        @Override
+                        Map<String, String> stackOutputs(pl.wsztajerowski.baas.config.BaasConfig config, String region) {
+                            return region.equals(bucketRegion) ? outputs : Map.of();
                         }
                     };
                 }

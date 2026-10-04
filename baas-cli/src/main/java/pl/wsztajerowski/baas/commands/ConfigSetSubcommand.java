@@ -32,9 +32,6 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         description = "AWS CLI profile that assumes BaasCliOperatorRole — used by run/results/config.")
     String operatorProfile;
 
-    @Option(names = "--region", description = "AWS region.")
-    String region;
-
     @Option(names = "--instance-type", description = "Default EC2 instance type.")
     String instanceType;
 
@@ -55,6 +52,10 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     // No --prefix. Adopting an installation is `baas config sync --name`, which checks the stack
     // exists first; this option wrote the same field unchecked, so a typo surfaced only as the
     // first real command's AWS error. It dated from when the prefix was a name you chose.
+    //
+    // No --region, for the same reason. The region is the installation's: `baas admin setup
+    // --region` chooses it and `config sync` finds it from the bucket. Set by hand, it aimed a
+    // machine at a region with no installation, and `run` then advised building an image there.
 
     @Spec CommandSpec spec;
 
@@ -73,7 +74,6 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
-        if (region != null) config.getAws().setRegion(region);
         if (instanceType != null) config.getEc2().setDefaultInstanceType(instanceType);
         if (benchmarkTimeout != null) config.getEc2().setBenchmarkTimeoutSeconds(benchmarkTimeout);
         if (watchdogMargin != null) config.getEc2().setWatchdogMarginSeconds(watchdogMargin);

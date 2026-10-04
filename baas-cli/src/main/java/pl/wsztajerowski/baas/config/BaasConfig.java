@@ -108,10 +108,12 @@ public class BaasConfig {
 
         /**
          * The region every command uses: the file's {@code aws.region}, else {@code AWS_REGION},
-         * else {@value #DEFAULT_REGION}. The file wins because it is what {@code admin setup} wrote
-         * for this installation. The environment is consulted at all so that a CI job, whose fresh
-         * config names no region, follows the region its credentials step was given instead of
-         * silently assuming the default.
+         * else {@value #DEFAULT_REGION}. The file's value is the installation's own region —
+         * {@code admin setup} writes the one it deployed to, {@code config sync} the one it found
+         * the installation's bucket in — so it wins. The environment and the default matter only
+         * before any installation is adopted: where {@code admin setup} and
+         * {@code admin deployer-policy} deploy or render, and where {@code config sync} starts
+         * looking (any region finds the bucket).
          *
          * <p>Resolved, never stored: {@link #getRegion()} stays the file's own value, so saving a
          * configuration cannot copy an environment variable into the file and pin it there.

@@ -320,6 +320,14 @@ The watchdog is the only one that survives a deadlocked JVM.
   `--bucket`, which are gone: an override of one resource could aim a command at one installation's
   table while its configuration named another. `config sync` verifies the stack exists, so a
   torn-down installation is read through a kept copy of its config, or one written by hand.
+- **The region is chosen once, by `baas admin setup --region`, and never typed again.** `config sync`
+  finds it: the bucket carries the prefix's name, bucket names are global, and `HeadBucket` from any
+  region answers a wrong-region request with 301/400 carrying `x-amz-bucket-region` (a 404 is no
+  bucket) — under the `s3:ListBucket` the operator already holds. Sync stores the region, CI
+  included, so a job follows the installation rather than its `AWS_REGION`. There is no
+  `config set --region`: set by hand it aimed a machine at a region with no installation, and `run`
+  then advised building an image there. Moving an installation is a rebuild in the new region, after
+  which every machine re-runs the same `config sync --name`.
 - **An account-shared installation makes two concurrent `baas admin build-image` runs reachable.**
   The one-image invariant's ordering — repoint the pointer, then deregister the replaced AMI —
   assumes a single builder, which per-identity naming supplied by accident. Two concurrent bakes
