@@ -40,14 +40,14 @@ workflows, the `act` harness, the self-hosted runner and `WorkflowRole`.
 | 9 | S10 | Third-party actions on mutable tags; dependabot lacks `github-actions` | Low | **Reduced in surface** |
 | 10 | S12 | `GHA_EC2_PAT` is a classic PAT with `repo` scope | Low | **Fixed** |
 | 11 | A11 | Two `@Param` variants of one benchmark method share a sort key | Med | **Fixed** |
-| 12 | A12 | `jmh-with-prof` without `jfr`/`async` fails after the benchmark ran, storing nothing | Med | **Fixed** (`review-fixes`, c187d4c); confirmed first by a `gc`-only IT failing with `NoSuchFileException` |
+| 12 | A12 | `jmh-with-prof` without `jfr`/`async` fails after the benchmark ran, storing nothing | Med | **Fixed** (`review-fixes`, 58a4491); confirmed first by a `gc`-only IT failing with `NoSuchFileException` |
 | 13 | A13 | `LocalStorageService` reads every file as UTF-8 only to trace-log it; binary output throws | Low | Decided 2026-10-04 → `retire-mongodb` (QUEUE.md), which removes local mode |
-| 14 | A14 | `FileUtils.ensurePathExists` creates a directory at the file's own path | Low | **Fixed** (`review-fixes`, 2165cce) |
-| 15 | A15 | JCStress's exit code is discarded | Low | **Fixed** (`review-fixes`, 8558649) |
-| 16 | S16 | `release.yml` grants `id-token: write` nothing uses; semantic-release installed unpinned | Low | **Fixed** (`review-fixes`, 59248d1); the next real release is its only end-to-end test |
-| 17 | C1 | Mongo-era entities, the disabled `Sandbox` test, and `gson-javatime-serialisers` | Low | **Fixed** (`review-fixes`, 4f05522) |
-| 18 | C2 | Runner dead methods, a dead field and unused imports | Low | **Fixed** (`review-fixes`, bb432cf); `S3StorageService.getEndpoint` kept; Mongo getters → `retire-mongodb` |
-| 19 | C3 | Unreferenced scripts under `scripts/` | Low | **Fixed** (`review-fixes`, cef6aef) |
+| 14 | A14 | `FileUtils.ensurePathExists` creates a directory at the file's own path | Low | **Fixed** (`review-fixes`, d6cf7b3) |
+| 15 | A15 | JCStress's exit code is discarded | Low | **Fixed** (`review-fixes`, d1317ae) |
+| 16 | S16 | `release.yml` grants `id-token: write` nothing uses; semantic-release installed unpinned | Low | **Fixed** (`review-fixes`, 0e9d44c); the next real release is its only end-to-end test |
+| 17 | C1 | Mongo-era entities, the disabled `Sandbox` test, and `gson-javatime-serialisers` | Low | **Fixed** (`review-fixes`, 18dbeba) |
+| 18 | C2 | Runner dead methods, a dead field and unused imports | Low | **Fixed** (`review-fixes`, cdd69c7); `S3StorageService.getEndpoint` kept; Mongo getters → `retire-mongodb` |
+| 19 | C3 | Unreferenced scripts under `scripts/` | Low | **Fixed** (`review-fixes`, 2d8840e) |
 | 20 | C4 | MongoDB retirement: the largest removal left, and every service IT runs on the Mongo adapter | — | Decided 2026-10-04 → `retire-mongodb` (QUEUE.md) |
 
 ### How `cli-driven-ci-workflows` closed them
