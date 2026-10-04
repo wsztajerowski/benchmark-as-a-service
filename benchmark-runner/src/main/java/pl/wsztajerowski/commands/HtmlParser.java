@@ -41,29 +41,11 @@ public class HtmlParser {
             .orElse("");
     }
 
-    public String getTextOfNextParentSibling(String selector) {
-        return getFirstElementForSelector(selector)
-            .map(Element::parent)
-            .map(Element::nextElementSibling)
-            .map(Element::text)
-            .orElse("");
-    }
-
     public String getTextOfParent(String selector) {
         return getFirstElementForSelector(selector)
             .map(Element::parent)
             .map(Element::text)
             .orElse("");
-    }
-
-    public List<String> getListOfAttributeValuesForSelector(String selector, String attributeName) {
-        return rootElement
-            .select(selector)
-            .stream()
-            .map(tag -> tag.attr(attributeName))
-            .filter(not(
-                String::isBlank))
-            .toList();
     }
 
     public List<String> getListValuesForSelector(String selector) {

@@ -15,7 +15,7 @@ class ApiCommonSharedOptionsTest {
     void parsesTheResultsTableAndProject() {
         var options = parse("--results-table", "baas-abc-results", "--project", "lynx-journal");
 
-        assertThat(options.getResultsTableName()).isEqualTo("baas-abc-results");
+        assertThat(options.resultsTableName).isEqualTo("baas-abc-results");
         assertThat(options.getProject()).isEqualTo("lynx-journal");
     }
 
