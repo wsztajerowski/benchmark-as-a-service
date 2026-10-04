@@ -15,6 +15,9 @@ import software.amazon.awssdk.services.cloudformation.model.Stack;
 import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 import software.amazon.awssdk.services.cloudformation.model.UpdateStackRequest;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +31,14 @@ public class CloudFormationService {
 
     public CloudFormationService(CloudFormationClient cf) {
         this.cf = cf;
+    }
+
+    /** The core stack template, bundled into the CLI; setup and build-image submit the same one. */
+    public static String coreTemplate() throws IOException {
+        try (InputStream is = CloudFormationService.class.getResourceAsStream("/templates/cf-template-core.yaml")) {
+            if (is == null) throw new IllegalStateException("CF template not found in classpath");
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     /**

@@ -19,9 +19,6 @@ import pl.wsztajerowski.baas.infra.RunnerImageExtension;
 import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -131,7 +128,7 @@ public class BuildImageCommand implements Callable<Integer> {
             logger.info("Registering runner image {} (parent {})...", plan.label(), parentAmiId);
             // Every image parameter is sent; everything else — the networking choices in
             // particular — is carried forward from the deployed stack.
-            cloudFormation.updateStackParameters(prefix, loadTemplate(), plan.values());
+            cloudFormation.updateStackParameters(prefix, CloudFormationService.coreTemplate(), plan.values());
 
             String pipelineArn = cloudFormation.getStackOutputs(prefix).get("RunnerImagePipelineArn");
             if (pipelineArn == null || pipelineArn.isEmpty()) {
@@ -151,13 +148,6 @@ public class BuildImageCommand implements Callable<Integer> {
                   Pointer:   {}""", plan.label(), amiId, parentAmiId,
                 RunnerImageExtension.identity(extension), parameterName);
             return 0;
-        }
-    }
-
-    private String loadTemplate() throws IOException {
-        try (InputStream is = getClass().getResourceAsStream("/templates/cf-template-core.yaml")) {
-            if (is == null) throw new IllegalStateException("CF template not found in classpath");
-            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 }
