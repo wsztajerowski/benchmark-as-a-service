@@ -96,6 +96,13 @@ public class JmhWithProfilerSubcommandService {
     private void uploadProfilerArtifacts() {
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
             Path storageDir = Path.of(profilerOutputPathFor(jmhResult));
+            // Only async and jfr write a per-benchmark directory; gc, comp, cl and the rest report
+            // secondary metrics and create none. Listing a missing one failed the run after the
+            // benchmark had finished, before its measurements were stored.
+            if (!Files.isDirectory(storageDir)) {
+                logger.debug("No profiler artifacts for {}", jmhResult.benchmark());
+                continue;
+            }
             try (Stream<Path> paths = list(storageDir)) {
                 paths
                     .forEach(path -> {
