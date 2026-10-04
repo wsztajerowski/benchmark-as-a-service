@@ -16,10 +16,15 @@ import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.ImageBuilderService;
+import pl.wsztajerowski.baas.infra.RunnerImageExtension;
+import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Optional;
 import java.util.Scanner;
 import java.util.concurrent.Callable;
 import java.util.stream.Collectors;
@@ -85,6 +90,22 @@ public class TeardownCommand implements Callable<Integer> {
             }
         }
 
+        // Before anything is deleted: the extension exists only as a stack parameter, so deleting
+        // the stack deletes the only copy. A teardown that cannot save it deletes nothing — a
+        // re-run costs a minute, a lost extension cannot be recovered.
+        Optional<Path> savedExtension;
+        try (var cf = factory.cloudFormation()) {
+            String extension = new CloudFormationService(cf).getStackParameters(resolvedStack)
+                .getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
+            savedExtension = saveExtension(extension,
+                configService().configFilePath().toAbsolutePath().getParent(), resolvedStack);
+        } catch (IOException | RuntimeException e) {
+            logger.error("Could not save the runner-image extension of {} ({}). Nothing was deleted.\n"
+                + "  Save it by hand with `baas admin image --extension > <file>`, then re-run teardown.",
+                resolvedStack, e.getMessage());
+            return 1;
+        }
+
         // Empty + delete S3 bucket if requested. The stack declares DeletionPolicy: Retain,
         // so CloudFormation will not remove the bucket — teardown has to do it here.
         // Derived from the installation being torn down, not from config: --stack-name may name
@@ -140,7 +161,31 @@ public class TeardownCommand implements Callable<Integer> {
                 bucket);
         }
         logger.warn("{}", retainedTableNotice(resultsTable, configService().configFilePath()));
+        savedExtension.ifPresent(file -> logger.warn("{}", extensionSavedNotice(file)));
         return 0;
+    }
+
+    /**
+     * Writes a non-empty extension, with the marker a pull prints, to
+     * {@code runner-image-extension.<installation>.yaml} in {@code directory}; writes nothing for
+     * an installation without one. A later setup's stack holds no extension, so
+     * {@code build-image --extension} accepts the file as it is.
+     */
+    static Optional<Path> saveExtension(String extension, Path directory, String installation) throws IOException {
+        if (extension == null || extension.isBlank()) {
+            return Optional.empty();
+        }
+        Files.createDirectories(directory);
+        Path file = directory.resolve("runner-image-extension." + installation + ".yaml");
+        Files.writeString(file, RunnerImageExtension.withMarker(extension));
+        return Optional.of(file);
+    }
+
+    static String extensionSavedNotice(Path file) {
+        return """
+            Runner-image extension saved to %1$s
+              The stack held its only copy. After a later setup, push it back with:
+                baas admin build-image --extension %1$s""".formatted(file);
     }
 
     /** {@code --stack-name} when given, otherwise this machine's configured installation. */

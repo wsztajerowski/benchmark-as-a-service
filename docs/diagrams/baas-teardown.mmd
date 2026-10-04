@@ -29,6 +29,12 @@ sequenceDiagram
         end
     end
 
+    TD->>CF: describeStacks -> RunnerImageExtensionData
+    CF-->>TD: the deployed extension, or empty
+    opt an extension is deployed
+        Note over TD: written with its marker to runner-image-extension.<prefix>.yaml<br/>beside the config file -- the stack holds its only copy (U40).<br/>Cannot read or write it -> exit 1, nothing deleted
+    end
+
     alt --delete-bucket set
         TD->>S3: listObjectsV2Paginator(bucket)
         S3-->>TD: object keys (paginated)
