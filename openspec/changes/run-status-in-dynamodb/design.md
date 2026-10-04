@@ -215,14 +215,20 @@ the end. `--in-flight` is filtered on the client after the EC2 join, and it page
   variables first, and the `--key` and `--expression-attribute-values` JSON contains only `${VAR}`
   references.
 - **Bounded retries, and only for this command.** The settings are passed inline:
-  `AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=3 aws dynamodb update-item --cli-connect-timeout 5
-  --cli-read-timeout 10 …`. The worst case, about 3 × 15 s plus backoff, stays under the 60 s
-  minimum watchdog margin. Nothing is exported: the runner's Java SDK reads the same environment
-  variables, so exporting them would change its own S3 and DynamoDB retry behaviour.
+  `AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=<n> aws dynamodb update-item --cli-connect-timeout 5
+  --cli-read-timeout 10 …`, with `n` = 3 by default and 2 for `running`. Each attempt costs up to
+  15 s and standard-mode backoff adds up to 2 s, then 4 s: ~51 s for three, ~32 s for two.
+  `running` is the one write on the path to the JVM, so it takes two. The 60 s minimum watchdog
+  margin also has to cover boot, IMDS, the manifest and four downloads (verify.md D3, as corrected).
+  Nothing is exported: the runner's Java SDK reads the same environment variables, so exporting them
+  would change its own S3 and DynamoDB retry behaviour.
 - **A refused condition.** `ConditionalCheckFailedException`, found in stderr, is logged as "status
-  already terminal" and returns success.
-- **Any other failure** is logged and also returns. Because nothing aborts the script, the boot-log
-  upload and the termination that follow always run.
+  already terminal, or no run item at this key", and `run_status` returns 2. Only the `running`
+  write acts on it: the run already has an outcome or has no item, so the instance ships its boot
+  log and terminates without starting the benchmark (post-apply review, finding 1). Every other
+  caller ignores the return value.
+- **Any other failure** is logged and returns 1, which no caller treats as a reason to stop.
+  Because nothing aborts the script, the boot-log upload and the termination that follow always run.
 
 Placement:
 
@@ -260,7 +266,10 @@ exit 1, as `failed:<n>` does today. The `--format json` summary's `exitCode` is 
 
 One method serves the shutdown hook, the poll cap and `baas runs terminate`:
 1. write the reason, with a short API-call timeout;
-2. terminate the instance whether or not the write succeeded.
+2. terminate the instance whether or not the write succeeded, unless it was refused because the
+   instance had already recorded `completed` or `failed:<n>`. That instance is mid-upload and
+   terminates itself (post-apply review, finding 5). The poll cap then reports that stored outcome,
+   not `timed-out` (finding 4).
 
 The reasons:
 - `cancelled` on interrupt and from `terminate`;

@@ -24,7 +24,13 @@ sequenceDiagram
         User->>RT: baas runs terminate 20261003T070025527Z-5bc8461b
         RT->>DDB: Query requestId-index (gsi1pk = runId, gsi1sk = RUN)
         alt no run item
-            RT-->>User: "No run found", exit 1
+            RT->>EC2: describeInstances by the run-id tag (a run from a CLI before run items)
+            alt no live instance either
+                RT-->>User: "No run found", exit 1
+            else live instance
+                Note over RT: confirm, then terminateInstances -- nothing to record
+                RT-->>User: "Terminated instance ... which has no run item", exit 0
+            end
         end
         RT->>EC2: describeInstances(instanceId), else by the run-id tag
         alt terminal status and no live instance
