@@ -239,3 +239,24 @@ historical task text; D3 records the change.
   item is built from `buildRunnerTags`, which rejects every observed key
   (`RunCommandTest.rejectsACallerTagThatCollidesWithAMachineObservedKey`), but no test asserts on a
   stored run item's tags after a run.
+
+## W1 closed live (2026-10-05)
+
+Run on `baas-381492019823` (eu-central-1) from branch `cli-usage-reanalysis`, all tagged
+`exclude_from_results=true`, project `baas-e2e`, `--timeout 60 --watchdog-margin 60`.
+
+**The fixture this entry asked for cannot work.** A benchmark that survives SIGTERM was tried first
+(run `20261005T013248490Z-c6c62afd`, CLI killed with SIGKILL): it ended `failed:124`, because the
+runner starts the benchmark as a separate child JVM, so `timeout`'s SIGTERM ends the runner JVM
+whatever the benchmark does. That run did confirm layer 2 live, detached. The watchdog exists for
+a runner JVM that will not exit, so that is what was simulated: a throwaway `--runner-jar` whose
+`main` sleeps forever behind a shutdown hook that never returns (uploaded to the run's own `input/`,
+never to `releases/`).
+
+| Check | Run | Result |
+|---|---|---|
+| (1) CLI detached with `kill -9` right after launch | `20261005T013659765Z-6ded1228` | **Pass.** Item `timed-out` ~2 min after launch with no CLI alive. `cloud-init-output.log` in the prefix shows `run_status: running` → `HangingRunner: SIGTERM received, never exiting` → `WATCHDOG: hard-kill cap exceeded` → `run_status: timed-out`; instance `shutting-down` |
+| (2) attached CLI reaches its poll cap | `20261005T014042050Z-23fd9d36` | **Pass.** `Client-side poll cap exceeded (120s); recording the run as timed out`, instance terminated by the CLI, `runStatus` `timed-out`, exit 1 — not `cancelled` |
+
+W1 is closed. Task 13.4 is satisfied by these two runs.
+

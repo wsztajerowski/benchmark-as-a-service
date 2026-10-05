@@ -379,7 +379,9 @@ baas admin deployer-policy --prefix "$DEV" > /tmp/deployer-dev.json
 #    alongside the account's own: two rendered documents are ~8.5k characters against IAM's
 #    5120-character inline budget, which is shared across every inline policy on the principal.
 
-# 2. Deploy the core template directly. ResourceNamePrefix is an ordinary parameter.
+# 2. Deploy the core template directly. ResourceNamePrefix is an ordinary parameter. Outside
+#    eu-central-1 also override RunnerParentAmiId: its default is the eu-central-1 AMI of the pinned
+#    AL2023 release, which `baas admin setup` resolves per region but a by-hand deploy does not.
 aws cloudformation deploy \
   --template-file infra/cf-template-core.yaml \
   --stack-name "$DEV" \
