@@ -28,7 +28,7 @@ class S3DownloadIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
             .withServices(LocalStackContainer.Service.S3);
 
     private static final String RESULT_PATH = "main/jmh/20260819_090000";

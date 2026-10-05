@@ -478,6 +478,10 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **JUnit 6** (`6.0.2`) and **Testcontainers 2.x** — both differ from the versions you'd assume.
   Integration tests pin `mongo:7.0.5`; DynamoDB runs on LocalStack. One store contract suite runs
   against both adapters — a behavioural difference between them is a test failure, not a discovery.
+- **LocalStack is pinned to `4.14.0`, the newest release confirmed (2026-10-05) to start without an account.** `2026.09.0`
+  (and so `latest`) exits 55 without `LOCALSTACK_AUTH_TOKEN`, and this repository holds no secrets. The pin
+  replaced `0.12.16`, which took 25–65 s to start against Testcontainers' 60 s wait and stored the SDK's
+  `aws-chunked` upload framing as object bytes — `StorageServiceIT` had asserted that corrupted size.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
 - **The mongo connection string must include a database name** (`mongodb://host:port/dbname`),

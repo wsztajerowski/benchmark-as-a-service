@@ -26,7 +26,6 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | U28 | No lookup of one run by id | Low | `runs-command` |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | Low | `retire-mongodb` |
-| N1 | Runner ITs use LocalStack 0.12.16, which misses Testcontainers' 60 s startup wait | Low | `retire-mongodb` |
 | U2 | No CLI path from teardown residue to an empty account | Low | `export-before-teardown` |
 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | `export-before-teardown` |
 | U21 | Live check: an installation outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
@@ -108,7 +107,7 @@ since U27 it reads `runStatus` from `baas run`'s summary.)
   before run items shows its manifest only. `--format json` prints both as one object.
 - Breaking CLI change: `feat(cli)!`, next major.
 
-### `retire-mongodb` — C4, A13, N1
+### `retire-mongodb` — C4, A13
 
 **C4.** The largest removal left: `MongoResultsStore`, `MongoMeasurementDocument`,
 `ResultsStoreBuilder.mongoStore`, `--mongo-connection-string`/`-m` and its `MONGO_CONNECTION_STRING`
@@ -122,13 +121,8 @@ exercised by the store contract suite but by no end-to-end runner test.
 whatever the level, so a binary file (`profile.jfr`, a `.bin.gz`) throws and fails the run. Local mode
 only (no `--s3-bucket`), which no script, test or README section uses.
 
-**N1 (2026-10-05).** The runner's ITs start `localstack/localstack:0.12.16`, which on a developer Mac
-needs ~65 s to log `Ready.` — past Testcontainers' 60 s wait — so all eight fail at container start
-and `mvn verify` is red locally while CI may be green. `baas-cli`'s ITs use LocalStack 3.8 and start
-in seconds.
-
 **Decided (2026-10-04), as its own change:** first move the service ITs onto LocalStack DynamoDB —
-on 3.8, closing N1 — so the production path is tested end to end. Then delete the Mongo adapter,
+so the production path is tested end to end. Then delete the Mongo adapter,
 `-m`/`MONGO_CONNECTION_STRING`, Morphia, the driver, the Mongo testcontainer, the compose service and
 local storage mode, so `--results-table` and `--s3-bucket` become required. Update CLAUDE.md: the
 *Accepted risks* MongoDB row, the Morphia and connection-string gotchas, *Adding a benchmark type*.
