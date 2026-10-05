@@ -6,7 +6,7 @@ Set 2026-10-02.
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | CLI usage fixes — one batch, no OpenSpec change | U22–U27, U29, U30, U32, U34, U35, U38–U41 | **In review: PR #77** (2026-10-05), with the live checks and the docs merge | Merge PR #77 into `next-release` |
+| 1 | `jcstress-e2e` | `detached-run` exploration Q6/Q7 (`detached-run/exploration.md` §7) | Decided 2026-10-05; proposing | `/opsx:propose jcstress-e2e`: the runner's JCStress `--mode` option (long form only: `-m` is `--mongo-connection-string` until `retire-mongodb`) and an attached JCStress sanity-mode E2E job against `fake-stress-tests`, asserting shape, not pass/fail counts |
 | 2 | `runs-command` | P11, U28 | Decided, no change directory yet. Design in `docs/review/open-findings.md` (*runs-command*), with U28 | `/opsx:propose runs-command` |
 | 3 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2, U12 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
 | 4 | `narrow-bucket-grants` | S14, S7, S15 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*narrow-bucket-grants*): runner S3 grant scoped to `PutObject`/`GetObject` on `runs/*` + `GetObject` on `releases/*`, no `DeleteObject`; the operator's unused `DeleteObject` removed; the runner-JAR seed made an `If-None-Match: *` put. No bucket policy. Installations pick it up on their next `baas admin setup` | `/opsx:propose narrow-bucket-grants` |
