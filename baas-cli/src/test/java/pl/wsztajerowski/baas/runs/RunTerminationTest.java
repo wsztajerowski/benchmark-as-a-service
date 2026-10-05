@@ -97,4 +97,18 @@ class RunTerminationTest {
         assertThat(instances.terminated).containsExactly("i-tagged");
         assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
     }
+
+    /** U30: the instance wrote this outcome and is uploading its boot log before it terminates. */
+    @Test
+    void aRunTheInstanceFinishedIsLeftToTerminateItself() {
+        runningOn("i-1");
+        recorder.status = RunStatus.COMPLETED;
+
+        assertThat(termination.terminate("r", () -> { throw new AssertionError("not asked"); })).isZero();
+        assertThat(instances.terminated).isEmpty();
+
+        recorder.status = RunStatus.failed(3);
+        assertThat(termination.terminate("r", () -> { throw new AssertionError("not asked"); })).isZero();
+        assertThat(instances.terminated).isEmpty();
+    }
 }

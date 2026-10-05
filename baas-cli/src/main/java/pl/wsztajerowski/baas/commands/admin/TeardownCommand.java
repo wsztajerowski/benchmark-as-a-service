@@ -25,8 +25,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
-import java.util.Scanner;
 import java.util.concurrent.Callable;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Command(
@@ -77,17 +77,8 @@ public class TeardownCommand implements Callable<Integer> {
         }
 
         // Gate 2: explicit confirmation
-        if (!yes) {
-            // Stays on stdout: an interactive prompt needs to sit on the same line as the
-            // cursor, and every logger line comes with a timestamp prefix and a newline. print,
-            // not println, and the Console flushes it — picocli's writer would otherwise hold it.
-            Console.of(spec.commandLine().getOut())
-                .print("Type the stack name to confirm deletion [" + resolvedStack + "]: ");
-            String input = new Scanner(System.in).nextLine().trim();
-            if (!resolvedStack.equals(input)) {
-                logger.info("Aborted.");
-                return 0;
-            }
+        if (!confirmed(resolvedStack)) {
+            return 1;
         }
 
         // Before anything is deleted: the extension exists only as a stack parameter, so deleting
@@ -186,6 +177,44 @@ public class TeardownCommand implements Callable<Integer> {
             Runner-image extension saved to %1$s
               The stack held its only copy. After a later setup, push it back with:
                 baas admin build-image --extension %1$s""".formatted(file);
+    }
+
+    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
+    Console console;
+
+    /** Replaced in tests; reads one answer from the terminal. */
+    Supplier<String> answerReader = () -> System.console().readLine();
+
+    /**
+     * {@code --yes}, or the stack name typed back on a terminal. Without a terminal only
+     * {@code --yes} proceeds, as for {@code baas runs terminate}: reading a closed stdin used to
+     * crash with "No line found". An abort exits 1, so a script can tell it from a teardown done.
+     */
+    boolean confirmed(String stack) {
+        if (yes) {
+            return true;
+        }
+        if (!console().interactive()) {
+            logger.error("Refusing to tear down {} without confirmation: no terminal to ask on. "
+                + "Pass --yes. Nothing was deleted.", stack);
+            return false;
+        }
+        // Stays on stdout: the prompt has to sit on the cursor's line, and every logger line
+        // comes with a timestamp prefix and a newline. The Console flushes it.
+        console().print("Type the stack name to confirm deletion [" + stack + "]: ");
+        String answer = answerReader.get();
+        if (answer == null || !stack.equals(answer.strip())) {
+            logger.info("Aborted. Nothing was deleted.");
+            return false;
+        }
+        return true;
+    }
+
+    private Console console() {
+        if (console == null) {
+            console = Console.of(spec.commandLine().getOut());
+        }
+        return console;
     }
 
     /** {@code --stack-name} when given, otherwise this machine's configured installation. */

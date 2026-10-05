@@ -104,6 +104,7 @@ public class SetupCommand implements Callable<Integer> {
     public Integer call() throws Exception {
         // Before anything is loaded, resolved or deployed.
         validateFederationOptions();
+        validateNetworkingOptions();
 
         BaasConfig config = configService().loadOrEmpty();
         if (region != null) config.getAws().setRegion(region);
@@ -129,11 +130,6 @@ public class SetupCommand implements Callable<Integer> {
         config.setPrefix(resolvedPrefix);
 
         logger.info("Using installation: {} (derived from account {})", resolvedPrefix, accountId);
-
-        if (useExistingVpc && (existingVpcId == null || existingSubnetId == null || existingSecurityGroupId == null)) {
-            logger.error("--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id.");
-            return 1;
-        }
 
         // Before the preflight: a deployer's grants name one region, so in another region the
         // preflight would print a policy for it and invite granting a second installation that
@@ -471,6 +467,25 @@ public class SetupCommand implements Callable<Integer> {
      * false — a setup that reports success and leaves CI with no access. Rejected outright, the
      * same stance {@code baas run} takes on a {@code --tag} for a reserved key.
      */
+    /**
+     * The networking ids mean something only with {@code --use-existing-vpc}. Without it a create
+     * built new networking and ignored them without a word, and an update refused them as
+     * "different networking" — so both halves of the pair are required together, the same stance
+     * {@link #validateFederationOptions()} takes on a partial federation set.
+     */
+    void validateNetworkingOptions() {
+        boolean anyId = existingVpcId != null || existingSubnetId != null || existingSecurityGroupId != null;
+        if (useExistingVpc && (existingVpcId == null || existingSubnetId == null || existingSecurityGroupId == null)) {
+            throw new ParameterException(spec.commandLine(),
+                "--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id. Nothing was deployed.");
+        }
+        if (!useExistingVpc && anyId) {
+            throw new ParameterException(spec.commandLine(),
+                "--vpc-id, --subnet-id and --sg-id apply only with --use-existing-vpc; without it setup "
+                    + "builds its own networking and would ignore them. Nothing was deployed.");
+        }
+    }
+
     void validateFederationOptions() {
         boolean anySetting = githubOrg != null || !githubRepos.isEmpty() || oidcProviderArn != null;
         if (revokeGithubOidc && anySetting) {

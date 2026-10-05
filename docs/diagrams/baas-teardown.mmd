@@ -22,10 +22,13 @@ sequenceDiagram
 
     opt --yes not set
         Note over TD,User: Gate 2 -- explicit confirmation
+        alt no terminal to ask on
+            TD-->>User: refuse, pass --yes -- exit 1, nothing deleted (U32)
+        end
         TD->>User: prompt: type the stack name to confirm deletion
         User-->>TD: typed input
         alt input does not match the stack name exactly
-            TD-->>User: "Aborted." exit 0
+            TD-->>User: "Aborted. Nothing was deleted." exit 1
         end
     end
 

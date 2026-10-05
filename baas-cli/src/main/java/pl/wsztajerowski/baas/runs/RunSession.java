@@ -117,6 +117,14 @@ public final class RunSession {
             return Confirmation.CONFIRMED;
         }
         Optional<RunItem> current = readQuietly();
+        // An outcome only the instance writes means it got there first — RunInstances answered
+        // after the whole run (seen live on a slow link) — not that the run was stopped. The poll
+        // reports it, and the instance terminates itself after its boot-log upload.
+        if (current.isPresent() && RunStatus.isRecordedByInstance(current.get().status())) {
+            logger.info("Run {} already ended ({}) before its launch was confirmed.",
+                run.runId(), current.get().status());
+            return Confirmation.CONFIRMED;
+        }
         if (current.isPresent() && current.get().isTerminal()) {
             logger.error("Run {} was stopped ({}) while it was launching; terminating {}.",
                 run.runId(), current.get().status(), launchedInstanceId);

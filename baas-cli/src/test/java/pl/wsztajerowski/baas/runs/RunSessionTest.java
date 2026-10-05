@@ -427,4 +427,34 @@ class RunSessionTest {
         assertThat(session.ended()).isTrue();
         assertThat(session.endStatus()).isEqualTo(RunStatus.VANISHED);
     }
+
+    // ─── U38: an outcome that beat the launch confirmation ───────────────────────
+
+    /**
+     * RunInstances answered after the whole run (seen live on a slow link): the instance recorded
+     * completed before the CLI could record launched. That is a finished run, not a cancelled one.
+     */
+    @Test
+    void aRunThatFinishedBeforeItsLaunchWasConfirmedIsReportedAsFinished() throws Exception {
+        session.reserve();
+        recorder.instanceWrites(RunStatus.RUNNING);
+        recorder.instanceWrites(RunStatus.COMPLETED);
+
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CONFIRMED);
+        assertThat(instances.terminated).as("it is uploading its boot log and terminates itself").isEmpty();
+
+        instances.states.put("i-1", "shutting-down");
+        var outcome = await(600, true, () -> { });
+        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
+    }
+
+    @Test
+    void aFailedRunThatBeatTheConfirmationIsReportedAsFailedNotCancelled() throws Exception {
+        session.reserve();
+        recorder.instanceWrites(RunStatus.failed(7));
+
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CONFIRMED);
+        assertThat(instances.terminated).isEmpty();
+        assertThat(await(600, false, () -> { })).isEqualTo(new RunSession.Outcome("failed:7", 1));
+    }
 }

@@ -278,7 +278,7 @@ public class RunCommand implements Callable<Integer> {
         }
         if (!VALID_TYPES.contains(benchmarkType)) {
             logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
-            return 1;
+            return 2;
         }
 
         // Checked first, before resolving the project, the results table, the runner image or
@@ -308,6 +308,10 @@ public class RunCommand implements Callable<Integer> {
         String resolvedTable = resolveResultsTable(config);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         Timings timings = resolveTimings(config);
+        // Before any AWS call, like every other check on what the caller typed: a reserved or
+        // project tag used to be refused only after the JAR upload, leaving an input/ in S3 that
+        // no run item names and nothing expires.
+        Map<String, String> runnerTags = buildRunnerTags(benchmarkType, resolvedProject);
         int resolvedTimeout = timings.timeoutSeconds();
         int resolvedWallClock = timings.watchdogSeconds();
         logger.debug("Resolved run parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
@@ -397,8 +401,6 @@ public class RunCommand implements Callable<Integer> {
 
         // 5. Build user-data. The run item's sort key is built here, once, by ResultKeys, and
         //    handed to the instance verbatim; see UserDataScriptBuilder's RUN_SORT_KEY.
-        Map<String, String> runnerTags =
-            buildRunnerTags(benchmarkType, resolvedProject);
         RunItem run = new RunItem(runId, resolvedProject, runInstant, resultPath, resolvedInstanceType,
             RunStatus.LAUNCHING, null, null, runnerTags, null);
         String userData = new UserDataScriptBuilder().build(
@@ -700,6 +702,12 @@ public class RunCommand implements Callable<Integer> {
      * below the benchmark's own timeout.
      */
     static int watchdogBound(int timeoutSeconds, int marginSeconds) {
+        if (timeoutSeconds < 1) {
+            throw new IllegalArgumentException(
+                "The benchmark timeout must be at least 1 second; got " + timeoutSeconds + ". `timeout 0` "
+                    + "disables the process timeout and a negative one fails the run unstarted. "
+                    + "Nothing was launched.");
+        }
         if (marginSeconds < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
             throw new IllegalArgumentException(
                 "The watchdog margin must be at least " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS

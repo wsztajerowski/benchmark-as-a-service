@@ -35,8 +35,8 @@ import java.util.concurrent.Callable;
         "result path (runs/<project>/<runId>):",
         "  baas env diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2",
         "",
-        "A run that failed before storing a measurement has no index entry:",
-        "name it by its result path.",
+        "Every run since run items existed resolves by id, failed ones included;",
+        "an older run that stored no measurement needs its result path.",
         "",
         "A run recorded before the unified layout keeps its original path",
         "(<branch>/<type>/<timestamp>); both shapes still resolve."
