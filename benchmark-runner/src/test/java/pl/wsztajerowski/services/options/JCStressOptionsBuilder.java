@@ -17,6 +17,7 @@ public final class JCStressOptionsBuilder {
     private Boolean preTouchHeap;
     private Integer strideCount;
     private Integer strideSize;
+    private String mode;
     private String testNameRegex;
     private Path processOutput;
 
@@ -87,6 +88,11 @@ public final class JCStressOptionsBuilder {
         return this;
     }
 
+    public JCStressOptionsBuilder withMode(String mode) {
+        this.mode = mode;
+        return this;
+    }
+
     public JCStressOptionsBuilder withTestNameRegex(String testNameRegex) {
         this.testNameRegex = testNameRegex;
         return this;
@@ -112,6 +118,7 @@ public final class JCStressOptionsBuilder {
             preTouchHeap,
             strideCount,
             strideSize,
+            mode,
             testNameRegex,
             processOutput
         );

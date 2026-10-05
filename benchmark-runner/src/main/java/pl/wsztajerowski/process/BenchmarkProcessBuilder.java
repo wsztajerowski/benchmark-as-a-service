@@ -27,6 +27,11 @@ public class BenchmarkProcessBuilder {
             .addArgument(benchmarkPath.toString());
     }
 
+    /** The command line built so far, for tests that pin what reaches the benchmark process. */
+    public List<String> commands() {
+        return List.copyOf(commands);
+    }
+
     public BenchmarkProcessBuilder withOutputPath(Path path){
         this.outputPath = path;
         return this;
