@@ -1,0 +1,27 @@
+%% One installation per account. [outside] = AWS console/CLI, IAM, or time.
+%% Federation (on/off) and networking (fixed at create) are orthogonal attributes of Deployed/Ready.
+stateDiagram-v2
+    direction TB
+    [*] --> Empty
+    Empty --> Authorised: [outside] attach rendered deployer policy
+    Authorised --> Deployed: admin setup (any region, parent AMI resolved there)
+    Authorised --> RolledBack: admin setup, create fails
+    RolledBack --> Residue: admin teardown
+    Deployed --> Ready: admin build-image
+    Deployed --> Deployed: admin setup (update)
+    Ready --> Ready: admin build-image [--extension] (rebuild in place)<br/>admin setup (update, image carried forward)
+    Ready --> Ready: admin setup --region B — refused, names the bucket's region<br/>build-image from an older-base CLI — refused, upgrade the CLI
+    Ready --> Dangling: [outside] AMI deregistered
+    Dangling --> Ready: admin build-image
+    Ready --> Busy: baas run (run item launching…running)
+    Busy --> Ready: instance records outcome + self-terminates<br/>Ctrl+C hook · poll cap · runs terminate · watchdog
+    Busy --> Busy: admin teardown refused (names run ids)
+    Deployed --> Residue: admin teardown [--delete-bucket]
+    Ready --> Residue: admin teardown [--delete-bucket]<br/>(saves the extension, retires the image)
+    Residue --> Residue: admin setup refused (bucket or table exists)
+    Residue --> Empty: [outside] delete table<br/>(+ bucket without --delete-bucket)
+
+    state Residue {
+        [*] --> kept
+        kept: results table (always)<br/>bucket (unless --delete-bucket)
+    }

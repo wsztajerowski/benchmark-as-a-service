@@ -76,13 +76,6 @@ checkout is the developer's explicit special case, not a silent stand-in for a p
 One-time, and it needs the elevated deployer credentials described under
 [Permissions](#permissions).
 
-> **SSO users:** an SSO session's caller ARN carries a per-session name, so a second `baas admin
-> setup` computes a different prefix — creating a *separate* stack, bucket and results table (all
-> retained) and repointing your config at the empty one. It presents as "all my benchmark history
-> is gone," though the original table is untouched. Run `setup` from a stable identity until this
-> is fixed (tracked as finding **A10** in
-> [`docs/review/baas-cli-findings.md`](docs/review/baas-cli-findings.md)).
-
 ```bash
 baas admin setup
 ```
@@ -119,13 +112,15 @@ move benchmark numbers (`perf_event_paranoid`, `kptr_restrict`, transparent huge
 That file is the only place a tool version is written down, and `git log -p` on it is the image
 history.
 
-**The definition is bundled into the CLI when it is built**, and `build-image` bakes that bundled
-copy — it reads no file from disk. An installed `baas` therefore bakes the image its release
-shipped with, and editing a `runner-image.yaml` next to it changes nothing. Changing the image
-today means editing `infra/runner-image.yaml` in a checkout of this repository, rebuilding the CLI
-(`mvn package`), and running `baas admin build-image` from that build. Letting an installed CLI
-bake a definition you supply is not built yet (finding U20 in
-[`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md)).
+**The base definition is bundled into the CLI when it is built**, and `build-image` bakes that
+bundled copy — it reads no file from disk, so editing a `runner-image.yaml` next to an installed
+`baas` changes nothing. A base moves only forward, by upgrading the CLI: `build-image` refuses a
+bundled base older than the installation's. What an installation adds on top is its **extension**,
+an AWSTOE document you pull with `baas admin image --extension > ext.yaml`, edit, and push with
+`baas admin build-image --extension ext.yaml`; teardown saves it beside your config before deleting
+the stack, which holds its only copy. The workflow is in
+[`infra/README.md`](infra/README.md), the rationale in
+[ADR 0004](docs/adr/0004-runner-image-only-moves-forward.md).
 
 Changing a version is a one-line edit **plus** a bump of `imageVersion` in the same file. Image
 Builder components are immutable at a given version, so `baas admin build-image` checks that up
@@ -353,9 +348,9 @@ discards measurements.
 
 Design rationale, the invariants the runner depends on, and the open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
-Call-level sequence diagrams and C4 views (`c4-*.mmd`): [`docs/diagrams/`](docs/diagrams/). The
-command surface, state graph and known gaps:
-[`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md).
+Call-level sequence diagrams, state machines (`baas-states-*.mmd`) and C4 views (`c4-*.mmd`):
+[`docs/diagrams/`](docs/diagrams/). Decisions since: [`docs/adr/`](docs/adr/). Known open issues:
+[`docs/review/open-findings.md`](docs/review/open-findings.md).
 
 ## Permissions
 
