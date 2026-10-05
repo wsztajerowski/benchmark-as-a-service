@@ -15,6 +15,7 @@ public record JCStressOptions(
     Boolean preTouchHeap,
     Integer strideCount,
     Integer strideSize,
+    String mode,
     String testNameRegex,
     Path processOutput) {
 }

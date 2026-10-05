@@ -7,6 +7,7 @@ import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.process.BenchmarkProcessBuilder;
 import pl.wsztajerowski.results.JCStressMeasurementMapper;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
@@ -36,26 +37,32 @@ public class JCStressSubcommandService {
         this.jcStressOptions = jcStressOptions;
     }
 
+    /** JCStress's command line, without the output redirection. An absent option adds no argument. */
+    BenchmarkProcessBuilder jcstressProcess() {
+        return benchmarkProcessBuilder(benchmarkPath)
+            .addArgumentWithValue("-r", jcStressOptions.reportPath())
+            .addArgumentIfValueIsNotNull("-c", jcStressOptions.cpuNumber())
+            .addArgumentIfValueIsNotNull("-f", jcStressOptions.forks())
+            .addArgumentIfValueIsNotNull("-fsm", jcStressOptions.forkMultiplier())
+            .addArgumentIfValueIsNotNull("-hs", jcStressOptions.heapSize())
+            .addArgumentIfValueIsNotNull("-jvmArgs", jcStressOptions.jvmArgs())
+            .addArgumentIfValueIsNotNull("-jvmArgsPrepend", jcStressOptions.jvmArgsPrepend())
+            .addArgumentIfValueIsNotNull("-pth", jcStressOptions.preTouchHeap())
+            .addArgumentIfValueIsNotNull("-sc", jcStressOptions.splitCompilationModes())
+            .addArgumentIfValueIsNotNull("-spinStyle", jcStressOptions.spinStyle())
+            .addArgumentIfValueIsNotNull("-strideCount", jcStressOptions.strideCount())
+            .addArgumentIfValueIsNotNull("-strideSize", jcStressOptions.strideSize())
+            .addArgumentIfValueIsNotNull("-m", jcStressOptions.mode())
+            .addArgumentIfValueIsNotNull("-t", jcStressOptions.testNameRegex());
+    }
+
     public void executeCommand() {
         Path reportPath = jcStressOptions.reportPath();
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JCStress. Output path: {}", outputPath);
         int exitCode;
         try {
-            exitCode = benchmarkProcessBuilder(benchmarkPath)
-                .addArgumentWithValue("-r", reportPath)
-                .addArgumentIfValueIsNotNull("-c", jcStressOptions.cpuNumber())
-                .addArgumentIfValueIsNotNull("-f", jcStressOptions.forks())
-                .addArgumentIfValueIsNotNull("-fsm", jcStressOptions.forkMultiplier())
-                .addArgumentIfValueIsNotNull("-hs", jcStressOptions.heapSize())
-                .addArgumentIfValueIsNotNull("-jvmArgs", jcStressOptions.jvmArgs())
-                .addArgumentIfValueIsNotNull("-jvmArgsPrepend", jcStressOptions.jvmArgsPrepend())
-                .addArgumentIfValueIsNotNull("-pth", jcStressOptions.preTouchHeap())
-                .addArgumentIfValueIsNotNull("-sc", jcStressOptions.splitCompilationModes())
-                .addArgumentIfValueIsNotNull("-spinStyle", jcStressOptions.spinStyle())
-                .addArgumentIfValueIsNotNull("-strideCount", jcStressOptions.strideCount())
-                .addArgumentIfValueIsNotNull("-strideSize", jcStressOptions.strideSize())
-                .addArgumentIfValueIsNotNull("-t", jcStressOptions.testNameRegex())
+            exitCode = jcstressProcess()
                 .withOutputPath(jcStressOptions.processOutput())
                 .buildAndStartProcess()
                 .waitFor();

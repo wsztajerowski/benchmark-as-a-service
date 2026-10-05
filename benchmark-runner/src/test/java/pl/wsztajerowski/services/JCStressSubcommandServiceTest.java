@@ -40,4 +40,33 @@ class JCStressSubcommandServiceTest {
             .hasMessageContaining("index.html");
         assertThat(saved).contains(tmp.resolve("result/jcstress-output.txt"));
     }
+
+    @Test
+    void aModeReachesJCStressAsItsShortOption(@TempDir Path tmp) {
+        var sut = serviceWith(tmp, "sanity");
+
+        assertThat(sut.jcstressProcess().commands()).containsSubsequence("-m", "sanity");
+    }
+
+    /** Without --mode JCStress keeps its default, so results stay comparable with earlier runs. */
+    @Test
+    void noModeAddsNoModeArgument(@TempDir Path tmp) {
+        var sut = serviceWith(tmp, null);
+
+        assertThat(sut.jcstressProcess().commands()).doesNotContain("-m");
+    }
+
+    private static JCStressSubcommandService serviceWith(Path tmp, String mode) {
+        return JCStressSubcommandServiceBuilder.serviceBuilder()
+            .withBenchmarkPath(tmp.resolve("tests.jar"))
+            .withCommonOptions(new CommonSharedOptions(tmp.resolve("result"), "req-1", Instant.now(), "p", Map.of()))
+            .withStorageService((storagePath, localPath) -> { })
+            .withResultsStore(measurements -> { })
+            .withJCStressOptions(jcStressOptionsBuilder()
+                .withReportPath(tmp.resolve("report"))
+                .withProcessOutput(tmp.resolve("jcstress-output.txt"))
+                .withMode(mode)
+                .build())
+            .build();
+    }
 }
