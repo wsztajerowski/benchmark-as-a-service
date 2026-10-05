@@ -1,5 +1,6 @@
-# The project's own end-to-end self-test: one real benchmark run on one real EC2 instance,
-# launched exactly the way a developer's laptop launches one.
+# The project's own end-to-end self-test: one real benchmark run per job, each on its own real EC2
+# instance, launched exactly the way a developer's laptop launches one. `benchmark` covers the
+# image-dependent type (jmh-with-async); `jcstress` covers the JCStress path in sanity mode.
 #
 # It drives the CLI rather than re-implementing it. Nothing here provisions or terminates an
 # instance, mints a run identifier, builds an S3 key, installs a JDK or a profiler onto the
@@ -11,7 +12,7 @@
 # `private-runner-network` moves runners onto a subnet with no route to github.com, which a
 # self-hosted runner agent must reach.
 #
-# Cost: this provisions a paid instance per triggering event, so the pull_request trigger is
+# Cost: this provisions a paid instance per job per triggering event, so the pull_request trigger is
 # path-filtered and there is no schedule. workflow_dispatch is what makes it provable on demand.
 
 name: E2E Production Benchmark Test
@@ -24,6 +25,7 @@ on:
       - 'baas-model/**'
       - 'benchmark-runner/**'
       - 'fake-jmh-benchmarks/**'
+      - 'fake-stress-tests/**'
       - 'infra/**'
       - 'pom.xml'
       - '.github/workflows/e2e-cloud-test.yml'
@@ -206,6 +208,120 @@ jobs:
       # its id, which resolves through the run item even when no measurement was stored; the path
       # form stays because it needs no index lookup at all, and a failure step should depend on as
       # little as possible.
+      - name: Surface the runner boot log on failure
+        if: failure() && steps.run.outputs.result_path != ''
+        run: |
+          $BAAS download "${{ steps.run.outputs.result_path }}" -o ./failed || true
+          cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"
+
+  # The JCStress path end to end: the runner's JCStress subcommand, its HTML report parsing, the
+  # single JCSTRESS# item and jcstress-output.txt. Attached, like the job above. Sanity mode keeps it
+  # to seconds of JCStress on top of the boot.
+  #
+  # Asserted by shape only. The fixture's TestWithForbiddenResults fails whenever its non-atomic
+  # increment races, which is nondeterministic; the runner stores the summary either way, so the
+  # run ends completed and no assertion may depend on pass or fail counts.
+  jcstress:
+    name: JCStress on EC2 via baas run
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      BAAS: java -jar baas-cli/target/baas-cli.jar
+      PROJECT: ${{ github.event.repository.name }}
+      RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
+      RUN_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: 25
+          distribution: temurin
+          cache: maven
+
+      - name: Build the CLI, the runner and the fixture tests
+        run: mvn -B -q clean package -DskipTests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          # Same federation and session length as the job above, for the same reasons.
+          role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 9000
+          role-session-name: GitHubActions
+
+      - name: Sync configuration from the deployed core stack
+        run: $BAAS config sync --name "${{ vars.CORE_STACK_NAME }}"
+
+      # --mode is the runner's, forwarded to JCStress as -m: on the runner -m is the MongoDB
+      # connection string. --runner-jar and exclude_from_results as in the job above.
+      - name: Run the JCStress tests on EC2
+        id: run
+        run: |
+          set -o pipefail
+          status=0
+          $BAAS run jcstress \
+            --format json \
+            --project "$PROJECT" \
+            --tag branch="$RUN_BRANCH" \
+            --tag commit="$RUN_COMMIT" \
+            --runner-jar benchmark-runner/target/benchmark-runner.jar \
+            --benchmark-jar fake-stress-tests/target/fake-stress-tests.jar \
+            --tag exclude_from_results=true \
+            -- --mode sanity \
+            | tee summary.json || status=$?
+          run_id=$(jq -r '.runId // empty' summary.json)
+          {
+            echo "run_id=$run_id"
+            echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
+            echo "run_status=$(jq -r '.runStatus // empty' summary.json)"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] && [ -z "$run_id" ]; then
+            echo "::error::the run succeeded but its JSON summary carried no runId"
+            echo "--- captured stdout ---"; cat summary.json
+            exit 1
+          fi
+          exit "$status"
+
+      - name: The run item recorded the outcome
+        run: |
+          test "${{ steps.run.outputs.run_status }}" = "completed" || {
+            echo "::error::run item status is '${{ steps.run.outputs.run_status }}', expected completed"; exit 1; }
+
+      # A JCStress run is one item, named for the run rather than for a class and method.
+      - name: The run stored exactly one JCStress measurement carrying this job's tags
+        run: |
+          $BAAS results --request-id "${{ steps.run.outputs.run_id }}" --format json \
+            | tee measurements.json
+          test "$(jq 'length' measurements.json)" -eq 1
+          test "$(jq -r '.[0].benchmarkType' measurements.json)" = "jcstress"
+          jq -e '.[0].benchmarkName | startswith("(jcstress)")' measurements.json > /dev/null
+          test "$(jq -r '.[0].tags.project' measurements.json)" = "$PROJECT"
+          test "$(jq -r '.[0].tags.branch' measurements.json)" = "$RUN_BRANCH"
+          test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
+          test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
+
+      - name: The JCStress output and the environment manifest reached the run's prefix
+        run: |
+          $BAAS download "${{ steps.run.outputs.run_id }}" -o ./artifacts
+          find ./artifacts -type f | sort
+          test -s ./artifacts/environment.json
+          test -s ./artifacts/jcstress-output.txt
+
+      - name: Publish the run's artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jcstress-run-${{ steps.run.outputs.run_id }}
+          path: ./artifacts
+          if-no-files-found: ignore
+
       - name: Surface the runner boot log on failure
         if: failure() && steps.run.outputs.result_path != ''
         run: |
