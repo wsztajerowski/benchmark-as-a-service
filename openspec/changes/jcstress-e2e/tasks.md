@@ -63,10 +63,15 @@
       - The download held `environment.json`, `jcstress-output.txt` (`Test preset mode:
         "sanity"`, so the option reached JCStress on the instance), both test pages, the boot log,
         `packages.txt` and `input/`.
-- [ ] 5.2 Open the PR into `next-release` and confirm both E2E jobs pass on it. Record the run ids.
+- [x] 5.2 Open the PR into `next-release` and confirm both E2E jobs pass on it. Record the run ids.
       No score comparison is needed: the change does not affect measurements (design.md
       *Comparability*). A run without `--mode` passes JCStress the same arguments as before, which
       task 2.1's test pins.
+      *Done 2026-10-05:* PR #79, workflow run 37376994441, every check green. The two jobs ran in
+      parallel, about 1 m 50 s each:
+      - `benchmark` → `20261005T213735349Z-4c26acf0`;
+      - `jcstress` → `20261005T213752486Z-f34c851f`, summary `runStatus` `completed`.
+      The `install.sh` jobs and the build also passed.
 
 ## 6. Verify
 
