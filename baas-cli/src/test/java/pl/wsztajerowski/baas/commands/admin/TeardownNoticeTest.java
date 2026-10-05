@@ -103,4 +103,35 @@ class TeardownNoticeTest {
         assertThat(TeardownCommand.extensionSavedNotice(Path.of("/h/.baas/runner-image-extension.p.yaml")))
             .contains("baas admin build-image --extension /h/.baas/runner-image-extension.p.yaml");
     }
+
+    // ─── U32: confirmation ───────────────────────────────────────────────────────
+
+    private TeardownCommand teardown(boolean interactive, String... args) {
+        var command = new TeardownCommand();
+        new picocli.CommandLine(command).parseArgs(args);
+        command.console = pl.wsztajerowski.baas.console.Console.withFlags(
+            new java.io.PrintWriter(new java.io.StringWriter()), interactive, false);
+        return command;
+    }
+
+    /** Reading a closed stdin used to crash with "No line found". */
+    @Test
+    void withoutATerminalOnlyYesProceeds() {
+        var command = teardown(false);
+        command.answerReader = () -> { throw new AssertionError("must not prompt"); };
+        assertThat(command.confirmed("baas-123456789012")).isFalse();
+
+        assertThat(teardown(false, "--yes").confirmed("baas-123456789012")).isTrue();
+    }
+
+    @Test
+    void onATerminalOnlyTheExactStackNameProceeds() {
+        var wrong = teardown(true);
+        wrong.answerReader = () -> "baas-1234";
+        assertThat(wrong.confirmed("baas-123456789012")).isFalse();
+
+        var right = teardown(true);
+        right.answerReader = () -> " baas-123456789012 ";
+        assertThat(right.confirmed("baas-123456789012")).isTrue();
+    }
 }

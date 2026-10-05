@@ -65,6 +65,11 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        if (benchmarkTimeout != null && benchmarkTimeout < 1) {
+            logger.error("--timeout must be at least 1 second; got {}. 0 would disable the process "
+                + "timeout on the instance.", benchmarkTimeout);
+            return 2;
+        }
         if (watchdogMargin != null && watchdogMargin < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
             logger.error("--watchdog-margin must be at least {} seconds; got {}.",
                 BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS, watchdogMargin);

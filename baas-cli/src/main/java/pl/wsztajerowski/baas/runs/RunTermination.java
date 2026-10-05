@@ -43,6 +43,14 @@ public final class RunTermination {
             logger.info("Run {} already ended ({}); nothing to terminate.", runId, run.status());
             return 0;
         }
+        // The instance wrote this outcome itself and is uploading its boot log before it
+        // terminates; cutting that off loses the one record of a failed run. The same rule
+        // RunSession.stop follows.
+        if (RunStatus.isRecordedByInstance(run.status())) {
+            logger.info("Run {} already ended ({}); instance {} is uploading its boot log and "
+                + "terminates itself.", runId, run.status(), live);
+            return 0;
+        }
         if (!confirm.getAsBoolean()) {
             logger.info("Nothing was changed.");
             return 1;

@@ -317,4 +317,22 @@ class SetupCommandTest {
             .contains("previous teardown retained it")
             .contains("aws s3 sync s3://baas-123456789012 ./backup");
     }
+
+    // ─── U34: networking ids belong to --use-existing-vpc ────────────────────────
+
+    @Test
+    void networkingIdsWithoutTheFlagAreRefusedNotIgnored() {
+        assertThatThrownBy(parsed("--vpc-id", "vpc-1")::validateNetworkingOptions)
+            .isInstanceOf(CommandLine.ParameterException.class)
+            .hasMessageContaining("--use-existing-vpc");
+    }
+
+    @Test
+    void theFlagStillNeedsAllThreeIds() {
+        assertThatThrownBy(parsed("--use-existing-vpc", "--vpc-id", "vpc-1")::validateNetworkingOptions)
+            .isInstanceOf(CommandLine.ParameterException.class);
+        assertThatCode(parsed("--use-existing-vpc", "--vpc-id", "v", "--subnet-id", "s", "--sg-id", "g")
+            ::validateNetworkingOptions).doesNotThrowAnyException();
+        assertThatCode(parsed()::validateNetworkingOptions).doesNotThrowAnyException();
+    }
 }

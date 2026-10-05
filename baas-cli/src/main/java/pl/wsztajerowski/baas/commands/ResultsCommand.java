@@ -121,6 +121,14 @@ public class ResultsCommand implements Callable<Integer> {
             return 2;
         }
 
+        if (limit != null && limit < 1) {
+            logger.error("--limit must be at least 1; got {}.", limit);
+            return 2;
+        }
+        if (allRuns && groupByNamed()) {
+            logger.error("--group-by chooses the best per group, which --all-runs turns off: pass one of them.");
+            return 2;
+        }
         String conflict = requestIdConflict();
         if (conflict != null) {
             logger.error("--request-id names one run, so it cannot be combined with {}.", conflict);
@@ -196,7 +204,7 @@ public class ResultsCommand implements Callable<Integer> {
         }
 
         rows = ResultsGrouping.sortedForDisplay(rows);
-        if (limit != null && limit >= 0 && rows.size() > limit) {
+        if (limit != null && rows.size() > limit) {
             info.accept("Reporting " + limit + " of " + rows.size() + " rows (--limit).");
             rows = rows.subList(0, limit);
         }
@@ -300,7 +308,15 @@ public class ResultsCommand implements Callable<Integer> {
         if (benchmarkName != null) return "--benchmark-name";
         if (tags != null && !tags.isEmpty()) return "--tag";
         if (allProjects) return "--all-projects";
+        if (allRuns) return "--all-runs";
+        if (groupByNamed()) return "--group-by";
         return null;
+    }
+
+    /** {@code --group-by} has a default, so only the parse result tells a typed one from it. */
+    private boolean groupByNamed() {
+        return spec != null && spec.commandLine().getParseResult() != null
+            && spec.commandLine().getParseResult().hasMatchedOption("--group-by");
     }
 
     /** The PROJECT column only when rows can come from more than one; tag lines only with {@code -v}. */

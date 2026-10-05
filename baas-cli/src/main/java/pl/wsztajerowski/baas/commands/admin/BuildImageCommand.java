@@ -87,6 +87,11 @@ public class BuildImageCommand implements Callable<Integer> {
         // Read before any AWS call: a file that cannot be pushed fails without a round trip.
         Optional<RunnerImageExtension.WorkingCopy> pushed = Optional.empty();
         if (extensionFile != null) {
+            if (!Files.isRegularFile(extensionFile)) {
+                // Files.readString's NoSuchFileException carries only the path as its message.
+                logger.error("Extension file not found: {}. Nothing was changed.", extensionFile);
+                return 1;
+            }
             var file = RunnerImageExtension.parse(Files.readString(extensionFile));
             try {
                 RunnerImageExtension.requireStorable(file.content());
