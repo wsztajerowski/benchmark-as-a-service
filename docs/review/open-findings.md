@@ -28,6 +28,8 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | Low | `retire-mongodb` |
 | U2 | No CLI path from teardown residue to an empty account | Low | `export-before-teardown` |
 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | `export-before-teardown` |
+| DR1 | `run --detach` with today's shutdown hook would cancel and terminate the run it just launched | High if shipped naively | `detached-run` |
+| DR4 | The archived non-goal rejecting `--detach` cites a reason run items removed | Info | `detached-run` |
 | U21 | Live check: an installation outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
 | U40 | Live check: teardown saving a non-empty extension (fixed in code) | — | deferred, blocked on IAM |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | High → reduced | open |
@@ -141,6 +143,23 @@ The design lives in
 [`openspec/changes/export-before-teardown/brainstorm.md`](../../openspec/changes/export-before-teardown/brainstorm.md)
 (its dated 2026-10-02 block overrides the text above it): an export command decoupled from teardown,
 then a teardown that deletes the bucket and table behind a second typed confirmation.
+
+### `detached-run` — DR1, DR4
+
+Not yet in `QUEUE.md`: a stub change, explored on 2026-10-05, that comes after `jcstress-e2e` and
+`runs-command`. Its full exploration, with every decision, is
+[`openspec/changes/detached-run/exploration.md`](../../openspec/changes/detached-run/exploration.md).
+
+**DR1.** The shutdown hook is registered before `RunInstances` (`RunCommand` l.443), and it calls
+`session.stop(CANCELLED)` whenever the session has not ended. A detached `run` returning after
+`confirmLaunched` would therefore cancel and terminate its own instance at JVM exit. **Decided:**
+keep the hook armed through the launch, then disarm it. An ADR amends CLAUDE.md's
+three-termination-layers rule: for a detached run, `baas runs terminate` replaces the CLI's Ctrl+C
+layer.
+
+**DR4.** The archived `run-status-in-dynamodb` design lists `--detach`/`attach` as a non-goal,
+"rejected in the usage analysis §5", whose reason (it would need discovery by tag) the run items
+removed. The `detached-run` ADR supersedes it explicitly.
 
 ## Deferred live checks
 
