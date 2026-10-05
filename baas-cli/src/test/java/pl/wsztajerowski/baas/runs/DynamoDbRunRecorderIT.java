@@ -44,7 +44,7 @@ class DynamoDbRunRecorderIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
             .withServices(LocalStackContainer.Service.DYNAMODB);
 
     private DynamoDbClient client;
