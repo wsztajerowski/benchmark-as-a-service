@@ -70,7 +70,7 @@ shared-tag `TerminateInstances` grant let any runner terminate any other.
   rationale changes once the `TerminateInstances` condition is gone), and the *Accepted risks* row
   claiming a private subnet costs ~$32/month, which is rewritten to record that gateway endpoints plus a
   prebaked AMI achieved it for free. Also `README.md`, `infra/README.md`, `docs/adr/`,
-  `docs/diagrams/`, `docs/review/baas-cli-findings.md` (S8).
+  `docs/diagrams/`, ADR 0005 and CLAUDE.md's *Accepted risks* (S8, accepted 2026-10-02).
 - **Depends on**: `prebaked-runner-ami` (tooling must be baked in) and `dynamodb-results-store` (Atlas is
   on the public internet and unreachable without NAT). Neither dependency is optional.
 - **Cost**: $0 standing. Gateway endpoints and the internet gateway are free; there is no NAT and no

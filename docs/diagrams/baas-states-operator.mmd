@@ -1,0 +1,12 @@
+%% One operator machine's configuration (~/.baas/config.yaml or --config-path).
+%% prefix is account-derived and region is found from the bucket, so neither is ever typed.
+stateDiagram-v2
+    direction TB
+    [*] --> NoConfig
+    NoConfig --> Adopted: config sync --name P<br/>(stores prefix + region)<br/>or admin setup
+    Adopted --> Operator: config set --operator-profile<br/>(or ambient creds)
+    Operator --> Operator: config set (preferences)
+    Operator --> Orphaned: [elsewhere] admin teardown
+    Orphaned --> Operator: [elsewhere] setup, same region<br/>(no re-sync needed)
+    Orphaned --> Adopted: [elsewhere] setup in another region,<br/>then config sync --name P
+    Orphaned: Orphaned<br/>results and runs list read the retained table<br/>run, download, env diff fail

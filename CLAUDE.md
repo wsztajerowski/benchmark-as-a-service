@@ -55,8 +55,9 @@ ends the statement). **Every `.mmd` edit is rendered and looked at before it is 
 `mmdc -i docs/diagrams/<file>.mmd -o <scratch>/<file>.png`, then open the PNG and check the change reads as
 intended — a clean exit only proves it parsed, not that the arrow landed in the right branch. The render stays out
 of the repository. Mermaid CLI is installed globally (`npm install -g @mermaid-js/mermaid-cli`); nothing in CI
-renders these files, so a broken diagram is otherwise found by its next reader. State graph and gap list: [`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md). Design rationale and open risks:
-[`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md). Per-change
+renders these files, so a broken diagram is otherwise found by its next reader. State machines for the installation, an operator machine and a run: `docs/diagrams/baas-states-*.mmd`. Design rationale and open risks:
+[`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md); later decisions, and the hardenings declined
+with their reasons, in `docs/adr/0002`–`0005`. Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
 **OpenSpec changes use the stock `spec-driven` schema**, driven by `/opsx:explore` → `/opsx:propose`
@@ -69,10 +70,13 @@ live in `openspec/config.yaml`, keyed by artifact ID only; any other key is drop
 warning the agent never sees. Archived changes still pinned to `superspec` are never re-read, so
 the deleted schema breaks nothing.
 
-**Open review findings live in [`docs/review/`](docs/review/)** — one file per module, plus one per
-reviewed change (`prebaked-runner-ami-review.md`), each entry marked Open or Fixed. An in-progress walkthrough works through them by severity; read the relevant
-file before proposing security or architecture work, and update the status table when one is
-fixed. Items already in *Accepted risks* below are excluded from both files on purpose.
+**Open review findings live in one file, [`docs/review/open-findings.md`](docs/review/open-findings.md)**
+— every finding neither fixed nor accepted, with the designs of the changes queued to close them. IDs
+keep the prefix of the review that filed them (`S`/`A`/`D`/`C`, `P`, `U`, `N`), so citations
+still resolve. Read it before proposing security or architecture work. Closing a finding deletes its
+entry; a decision worth keeping becomes an ADR (`docs/adr/0005` collects the declined hardenings).
+Items in *Accepted risks* below are excluded on purpose. The per-module review files and the CLI
+usage analysis were merged into it on 2026-10-05 — `git log -- docs/review docs/analysis`.
 
 ## Invariants — breaking these costs money or silently loses data
 
