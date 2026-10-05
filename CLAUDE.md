@@ -43,8 +43,8 @@ the verbatim result JSON and profiling artifacts go to S3.
 | `baas-model` | The stored measurement shape, the key encoding and the tag vocabulary — shared by the CLI and the runner so the two cannot drift. No MongoDB dependency, enforced by the build |
 | `fake-jmh-benchmarks`, `fake-stress-tests` | Test fixtures |
 
-One trigger path: `baas run`. CI does not have a second one — `e2e-cloud-test.yml` is a single
-`ubuntu-latest` job that federates into `OperatorRole` and calls `baas run`, so a regression in the
+One trigger path: `baas run`. CI does not have a second one — `e2e-cloud-test.yml` is two
+`ubuntu-latest` jobs that federate into `OperatorRole` and call `baas run`, so a regression in the
 CLI cannot pass CI. `benchmark-runner.yml`, `exec-single-benchmark.yml`, `start-ec2-runner.yml`,
 `stop-ec2-runner.yml` and the `act` harness under `.github/test/` are deleted; the consumer
 contract is *install the CLI*, not *call our reusable workflow*.
@@ -435,10 +435,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
-- **`e2e-cloud-test.yml` drives `baas run` end to end, and it is the only thing that does.** One
-  `ubuntu-latest` job, `jmh-with-async` against `fake-jmh-benchmarks` on the real runner AMI, so a
-  bad bake now fails CI rather than surviving it. It is path-filtered on `pull_request` plus
-  `workflow_dispatch` because it provisions a paid instance per triggering event, and it tags
+- **`e2e-cloud-test.yml` drives `baas run` end to end, and it is the only thing that does.** Two
+  `ubuntu-latest` jobs, each launching its own instance: `benchmark` runs `jmh-with-async` against
+  `fake-jmh-benchmarks` on the real runner AMI, so a bad bake fails CI rather than surviving it;
+  `jcstress` runs `fake-stress-tests` in JCStress sanity mode (`-- --mode sanity`) and asserts the
+  stored item's shape only, never pass/fail counts — the fixture's `TestWithForbiddenResults` races
+  nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
+  provisions a paid instance per job per triggering event, and it tags
   itself `exclude_from_results=true` — which is why `queryByRequestId` carries no exclusion
   filter. **The path filter bounds it per PR, not per push:** GitHub evaluates a `pull_request`
   path filter against the PR's cumulative diff, so once a PR touches `baas-cli/**` *every*
@@ -448,8 +451,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   CLI before its shutdown hook fires, leaving the shell watchdog as the only termination layer,
   which is the red-job-and-full-bill failure this design exists to remove. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
   JVM test (the JSON summary's shape is pinned against `printRunSummary`, and the wiring through
-  `call()` only on a path that fails before AWS), and `jcstress` has no end-to-end coverage at all
-  now that the old path is gone.
+  `call()` only on a path that fails before AWS).
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
   table if you want one.
@@ -482,6 +484,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   (and so `latest`) exits 55 without `LOCALSTACK_AUTH_TOKEN`, and this repository holds no secrets. The pin
   replaced `0.12.16`, which took 25–65 s to start against Testcontainers' 60 s wait and stored the SDK's
   `aws-chunked` upload framing as object bytes — `StorageServiceIT` had asserted that corrupted size.
+- **A JCStress run's mode is `--mode`, not `-m`.** The runner forwards it to JCStress as `-m`, but
+  on the runner `-m` is `--mongo-connection-string` on every subcommand, so `baas run jcstress -- -m
+  sanity` is read as a Mongo URI. The short form can follow once `retire-mongodb` frees `-m`.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
 - **The mongo connection string must include a database name** (`mongodb://host:port/dbname`),
