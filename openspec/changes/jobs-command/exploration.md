@@ -178,8 +178,27 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   always keeps the *highest* score (`ResultsGrouping.java:31-46`) — for `avgt`/`sample`/`ss`
   (time per op) that is the worst, and `thrpt` and `avgt` rows of one benchmark are compared.
 
-Open, in order: the summary flag (`--best-per <tag>` vs `--best` + `--group-by`) and the "best"
-direction; cross-cutting conventions; then the full command tree; the parked policy question.
+- **Summary flag: `--best-per <tag>`** (replaces today's default view and `--group-by`; results only —
+  a job has no score). "Best" = highest for throughput, lowest for time-per-op, grouped within one
+  JMH mode — the fix of the finding above.
+- **Filter flags: same name, same meaning** on every command, shared where meaningful.
+- **`--project p` = "only project p" everywhere; the default when absent is per command**, stated in
+  its help: `jobs list` = every project (one partition, cheap); `results query` = the resolved
+  project (git, picker, else error) — scanning every project is opt-in via `--all-projects`, which
+  exists on results only.
+- **`--limit N` = the N newest rows**, default 20 on both, `--limit 0` = no limit; a cut is announced
+  on stderr. **`--offset M`** pages; newest-first paging shifts if a row arrives between pages
+  (harmless here; a `--before <jobId>` cursor is the stable alternative if it ever matters).
+- **One pipeline on both: filter → [`--best-per`] → sort → `--offset` → `--limit`**, default sort
+  newest first, `--sort-by <field>` (results: `created`, `benchmark`, `score`, `project`; jobs:
+  `created`, `status`, `project`) and `--asc`. A non-default sort on `jobs list` reads every job.
+- **Indexes deferred.** They optimise behind the CLI semantics and change no flag. Trigger: the job
+  partition outgrows a few pages (≈ >5,000 jobs) or `jobs list` latency becomes noticeable. First a
+  sparse by-project index (`pk = <project>`, `sk = createdAt`, job items only); a by-status index last
+  or never (status moves 4–5 times per job, `vanished` is never stored).
+
+Open, in order: next-step hints; grouped help; then the full command tree; the parked policy
+question; `--exclude-tag` with the `baas query` features.
 
 ## Open — continue here after the rebase
 
