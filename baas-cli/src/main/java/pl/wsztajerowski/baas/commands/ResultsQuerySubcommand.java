@@ -74,25 +74,42 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         + "Reads the whole table.")
     boolean allProjects;
 
-    @Option(names = "--job-id", description = "Return every measurement of one job. Cannot be combined with other filters.")
+    @Option(names = "--job-id", description = "Only this job's measurements, read through the job-ID index. "
+        + "Combines with every filter except --project and --all-projects.")
     String jobId;
 
     @Option(names = "--benchmark-name", description = "Filter by benchmark name (regex).")
     String benchmarkName;
 
-    @Option(names = "--tag", description = "Filter by tag, repeatable. Repeated tags must all match.")
+    @Option(names = "--tag", description = "Keep rows carrying this tag (key=value), repeatable; all must match.")
     Map<String, String> tags;
 
-    @Option(names = "--group-by", description = "Tag to group by when keeping the best score. Default: branch.",
-        defaultValue = ResultsFilters.BRANCH)
-    String groupBy;
+    @Option(names = "--exclude-tag", paramLabel = "<key=value>",
+        description = "Drop rows carrying this tag, repeatable; any match drops the row.")
+    List<String> excludeTags;
 
-    @Option(names = "--all-jobs", description = "Report every measurement instead of the best per group, "
-        + "including jobs tagged exclude_from_results=true.")
-    boolean allJobs;
+    @Option(names = "--best-per", paramLabel = "<tag>",
+        description = "Keep only the best score per benchmark, mode and value of this tag (e.g. branch): "
+            + "the highest for throughput, the lowest for time per operation.")
+    String bestPer;
 
-    @Option(names = "--limit", description = "Maximum rows to report.")
-    Integer limit;
+    @Option(names = "--show-excluded",
+        description = "Also show measurements tagged exclude_from_results=true (drawn faint on a terminal).")
+    boolean showExcluded;
+
+    @Option(names = "--sort-by", paramLabel = "<field>",
+        description = "Order by created (default, newest first), benchmark, score or project.")
+    String sortBy = "created";
+
+    @Option(names = "--asc", description = "Reverse the order: oldest, lowest or alphabetical first.")
+    boolean ascending;
+
+    @Option(names = "--offset", paramLabel = "<n>", description = "Skip this many rows first (default 0).")
+    int offset;
+
+    @Option(names = "--limit", paramLabel = "<n>",
+        description = "Report at most this many rows (default 20; 0 for no limit).")
+    int limit = 20;
 
     @Option(names = "--format", description = "Output format: table (default), json, csv.", defaultValue = "table")
     String format;
@@ -121,17 +138,29 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             return 2;
         }
 
-        if (limit != null && limit < 1) {
-            logger.error("--limit must be at least 1; got {}.", limit);
+        if (limit < 0 || offset < 0) {
+            logger.error("--limit and --offset must not be negative; got {} and {}.", limit, offset);
             return 2;
         }
-        if (allJobs && groupByNamed()) {
-            logger.error("--group-by chooses the best per group, which --all-jobs turns off: pass one of them.");
+        if (!ResultsGrouping.SORT_FIELDS.contains(sortBy)) {
+            logger.error("Unknown --sort-by '{}'. Valid: {}.", sortBy, String.join(", ", ResultsGrouping.SORT_FIELDS));
+            return 2;
+        }
+        if (bestPer != null && bestPer.isBlank()) {
+            logger.error("--best-per needs a tag to group by, e.g. --best-per branch.");
+            return 2;
+        }
+        try {
+            if (excludeTags != null) {
+                excludeTags.forEach(ResultsFilters::pair);
+            }
+        } catch (IllegalArgumentException bad) {
+            logger.error("--exclude-tag: {}", bad.getMessage());
             return 2;
         }
         String conflict = jobIdConflict();
         if (conflict != null) {
-            logger.error("--job-id names one job, so it cannot be combined with {}.", conflict);
+            logger.error("--job-id reads one job through its own index, so it cannot be combined with {}.", conflict);
             return 2;
         }
         if (project != null && allProjects) {
@@ -186,27 +215,32 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
      */
     private List<ResultRow> fetch(ResultsQueryService results, Consumer<String> warn, Consumer<String> info) {
         List<ResultRow> rows;
+        // A lookup by job id is a request for that job, so the exclusion never applies to it.
         if (jobId != null) {
             rows = results.queryByJobId(jobId);
         } else if (allProjects) {
-            rows = results.scanAllProjects(allJobs);
+            rows = results.scanAllProjects(showExcluded);
         } else {
-            rows = results.queryProject(project, allJobs);
+            rows = results.queryProject(project, showExcluded);
         }
 
-        if (jobId == null) {
-            rows = ResultsFilters.byBenchmarkName(rows, benchmarkName);
-            rows = ResultsFilters.byTags(rows, tags);
-            ResultsFilters.unknownTagWarning(rows, tags).ifPresent(warn);
-            if (!allJobs) {
-                rows = ResultsGrouping.bestPerGroup(rows, groupBy);
-            }
+        // The shared pipeline: filter, [--best-per], sort, --offset, --limit.
+        rows = ResultsFilters.byBenchmarkName(rows, benchmarkName);
+        rows = ResultsFilters.byTags(rows, tags);
+        rows = ResultsFilters.byExcludedTags(rows, excludeTags, ResultRow::tag);
+        ResultsFilters.unknownTagWarning(rows, tags).ifPresent(warn);
+        if (bestPer != null) {
+            rows = ResultsGrouping.bestPerGroup(rows, bestPer);
         }
-
-        rows = ResultsGrouping.sortedForDisplay(rows);
-        if (limit != null && rows.size() > limit) {
-            info.accept("Reporting " + limit + " of " + rows.size() + " rows (--limit).");
+        rows = ResultsGrouping.sorted(rows, sortBy, ascending);
+        int total = rows.size();
+        rows = rows.stream().skip(offset).toList();
+        if (limit > 0 && rows.size() > limit) {
             rows = rows.subList(0, limit);
+        }
+        if (rows.size() < total) {
+            info.accept("Reporting " + rows.size() + " of " + total + " rows"
+                + (offset > 0 ? " from offset " + offset : "") + " (--limit " + limit + ").");
         }
         return rows;
     }
@@ -295,28 +329,17 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     }
 
     /**
-     * {@code --job-id} reads a different index and returns one job whole; combining it with a
-     * filter would silently ignore the filter, which reads as the filter being broken. A project is
-     * refused too: one job is already narrower than any project, and a project that disagreed with
-     * the job's own would be ignored without a word.
+     * {@code --job-id} is an ordinary filter, but it reads the job-ID index instead of a project's
+     * partition, so the two options that choose a partition are the ones it cannot take: a project
+     * that disagreed with the job's own would be ignored without a word.
      */
     private String jobIdConflict() {
         if (jobId == null) {
             return null;
         }
         if (project != null) return "--project";
-        if (benchmarkName != null) return "--benchmark-name";
-        if (tags != null && !tags.isEmpty()) return "--tag";
         if (allProjects) return "--all-projects";
-        if (allJobs) return "--all-jobs";
-        if (groupByNamed()) return "--group-by";
         return null;
-    }
-
-    /** {@code --group-by} has a default, so only the parse result tells a typed one from it. */
-    private boolean groupByNamed() {
-        return spec != null && spec.commandLine().getParseResult() != null
-            && spec.commandLine().getParseResult().hasMatchedOption("--group-by");
     }
 
     /** The PROJECT column only when rows can come from more than one; tag lines only with {@code -v}. */

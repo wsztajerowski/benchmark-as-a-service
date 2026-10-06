@@ -48,18 +48,27 @@
 
 ## 4. `results query` (D2, D3, D4)
 
-- [ ] 4.1 Default lists every measurement; `--show-excluded` replaces `--all-jobs`; `--group-by` and
+- [x] 4.1 Default lists every measurement; `--show-excluded` replaces `--all-jobs`; `--group-by` and
       `--all-jobs` removed; `--job-id` combines with every filter except `--project`/`--all-projects`.
       Verify with `ResultsQueryServiceIT` and the results command tests.
-- [ ] 4.2 `--best-per <tag>` with the JMH mode in the group key and the direction per mode (highest for
+      *Done:* `OptionValidationTest` (removed options unknown, `--job-id` refuses only the partition
+      options), `ResultsQueryPipelineTest` (every measurement by default).
+- [x] 4.2 `--best-per <tag>` with the JMH mode in the group key and the direction per mode (highest for
       `thrpt`, lowest for `avgt`/`sample`/`ss`, non-finite never wins). Verify with `ResultsGroupingTest`
       cases for each mode and for one benchmark measured in two modes.
-- [ ] 4.3 `--exclude-tag k=v` (repeatable, any match drops). Verify with `ResultsFiltersTest`.
-- [ ] 4.4 The pipeline: sort (default newest first; `--sort-by created|benchmark|score|project`,
+      *Done:* `ResultsGroupingTest` — lower wins for `avgt`/`sample`/`ss`, two modes never compared,
+      NaN never wins; `ResultsQueryPipelineTest.bestPerKeepsOneRowPerBranch`.
+- [x] 4.3 `--exclude-tag k=v` (repeatable, any match drops). Verify with `ResultsFiltersTest`.
+      *Done:* `ResultsFiltersTest` (any pair drops a row; a list, so one key may repeat);
+      `ResultsQueryPipelineTest.anExcludedTagIsDroppedBeforePaging`; a malformed pair exits 2.
+- [x] 4.4 The pipeline: sort (default newest first; `--sort-by created|benchmark|score|project`,
       `--asc`), then `--offset`, then `--limit` (default 20, `0` none) with the stderr notice. Verify
       with tests for the default 20-of-30 cut, an offset page, and a non-default sort.
-- [ ] 4.5 `--watch` keeps its behaviour under `results query`. Verify with the existing watch tests,
+      *Done:* `ResultsQueryPipelineTest` (20 newest of 30, offset 20 → the 10 oldest, `--limit 0`,
+      `--sort-by score --asc`); `ResultsGroupingTest` for the comparators.
+- [x] 4.5 `--watch` keeps its behaviour under `results query`. Verify with the existing watch tests,
       renamed.
+      *Done:* the watch tests (`ConsoleOutputTest`, `ResultsProjectSelectionTest`) pass under `query`.
 
 ## 5. `jobs list` (D4)
 
