@@ -246,17 +246,9 @@ key rename); the parked policy question; then `jobs run` options stay as they ar
 Previously open: the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
-## Open — continue here after the rebase
+## Open — superseded
 
-Asked one at a time, in this order:
-
-1. Does top-level `baas download <job>` become `baas jobs download <job>`? Coupled with the item the
-   rename deferred here (its design D6): `download` and `env diff` still accept a literal result path,
-   which only served jobs without a status item or from before the unified layout — none exist since
-   the rebuild. Removing it is a behaviour change with a spec delta (REMOVED + ADDED, since OpenSpec
-   cannot drop a scenario from a MODIFIED block), and it reverses the P11 design's "id or path".
-2. `results --job-id` versus `jobs show` — does a job's measurements view belong under `jobs`?
-3. Does `admin` stay as the deployer-credentials namespace, or become `baas image build` /
-   `baas install setup`?
-4. `<type>` on `baas run`: positional (today), `--type`, or a subcommand per type?
-5. Next-step hints and grouped `baas --help`: in this change or later?
+The five questions first listed here are all answered above: `download` moved under `jobs` (job id
+only); measurements stay in `results` (`--job-id` kept); `admin` stays as the deployer namespace;
+`<type>` on `baas run` is unchanged in this change; hints and grouped help are decided. The live open
+list is at the end of *Per action*.
