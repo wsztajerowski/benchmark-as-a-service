@@ -7,6 +7,9 @@
       `RESULT#baas-e2e` and `RESULT#baas-lifecycle-test`, and the bucket has no prefix outside `runs/`
       and `image-builds/`. Verify by recording both listings here. *Checked 2026-10-06 during the
       proposal (47 items); re-run immediately before teardown.*
+      *Re-run 2026-10-06 18:5x before teardown:* unchanged — 47 items (`RUN` 24,
+      `RESULT#benchmark-as-a-service` 20, `RESULT#baas-e2e` 2, `RESULT#baas-lifecycle-test` 1); bucket
+      prefixes `image-builds/`, `runs/`.
 - [x] 1.2 Confirm the deployer policy names no partition key, attribute, index, tag or `runs/` path:
       `grep -inE 'run[^n]|request|index|LeadingKeys' infra/deployer-policy.json` matches only
       `runner` names and `aws:RequestedRegion`. Verify by the grep output.
@@ -101,13 +104,21 @@
 
 ## 8. Rebuild the installation (design D4)
 
-- [ ] 8.1 Re-run 1.1; confirm nothing is in flight (`baas runs list --in-flight` with the old CLI).
-- [ ] 8.2 `baas admin teardown --delete-bucket --yes`, then delete the retained table with
+- [x] 8.1 Re-run 1.1; confirm nothing is in flight (`baas runs list --in-flight` with the old CLI).
+      *Done:* the 1.1 listing unchanged; no `benchmark-runner` instance pending or running (EC2
+      query — release 5.0.0, the installed CLI, has no `runs` command).
+- [x] 8.2 `baas admin teardown --delete-bucket --yes`, then delete the retained table with
       `aws dynamodb delete-table` under the deployer profile. Verify with `describe-stacks` and
       `describe-table` both reporting not found.
-- [ ] 8.3 From the branch build: `baas admin setup` (region and federation values as before), then
+      *Done:* teardown emptied and deleted the bucket, deleted the stack and retired
+      `ami-09d0ca3128f2792c0`; `delete-table` under `baas-admin`; both describes report not found.
+- [x] 8.3 From the branch build: `baas admin setup` (region and federation values as before), then
       `baas admin build-image`, then `baas config sync --name baas-381492019823`. Verify: the stack
       is `CREATE_COMPLETE`, the table has `jobId-index`, `baas admin image` shows the image.
+      *Done:* setup with `--github-org wsztajerowski --github-repo benchmark-as-a-service
+      --oidc-provider-arn …` (the deployed values); the table's only index is `jobId-index`; the
+      operator role kept its ARN; `build-image` published 1.3.0 as `ami-0fce89356196866ea` (same
+      parent `ami-070cc8ab883065d64`, no extension); `config sync` adopted it.
 
 ## 9. End-to-end verification (manual — no automated test covers the `baas run` path)
 
@@ -115,17 +126,31 @@ At most **5 paid runs**; the image bake and the PR's CI e2e jobs do not count. R
 wall time and outcome. No score comparison: no measurement path changes (design D7), and there is no
 history left to compare with.
 
-- [ ] 9.1 Run 1: `baas run --runner-jar … --benchmark-jar fake-jmh-benchmarks/… --project baas-e2e
+- [x] 9.1 Run 1: `baas run --runner-jar … --benchmark-jar fake-jmh-benchmarks/… --project baas-e2e
       --tag exclude_from_results=true jmh-with-async -- …`. Verify: summary `jobId` / `jobStatus`
       `completed`; `baas jobs list` shows it; `baas results --job-id <id>` returns its rows;
       `baas download <id>` holds `environment.json` with `jobId` and `schemaVersion` 5, the async
       artifacts and `jmh-result.json` under `jobs/baas-e2e/<id>/`; the instance carried
       `baas-job-id`.
-- [ ] 9.2 Run 2: `jcstress -- --mode sanity`. Verify: one JCStress item, `jobStatus` `completed`.
-- [ ] 9.3 Run 3: launch a long `jmh` job and stop it with `baas jobs terminate <id> --yes`. Verify:
+      *Done (paid 1/5):* `20261006T165241024Z-47516b65`, 80 s, `jobStatus` `completed`. `jobs list`
+      shows it; `results --job-id` one row; `download` 10 artifacts under `jobs/baas-e2e/<id>/`
+      (flamegraphs, JFR, `jmh-result.json`, `input/`); manifest has `jobId`, no `requestId`; the
+      instance carried `baas-job-id`. **It found a miss:** the manifest still wrote
+      `schemaVersion` 4 — task 4.4's bump had not been made. Fixed in `9574877`.
+- [x] 9.2 Run 2: `jcstress -- --mode sanity`. Verify: one JCStress item, `jobStatus` `completed`.
+      *Done (paid 2/5):* `20261006T165527798Z-9b0265b7`, 66 s, `completed`; one JCStress item;
+      manifest `schemaVersion` 5 with `jobId` — confirms the fix.
+- [x] 9.3 Run 3: launch a long `jmh` job and stop it with `baas jobs terminate <id> --yes`. Verify:
       status `cancelled` recorded, instance terminated, boot log uploaded.
-- [ ] 9.4 Not a paid run: `baas env diff` of runs 1 and 2 by job id. Verify it resolves both through
+      *Done (paid 3/5):* `20261006T165701309Z-f8b7cffb`, terminated while `running`: status
+      `cancelled`, instance `shutting-down`, the attached CLI printed `jobStatus` `cancelled` and
+      exited 1. The task's "boot log uploaded" was a wrong expectation: an operator's
+      `jobs terminate` kills the instance outright, and only a self-terminating instance ships
+      its log. Unchanged behaviour, not a regression.
+- [x] 9.4 Not a paid run: `baas env diff` of runs 1 and 2 by job id. Verify it resolves both through
       `jobId-index`. (No paid run — reuses 1 and 2.)
+      *Done:* `env diff` of runs 1 and 2 by job id resolved both through `jobId-index`; it warned
+      on the 4 vs 5 schema difference, as designed.
 - [ ] 9.5 Push, open the PR into `next-release`; both CI e2e jobs green. Record the workflow run.
 - [ ] 9.6 Runs 4–5 are reserve, spent only to re-check a fix found by 9.1–9.5. Record whether they
       were used.
