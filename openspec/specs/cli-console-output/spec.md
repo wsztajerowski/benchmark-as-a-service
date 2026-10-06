@@ -53,7 +53,7 @@ contain no escape sequence, whether or not the output is interactive.
 ### Requirement: Tables are coloured when interactive, without losing alignment
 When the output is interactive and colour is allowed, the `baas results` table and the `baas env diff`
 table SHALL emphasise the header row, SHALL de-emphasise values reported as unknown (`n/a`), and the
-`baas env diff` table SHALL distinguish the two runs' values. The `baas results` table SHALL also
+`baas env diff` table SHALL distinguish the two jobs' values. The `baas results` table SHALL also
 de-emphasise every row of a measurement tagged `exclude_from_results=true`. Colour SHALL NOT change the
 visible column widths: every column SHALL start at the same position as in the uncoloured table.
 
@@ -62,7 +62,7 @@ visible column widths: every column SHALL start at the same position as in the u
 - **THEN** its `n/a` is rendered de-emphasised, distinct from measured values
 
 #### Scenario: Excluded rows are de-emphasised
-- **WHEN** `baas results --all-runs` shows a row tagged `exclude_from_results=true`, on an interactive
+- **WHEN** `baas results --all-jobs` shows a row tagged `exclude_from_results=true`, on an interactive
   terminal
 - **THEN** that row is rendered de-emphasised, and the other rows are not
 
@@ -71,8 +71,8 @@ visible column widths: every column SHALL start at the same position as in the u
 - **THEN** after removing escape sequences the two are identical
 
 ### Requirement: `baas run` shows a live status line when interactive
-While polling for a run's outcome, `baas run` SHALL, when the output is interactive and `--format json`
-is not given, maintain a single status line on standard output, redrawn in place, carrying the run's
+While polling for a job's outcome, `baas run` SHALL, when the output is interactive and `--format json`
+is not given, maintain a single status line on standard output, redrawn in place, carrying the job's
 state, the elapsed time and the instance identifier, in place of the periodic "still running" log line.
 Log output emitted while the line is shown SHALL appear above it without being overwritten by it or
 interleaved with it. The line SHALL be cleared before anything else is written to standard output and
