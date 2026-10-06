@@ -159,8 +159,14 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
 - **`download` becomes `baas jobs download <job>`**, job id only; the literal-result-path form goes.
 - **`build-image` / `image` become `baas admin image build | show`.**
 
-Open, in order: the policy's place (`admin policy show` vs a `deployment` verb); the verb vocabulary
-and whether a bare noun may imply a verb; cross-cutting conventions; then the full command tree.
+- **The word "installation" is already renamed to "deployment"** in messages, identifiers, docs,
+  diagrams and main specs (`fec4adc`, no OpenSpec change, at the user's request); the installed-CLI
+  sense and `infra/runner-image.yaml` keep "installation". The second-installation session was told.
+- **Parked:** where the deployer policy lives (`admin policy show`, a `deployment` verb, or a separate
+  command) — the user expects a deeper discussion of whether it stays a command at all.
+
+Open, in order: the verb vocabulary and whether a bare noun may imply a verb; cross-cutting
+conventions; then the full command tree; the parked policy question.
 
 ## Open — continue here after the rebase
 
