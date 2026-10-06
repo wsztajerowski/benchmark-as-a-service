@@ -105,7 +105,11 @@ most two, logged to stderr only when `Console` is interactive (the colour gate).
 
 It replaces `teardown --stack-name` and `config sync --name`. Until `multiple-deployments` lands, a
 name other than the configured one fails naming both. `--config-path` stays (its removal belongs to the
-sibling change). `config sync --deployment` keeps sync's rule that the name is required.
+sibling change). `config sync --deployment` keeps sync's rule that the name is required. **Keep stable:** the header of the
+cli-command-structure requirement "A deployment is named only by `--deployment`" and its scenario names
+("Teardown is aimed by the global option", "A different deployment is refused", "Removed pointers are
+rejected") — `multiple-deployments` MODIFIES that requirement at its rebase to fold in the selection
+rule (its task 1.2, commit 570bd1a).
 
 ### D11 — The deployer policy is a step of setup, not a command
 
