@@ -282,7 +282,20 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   Both changes rebase over each other's `core-stack-provisioning` "Teardown safety gates" and
   `cli-command-structure` requirements.
 
-Open, in order: `config` verbs (the key rename — offered to `multiple-deployments`' migration); the parked policy question; then `jobs run` options stay as they are.
+- **Closed in `multiple-deployments` (user decisions relayed 2026-10-07, its commit `fdb8cfc`):**
+  `baas config list` adopted as drafted (local only, `--format json`, never aliased; the ambiguity
+  error hints `→ choose one: baas config list`). The key rename adopted with the option rename:
+  `aws.profile` → `aws.deployerProfile` (migrated, also on read), `--aws-profile` →
+  `--deployer-profile` on `admin deployment setup` and `config set`; `aws.operatorProfile` and the
+  no-fallback invariant unchanged. Same release as this change's renames. **When writing this
+  change's deltas:** say `aws.deployerProfile` in the rewritten "`baas admin build-image` builds the
+  runner image" (scenario "Build uses deployer credentials") and "Environments can be compared field
+  by field" (scenario "Diff uses operator credentials"); `multiple-deployments` also modifies
+  `core-stack-provisioning` "baas admin setup is self-sufficient" and "Day-to-day commands resolve
+  operator credentials" — tell that session if this change touches either, and send it the final
+  requirement headers once proposed.
+
+Open, in order: the parked policy question; then `jobs run` options stay as they are.
 Previously open: the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
