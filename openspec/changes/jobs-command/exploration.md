@@ -151,14 +151,28 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   `config` = this machine's binding. Deployer: `deployment` (setup, teardown) and `image`.
 - **The deployer noun is `deployment`** (`baas admin deployment setup | teardown`), chosen over
   `deployment` for pairing with the deployer workload; `instance` rejected (the EC2 runner).
-- **Scope:** global, inherited `--deployment <name>` plus `BAAS_DEPLOYMENT`; never positional; absent
-  means the account's deployment. Same word as the noun, as kubectl's `--namespace` / `namespaces`.
+- **Scope:** global, inherited `--deployment <name>`; never positional (the env var and the
+  "absent" rule are superseded below). Same word as the noun, as kubectl's `--namespace` / `namespaces`.
   Coordinates with the second-deployment exploration (session `0d0d679c`), which was leaning to
   `--deployment`. Renaming "deployment" in messages and docs to "deployment" is owed by
   whichever change introduces the selector.
 - **`download` becomes `baas jobs download <job>`**, job id only; the literal-result-path form goes.
 - **`build-image` / `image` become `baas admin image build | show`.**
 
+- **Superseded by the dev-deployment exploration (user decision relayed 2026-10-06 by session
+  `benchmark-as-a-service-ad`):** `BAAS_DEPLOYMENT` is **dropped** (invisible state that silently
+  changes which deployment a command hits; a shell alias carrying `--deployment` covers the dev
+  worktree, and adding the variable later is non-breaking). Storage is one file per deployment,
+  `~/.baas/deployments/<name>.yaml` (name = prefix); today's flat `config.yaml` migrates there and is
+  removed. **`--deployment` absent:** exactly one local deployment → that one; two or more → error
+  listing the names; none → error ("No deployment is configured"), except `admin deployment setup`,
+  which derives `baas-<accountId>`. `config sync` with no local deployment must be named (CI safety);
+  with one, bare sync re-syncs it. Teardown deletes `deployments/<name>.yaml`. With two or more
+  deployments every command, teardown included, must name one — the guard against an accidental
+  production teardown. Grouped help's option line therefore drops "env BAAS_DEPLOYMENT".
+- **Open, raised by that session:** a `BAAS_HOME` root variable (like `CARGO_HOME`, `GNUPGHOME`) so
+  tests and CI can relocate `~/.baas` now that `--config-path` is gone — a root, not a deployment
+  pointer, so it does not break "every pointer to a deployment is `--deployment`".
 - **The word "installation" is already renamed to "deployment"** in messages, identifiers, docs,
   diagrams and main specs (`fec4adc`, no OpenSpec change, at the user's request); the installed-CLI
   sense and `infra/runner-image.yaml` keep "installation". The second-installation session was told.
