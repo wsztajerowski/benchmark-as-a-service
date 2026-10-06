@@ -131,6 +131,37 @@ record its outcome — rebuild with nothing in flight.
 `results --job-id`, `download <jobId>` against them; the CI e2e run on the PR counts separately).
 Record each in the change's `verify.md`.
 
+## Whole-API construction (2026-10-06, after the rename)
+
+Decided top-down; each action is settled only after the construction.
+
+```
+baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
+       scope             workload  domain   shared vocabulary
+```
+
+- **Three layers below the scope: workload → domain noun → verb.** Canonical commands are always
+  noun–verb; a short form is an *alias* onto a canonical one, never an exception to the grammar.
+- **`baas run` is an alias of `baas jobs run`.** `baas results` is an alias of `baas results list`
+  (tentative — "perhaps").
+- **Workloads are credential boundaries:** operator (no prefix) and deployer (`admin`). `admin` stays.
+- **Domains:** `jobs` = the execution (status, instance, boot log, environment, artifacts);
+  `results` = the measurements, the numbers that matter historically. Two domains, so
+  `results --job-id` stays and `jobs show` shows no measurements (a stderr hint may point across).
+  `config` = this machine's binding. Deployer: `deployment` (setup, teardown) and `image`.
+- **The deployer noun is `deployment`** (`baas admin deployment setup | teardown`), chosen over
+  `installation` for pairing with the deployer workload; `instance` rejected (the EC2 runner).
+- **Scope:** global, inherited `--deployment <name>` plus `BAAS_DEPLOYMENT`; never positional; absent
+  means the account's deployment. Same word as the noun, as kubectl's `--namespace` / `namespaces`.
+  Coordinates with the second-installation exploration (session `0d0d679c`), which was leaning to
+  `--installation`. Renaming "installation" in messages and docs to "deployment" is owed by
+  whichever change introduces the selector.
+- **`download` becomes `baas jobs download <job>`**, job id only; the literal-result-path form goes.
+- **`build-image` / `image` become `baas admin image build | show`.**
+
+Open, in order: the policy's place (`admin policy show` vs a `deployment` verb); the verb vocabulary
+and whether a bare noun may imply a verb; cross-cutting conventions; then the full command tree.
+
 ## Open — continue here after the rebase
 
 Asked one at a time, in this order:
