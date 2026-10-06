@@ -271,7 +271,18 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   (`--in-flight --watch` follows launches): interactive only and refused without a terminal, a fixed
   30 s interval, refused with any `--format` other than `table`.
 
-Open, in order: `config` verbs (incl. the key rename); the parked policy question; then `jobs run` options stay as they are.
+- **Scope split with `multiple-deployments` (accepted 2026-10-07):** this change owns the grammar —
+  the global `--deployment` option, `admin deployment setup|teardown`, `--deployment` replacing
+  `teardown --stack-name` and `sync --name` (until the other change lands it can only name the one
+  configured deployment). `multiple-deployments` (branch of the same name, built on this one) owns
+  the multiplicity: non-default names and their validation, per-deployment files and the migration
+  of `config.yaml`, the selection rule, sync's naming rule, teardown deleting the file, the
+  `baas-deployment` runner tag and scoped lookups, **removing `--config-path`** (so this change
+  leaves it in place), and the proposed **`baas config list`** (local listing of deployment files).
+  Both changes rebase over each other's `core-stack-provisioning` "Teardown safety gates" and
+  `cli-command-structure` requirements.
+
+Open, in order: `config` verbs (the key rename — offered to `multiple-deployments`' migration); the parked policy question; then `jobs run` options stay as they are.
 Previously open: the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
