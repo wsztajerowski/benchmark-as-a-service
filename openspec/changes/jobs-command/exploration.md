@@ -219,7 +219,31 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   destroys the deployment's history unrecoverably. Assumed to be implemented with
   `admin deployment teardown` in this change unless scoped otherwise.
 
-Open, in order: the full command tree, then each action; the parked policy question; `--exclude-tag`
+### Per action
+
+- **`jobs show <job>`** prints three sections: **Job** (the job item — identity, stored and resolved
+  status with `vanished` computed, instance, tags, `Error` when failed), **Environment** (all of
+  `environment.json`, by group), **Artifacts** (one S3 listing of the prefix, summarised by folder).
+  Missing parts are stated, not errors (no manifest when the instance never booted); a missing job
+  item is an error. `--format json` = `{ "job", "environment", "artifacts" }`. Hints:
+  `→ measurements: baas query --job-id …`, `→ files: baas jobs download …`.
+- **`jobs diff <jobA> <jobB>`** compares the measurement environment only — no identity, no section
+  flags. It prints `Differs in: <groups>` then the differing fields group by group; "No differences.
+  Both jobs measured on the same environment." can finally print. A `schemaVersion` mismatch is loud.
+  **Packages section, AMI-gated:** only when `machine.amiId` differs, read both `packages.txt` and
+  list changed (`name old → new`), added and removed packages; named in `Differs in:` as `packages`.
+  Same AMI ⇒ same packages (user-data installs nothing), so the common case reads no extra object.
+- **`environment.json` (schemaVersion 6)** keeps 22 fields in 7 groups — `machine` (imageVersion,
+  amiId, instanceType), `cpu` (model, arch, cores, threadsPerCore, maxMhz), `memory` (totalKb,
+  swapTotalKb), `os` (version, kernelRelease), `jvm` (version, vendor, vendorVersion, name), `tools`
+  (perf, asyncProfiler), `tunables` (perfEventParanoid, kptrRestrict, transparentHugepages) — and
+  drops `jobId`, `createdAt`, `project`, `branch`, `benchmarkType` (identity: on the job item and
+  tags), `region` and `awsCliVersion`. Values are still captured into shell variables first; the
+  machine-observed tags read the same variables. `packages.txt` stays a separate file.
+
+Open, in order: `results query` features (incl. `--exclude-tag`, `--watch`); `config` verbs (incl. the
+key rename); the parked policy question; then `jobs run` options stay as they are.
+Previously open: the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
 ## Open — continue here after the rebase
