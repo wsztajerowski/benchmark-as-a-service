@@ -197,8 +197,19 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   sparse by-project index (`pk = <project>`, `sk = createdAt`, job items only); a by-status index last
   or never (status moves 4–5 times per job, `vanished` is never stored).
 
-Open, in order: next-step hints; grouped help; then the full command tree; the parked policy
-question; `--exclude-tag` with the `baas query` features.
+- **Next-step hints:** interactive only (the `Console` gate colour uses), stderr via the logger,
+  shape `→ <purpose>: <exact command>` with real ids, at most two per command, no opt-out flag.
+- **Grouped `baas --help`:** shortcuts (`run = jobs run`, `query = results query`) → operator
+  commands → deployer commands; each noun line lists its verbs; deployer lines show the full path
+  (`admin deployment …`, `admin image …`) so every line is copyable; headers name the role —
+  "Operator commands (operator AWS credentials)", "Deployer commands (deployer AWS credentials)" —
+  never a config key.
+- **Parked for the `config` discussion:** renaming `aws.profile` / `aws.operatorProfile` to
+  `aws.deployerProfile` / `aws.operatorProfile` (a `config.yaml` migration, and the invariant that the
+  operator profile never falls back to the deployer's).
+
+Open, in order: the full command tree, then each action; the parked policy question; `--exclude-tag`
+with the `baas query` features; the config key rename with `config`.
 
 ## Open — continue here after the rebase
 
