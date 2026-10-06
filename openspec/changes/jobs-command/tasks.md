@@ -72,9 +72,13 @@
 
 ## 5. `jobs list` (D4)
 
-- [ ] 5.1 The pipeline (`--sort-by created|status|project`, `--asc`, `--offset`, `--limit` default 20 /
+- [x] 5.1 The pipeline (`--sort-by created|status|project`, `--asc`, `--offset`, `--limit` default 20 /
       `0`), `--exclude-tag`, and `--watch` (interactive only, refused with a machine format). Lazy
       paging stays for the default order only. Verify with `JobListingTest` and `JobsCommandTest`.
+      *Done:* `JobListingTest` (exclusion, ordering), `JobsCommandTest` (20 of 30 with the note, offset,
+      `--limit 0`, `--watch` refused without a terminal). Deviation: every matching job is read, not
+      lazily under the default order (design D4 updated). `--watch` shares `console.Watch` with
+      `results query`.
 
 ## 6. `jobs show` (D5)
 

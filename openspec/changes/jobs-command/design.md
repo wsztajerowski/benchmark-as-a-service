@@ -59,8 +59,9 @@ mode strings the runner stores.
 `jobs list` and `results query` apply filter → [`--best-per`] → sort → `--offset` → `--limit`; newest
 first by default; `--sort-by`, `--asc`; `--limit` default 20, `0` none; a cut is announced on stderr.
 `--limit` used to mean "first N in display order" on results — the oldest rows of the alphabetically
-first benchmarks — and "newest N" on jobs; it now means the latter on both. `jobs list` keeps reading
-pages lazily only under the default order. Rejected: per-command display orders (paging would not
+first benchmarks — and "newest N" on jobs; it now means the latter on both. `jobs list` reads every matching job, then applies the pipeline,
+so the order and the "N of M" note are exact for any `--sort-by` (an implementation choice, 2026-10-07:
+lazy paging could not count the total; one or two pages at this scale, and D14's trigger covers growth). Rejected: per-command display orders (paging would not
 follow what is shown); a cursor instead of `--offset` (noted as the stable alternative if rows
 arriving between pages ever matter).
 
