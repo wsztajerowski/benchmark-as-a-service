@@ -10,7 +10,7 @@ resources that bake the runner AMI. This is the same stack that `baas admin setu
 user's account.
 
 **The results table** (`baas-<prefix>-results`, output as `ResultsTableName`) is on-demand billed,
-keyed `pk`/`sk`, with one GSI `requestId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
+keyed `pk`/`sk`, with one GSI `jobId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
 it is `DeletionPolicy: Retain` / `UpdateReplacePolicy: Retain` — benchmark history outlives any
 single stack — which means a teardown leaves it behind and the next `setup` for the same caller
 fails on the name. `baas admin setup` pre-checks for exactly that and says how to recover.
@@ -99,7 +99,7 @@ never overwriting it.
 - **A file of comments only removes the extension.**
 - **Never put a credential in it.** Anyone who can describe the stack can read it.
 - **Results stay distinguishable.** The image label becomes `<base>+ext.<hash>`, so results from an
-  extended image never share an `imageVersion` tag with a stock image's, and every run records the
+  extended image never share an `imageVersion` tag with a stock image's, and every job records the
   JVM vendor, kernel tunables and packages it measured on in `environment.json` / `packages.txt`.
 - **What the contract does not constrain** is yours to change: another JDK vendor or a newer Java,
   transparent hugepages, swap. async-profiler is checked for presence only; on OpenJ9 it works
@@ -180,7 +180,7 @@ hold the deployer policy permanently; don't skip assuming the operator role.
 
 Required by `baas admin setup`, `baas admin build-image` and `baas admin teardown`. Attach this
 only to identities that provision, image or tear down the core stack — it should not be held as a
-standing policy for routine benchmark runs.
+standing policy for routine benchmark jobs.
 
 **It is rendered per installation, not shared.** Every resource it names derives from the
 account, the region and the installation prefix — `<prefix>` for the stack and bucket,
@@ -319,7 +319,7 @@ aws:
 
 `aws.operatorProfile` deliberately does **not** fall back to `aws.profile`. `baas admin
 setup` writes the deployer profile into `aws.profile`, and silently reusing it would give
-every benchmark run `iam:CreateRole` and `cloudformation:*` — the exact standing privilege
+every benchmark job `iam:CreateRole` and `cloudformation:*` — the exact standing privilege
 the operator role exists to avoid.
 
 If you are setting up on a machine that never ran `baas admin setup` — the usual case when
@@ -433,8 +433,8 @@ runner:
 
 It names the GitHub repository the version-pinned runner JAR is downloaded from, and it is read
 **only** when `releases/<version>/benchmark-runner.jar` is not yet seeded in the bucket. After the
-first run of a given CLI version the object exists, is never overwritten, and the setting goes
-unread until the next version bump — so changing it does not repoint runs already pinned.
+first job of a given CLI version the object exists, is never overwritten, and the setting goes
+unread until the next version bump — so changing it does not repoint jobs already pinned.
 
 It is configuration rather than a constant in the user-data script so that a fork can point at its
 own releases. Note that the *instance* never contacts GitHub: the CLI does the download on the
@@ -449,7 +449,7 @@ every IAM grant that named it — on the runner, the operator, the deployer and 
 `WorkflowRole`, itself since deleted — are all gone.
 
 For the record, while it was live: Atlas does not serve clients on 443, and runner instances get an
-**ephemeral public IP per run** — no NAT gateway, no Elastic IP — so there was no stable address to
+**ephemeral public IP per job** — no NAT gateway, no Elastic IP — so there was no stable address to
 add to the IP Access List. The entry was `0.0.0.0/0`, with access controlled by the connection
 string's credentials rather than by network. That was the standing argument for the
 private-networking profile (private subnet + NAT gateway + PrivateLink, needing a paid M10+ tier,
@@ -459,13 +459,13 @@ egress for the store at all — which is what the `private-runner-network` chang
 `benchmark-runner` still carries a MongoDB adapter for standalone use against a user's own cluster,
 selected by `--mongo-connection-string` on that JAR. No BaaS infrastructure supports it.
 
-## Debugging a failed run
+## Debugging a failed job
 
 Runner instances self-terminate on both the success and failure paths, so the boot log is
 uploaded to S3 before termination:
 
 ```
-s3://<bucket>/runs/<project>/<runId>/cloud-init-output.log
+s3://<bucket>/jobs/<project>/<jobId>/cloud-init-output.log
 ```
 
-`baas run` prints that path when a run fails, and when the instance dies before reporting.
+`baas run` prints that path when a job fails, and when the instance dies before reporting.

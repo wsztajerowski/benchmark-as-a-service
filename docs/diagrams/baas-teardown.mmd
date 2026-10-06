@@ -12,11 +12,11 @@ sequenceDiagram
     Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else the configured prefix (the stack IS the prefix)
 
     rect rgb(255, 235, 235)
-        Note over TD,EC2: Gate 1 -- never tear down under a live run
+        Note over TD,EC2: Gate 1 -- never tear down under a live job
         TD->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
-        EC2-->>TD: instances, with each one's baas-request-id tag
+        EC2-->>TD: instances, with each one's baas-job-id tag
         alt running runner instances found
-            TD-->>User: abort naming each run id (from the tag), instance and state,<br/>and `baas runs terminate <runId>` -- exit 1. No table read: the deployer has none
+            TD-->>User: abort naming each job id (from the tag), instance and state,<br/>and `baas jobs terminate <jobId>` -- exit 1. No table read: the deployer has none
         end
     end
 

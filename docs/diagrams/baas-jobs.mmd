@@ -1,38 +1,38 @@
 sequenceDiagram
     actor User as Operator
-    participant RL as RunsListSubcommand
-    participant RT as RunsTerminateSubcommand
+    participant RL as JobsListSubcommand
+    participant RT as JobsTerminateSubcommand
     participant EC2 as AWS EC2
     participant DDB as DynamoDB<br/><prefix>-results
 
     rect rgb(240, 248, 255)
-        Note over User,DDB: baas runs list [--limit 20] [--in-flight] [--project p] [--tag k=v]... [--format table|json|csv]
-        User->>RL: baas runs list --in-flight
+        Note over User,DDB: baas jobs list [--limit 20] [--in-flight] [--project p] [--tag k=v]... [--format table|json|csv]
+        User->>RL: baas jobs list --in-flight
         RL->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
-        EC2-->>RL: live instances, each with its baas-request-id tag
-        Note over RL: ONE call, bounded by what is running -- not by how many runs vanished
+        EC2-->>RL: live instances, each with its baas-job-id tag
+        Note over RL: ONE call, bounded by what is running -- not by how many jobs vanished
         loop pages of 100, newest first, until --limit rows match
-            RL->>DDB: Query pk = RUN, ScanIndexForward=false
-            DDB-->>RL: run items
+            RL->>DDB: Query pk = JOB, ScanIndexForward=false
+            DDB-->>RL: job items
         end
-        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its run id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written).<br/>Nothing is hidden: exclude_from_results runs are listed, with their source.
-        RL-->>User: RUN_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE | STARTED | ELAPSED<br/>or "No runs in flight." -- exit 0
+        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its job id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written).<br/>Nothing is hidden: exclude_from_results runs are listed, with their source.
+        RL-->>User: JOB_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE | STARTED | ELAPSED<br/>or "No jobs in flight." -- exit 0
     end
 
     rect rgb(255, 245, 235)
-        Note over User,DDB: baas runs terminate <runId> [--yes]
-        User->>RT: baas runs terminate 20261003T070025527Z-5bc8461b
-        RT->>DDB: Query requestId-index (gsi1pk = runId, gsi1sk = RUN)
-        alt no run item
-            RT->>EC2: describeInstances by the run-id tag (a run from a CLI before run items)
+        Note over User,DDB: baas jobs terminate <jobId> [--yes]
+        User->>RT: baas jobs terminate 20261003T070025527Z-5bc8461b
+        RT->>DDB: Query jobId-index (gsi1pk = jobId, gsi1sk = JOB)
+        alt no job item
+            RT->>EC2: describeInstances by the job-id tag (a job from a CLI before job items)
             alt no live instance either
-                RT-->>User: "No run found", exit 1
+                RT-->>User: "No job found", exit 1
             else live instance
                 Note over RT: confirm, then terminateInstances -- nothing to record
-                RT-->>User: "Terminated instance ... which has no run item", exit 0
+                RT-->>User: "Terminated instance ... which has no job item", exit 0
             end
         end
-        RT->>EC2: describeInstances(instanceId), else by the run-id tag
+        RT->>EC2: describeInstances(instanceId), else by the job-id tag
         alt terminal status and no live instance
             RT-->>User: "already ended", exit 0 -- nothing changed
         end
