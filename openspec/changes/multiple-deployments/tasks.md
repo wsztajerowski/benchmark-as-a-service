@@ -2,8 +2,8 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm `jobs-command` accepts the scope split in design.md *Context*: it owns the `--deployment` grammar, and this change owns multiplicity, including the `--config-path` removal. Verified by its exploration or design recording the split.
-- [ ] 1.2 Rebase onto `next-release` after `jobs-command` is archived. Re-check every MODIFIED and REMOVED header in `specs/` verbatim against the then-current main specs (`grep -n '^### Requirement' openspec/specs/<cap>/spec.md`), merge `jobs-command`'s teardown rewrite ("nothing survives") into *Teardown safety gates*, and verify with `openspec validate multiple-deployments` and no archive-time "not in the current spec" warning on a dry read.
+- [x] 1.1 Confirm `jobs-command` accepts the scope split in design.md *Context*: it owns the `--deployment` grammar, and this change owns multiplicity, including the `--config-path` removal. Verified by its exploration or design recording the split. Done: accepted 2026-10-07, `jobs-command` commit `4bcb9cd`, with `baas config list` added to this change.
+- [ ] 1.2 Rebase onto `next-release` after `jobs-command` is archived. Re-check every MODIFIED and REMOVED header in `specs/` verbatim against the then-current main specs (`grep -n '^### Requirement' openspec/specs/<cap>/spec.md`), merge `jobs-command`'s teardown rewrite ("nothing survives": no `Retain`, no retained-resource pre-checks, no `--delete-bucket`) into *Teardown safety gates*, carry its command renames (`admin deployment …`, `admin image …`, `jobs download`/`jobs diff`, `results query`) into every scenario here, add MODIFIED blocks renaming `aws.profile` → `aws.deployerProfile` in any requirement still naming it after the rebase (today: `cli-command-structure` *`baas admin build-image` builds the runner image*, `runner-image-provisioning` *Environments can be compared field by field*), and verify with `openspec validate multiple-deployments` and no archive-time "not in the current spec" warning on a dry read.
 - [ ] 1.3 Confirm by a live probe that `/aws-dev/runner/ami-id` and `/ssm-dev/…` are rejected by `ssm:PutParameter`, and record the error text in design.md *Resolved Questions*.
 - [ ] 1.4 Confirm `-role-image-build` is still the longest role-name suffix in `cf-template-core.yaml` (`grep -o '\${ResourceNamePrefix}-role-[a-z-]*'`), and that no other composed name type has a tighter limit than IAM roles' 64.
 
@@ -27,7 +27,10 @@
 - [ ] 4.5 `admin deployment setup`: use `--deployment` verbatim, the only file when one exists, or `baas-<accountId>` when none; write that deployment's file. Verify with tests for all three paths.
 - [ ] 4.6 `config sync`: require `--deployment` when no deployment is configured, re-sync the only one, and refuse an ambiguous call. Verify with tests for each case.
 - [ ] 4.7 Teardown: delete the deployment's file after a completed teardown. Verify with a test that it is gone, and that the other deployment's file is untouched.
-- [ ] 4.8 Update `install-test.yml`'s sentinel check to the `deployments/` layout. Verify by running `scripts/tests/install-test.sh` locally.
+- [ ] 4.8 Rename `aws.profile` → `aws.deployerProfile` in `BaasConfig`, in the migration, and on read of a deployment file still carrying it. Verify with unit tests for the migrated flat file and a deployment file carrying the old key.
+- [ ] 4.9 Rename `--aws-profile` → `--deployer-profile` on `admin deployment setup` and `config set`, and label both profiles in `config show`. Verify with tests that the old option is an unknown-option error and the new one stores `aws.deployerProfile`.
+- [ ] 4.10 Add `baas config list` (table and `--format json` through `Console`, `Locale.ROOT`, no AWS client constructed, never a top-level alias), and add the `→ choose one: baas config list` hint to the ambiguity error. Verify with tests for zero, one and two deployments, the JSON shape, and that no SDK client is built.
+- [ ] 4.11 Update `install-test.yml`'s sentinel check to the `deployments/` layout. Verify by running `scripts/tests/install-test.sh` locally.
 
 ## 5. Runner tag and scoped lookups (U36)
 
@@ -38,8 +41,8 @@
 ## 6. Documentation and project rules
 
 - [ ] 6.1 Write ADR 0006 reversing *exactly one deployment per account*: what A10 protected (silent forking) and why an explicit name does not reintroduce it. Verify the ADR is linked from `CLAUDE.md`.
-- [ ] 6.2 Update `CLAUDE.md`. Replace "There is no option to name a different one" with the default-plus-named rule and the validation summary. Add `baas-deployment` to the fixed instance tags. Replace the `--config-path` / `config sync --name` paragraph with per-deployment files and the selection rule. Note the no-env-var decision. Verify with `grep -n 'config-path\|no option to name' CLAUDE.md` returning nothing stale.
-- [ ] 6.3 Replace `infra/README.md` *A second deployment* with the CLI procedure (deployer policy attached as customer-managed, `baas --deployment <name> admin deployment setup --region …`, `admin image build`, the `baas-dev` alias, teardown). Verify by following it in 7.1.
+- [ ] 6.2 Update `CLAUDE.md`. Replace "There is no option to name a different one" with the default-plus-named rule and the validation summary. Add `baas-deployment` to the fixed instance tags. Replace the `--config-path` / `config sync --name` paragraph with per-deployment files, the selection rule and `config list`. Note the no-env-var decision. Restate the operator-profile invariant against `aws.deployerProfile`. Verify with `grep -n 'config-path\|no option to name\|aws\.profile\|aws-profile' CLAUDE.md` returning nothing stale.
+- [ ] 6.3 Replace `infra/README.md` *A second deployment* with the CLI procedure (deployer policy attached as customer-managed, `baas --deployment <name> admin deployment setup --region …`, `admin image build`, the `baas-dev` alias, teardown). Replace `aws.profile` / `--aws-profile` in `README.md` and `infra/README.md`. Verify by following it in 7.1, and by `grep -rn 'aws\.profile\|aws-profile' README.md infra/README.md` returning nothing.
 - [ ] 6.4 Add the project rule to `openspec/config.yaml` under `tasks`: a change touching `infra/`, IAM or the runner image includes a manual task to verify it on a second deployment and record the result in `verify.md`. Verify `openspec instructions tasks --change multiple-deployments --json` shows the rule.
 - [ ] 6.5 Delete U36 and C5 from `docs/review/open-findings.md` (index rows and entries). Verify by grep.
 - [ ] 6.6 Update `docs/diagrams/` where setup, teardown or config selection appear, rendering each edited `.mmd` with `mmdc` to a scratch PNG and inspecting it before committing.
@@ -48,7 +51,7 @@
 
 - [ ] 7.1 With the dev deployer policy attached (customer-managed, by an identity above the deployer), run `baas --deployment <dev-name> admin deployment setup --region us-east-1`, then `admin image build`. Record that the parent AMI resolved for us-east-1 and that the bake's contract passed.
 - [ ] 7.2 Run a `fake-jmh-benchmarks` job on the dev deployment through the `baas-dev` alias. Record that the instance carries `baas-deployment=<dev-name>`, that `environment.json` exists, and that the result is in `<dev-name>-results` only.
-- [ ] 7.3 With both deployments configured, confirm a bare `baas results query` fails listing both names, and that `baas --deployment baas-<acct> jobs list` does not show the dev runner.
+- [ ] 7.3 With both deployments configured, confirm a bare `baas results query` fails listing both names with the `config list` hint, that `baas config list` shows both rows with their regions, and that `baas --deployment baas-<acct> jobs list` does not show the dev runner.
 - [ ] 7.4 Same-region check: create a second named deployment in `eu-central-1`, start a job on it, and confirm the default deployment's teardown gate does not list it. Tear down only the second deployment. Record the result as U36's live closure.
 - [ ] 7.5 Tear down the dev deployment. Confirm `~/.baas/deployments/<dev-name>.yaml` is gone, and that bare commands address the default deployment again. Use the same run to perform the deferred U21/U40 checks, and record them per `openspec/changes/QUEUE.md`.
 

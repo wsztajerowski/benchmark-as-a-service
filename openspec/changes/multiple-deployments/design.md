@@ -104,6 +104,29 @@ and that is exactly when the name is required.
   (`alias baas-dev='java -jar …/baas-cli.jar --deployment wiktor-dev'`). It can be added later without
   breaking anything.
 
+### `baas config list` exists, local and credential-free
+Once deployments are plural, `config` manages a collection, and a collection with `show`, `set` and
+`sync` but no `list` is a gap in the API. It reads the files only, so it works with any number of
+deployments, without credentials and without selecting one. The ambiguity error keeps its list of names
+and adds `→ choose one: baas config list`. `list` is a shared verb, so it is never aliased at the top
+level (`jobs-command`'s alias rule).
+
+*Rejected:*
+- **Leaving it out and printing each name's region in the ambiguity error.** It covers the moment of
+  need, but the user chose API completeness. `ls ~/.baas/deployments` was never meant to be the
+  interface.
+
+### `aws.profile` becomes `aws.deployerProfile`, and `--aws-profile` becomes `--deployer-profile`
+The key held the deployer's profile without saying so, which is why the docs had to explain that the
+operator profile never falls back to it. The flat-file migration already rewrites every file once, so
+the rename adds one line there. A deployment file still carrying `aws.profile` (written by a reactor
+build from before the rename) is renamed when read. An older CLI cannot read a migrated file anyway,
+so the rename costs no extra compatibility. The options follow the key, and the break lands in the
+same release as `jobs-command`'s renames, so users absorb one round of breakage instead of two.
+
+*Rejected:*
+- **Renaming later in a separate change.** It would need a second migration and a second break.
+
 ### `--config-path` is removed, and tests get the root through code
 `ConfigService` takes the `~/.baas` root from its constructor. `BaasApp` gets a package-private seam
 for the nine test classes that use `--config-path` today. There is no user-facing root override.
@@ -172,11 +195,12 @@ down, and record the result in `verify.md`.
 
 - **The deployer-policy surface for a named deployment** (`deployer-policy --prefix`): parked with
   `jobs-command`. This change must not settle it.
-- **`jobs-command`'s acceptance of the scope split above**, in particular that `--config-path` is
-  removed here rather than there.
 
 ## Resolved Questions
 
+- *Does `jobs-command` accept the scope split?* Yes, on 2026-10-07 (`jobs-command` commit `4bcb9cd`),
+  with `baas config list` handed to this change. `jobs-command` leaves `--config-path` in place for
+  this change to remove.
 - *Same account, different region: does the region separate deployments?* No. S3 bucket names and
   IAM names are global, so the prefix must differ. The region is optional.
 - *Naming the selector:* `deployment`. "profile" collides with `--aws-profile` and `aws.profile`,

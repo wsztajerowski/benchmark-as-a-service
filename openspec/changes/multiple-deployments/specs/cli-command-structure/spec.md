@@ -23,14 +23,20 @@ it tears down once the teardown has completed, whether or not other deployments 
 
 ### Requirement: An existing flat configuration is migrated once
 When `~/.baas/config.yaml` holds a `prefix`, the CLI SHALL move its content to
-`~/.baas/deployments/<prefix>.yaml` and remove `~/.baas/config.yaml` before resolving the
-deployment. When the target file already exists, the flat file's content SHALL replace it, since the
+`~/.baas/deployments/<prefix>.yaml`, renaming the key `aws.profile` to `aws.deployerProfile`, and
+remove `~/.baas/config.yaml` before resolving the deployment. No deployment file SHALL carry
+`aws.profile` afterwards; a deployment file that still carries one SHALL have it renamed the same way
+when read. When the target file already exists, the flat file's content SHALL replace it, since the
 flat file can only have been written later by an older CLI. A `~/.baas/config.yaml` with no `prefix`
 SHALL be left untouched and ignored.
 
 #### Scenario: First run after upgrading
 - **WHEN** a command runs and `~/.baas/config.yaml` holds `prefix: baas-123456789012` and no deployment file exists
 - **THEN** `~/.baas/deployments/baas-123456789012.yaml` holds the same settings, `~/.baas/config.yaml` is gone, and the command addresses that deployment
+
+#### Scenario: The deployer key is renamed in the move
+- **WHEN** the flat file holds `aws.profile: baas-admin` and `aws.operatorProfile: baas-operator`
+- **THEN** the deployment file holds `aws.deployerProfile: baas-admin` and `aws.operatorProfile: baas-operator`, and no `aws.profile`
 
 #### Scenario: An older CLI afterwards fails loudly
 - **WHEN** a CLI from before this change runs after the migration
@@ -39,7 +45,8 @@ SHALL be left untouched and ignored.
 ### Requirement: A deployment is selected by name, or implied when it is the only one
 Every command that addresses a deployment SHALL use the one named by the global `--deployment <name>`
 option. When the option is absent, it SHALL use the only configured deployment if exactly one is
-configured, and SHALL fail listing the configured names if two or more are. When none is configured,
+configured, and SHALL fail listing the configured names if two or more are, with the hint
+`→ choose one: baas config list`. When none is configured,
 every command SHALL fail reporting that no deployment is configured, except
 `baas admin deployment setup`, which derives the name. No environment variable and no stored setting
 SHALL select a deployment.
@@ -50,7 +57,7 @@ SHALL select a deployment.
 
 #### Scenario: Two deployments require the flag
 - **WHEN** `baas run jmh -- MyBenchmark` runs with `baas-123456789012` and `wiktor-dev` configured and no `--deployment`
-- **THEN** the command exits non-zero listing both names, issues no AWS call and launches nothing
+- **THEN** the command exits non-zero listing both names and the hint `→ choose one: baas config list`, issues no AWS call and launches nothing
 
 #### Scenario: Teardown is never ambiguous
 - **WHEN** `baas admin deployment teardown --yes` runs with two deployments configured and no `--deployment`
@@ -59,6 +66,39 @@ SHALL select a deployment.
 #### Scenario: An environment variable selects nothing
 - **WHEN** `BAAS_DEPLOYMENT=wiktor-dev baas results query` runs with two deployments configured
 - **THEN** the command fails listing both names, as if the variable were unset
+
+### Requirement: `baas config list` lists the configured deployments
+`baas config list` SHALL print one row per file in `~/.baas/deployments/`, with the columns
+DEPLOYMENT, REGION, OPERATOR PROFILE and DEPLOYER PROFILE, read from the files alone. It SHALL make no
+AWS call and SHALL NOT require any deployment to be selected, so it works with any number of
+configured deployments. `--format json` SHALL print the same rows as a JSON array. With no deployment
+configured it SHALL print that none is configured and exit 0. `list` SHALL NOT be aliased at the top
+level.
+
+#### Scenario: Two deployments listed without credentials
+- **WHEN** `baas config list` runs with `baas-123456789012` and `wiktor-dev` configured and no AWS credentials available
+- **THEN** it prints both rows with their region and profiles, and exits 0
+
+#### Scenario: Machine-readable listing
+- **WHEN** `baas config list --format json` runs
+- **THEN** stdout is a JSON array with one object per deployment and nothing else
+
+#### Scenario: No deployment configured
+- **WHEN** `baas config list` runs with no deployment configured
+- **THEN** it reports that no deployment is configured and exits 0
+
+### Requirement: The deployer profile option is named for the deployer
+`baas config set` SHALL accept `--deployer-profile <name>`, stored as `aws.deployerProfile`, beside
+`--operator-profile`. It SHALL NOT accept `--aws-profile`. `baas config show` SHALL label the two
+profiles as the deployer profile and the operator profile.
+
+#### Scenario: Setting the deployer profile
+- **WHEN** `baas config set --deployer-profile baas-admin` runs
+- **THEN** the selected deployment's file holds `aws.deployerProfile: baas-admin`
+
+#### Scenario: The old option is gone
+- **WHEN** `baas config set --aws-profile baas-admin` runs
+- **THEN** picocli reports an unknown option error and nothing is written
 
 ## MODIFIED Requirements
 
