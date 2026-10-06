@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 4;
+    public static final int MANIFEST_SCHEMA_VERSION = 5;
 
     /**
      * EC2 refuses user-data over 16 KB raw, and the launch then fails outright. The comments below
