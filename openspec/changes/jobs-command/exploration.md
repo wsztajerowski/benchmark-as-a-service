@@ -170,9 +170,18 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   with one, bare sync re-syncs it. Teardown deletes `deployments/<name>.yaml`. With two or more
   deployments every command, teardown included, must name one — the guard against an accidental
   production teardown. Grouped help's option line therefore drops "env BAAS_DEPLOYMENT".
-- **Open, raised by that session:** a `BAAS_HOME` root variable (like `CARGO_HOME`, `GNUPGHOME`) so
-  tests and CI can relocate `~/.baas` now that `--config-path` is gone — a root, not a deployment
-  pointer, so it does not break "every pointer to a deployment is `--deployment`".
+- **`BAAS_HOME` is dropped** (user decision relayed by the same session): nobody outside the tests
+  relocates `~/.baas`. The in-process tests that pass `--config-path` today get the root injected
+  through code (`BaasApp`/`ConfigService`), with no user-facing surface; CI's HOME is fresh;
+  `install-test.yml`'s sentinel check moves to the `deployments/` layout. Addable later.
+- **Also from that exploration (affects `jobs list`, `jobs terminate`, teardown):** runners get a
+  fourth fixed instance tag, `baas-deployment=<prefix>`, and every runner lookup — `jobs list`'s
+  `vanished` resolution, teardown's in-flight check, `jobs terminate` — filters on it, so two
+  deployments in one region never see each other's runners. `RunnerRole`'s IAM condition stays on
+  `baas-role`. Runners from an older CLI lack the tag (accepted; the watchdog still ends them).
+  A deployment name is validated only by `admin deployment setup`: 3–47 chars,
+  `^[a-z][a-z0-9-]*[a-z0-9]$`, no `--`, not starting with `aws`, `ssm`, `sthree-`, `amzn-s3-demo-`,
+  not ending with `-s3alias`.
 - **The word "installation" is already renamed to "deployment"** in messages, identifiers, docs,
   diagrams and main specs (`fec4adc`, no OpenSpec change, at the user's request); the installed-CLI
   sense and `infra/runner-image.yaml` keep "installation". The second-installation session was told.
