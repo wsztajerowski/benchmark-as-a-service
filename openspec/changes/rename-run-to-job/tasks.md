@@ -151,15 +151,19 @@ history left to compare with.
       `jobId-index`. (No paid run — reuses 1 and 2.)
       *Done:* `env diff` of runs 1 and 2 by job id resolved both through `jobId-index`; it warned
       on the 4 vs 5 schema difference, as designed.
-- [ ] 9.5 Push, open the PR into `next-release`; both CI e2e jobs green. Record the workflow run.
-- [ ] 9.6 Runs 4–5 are reserve, spent only to re-check a fix found by 9.1–9.5. Record whether they
+- [x] 9.5 Push, open the PR into `next-release`; both CI e2e jobs green. Record the workflow run.
+      *Done:* PR #80; every check green — e2e workflow run 37500704468 (`Benchmark on EC2` 1 m 50 s,
+      `JCStress on EC2` 2 m 17 s), `build` 6 m 32 s, both `install.sh` jobs.
+- [x] 9.6 Runs 4–5 are reserve, spent only to re-check a fix found by 9.1–9.5. Record whether they
       were used.
+      *Done:* not used — 3 of the 5 paid runs spent, the reserve untouched.
 
 ## 10. Verify, merge, archive
 
-- [ ] 10.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
+- [x] 10.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
       requirement → code → test → gap table, open warnings under stable IDs (W1, W2…) and any
       deviation from the design or tasks.
+      *Done 2026-10-06:* `verify.md` — no critical issue; W1–W7.
 - [ ] 10.2 Rebase-merge into `next-release`; archive the change and make the editorial commit of
       design D5 (`archive-renames.md`: capability directories, scenario titles, Purpose sections).
       Verify with `openspec validate --specs` and the 6.1 grep over `openspec/specs/`.
