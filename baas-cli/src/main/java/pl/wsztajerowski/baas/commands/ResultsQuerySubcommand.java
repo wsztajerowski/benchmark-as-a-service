@@ -12,6 +12,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Watch;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsFilters;
@@ -19,12 +20,8 @@ import pl.wsztajerowski.baas.results.ResultsGrouping;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 import pl.wsztajerowski.baas.results.ResultsTable;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.file.Path;
 import java.time.Duration;
-import java.time.LocalTime;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -47,7 +44,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
      * Fixed: a job lands minutes after the previous one, and each refresh is one partition
      * {@code Query}. An option can be added when someone needs a different pace.
      */
-    static final Duration WATCH_INTERVAL = Duration.ofSeconds(30);
+    static final Duration WATCH_INTERVAL = Watch.INTERVAL;
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -56,9 +53,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
 
-    /** The frame on screen, reprinted on the normal screen when {@code --watch} ends. */
-    private String lastFrame;
-    private boolean onAlternateScreen;
+    private Watch watcher;
 
     /**
      * Reads one line of the operator's answer to the project picker. Set by tests; otherwise the
@@ -245,80 +240,45 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         return rows;
     }
 
-    /**
-     * Refused rather than degraded: without a terminal there is nothing to redraw, and a pipe
-     * receiving a new table every 30 s forever is not output anyone asked for.
-     */
     String watchRefusal() {
-        if (!watch) {
-            return null;
-        }
-        if (!"table".equals(format.toLowerCase(Locale.ROOT))) {
-            return "--watch applies to the table only; it cannot be combined with --format " + format + ".";
-        }
-        if (!console().interactive()) {
-            return "--watch needs an interactive terminal; standard output is redirected or piped.";
-        }
-        return null;
+        return watch ? Watch.refusal(format, console()) : null;
     }
 
-    /**
-     * Runs until interrupted (Ctrl+C), on the alternate screen. Leaving it restores the normal
-     * screen and reprints the last frame there, so the result outlives the command. Left in a
-     * {@code finally} for a failed query — its error must be logged on the normal screen, not lost
-     * with the alternate one — and in a shutdown hook for Ctrl+C. {@link #leaveWatch} is
-     * idempotent, so both firing is harmless.
-     */
     private void watch(ResultsQueryService results) throws InterruptedException {
-        var time = DateTimeFormatter.ofPattern("HH:mm:ss");
-        enterWatch();
-        Runtime.getRuntime().addShutdownHook(new Thread(this::leaveWatch));
-        try {
-            while (true) {
-                var notes = new ArrayList<String>();
-                List<ResultRow> rows = fetch(results, notes::add, notes::add);
-                printFrame(rows, notes, LocalTime.now().format(time));
-                Thread.sleep(WATCH_INTERVAL.toMillis());
-            }
-        } finally {
-            leaveWatch();
-        }
+        watcher().run(out -> renderFrame(out, results));
     }
 
-    synchronized void enterWatch() {
-        console().enterAlternateScreen();
-        onAlternateScreen = true;
+    private void renderFrame(Console out, ResultsQueryService results) {
+        var notes = new ArrayList<String>();
+        List<ResultRow> rows = fetch(results, notes::add, notes::add);
+        renderRows(out, rows, notes);
     }
 
-    synchronized void leaveWatch() {
-        if (!onAlternateScreen) {
-            return;
-        }
-        onAlternateScreen = false;
-        console().leaveAlternateScreen();
-        if (lastFrame != null) {
-            console().print(lastFrame);
-        }
-    }
-
-    /**
-     * One {@code --watch} frame: header, table, then the notes that would otherwise be logged —
-     * in the frame, because logging them would repeat the same text every refresh and scroll the
-     * table away. Rendered to a string first, so the same text can be reprinted on exit.
-     */
-    synchronized void printFrame(List<ResultRow> rows, List<String> notes, String refreshedAt) {
-        var frame = new StringWriter();
-        var out = console().renderingTo(new PrintWriter(frame));
-        out.println(out.faint("Every " + WATCH_INTERVAL.toSeconds() + "s · refreshed " + refreshedAt
-            + " · Ctrl+C to stop"));
-        out.println("");
+    private void renderRows(Console out, List<ResultRow> rows, List<String> notes) {
         printTable(out, rows);
         for (String note : notes) {
             out.println("");
             out.println(note);
         }
-        lastFrame = frame.toString();
-        console().showFrame(lastFrame);
+    }
+
+    private Watch watcher() {
+        if (watcher == null) {
+            watcher = new Watch(console());
+        }
+        return watcher;
+    }
+
+    void enterWatch() {
+        watcher().enter();
+    }
+
+    void leaveWatch() {
+        watcher().leave();
+    }
+
+    void printFrame(List<ResultRow> rows, List<String> notes, String refreshedAt) {
+        watcher().show(out -> renderRows(out, rows, notes), refreshedAt);
     }
 
     private Console console() {
