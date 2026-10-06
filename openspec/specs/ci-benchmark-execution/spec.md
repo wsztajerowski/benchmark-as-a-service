@@ -28,7 +28,8 @@ from a developer's laptop.
 
 #### Scenario: One job, one run
 - **WHEN** the continuous-integration benchmark workflow runs
-- **THEN** it consists of a single job on a hosted runner, and the benchmark instance is never a
+- **THEN** it consists of one job on a hosted runner per benchmark type the self-test covers, each
+  job launches exactly one run through the CLI, and no benchmark instance is ever a
   continuous-integration agent
 
 ### Requirement: Continuous integration authenticates as the operator with no intermediate role
@@ -141,3 +142,24 @@ SHALL NOT enable `git.resolveProject`.
 #### Scenario: CI does not depend on git derivation
 - **WHEN** the self-test runs with a fresh configuration written by `baas config sync`
 - **THEN** the run succeeds without `git.resolveProject` being set
+
+### Requirement: The self-test also covers JCStress, in sanity mode
+Besides the image-dependent type, this project's continuous-integration self-test SHALL run a
+JCStress fixture through the CLI, in JCStress sanity mode, with the CLI attached until the run ends.
+Its run SHALL be tagged `exclude_from_results=true`. Its assertions SHALL concern the shape of what
+the run stored and uploaded, never the fixture's pass or fail counts, because the fixture contains a
+test whose outcome depends on whether a data race fires.
+
+#### Scenario: A JCStress regression fails CI
+- **WHEN** a change breaks the runner's JCStress execution, report parsing or storage
+- **THEN** the self-test's JCStress job fails, rather than the regression reaching a consumer
+
+#### Scenario: The JCStress run is asserted by shape
+- **WHEN** the JCStress job's run completes
+- **THEN** the job asserts that the run ended completed, that exactly one JCStress measurement is
+  retrievable by the run's identifier carrying the job's project, branch, commit and source, and that
+  the JCStress process output and the environment manifest reached the run's result path
+
+#### Scenario: A racing fixture does not make CI flaky
+- **WHEN** the fixture's forbidden outcome fires in one run and not in another
+- **THEN** both runs pass the self-test, since no assertion depends on the pass or fail counts
