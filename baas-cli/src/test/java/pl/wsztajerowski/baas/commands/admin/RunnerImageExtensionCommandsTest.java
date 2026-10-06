@@ -43,17 +43,17 @@ class RunnerImageExtensionCommandsTest {
 
     @Test
     void buildImageTakesAnExtensionFile() {
-        var result = new CommandLine(new BaasApp()).parseArgs("admin", "build-image", "--extension", "ext.yaml");
+        var result = new CommandLine(new BaasApp()).parseArgs("admin", "image", "build", "--extension", "ext.yaml");
 
-        assertThat(((BuildImageCommand) result.subcommand().subcommand().commandSpec().userObject()).extensionFile)
+        assertThat(((ImageBuildSubcommand) result.subcommand().subcommand().subcommand().commandSpec().userObject()).extensionFile)
             .isEqualTo(Path.of("ext.yaml"));
     }
 
     @Test
     void imageTakesTheExtensionFlag() {
-        var result = new CommandLine(new BaasApp()).parseArgs("admin", "image", "--extension");
+        var result = new CommandLine(new BaasApp()).parseArgs("admin", "image", "show", "--extension");
 
-        assertThat(((ImageCommand) result.subcommand().subcommand().commandSpec().userObject()).printExtension)
+        assertThat(((ImageShowSubcommand) result.subcommand().subcommand().subcommand().commandSpec().userObject()).printExtension)
             .isTrue();
     }
 
@@ -79,7 +79,7 @@ class RunnerImageExtensionCommandsTest {
         try {
             System.setErr(new PrintStream(stderr, true, StandardCharsets.UTF_8));
             exit = new CommandLine(new BaasApp()).execute(
-                "--config-path", config.toString(), "admin", "build-image", "--extension", big.toString());
+                "--config-path", config.toString(), "admin", "image", "build", "--extension", big.toString());
         } finally {
             System.setErr(original);
         }
@@ -146,14 +146,14 @@ class RunnerImageExtensionCommandsTest {
 
     @Test
     void theBaseVersionIsReadFromTheLabel() {
-        assertThat(ImageCommand.baseOf("1.3.0+ext.3f9a1c2e")).isEqualTo("1.3.0");
-        assertThat(ImageCommand.baseOf("1.2.0")).isEqualTo("1.2.0");
-        assertThat(ImageCommand.baseOf(null)).isNull();
+        assertThat(ImageShowSubcommand.baseOf("1.3.0+ext.3f9a1c2e")).isEqualTo("1.3.0");
+        assertThat(ImageShowSubcommand.baseOf("1.2.0")).isEqualTo("1.2.0");
+        assertThat(ImageShowSubcommand.baseOf(null)).isNull();
     }
 
     private static String report(String extension, String label) {
         var out = new StringWriter();
-        ImageCommand.printExtension(Console.plain(new PrintWriter(out, true)), extension, label);
+        ImageShowSubcommand.printExtension(Console.plain(new PrintWriter(out, true)), extension, label);
         return out.toString();
     }
 }

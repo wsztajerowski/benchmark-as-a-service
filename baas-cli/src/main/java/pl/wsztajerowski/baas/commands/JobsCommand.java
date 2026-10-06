@@ -14,8 +14,14 @@ import pl.wsztajerowski.baas.LoggingMixin;
 @Command(
     name = "jobs",
     mixinStandardHelpOptions = true,
-    description = "List benchmark jobs, and stop one that is still in flight.",
-    subcommands = {JobsListSubcommand.class, JobsTerminateSubcommand.class}
+    description = "The execution: run a benchmark job, list, show, diff, download or terminate one.",
+    subcommands = {
+        RunCommand.class,
+        JobsListSubcommand.class,
+        JobsDiffSubcommand.class,
+        JobsDownloadSubcommand.class,
+        JobsTerminateSubcommand.class
+    }
 )
 public class JobsCommand implements Runnable {
 
@@ -25,7 +31,7 @@ public class JobsCommand implements Runnable {
 
     @Override
     public void run() {
-        // Help text is program output, not a log event; see EnvCommand.
+        // Help text is program output, not a log event; see ResultsCommand.
         spec.commandLine().usage(spec.commandLine().getOut());
     }
 }

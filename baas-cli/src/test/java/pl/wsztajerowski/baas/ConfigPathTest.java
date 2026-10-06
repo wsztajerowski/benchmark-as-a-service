@@ -24,7 +24,7 @@ class ConfigPathTest {
     void isHonouredBeforeTheSubcommand(@TempDir Path dir) {
         Path file = dir.resolve("other.yaml");
 
-        assertThat(configFileSeenBy("--config-path", file.toString(), "results"))
+        assertThat(configFileSeenBy("--config-path", file.toString(), "query"))
             .isEqualTo(file);
     }
 
@@ -32,7 +32,7 @@ class ConfigPathTest {
     void isHonouredAfterTheSubcommand(@TempDir Path dir) {
         Path file = dir.resolve("other.yaml");
 
-        assertThat(configFileSeenBy("results", "--config-path", file.toString()))
+        assertThat(configFileSeenBy("query", "--config-path", file.toString()))
             .isEqualTo(file);
     }
 
@@ -46,7 +46,7 @@ class ConfigPathTest {
 
     @Test
     void defaultsToTheHomeDirectoryFile() {
-        assertThat(configFileSeenBy("results")).isEqualTo(ConfigService.DEFAULT_PATH);
+        assertThat(configFileSeenBy("query")).isEqualTo(ConfigService.DEFAULT_PATH);
     }
 
     /** A typed path that does not exist is a typo far more often than an unconfigured machine. */
@@ -63,7 +63,7 @@ class ConfigPathTest {
     void aReadCommandRefusesAMissingExplicitFile(@TempDir Path dir) {
         Path missing = dir.resolve("nope.yaml");
 
-        int exit = execute("--config-path", missing.toString(), "results", "--project", "p");
+        int exit = execute("--config-path", missing.toString(), "query", "--project", "p");
 
         assertThat(exit).isNotZero();
         assertThat(missing).doesNotExist();

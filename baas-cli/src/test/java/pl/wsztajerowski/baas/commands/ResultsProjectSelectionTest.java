@@ -38,8 +38,8 @@ class ResultsProjectSelectionTest {
         };
     }
 
-    private ResultsCommand command(boolean interactive, String answer, String... args) {
-        var command = new ResultsCommand();
+    private ResultsQuerySubcommand command(boolean interactive, String answer, String... args) {
+        var command = new ResultsQuerySubcommand();
         new CommandLine(command).parseArgs(args);
         command.console = Console.withFlags(new PrintWriter(screen), interactive, false);
         command.answerReader = () -> answer;
@@ -134,7 +134,7 @@ class ResultsProjectSelectionTest {
     @Test
     void theRemovedOptionsAreUnknown() {
         for (String option : new String[]{"--living-branches", "--all", "--results-table"}) {
-            var parser = new CommandLine(new ResultsCommand());
+            var parser = new CommandLine(new ResultsQuerySubcommand());
 
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> parser.parseArgs(option, "x"))
                 .as(option)
@@ -162,10 +162,10 @@ class ResultsProjectSelectionTest {
             @Override
             @SuppressWarnings("unchecked")
             public <K> K create(Class<K> cls) throws Exception {
-                if (cls != ResultsCommand.class) {
+                if (cls != ResultsQuerySubcommand.class) {
                     return defaults.create(cls);
                 }
-                var command = new ResultsCommand() {
+                var command = new ResultsQuerySubcommand() {
                     @Override
                     ResultsQueryService openResults(BaasConfig c, String table) {
                         return new ResultsQueryService(null, table) {
@@ -189,7 +189,7 @@ class ResultsProjectSelectionTest {
 
         new CommandLine(new BaasApp(), factory)
             .setErr(new PrintWriter(new StringWriter()))
-            .execute("--config-path", config.toString(), "results", "--watch");
+            .execute("--config-path", config.toString(), "query", "--watch");
 
         String out = screen.toString();
         assertThat(out).contains("Choose a project").contains("\u001b[?1049h");
@@ -199,7 +199,7 @@ class ResultsProjectSelectionTest {
     /** Refused before the configuration is read, so no deployment or credentials are needed. */
     @Test
     void anUnknownFormatIsRefusedRatherThanReadAsTheTable() {
-        int exit = new CommandLine(new ResultsCommand()).execute("--project", "p", "--format", "xml");
+        int exit = new CommandLine(new ResultsQuerySubcommand()).execute("--project", "p", "--format", "xml");
 
         assertThat(exit).isEqualTo(2);
     }

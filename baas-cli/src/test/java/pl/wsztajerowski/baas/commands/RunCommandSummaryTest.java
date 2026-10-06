@@ -133,7 +133,7 @@ class RunCommandSummaryTest {
     }
 
     /**
-     * The rule CLAUDE.md states for {@code ResultsCommand.printJson}: payload on standard output,
+     * The rule CLAUDE.md states for {@code ResultsQuerySubcommand.printJson}: payload on standard output,
      * diagnostics on the logger. A timestamp prefix on the payload line breaks {@code | jq}, and
      * {@code -v} is exactly when a diagnostic is most likely to land on the wrong stream.
      *

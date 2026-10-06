@@ -22,22 +22,15 @@ class TeardownNoticeTest {
             .contains("aws dynamodb delete-table --table-name baas-123456789012-results");
     }
 
-    /** --stack-name names the deployment whose image is retired, not this machine's. */
+    /** The image retired is the configured deployment's — the only one teardown can reach. */
     @Test
     void theImageRetiredIsTheTornDownDeployments() {
         var config = new pl.wsztajerowski.baas.config.BaasConfig();
         config.setPrefix("baas-123456789012");
 
-        var named = new TeardownCommand();
-        new picocli.CommandLine(named).parseArgs("--stack-name", "baas-123456789012-dev");
-        String dev = named.resolveDeployment(config);
-        assertThat(TeardownCommand.pointerPath(dev)).isEqualTo("/baas-123456789012-dev/runner/ami-id");
-        assertThat(TeardownCommand.recipeName(dev)).isEqualTo("baas-123456789012-dev-recipe-runner");
-
-        var configured = new TeardownCommand();
-        new picocli.CommandLine(configured).parseArgs();
-        assertThat(TeardownCommand.pointerPath(configured.resolveDeployment(config)))
-            .isEqualTo("/baas-123456789012/runner/ami-id");
+        String deployment = new TeardownCommand().resolveDeployment(config);
+        assertThat(TeardownCommand.pointerPath(deployment)).isEqualTo("/baas-123456789012/runner/ami-id");
+        assertThat(TeardownCommand.recipeName(deployment)).isEqualTo("baas-123456789012-recipe-runner");
     }
 
     @Test

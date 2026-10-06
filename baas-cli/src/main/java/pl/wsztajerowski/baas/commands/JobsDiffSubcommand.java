@@ -42,9 +42,9 @@ import java.util.concurrent.Callable;
         "(<branch>/<type>/<timestamp>); both shapes still resolve."
     }
 )
-public class EnvDiffSubcommand implements Callable<Integer> {
+public class JobsDiffSubcommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(EnvDiffSubcommand.class);
+    private static final Logger logger = LoggerFactory.getLogger(JobsDiffSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -126,7 +126,7 @@ public class EnvDiffSubcommand implements Callable<Integer> {
 
     /**
      * Command payload, so the {@link Console} rather than the logger — a timestamp prefix on every
-     * line breaks redirecting this to a file, the same reasoning as ResultsCommand#printJson. The
+     * line breaks redirecting this to a file, the same reasoning as ResultsQuerySubcommand#printJson. The
      * two jobs' values are coloured apart when the terminal allows it.
      */
     void printDiff(Console out, Map<String, EnvironmentManifest.Difference> differences) {

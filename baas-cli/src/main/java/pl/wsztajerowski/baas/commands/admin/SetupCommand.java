@@ -126,6 +126,13 @@ public class SetupCommand implements Callable<Integer> {
         }
         logger.debug("Caller ARN: {}", callerArn);
         String resolvedPrefix = computePrefix(accountId);
+        var named = BaasApp.deployment(spec);
+        if (named.isPresent() && !named.get().equals(resolvedPrefix)) {
+            // Naming a deployment other than the account's own is the multiple-deployments change's.
+            logger.error("--deployment {} is not this account's deployment ({}). Nothing was done.",
+                named.get(), resolvedPrefix);
+            return 2;
+        }
 
         config.setPrefix(resolvedPrefix);
 

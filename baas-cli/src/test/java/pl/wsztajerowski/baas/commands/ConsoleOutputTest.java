@@ -54,9 +54,9 @@ class ConsoleOutputTest {
     void jsonAndCsvStayPlainEvenWhenColourIsOn() throws Exception {
         for (String method : List.of("printJson", "printCsv")) {
             var out = new StringWriter();
-            var command = new ResultsCommand();
+            var command = new ResultsQuerySubcommand();
             command.console = Console.withFlags(new PrintWriter(out), true, true);
-            Method print = ResultsCommand.class.getDeclaredMethod(method, List.class);
+            Method print = ResultsQuerySubcommand.class.getDeclaredMethod(method, List.class);
             print.setAccessible(true);
             print.invoke(command, List.of(row("r1", "1.0.0")));
 
@@ -88,7 +88,7 @@ class ConsoleOutputTest {
     // --- env diff --------------------------------------------------------------------------
 
     private static String diff(boolean colour) {
-        var command = new EnvDiffSubcommand();
+        var command = new JobsDiffSubcommand();
         command.resultPathA = "jobs/p/20260724T120000000Z-a3f9c21b";
         command.resultPathB = "jobs/p/20260811T093000000Z-b7e4d0f2";
         Map<String, Difference> differences = new LinkedHashMap<>();
@@ -123,7 +123,7 @@ class ConsoleOutputTest {
     /** Surefire has no console, so this is the redirected case: refused before any config or AWS. */
     @Test
     void watchIsRefusedWithoutATerminal() {
-        var captured = run("results", "--watch", "--project", "p");
+        var captured = run("query", "--watch", "--project", "p");
 
         assertThat(captured.exitCode()).isEqualTo(2);
         assertThat(captured.err()).contains("--watch needs an interactive terminal");
@@ -132,7 +132,7 @@ class ConsoleOutputTest {
 
     @Test
     void watchIsRefusedForAMachineFormat() {
-        var captured = run("results", "--watch", "--format", "json", "--project", "p");
+        var captured = run("query", "--watch", "--format", "json", "--project", "p");
 
         assertThat(captured.exitCode()).isEqualTo(2);
         assertThat(captured.err()).contains("--watch applies to the table only");
@@ -143,7 +143,7 @@ class ConsoleOutputTest {
     void aWatchFrameCarriesRowWarningsBelowTheTableInsteadOfLoggingThem() {
         var out = new StringWriter();
         var err = new ByteArrayOutputStream();
-        var command = new ResultsCommand();
+        var command = new ResultsQuerySubcommand();
         command.console = Console.withFlags(new PrintWriter(out), true, false);
         PrintStream originalErr = System.err;
         try {
@@ -169,7 +169,7 @@ class ConsoleOutputTest {
     @Test
     void watchDrawsOnTheAlternateScreenAndLeavesTheLastFrameBehind() {
         var out = new StringWriter();
-        var command = new ResultsCommand();
+        var command = new ResultsQuerySubcommand();
         command.console = Console.withFlags(new PrintWriter(out), true, false);
 
         command.enterWatch();

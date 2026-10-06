@@ -52,7 +52,7 @@ class DownloadArgumentTest {
     @Test
     void noCommandDeclaresATableOrBucketOverride() {
         for (Object command : new Object[]{
-            new DownloadCommand(), new ResultsCommand(), new RunCommand(), new ConfigSetSubcommand()}) {
+            new JobsDownloadSubcommand(), new ResultsQuerySubcommand(), new RunCommand(), new ConfigSetSubcommand()}) {
             assertThat(optionNames(command))
                 .as(command.getClass().getSimpleName())
                 .doesNotContain("--results-table", "--bucket");

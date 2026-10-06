@@ -833,7 +833,7 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * One object on the {@link Console}, never coloured, following {@code ResultsCommand.printJson}'s rule exactly:
+     * One object on the {@link Console}, never coloured, following {@code ResultsQuerySubcommand.printJson}'s rule exactly:
      * the payload goes to standard output and every diagnostic to the logger, so
      * {@code baas run --format json | jq} is not corrupted by a timestamped log line — including
      * under {@code -v}.

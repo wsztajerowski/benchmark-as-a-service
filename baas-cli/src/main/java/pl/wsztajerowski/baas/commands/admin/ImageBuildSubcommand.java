@@ -26,7 +26,7 @@ import java.util.Optional;
 import java.util.concurrent.Callable;
 
 @Command(
-    name = "build-image",
+    name = "build",
     mixinStandardHelpOptions = true,
     description = "Build the runner AMI — the bundled base, the deployment's extension, the BaaS contract — and publish it.",
     footer = {
@@ -38,7 +38,7 @@ import java.util.concurrent.Callable;
         "their extension."
     }
 )
-public class BuildImageCommand implements Callable<Integer> {
+public class ImageBuildSubcommand implements Callable<Integer> {
 
     /**
      * Why this CLI must not build, or {@code null} when it may. A CLI bundling an older base than
@@ -58,7 +58,7 @@ public class BuildImageCommand implements Callable<Integer> {
             Nothing was changed.""".formatted(bundledBase, deployment, deployedBase);
     }
 
-    private static final Logger logger = LoggerFactory.getLogger(BuildImageCommand.class);
+    private static final Logger logger = LoggerFactory.getLogger(ImageBuildSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 

@@ -33,9 +33,9 @@ import java.util.concurrent.Callable;
     mixinStandardHelpOptions = true,
     description = "Download every S3 artifact for a job: result JSON, environment.json, process output, logs and profiling artifacts."
 )
-public class DownloadCommand implements Callable<Integer> {
+public class JobsDownloadSubcommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(DownloadCommand.class);
+    private static final Logger logger = LoggerFactory.getLogger(JobsDownloadSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 

@@ -10,15 +10,12 @@ import pl.wsztajerowski.baas.LoggingMixin;
     name = "admin",
     mixinStandardHelpOptions = true,
     description = {
-        "Deployer-privileged commands (requires BaasCliDeployerPolicy).",
-        "Start with `baas admin deployer-policy`, which prints that policy."
+        "Deployer commands (deployer AWS credentials).",
+        "Start with `baas admin deployment setup`, which prints the policy your identity lacks."
     },
     subcommands = {
-        SetupCommand.class,
-        BuildImageCommand.class,
-        ImageCommand.class,
-        TeardownCommand.class,
-        DeployerPolicyCommand.class
+        DeploymentCommand.class,
+        AdminImageCommand.class
     }
 )
 public class AdminCommand implements Runnable {
