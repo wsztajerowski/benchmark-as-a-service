@@ -35,12 +35,12 @@ public final class RunnerImageExtension {
     public static final int LIMIT_BYTES = RunnerImageRenderer.CFN_PARAMETER_LIMIT_BYTES;
 
     /**
-     * What {@code baas admin setup} writes and a pull of an installation with no extension prints.
+     * What {@code baas admin setup} writes and a pull of a deployment with no extension prints.
      * Comments only, so pushing it unchanged deploys no extension.
      */
     static final String STARTER = """
         # Runner image extension: an AWSTOE component document, run after the BaaS base and before
-        # the BaaS contract. Install anything here; it is stored in the installation's stack as
+        # the BaaS contract. Install anything here; it is stored in the deployment's stack as
         # written, comments included, and counts against a 4096-byte limit. ASCII only.
         #
         # The contract fails the bake if the image no longer has: Java at or above the runner's
@@ -181,7 +181,7 @@ public final class RunnerImageExtension {
     /**
      * Refuses a push based on a copy of the extension that has since been replaced. With no
      * extension deployed, any file is accepted — that is what lets a file kept across a teardown be
-     * pushed to the new installation. With one deployed, the file must have been pulled from it.
+     * pushed to the new deployment. With one deployed, the file must have been pulled from it.
      */
     public static void requireCurrent(WorkingCopy file, String deployedContent) {
         if (deployedContent.isEmpty()) {
@@ -190,7 +190,7 @@ public final class RunnerImageExtension {
         String deployed = hash(deployedContent);
         if (file.baseMarker().filter(deployed::equals).isEmpty()) {
             throw new IllegalStateException("""
-                The installation's extension is %s, but this file %s.
+                The deployment's extension is %s, but this file %s.
                   Someone may have pushed since you pulled; pushing would discard their extension,
                   and the stack keeps no earlier copy. Pull the deployed one, re-apply your edit,
                   and push again:

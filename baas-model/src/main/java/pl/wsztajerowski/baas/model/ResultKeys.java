@@ -67,7 +67,7 @@ public final class ResultKeys {
 
     /**
      * Every job of every project shares this one partition: the questions it answers — what is
-     * in flight, what happened to my job — are installation-wide, and one {@code Query} answers
+     * in flight, what happened to my job — are deployment-wide, and one {@code Query} answers
      * them newest first. Projects stay an attribute.
      */
     public static final String JOB_PARTITION_KEY = "JOB";

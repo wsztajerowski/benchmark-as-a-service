@@ -31,7 +31,7 @@ Resources:
   GithubOidc:
     Type: AWS::IAM::OIDCProvider
     # An identity provider outlives any one stack: the core stack's trust policy references its
-    # ARN, so deleting it would break every installation that federates through it.
+    # ARN, so deleting it would break every deployment that federates through it.
     DeletionPolicy: Retain
     Properties:
       Url: https://token.actions.githubusercontent.com

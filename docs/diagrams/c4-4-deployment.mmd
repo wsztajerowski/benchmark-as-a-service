@@ -14,7 +14,7 @@ C4Deployment
         Container(oidc, "GitHub OIDC provider", "cf-template-ci.yaml, by hand", "One per issuer per account")
     }
 
-    Deployment_Node(region, "AWS region (default eu-central-1)", "one installation: baas-<accountId>") {
+    Deployment_Node(region, "AWS region (default eu-central-1)", "one deployment: baas-<accountId>") {
         Container(cfStack, "Core stack <prefix>", "CloudFormation", "")
         ContainerDb(s3, "Bucket <prefix>", "S3", "Retain")
         ContainerDb(ddb, "Table <prefix>-results", "DynamoDB", "Retain")

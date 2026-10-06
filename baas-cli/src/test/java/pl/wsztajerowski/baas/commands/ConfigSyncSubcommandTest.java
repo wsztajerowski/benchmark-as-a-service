@@ -16,12 +16,12 @@ class ConfigSyncSubcommandTest {
 
     /**
      * Required although the prefix is derivable. A bare sync on a machine with no local state
-     * would adopt whatever installation the active credentials imply — in CI, that is a wrong role
-     * or a leftover AWS_PROFILE binding the machine to another account's installation, discovered
+     * would adopt whatever deployment the active credentials imply — in CI, that is a wrong role
+     * or a leftover AWS_PROFILE binding the machine to another account's deployment, discovered
      * only after something has been provisioned.
      */
     @Test
-    void theInstallationNameIsRequired() {
+    void theDeploymentNameIsRequired() {
         assertThatThrownBy(() -> new CommandLine(new ConfigSyncSubcommand()).parseArgs())
             .isInstanceOf(CommandLine.MissingParameterException.class)
             .hasMessageContaining("--name");
@@ -39,7 +39,7 @@ class ConfigSyncSubcommandTest {
     }
 
     @Test
-    void theNameIsTheInstallationPrefix() {
+    void theNameIsTheDeploymentPrefix() {
         var command = new ConfigSyncSubcommand();
         new CommandLine(command).parseArgs("--name", "baas-123456789012-dev");
 
@@ -47,7 +47,7 @@ class ConfigSyncSubcommandTest {
     }
 
     /**
-     * A second installation's configuration is created by sync, in the named file only. The stack
+     * A second deployment's configuration is created by sync, in the named file only. The stack
      * lookup is stood in for: the test has no stack, and the file handling is what is under test.
      */
     @Test
@@ -56,7 +56,7 @@ class ConfigSyncSubcommandTest {
         String defaultBefore = Files.exists(ConfigService.DEFAULT_PATH)
             ? Files.readString(ConfigService.DEFAULT_PATH) : null;
 
-        int exit = new CommandLine(new BaasApp(), installation("eu-central-1", Map.of("ResultsTableName", "t")))
+        int exit = new CommandLine(new BaasApp(), deployment("eu-central-1", Map.of("ResultsTableName", "t")))
             .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
@@ -69,18 +69,18 @@ class ConfigSyncSubcommandTest {
     void aMissingStackWritesNothing(@TempDir Path dir) {
         Path file = dir.resolve("dev.yaml");
 
-        int exit = new CommandLine(new BaasApp(), installation("eu-central-1", Map.of()))
+        int exit = new CommandLine(new BaasApp(), deployment("eu-central-1", Map.of()))
             .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-nope");
 
-        assertThat(exit).as("a bucket a teardown retained is not an installation").isNotZero();
+        assertThat(exit).as("a bucket a teardown retained is not a deployment").isNotZero();
         assertThat(file).doesNotExist();
     }
 
     @Test
-    void noBucketMeansNoInstallationAndWritesNothing(@TempDir Path dir) {
+    void noBucketMeansNoDeploymentAndWritesNothing(@TempDir Path dir) {
         Path file = dir.resolve("dev.yaml");
 
-        int exit = new CommandLine(new BaasApp(), installation(null, Map.of("ResultsTableName", "t")))
+        int exit = new CommandLine(new BaasApp(), deployment(null, Map.of("ResultsTableName", "t")))
             .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-nope");
 
         assertThat(exit).isNotZero();
@@ -89,14 +89,14 @@ class ConfigSyncSubcommandTest {
 
     /**
      * The region is found from the bucket and stored, whatever region the machine started in: the
-     * installation's region is a fact about it, so a machine or a CI job aimed elsewhere follows it.
+     * deployment's region is a fact about it, so a machine or a CI job aimed elsewhere follows it.
      */
     @Test
-    void syncStoresTheRegionTheInstallationLivesIn(@TempDir Path dir) throws Exception {
+    void syncStoresTheRegionTheDeploymentLivesIn(@TempDir Path dir) throws Exception {
         Path file = dir.resolve("c.yaml");
         Files.writeString(file, "aws:\n  region: \"eu-west-1\"\n");
 
-        int exit = new CommandLine(new BaasApp(), installation("us-east-1", Map.of("ResultsTableName", "t")))
+        int exit = new CommandLine(new BaasApp(), deployment("us-east-1", Map.of("ResultsTableName", "t")))
             .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
@@ -104,7 +104,7 @@ class ConfigSyncSubcommandTest {
     }
 
     /** A bucket in {@code bucketRegion} (none when null) and a stack there with {@code outputs}. */
-    private static CommandLine.IFactory installation(String bucketRegion, Map<String, String> outputs) {
+    private static CommandLine.IFactory deployment(String bucketRegion, Map<String, String> outputs) {
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
         return new CommandLine.IFactory() {
             @Override

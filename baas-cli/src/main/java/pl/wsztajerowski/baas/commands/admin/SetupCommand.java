@@ -67,7 +67,7 @@ public class SetupCommand implements Callable<Integer> {
     // These three set the federated trust on BaasCliOperatorRole. Omitting them on a later setup
     // leaves the deployed trust untouched rather than dropping it: the update path carries every
     // unnamed parameter forward with UsePreviousValue. That is why revocation needs its own
-    // gesture — nothing should be able to cut CI's access to an installation by accident.
+    // gesture — nothing should be able to cut CI's access to a deployment by accident.
     //
     // No BaasConfig field backs any of them. The deployed stack's parameters are the single
     // source of truth for what the trust policy says; a second copy in ~/.baas/config.yaml would
@@ -79,7 +79,7 @@ public class SetupCommand implements Callable<Integer> {
 
     @Option(names = "--github-repo", split = ",",
         description = "Repository name allowed to assume the operator role. Repeatable, or "
-            + "comma-separated; one installation can serve several repositories.")
+            + "comma-separated; one deployment can serve several repositories.")
     List<String> githubRepos = new ArrayList<>();
 
     @Option(names = "--oidc-provider-arn",
@@ -110,7 +110,7 @@ public class SetupCommand implements Callable<Integer> {
         if (region != null) config.getAws().setRegion(region);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
-        // Recorded in the file: the installation lives in one region, and the machine that
+        // Recorded in the file: the deployment lives in one region, and the machine that
         // created it should keep addressing that region whatever the environment later says.
         String resolvedRegion = config.getAws().resolveRegion();
         config.getAws().setRegion(resolvedRegion);
@@ -129,12 +129,12 @@ public class SetupCommand implements Callable<Integer> {
 
         config.setPrefix(resolvedPrefix);
 
-        logger.info("Using installation: {} (derived from account {})", resolvedPrefix, accountId);
+        logger.info("Using deployment: {} (derived from account {})", resolvedPrefix, accountId);
 
         // Before the preflight: a deployer's grants name one region, so in another region the
-        // preflight would print a policy for it and invite granting a second installation that
+        // preflight would print a policy for it and invite granting a second deployment that
         // cannot exist. The stack creates the bucket in its own region, so a bucket elsewhere means
-        // the installation is elsewhere — no stack lookup is needed, and HeadBucket is global.
+        // the deployment is elsewhere — no stack lookup is needed, and HeadBucket is global.
         try (var s3 = factory.s3()) {
             Optional<String> bucketRegion = new S3UploadService(s3).bucketRegion(config.bucket());
             if (bucketRegion.isPresent() && !bucketRegion.get().equals(resolvedRegion)) {
@@ -197,14 +197,14 @@ public class SetupCommand implements Callable<Integer> {
         }
     }
 
-    /** The stack is named by the prefix: the stack is the installation. */
+    /** The stack is named by the prefix: the stack is the deployment. */
     private Integer deploy(AwsClientFactory factory, BaasConfig config, String resolvedPrefix) throws Exception {
         String templateBody = CloudFormationService.coreTemplate();
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("ResourceNamePrefix", resolvedPrefix);
         // Networking is sent only when this invocation names it. Sending it unconditionally is
-        // what let a plain `baas admin setup` rebuild a shared installation's networking; see
+        // what let a plain `baas admin setup` rebuild a shared deployment's networking; see
         // networkingParameters().
         params.putAll(networkingParameters());
 
@@ -260,7 +260,7 @@ public class SetupCommand implements Callable<Integer> {
                 // The image is `baas admin build-image`'s to change: everything it deployed —
                 // base, parent, extension — is carried forward, so a plain setup never reverts an
                 // image or drops an extension. Only parameters the stack lacks are sent, which is
-                // how an installation from before a parameter existed gets a real value for it.
+                // how a deployment from before a parameter existed gets a real value for it.
                 Map<String, String> deployed = cloudFormation.getStackParameters(resolvedPrefix);
                 params.putAll(imageParameters(factory, config.getAws().resolveRegion(), deployed).absentFrom(deployed));
                 cloudFormation.updateStackParameters(resolvedPrefix, templateBody, params);
@@ -282,7 +282,7 @@ public class SetupCommand implements Callable<Integer> {
         // Only the operator role ARN is read back, and only to print it. The bucket, results
         // table and instance profile are derived from the prefix, and the subnet and security
         // group are resolved from this stack each time they are needed — storing either kind is
-        // how a config file comes to name one installation while `prefix` names another.
+        // how a config file comes to name one deployment while `prefix` names another.
         String operatorRoleArn;
         try (var cf = factory.cloudFormation()) {
             operatorRoleArn = new CloudFormationService(cf)
@@ -301,33 +301,33 @@ public class SetupCommand implements Callable<Integer> {
 
     /**
      * Why an existing bucket blocks a create. Bucket names are global, so the bucket answers from
-     * any region. In another region it is the account's installation — this setup was simply aimed
+     * any region. In another region it is the account's deployment — this setup was simply aimed
      * at the wrong region — and the advice once given here, {@code aws s3 rb --force}, would have
-     * deleted that installation's results. Only a bucket in this region is a retained leftover
+     * deleted that deployment's results. Only a bucket in this region is a retained leftover
      * worth copying out and removing; if the other region holds a leftover too, a setup aimed there
      * says so in turn.
      */
-    static String bucketBlocksSetup(String bucket, String installation, String bucketRegion, String region) {
+    static String bucketBlocksSetup(String bucket, String deployment, String bucketRegion, String region) {
         if (!bucketRegion.equals(region)) {
             return """
-                Installation %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket
-                  names are global, so an account holds one installation.
+                Deployment %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket
+                  names are global, so an account holds one deployment.
                   Address it there:  baas admin setup --region %2$s
-                Nothing was deployed.""".formatted(installation, bucketRegion, region, bucket);
+                Nothing was deployed.""".formatted(deployment, bucketRegion, region, bucket);
         }
         return """
             Bucket %1$s already exists, but stack %2$s does not.
               A previous teardown retained it — the stack cannot recreate a bucket
               that is already there, and the name is fixed by this AWS account.
               Keep the old results:  aws s3 sync s3://%1$s ./backup
-              Then remove it:        aws s3 rb s3://%1$s --force""".formatted(bucket, installation);
+              Then remove it:        aws s3 rb s3://%1$s --force""".formatted(bucket, deployment);
     }
 
     static final String EXTENSION_STARTER_FILE = "runner-image-extension.yaml";
 
     /**
      * The image parameters for this submission. Deployed values win wherever they exist, so the
-     * plan describes the image the installation already has; the bundled base and a freshly
+     * plan describes the image the deployment already has; the bundled base and a freshly
      * resolved parent fill in only what is missing, which on a create is everything.
      */
     private RunnerImageParameters imageParameters(AwsClientFactory factory, String region, Map<String, String> deployed) {
@@ -349,7 +349,7 @@ public class SetupCommand implements Callable<Integer> {
 
     /**
      * The operator's starting point for extending the runner image — the same document a pull of an
-     * installation without an extension prints. Never overwritten: it may hold edits, and the
+     * deployment without an extension prints. Never overwritten: it may hold edits, and the
      * stale-push guard makes an old copy harmless rather than something to refresh.
      */
     static void writeExtensionStarter(Path file) {
@@ -362,7 +362,7 @@ public class SetupCommand implements Callable<Integer> {
                 Runner-image extension starter written to {}
                   Edit it, then: baas admin build-image --extension {}""", file, file);
         } catch (IOException e) {
-            // A convenience, not part of the installation: the pull prints the same document.
+            // A convenience, not part of the deployment: the pull prints the same document.
             logger.warn("Could not write {}: {}. `baas admin image --extension` prints the same starter.",
                 file, e.getMessage());
         }
@@ -375,7 +375,7 @@ public class SetupCommand implements Callable<Integer> {
      */
     static String nextSteps(boolean created, String operatorRoleArn, String prefix) {
         if (!created) {
-            return "Installation " + prefix + " is deployed."
+            return "Deployment " + prefix + " is deployed."
                 + (operatorRoleArn.isEmpty() ? "" : " Operator role: " + operatorRoleArn);
         }
         // Setup deliberately does not build the image — that is a ~15-minute operation and every
@@ -427,7 +427,7 @@ public class SetupCommand implements Callable<Integer> {
      * them unconditionally <em>empty</em>, which discarded the options the caller had just typed:
      * {@code baas admin setup --github-org … --oidc-provider-arn …} against a fresh stack reported
      * success and deployed an operator role with no federated principal, so CI could not assume
-     * it. The bug was invisible for as long as every federated installation happened to have been
+     * it. The bug was invisible for as long as every federated deployment happened to have been
      * federated by an update rather than a create.
      */
     Map<String, String> federationParametersForCreate() {
@@ -527,13 +527,13 @@ public class SetupCommand implements Callable<Integer> {
     }
 
     /**
-     * Refuses an update that would move the installation onto different networking.
+     * Refuses an update that would move the deployment onto different networking.
      *
      * <p>Carrying the submitted values forward instead would close the same hole, but silently:
      * the operator typed a flag and it would be discarded without a word. Refusing names the
      * deployed value and the submitted one and submits nothing, so the operator can decide.
      *
-     * <p>Replacing a subnet or security group under a running installation moves resource ids that
+     * <p>Replacing a subnet or security group under a running deployment moves resource ids that
      * other machines' configuration and in-flight jobs are holding, which is why this is immutable
      * rather than merely discouraged.
      */
@@ -549,22 +549,22 @@ public class SetupCommand implements Callable<Integer> {
             .toList();
         if (!conflicts.isEmpty()) {
             throw new IllegalStateException("""
-                This installation is already deployed against different networking.
+                This deployment is already deployed against different networking.
                 %s
-                Networking is fixed when an installation is created. Omit the networking options to
-                keep what is deployed, or tear down and recreate the installation to change it.
+                Networking is fixed when a deployment is created. Omit the networking options to
+                keep what is deployed, or tear down and recreate the deployment to change it.
                 Nothing was submitted."""
                 .formatted(String.join("\n", conflicts)));
         }
     }
 
     /**
-     * The installation's name stem: {@code baas-<accountId>}. There is no option to name another.
+     * The deployment's name stem: {@code baas-<accountId>}. There is no option to name another.
      *
      * <p>The whole name, including the {@code baas-} namespace, lives in this one value, so every
      * resource is {@code <prefix>} or {@code <prefix>-<suffix>} and a reader who knows the prefix
      * can predict every name. Nothing about the calling principal reaches it: an IAM user, an SSO
-     * session and a role-chained session on one account all resolve to the same installation. That
+     * session and a role-chained session on one account all resolve to the same deployment. That
      * is the point — the AMI and the results table are account-level assets, and a name that moved
      * with the caller forked them silently rather than failing.
      */

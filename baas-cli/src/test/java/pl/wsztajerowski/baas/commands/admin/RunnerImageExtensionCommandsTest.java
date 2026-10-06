@@ -99,7 +99,7 @@ class RunnerImageExtensionCommandsTest {
         SetupCommand.writeExtensionStarter(file);
 
         assertThat(Files.readString(file))
-            .as("the same document a pull of an installation with no extension prints")
+            .as("the same document a pull of a deployment with no extension prints")
             .isEqualTo(RunnerImageExtension.withMarker(""))
             .startsWith("# baas-extension-base: none");
         assertThat(RunnerImageExtension.parse(Files.readString(file)).content())

@@ -4,7 +4,7 @@ sequenceDiagram
     participant JC as jcstress job<br/>ubuntu-latest
     participant STS as AWS STS
     participant CLI as baas CLI<br/>(reactor build)
-    participant AWS as Installation
+    participant AWS as Deployment
 
     GH->>Job: trigger (one at a time per ref, never cancelled mid-run)
     GH->>JC: same trigger, the two jobs run in parallel, each with its own instance
@@ -12,7 +12,7 @@ sequenceDiagram
     Job->>STS: AssumeRoleWithWebIdentity(vars.OPERATOR_ROLE_ARN, 9000 s)
     STS-->>Job: operator credentials in the environment (no profile)
     Job->>CLI: config sync --name vars.CORE_STACK_NAME
-    Note over Job,CLI: sync finds the installation's region from its bucket and stores it,<br/>so the job follows the installation whatever vars.AWS_REGION says
+    Note over Job,CLI: sync finds the deployment's region from its bucket and stores it,<br/>so the job follows the deployment whatever vars.AWS_REGION says
     CLI->>AWS: DescribeStacks
     Job->>CLI: run jmh-with-async --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
     CLI->>AWS: upload, launch, poll (see baas-run.mmd)

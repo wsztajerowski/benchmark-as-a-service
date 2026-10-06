@@ -588,7 +588,7 @@ class CoreTemplateTest {
 
         assertThat(branches.get(0)).isEqualTo("FederateGitHub");
         assertThat(branches.get(2))
-            .as("an installation supplying no federation parameters must deploy exactly as before")
+            .as("a deployment supplying no federation parameters must deploy exactly as before")
             .isEqualTo("AWS::NoValue");
     }
 

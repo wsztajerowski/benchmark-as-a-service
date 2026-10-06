@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ConfigSetOptionsTest {
 
     /**
-     * Adopting an installation goes through `config sync --name`, which checks the stack exists.
+     * Adopting a deployment goes through `config sync --name`, which checks the stack exists.
      * `config set --prefix` wrote the same field unchecked.
      */
     @Test
@@ -20,8 +20,8 @@ class ConfigSetOptionsTest {
     }
 
     /**
-     * The region is the installation's: setup chooses it and sync finds it from the bucket. Set by
-     * hand it aimed a machine at a region with no installation.
+     * The region is the deployment's: setup chooses it and sync finds it from the bucket. Set by
+     * hand it aimed a machine at a region with no deployment.
      */
     @Test
     void theRegionCannotBeSetByHand() {

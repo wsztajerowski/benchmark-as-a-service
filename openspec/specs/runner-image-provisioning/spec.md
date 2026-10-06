@@ -31,7 +31,7 @@ and the swap state; `perf_event_paranoid` and `kptr_restrict` are additionally b
 The user-data script SHALL NOT invoke `yum update`, install a JDK, or download async-profiler. Every tool
 the benchmark job requires SHALL already be present in the AMI.
 
-#### Scenario: User-data performs no package installation
+#### Scenario: User-data performs no package deployment
 - **WHEN** `UserDataScriptBuilder.build(...)` output is decoded
 - **THEN** it contains no `yum` invocation and no async-profiler download
 
@@ -179,7 +179,7 @@ pipeable.
 
 ### Requirement: The image is a BaaS-owned base, an optional user extension, and a contract
 Every runner image SHALL be built from three parts applied in this order: a base owned by BaaS and
-rendered from the definition bundled with the CLI; an optional extension owned by the installation's
+rendered from the definition bundled with the CLI; an optional extension owned by the deployment's
 operators, which is an AWSTOE component document of any content; and a contract owned by BaaS, which
 runs last. The extension SHALL NOT be constrained by any BaaS schema beyond being a valid AWSTOE
 document within the size limit. An upgrade of the CLI SHALL change the base and the contract only, and
@@ -190,11 +190,11 @@ SHALL NOT change a deployed extension.
 - **THEN** the agent is present on instances launched from the resulting image
 
 #### Scenario: An image without an extension
-- **WHEN** an image is built and the installation holds no extension
+- **WHEN** an image is built and the deployment holds no extension
 - **THEN** the image contains the base and passes the contract, and no extension step runs
 
 #### Scenario: A CLI upgrade keeps the extension
-- **WHEN** an installation with an extension is rebuilt by a newer CLI whose base differs
+- **WHEN** a deployment with an extension is rebuilt by a newer CLI whose base differs
 - **THEN** the new image carries the newer base and the unchanged extension
 
 ### Requirement: The contract fails a bake that breaks a BaaS workflow
@@ -207,7 +207,7 @@ SHALL remain unchanged, and the failure SHALL name the check. The contract SHALL
 vendor, a JVM version above the floor, the transparent hugepage mode or the swap state.
 
 #### Scenario: An extension that removes async-profiler fails the bake
-- **WHEN** an extension deletes the async-profiler installation and an image is built
+- **WHEN** an extension deletes the async-profiler deployment and an image is built
 - **THEN** the build fails naming the async-profiler check, and `/<prefix>/runner/ami-id` still names
   the previous image
 
@@ -230,11 +230,11 @@ vendor, a JVM version above the floor, the transparent hugepage mode or the swap
 ### Requirement: The parent image is resolved from a pinned release in the stack's region
 The base SHALL name its parent as one exact Amazon Linux 2023 release, not as a region-bound AMI ID and
 not as a selector that follows newer releases. `baas admin build-image` SHALL resolve that release to
-exactly one Amazon-owned AMI in the region of the installation's stack, and SHALL fail before
+exactly one Amazon-owned AMI in the region of the deployment's stack, and SHALL fail before
 submitting any stack change when the release resolves to no image or to more than one.
 
 #### Scenario: Building outside eu-central-1
-- **WHEN** `baas admin build-image` runs for an installation in `us-east-1`
+- **WHEN** `baas admin build-image` runs for a deployment in `us-east-1`
 - **THEN** the parent is the pinned release's AMI in `us-east-1` and the build proceeds
 
 #### Scenario: A release not published in the region
@@ -251,7 +251,7 @@ Each image SHALL carry a label equal to the base's version when no extension is 
 `<base version>+ext.<first 8 hex characters of the SHA-256 of the extension>` otherwise. The label SHALL
 be written to `/etc/baas-image-version` on the image and to the AMI's `baas-image-version` tag, and SHALL
 be what jobs record as `imageVersion`. The same extension content SHALL yield the same label in every
-installation.
+deployment.
 
 #### Scenario: A stock image is labelled by its base version
 - **WHEN** an image is built with base version `1.3.0` and no extension
@@ -266,15 +266,15 @@ installation.
 - **WHEN** the extension's content changes and the image is rebuilt
 - **THEN** the new image's label differs from the previous one
 
-### Requirement: The extension is held by the installation and changed only by an explicit push
-The deployed extension SHALL be stored in the installation's stack as written, apart from trailing
+### Requirement: The extension is held by the deployment and changed only by an explicit push
+The deployed extension SHALL be stored in the deployment's stack as written, apart from trailing
 whitespace, so that it can be read back exactly as stored. It SHALL be at most 4096 bytes and SHALL
 contain only printable ASCII, tabs and line breaks, because the stack does not read other characters
 back as written; a file that breaks either rule SHALL be refused before any stack change is
 submitted, naming its size and the limit, or the offending character's line and column. A file consisting only of comments and
 blank lines SHALL mean that no extension is deployed. Only `baas admin build-image --extension <file>`
 SHALL change the deployed extension; every other `build-image` and every `baas admin setup` on an
-existing installation SHALL leave it unchanged.
+existing deployment SHALL leave it unchanged.
 
 #### Scenario: Pull returns what was pushed
 - **WHEN** an extension with comments is pushed and then pulled
@@ -292,33 +292,33 @@ existing installation SHALL leave it unchanged.
   submitted
 
 #### Scenario: A plain rebuild keeps the extension
-- **WHEN** `baas admin build-image` runs without `--extension` on an installation holding an extension
+- **WHEN** `baas admin build-image` runs without `--extension` on a deployment holding an extension
 - **THEN** the new image carries the same extension
 
 #### Scenario: Removing the extension
 - **WHEN** a file of comments only is pushed with `--extension`
-- **THEN** the installation holds no extension and the next image's label is the base version alone
+- **THEN** the deployment holds no extension and the next image's label is the base version alone
 
 ### Requirement: A push based on a stale copy of the extension is refused
 A pulled or starter extension file SHALL carry a marker line naming the extension it was based on —
-its hash, or `none`. When the installation holds no extension, a push SHALL be accepted whatever the
-marker says. When the installation holds an extension, a push SHALL be accepted only when the file's
+its hash, or `none`. When the deployment holds no extension, a push SHALL be accepted whatever the
+marker says. When the deployment holds an extension, a push SHALL be accepted only when the file's
 marker names that extension's hash; otherwise it SHALL be refused before any stack change, naming the
 deployed hash and the command that pulls it. The marker line SHALL NOT be part of the stored extension
 or of its hash.
 
 #### Scenario: A teammate pushed since the file was pulled
-- **WHEN** the installation holds extension `9b1d04aa` and a file marked `3f9a1c2e` is pushed
+- **WHEN** the deployment holds extension `9b1d04aa` and a file marked `3f9a1c2e` is pushed
 - **THEN** the command exits non-zero naming `9b1d04aa` and `baas admin image --extension`, and no
   stack change is submitted
 
 #### Scenario: A file kept across a teardown is accepted
-- **WHEN** an installation was torn down and set up again, holds no extension, and a file marked
+- **WHEN** a deployment was torn down and set up again, holds no extension, and a file marked
   `3f9a1c2e` is pushed
 - **THEN** the push is accepted
 
 #### Scenario: A hand-written file without a marker
-- **WHEN** a file with no marker is pushed to an installation that holds an extension
+- **WHEN** a file with no marker is pushed to a deployment that holds an extension
 - **THEN** the push is refused
 
 #### Scenario: A deliberate replacement after a pull

@@ -115,7 +115,7 @@ history.
 **The base definition is bundled into the CLI when it is built**, and `build-image` bakes that
 bundled copy — it reads no file from disk, so editing a `runner-image.yaml` next to an installed
 `baas` changes nothing. A base moves only forward, by upgrading the CLI: `build-image` refuses a
-bundled base older than the installation's. What an installation adds on top is its **extension**,
+bundled base older than the deployment's. What a deployment adds on top is its **extension**,
 an AWSTOE document you pull with `baas admin image --extension > ext.yaml`, edit, and push with
 `baas admin build-image --extension ext.yaml`; teardown saves it beside your config before deleting
 the stack, which holds its only copy. The workflow is in
@@ -185,7 +185,7 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
 > values the job's own `environment.json` records, so the two can never disagree.
 
-> **A job with nowhere to record itself fails before it costs anything.** If no installation is
+> **A job with nowhere to record itself fails before it costs anything.** If no deployment is
 > configured, `baas run` stops before any upload — before any AWS call at all — and tells you to run
 > `baas config sync`. There is no option to discard measurements: every job records its status in
 > the results table, so a job without one could not be seen.
@@ -212,7 +212,7 @@ STARTED | ELAPSED`, takes `--limit`, `--project`, `--tag key=value` and `--forma
 hides nothing by default, CI jobs included. A job whose instance is gone without an outcome shows as
 `vanished`. `terminate` asks first on a terminal; pass `--yes` in scripts.
 
-> **Upgrade every `baas` that points at the installation.** A CLI from before job tracking reads
+> **Upgrade every `baas` that points at the deployment.** A CLI from before job tracking reads
 > job items as measurements: its `baas results --all-projects`, project picker and lookups by job id
 > fail once one exists. `baas results --project <name>` keeps working.
 
@@ -243,7 +243,7 @@ groups by `(project, benchmark, branch)` and keeps the best score in each group.
 | `--limit <n>`, `--format json\|csv` | Bound and reshape the output |
 
 Every command takes `--config-path <file>` to use a configuration other than `~/.baas/config.yaml` —
-the way to read another installation, such as a torn-down one whose table was retained.
+the way to read another deployment, such as a torn-down one whose table was retained.
 
 ### 7. Fetch everything a job produced
 
@@ -480,7 +480,7 @@ there says why.
 
 [`e2e-cloud-test.yml`](.github/workflows/e2e-cloud-test.yml) is the end-to-end test: one
 `ubuntu-latest` job federates into the operator role and drives `baas run` against the real
-installation ([`docs/diagrams/baas-ci-e2e.mmd`](docs/diagrams/baas-ci-e2e.mmd)). It provisions a
+deployment ([`docs/diagrams/baas-ci-e2e.mmd`](docs/diagrams/baas-ci-e2e.mmd)). It provisions a
 paid instance, so it runs on path-filtered pull requests and on demand:
 
 ```bash

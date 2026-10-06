@@ -8,7 +8,7 @@ import java.util.List;
 
 /**
  * Resolves the base's parent — one exact AL2023 release, named by its AMI name — to that release's
- * AMI ID in the installation's region.
+ * AMI ID in the deployment's region.
  *
  * <p>Not a selector: the name pins one release, so this answers "which ID does this release have
  * here", never "what is newest". Exactly one Amazon-owned image must match; anything else is

@@ -311,7 +311,7 @@ class ImageBuilderServiceTest {
      * Image Builder strips the trailing newline from a component document when it stores it, and
      * {@code RunnerImageRenderer.renderComponent()} ends with one because its template is a Java
      * text block. An exact comparison therefore reported "content differs" for content that was
-     * byte-identical apart from that newline — and it blocked every build on a fresh installation,
+     * byte-identical apart from that newline — and it blocked every build on a fresh deployment,
      * because `baas admin setup` registers the component before `build-image` ever runs. Found
      * against a live account, not in this suite.
      */
@@ -371,7 +371,7 @@ class ImageBuilderServiceTest {
         return ImageState.builder().status(status).reason(reason).build();
     }
 
-    // ─── retireInstallation: what teardown leaves behind ─────────────────────────
+    // ─── retireDeployment: what teardown leaves behind ─────────────────────────
 
     private static final String RECIPE = "a1b2c3d4-recipe-runner";
     private static final String RECORDS = "arn:aws:imagebuilder:eu-central-1:123456789012:image/" + RECIPE;
@@ -389,23 +389,23 @@ class ImageBuilderServiceTest {
     }
 
     @Test
-    void retiringAnInstallationRemovesThePointerTheAmiItsSnapshotsAndEveryRecord() {
+    void retiringAnDeploymentRemovesThePointerTheAmiItsSnapshotsAndEveryRecord() {
         ssm.parameters.put(POINTER, NEW_AMI);
         ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-current"));
         recordBuilds("1.2.0", 3);
         recordBuilds("1.1.0", 1);
-        String otherInstallation = "arn:aws:imagebuilder:eu-central-1:123456789012:image/a1b2c3d4-dev-recipe-runner/1.2.0";
-        imageBuilder.imageRecords.put(otherInstallation, new java.util.ArrayList<>(List.of(otherInstallation + "/1")));
+        String otherDeployment = "arn:aws:imagebuilder:eu-central-1:123456789012:image/a1b2c3d4-dev-recipe-runner/1.2.0";
+        imageBuilder.imageRecords.put(otherDeployment, new java.util.ArrayList<>(List.of(otherDeployment + "/1")));
 
-        List<String> leftovers = service().retireInstallation(POINTER, RECIPE);
+        List<String> leftovers = service().retireDeployment(POINTER, RECIPE);
 
         assertThat(leftovers).isEmpty();
         assertThat(ssm.parameters).doesNotContainKey(POINTER);
         assertThat(ec2.images).doesNotContainKey(NEW_AMI);
         assertThat(calls).contains("deregisterImage:" + NEW_AMI, "deleteSnapshot:snap-current");
-        assertThat(imageBuilder.imageRecords.get(otherInstallation))
-            .as("another installation's records are not this teardown's to delete")
-            .containsExactly(otherInstallation + "/1");
+        assertThat(imageBuilder.imageRecords.get(otherDeployment))
+            .as("another deployment's records are not this teardown's to delete")
+            .containsExactly(otherDeployment + "/1");
         assertThat(imageBuilder.deletedImages).hasSize(4);
         assertThat(imageBuilder.imageNameFilters).containsOnly(RECIPE);
     }
@@ -414,7 +414,7 @@ class ImageBuilderServiceTest {
     void noPointerIsNotAnErrorAndTheRecordsStillGo() {
         recordBuilds("1.2.0", 1);
 
-        assertThat(service().retireInstallation(POINTER, RECIPE)).isEmpty();
+        assertThat(service().retireDeployment(POINTER, RECIPE)).isEmpty();
         assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage:"));
         assertThat(remaining(imageBuilder.imageRecords)).isZero();
     }
@@ -424,7 +424,7 @@ class ImageBuilderServiceTest {
     void aPointerNamingAnAmiThatIsAlreadyGoneIsStillDeleted() {
         ssm.parameters.put(POINTER, NEW_AMI);
 
-        assertThat(service().retireInstallation(POINTER, RECIPE)).isEmpty();
+        assertThat(service().retireDeployment(POINTER, RECIPE)).isEmpty();
         assertThat(ssm.parameters).doesNotContainKey(POINTER);
         assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage:"));
     }
@@ -440,7 +440,7 @@ class ImageBuilderServiceTest {
         ec2.deregisterErrorCode = "UnauthorizedOperation";
         recordBuilds("1.2.0", 2);
 
-        List<String> leftovers = service().retireInstallation(POINTER, RECIPE);
+        List<String> leftovers = service().retireDeployment(POINTER, RECIPE);
 
         assertThat(leftovers).singleElement().asString()
             .contains(NEW_AMI, "aws ec2 deregister-image --image-id " + NEW_AMI);
@@ -455,7 +455,7 @@ class ImageBuilderServiceTest {
         recordBuilds("1.1.0", 3);
         recordBuilds("1.0.0", 1);
 
-        assertThat(service().retireInstallation(POINTER, RECIPE)).isEmpty();
+        assertThat(service().retireDeployment(POINTER, RECIPE)).isEmpty();
         assertThat(imageBuilder.deletedImages).hasSize(9);
         assertThat(remaining(imageBuilder.imageRecords)).isZero();
     }
@@ -467,7 +467,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-stuck"));
         ec2.deleteSnapshotErrorCode = "InvalidSnapshot.InUse";
 
-        assertThat(service().retireInstallation(POINTER, RECIPE)).singleElement().asString()
+        assertThat(service().retireDeployment(POINTER, RECIPE)).singleElement().asString()
             .contains("snap-stuck", NEW_AMI, "aws ec2 delete-snapshot --snapshot-id snap-stuck");
         assertThat(ssm.parameters).doesNotContainKey(POINTER);
     }

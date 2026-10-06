@@ -145,8 +145,8 @@ public class ResultsCommand implements Callable<Integer> {
         String tableName;
         try {
             tableName = config.resultsTable();
-        } catch (IllegalStateException noInstallation) {
-            logger.error("{}", noInstallation.getMessage());
+        } catch (IllegalStateException noDeployment) {
+            logger.error("{}", noDeployment.getMessage());
             return 1;
         }
 

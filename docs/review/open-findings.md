@@ -12,7 +12,7 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
   in [`docs/adr/`](../adr/). ADRs 0002–0005 hold what was closed or declined up to 2026-10-05.
 - **Excluded on purpose:** everything in CLAUDE.md's *Accepted risks*, and the hardenings and
   intended behaviour recorded in [ADR 0005](../adr/0005-declined-hardenings-and-intended-behaviour.md).
-- State machines for the installation, an operator machine and a job, which locate most `U`
+- State machines for the deployment, an operator machine and a job, which locate most `U`
   findings: `docs/diagrams/baas-states-*.mmd`.
 
 ## Index
@@ -30,14 +30,14 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | `export-before-teardown` |
 | DR1 | `run --detach` with today's shutdown hook would cancel and terminate the job it just launched | High if shipped naively | `detached-run` |
 | DR4 | The archived non-goal rejecting `--detach` cites a reason job items removed | Info | `detached-run` |
-| U21 | Live check: an installation outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
+| U21 | Live check: a deployment outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
 | U40 | Live check: teardown saving a non-empty extension (fixed in code) | — | deferred, blocked on IAM |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | High → reduced | open |
 | A4 | A store failure after the upload loses the measurement row | Med → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | Low | open |
 | N3 | A failed run-item reservation strands the uploaded `input/` | Low | open |
-| N2 | `3q7i7s65-operator-role` from the August installation still exists | Low | open, by hand |
-| C5 | Installation names hand-built beside `BaasConfig`'s derivations | Low | next change adding a name |
+| N2 | `3q7i7s65-operator-role` from the August deployment still exists | Low | open, by hand |
+| C5 | Deployment names hand-built beside `BaasConfig`'s derivations | Low | next change adding a name |
 | U8 | `runner.sourceRepo` can only be set by editing YAML | Info | open |
 | U14, U31, U33, U36 | Informational, see the last section | Info | — |
 
@@ -66,7 +66,7 @@ whole bucket. Nothing under the operator role deletes an object (the only delete
 `deleteAllObjects`, under deployer credentials). CI federates into this role on `pull_request`, so
 any same-repository branch's workflow can wipe every job's artifacts, unrecoverably.
 
-**Decided (2026-10-04), one small change, one `baas admin setup` re-run per installation:**
+**Decided (2026-10-04), one small change, one `baas admin setup` re-run per deployment:**
 1. The runner's S3 grant: `PutObject` and `GetObject` on `jobs/*`, `GetObject` on `releases/*`
    (user-data's `aws s3 cp` of the runner), no `DeleteObject`. Pin it in `CoreTemplateTest`. What
    remains of S7 is overwriting another job's objects under `jobs/*`, which has no per-job IAM scope.
@@ -163,16 +163,16 @@ removed. The `detached-run` ADR supersedes it explicitly.
 
 ## Deferred live checks
 
-### U21, U40 — an installation outside the account's own prefix and region
+### U21, U40 — a deployment outside the account's own prefix and region
 
 Both are fixed in code and unit-tested ([ADR 0004](../adr/0004-runner-image-only-moves-forward.md)).
-Live, they need a throwaway installation such as `baas-381492019823-dev` in `us-east-1`: U21 is the
+Live, they need a throwaway deployment such as `baas-381492019823-dev` in `us-east-1`: U21 is the
 setup → `build-image` → run there, U40 a teardown with a pushed extension. **Blocked on an IAM grant**
 (2026-10-05): `baas-admin` is the prefix- and region-exact deployer and `lynx` holds no IAM, so no
 identity in the account may deploy elsewhere. Attach
 `baas admin deployer-policy --prefix baas-381492019823-dev --region us-east-1` as a customer-managed
 policy, or use a second account. The steps are in `openspec/changes/QUEUE.md` (*Deferred checks*)
-and `infra/README.md` (*A second installation* — override `RunnerParentAmiId` outside eu-central-1).
+and `infra/README.md` (*A second deployment* — override `RunnerParentAmiId` outside eu-central-1).
 
 ## Open, not scheduled
 
@@ -209,20 +209,20 @@ to `runs list` and never expired (no lifecycle rule under `jobs/`, by design). U
 way into this state. Reserving first would instead leave a `launching` item for a failed upload,
 which lists as `vanished` — arguably the better failure.
 
-### N2 — the August installation's operator role is still in the account · Low
+### N2 — the August deployment's operator role is still in the account · Low
 
-`3q7i7s65-operator-role`, from the caller-ARN naming that `account-derived-installation-naming`
+`3q7i7s65-operator-role`, from the caller-ARN naming that `account-derived-deployment-naming`
 replaced, still exists: the `baas-operator` profile in `~/.aws/config` assumes it successfully
 (2026-10-05). The deployer cannot remove it (outside its prefix). Delete it, and the profile, with an
 identity above the deployer.
 
-### C5 — installation names hand-built beside `BaasConfig` · Low
+### C5 — deployment names hand-built beside `BaasConfig` · Low
 
 The pointer path, `-results`, `-recipe-runner`, `-component-runner`, `-role-runner` and
 `-role-operator` are rebuilt by hand in `RunCommand`, `BuildImageCommand`, `TeardownCommand` and
 `DeployerPreflight`. No live bug — every copy matches — but drift would silently bring back U1
 (teardown retiring a pointer that does not exist). **Decided (2026-10-04):** no dedicated work; the
-next change that adds a resource name introduces one `InstallationNames.of(prefix)` and moves these
+next change that adds a resource name introduces one `DeploymentNames.of(prefix)` and moves these
 onto it.
 
 ### U8 — `runner.sourceRepo` can only be set by editing YAML · Info
@@ -243,4 +243,4 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
   reports success: `DeleteStack` on a missing stack is a no-op and the notices still print. Under the
   prefix-exact deployer policy it is an `AccessDenied`.
 - **U36.** Teardown's in-flight gate lists every `baas-role=benchmark-runner` instance in the region,
-  so a by-hand `-dev` installation and the account's own block each other's teardown.
+  so a by-hand `-dev` deployment and the account's own block each other's teardown.

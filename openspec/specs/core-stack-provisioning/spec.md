@@ -59,7 +59,7 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 
 #### Scenario: First run with no prior config
 - **WHEN** `baas admin setup` runs and `~/.baas/config.yaml` does not exist
-- **THEN** the core stack is deployed using the default region and the account-derived prefix, and `~/.baas/config.yaml` is created with the installation's prefix and the credential settings it needs
+- **THEN** the core stack is deployed using the default region and the account-derived prefix, and `~/.baas/config.yaml` is created with the deployment's prefix and the credential settings it needs
 
 #### Scenario: No --prefix option
 - **WHEN** `baas admin setup --prefix foo` is invoked
@@ -132,15 +132,15 @@ instances, not from the results table.
 - **THEN** the deploy succeeds, and the policy's `iam:UpdateAssumeRolePolicy` grant names the same role resources as its role-creation statement rather than `Resource: "*"`
 
 ### Requirement: Deployer policy is resource-scoped
-`BaasCliDeployerPolicy`'s CloudFormation statement SHALL be scoped to `stack/<prefix>/*` and its IAM statement to the installation's own role and instance-profile ARNs — `role/<prefix>-role-*` and `instance-profile/<prefix>-profile-*` — rather than `Resource: "*"`. Because the prefix is account-derived, the rendered policy SHALL reach only installations in the caller's own account.
+`BaasCliDeployerPolicy`'s CloudFormation statement SHALL be scoped to `stack/<prefix>/*` and its IAM statement to the deployment's own role and instance-profile ARNs — `role/<prefix>-role-*` and `instance-profile/<prefix>-profile-*` — rather than `Resource: "*"`. Because the prefix is account-derived, the rendered policy SHALL reach only deployments in the caller's own account.
 
 #### Scenario: Cannot create an arbitrarily-named role
 - **WHEN** the deployer policy is evaluated for `iam:CreateRole` on `arn:aws:iam::<acct>:role/admin-backdoor`
 - **THEN** the request is not permitted
 
-#### Scenario: An installation deployed by hand needs its own rendered policy
-- **WHEN** the deployer policy rendered for `baas-<accountId>` is evaluated against a resource of an installation deployed by hand under another prefix
-- **THEN** the request is not permitted, and `baas admin deployer-policy --prefix <prefix>` renders the document that installation needs
+#### Scenario: A deployment set up by hand needs its own rendered policy
+- **WHEN** the deployer policy rendered for `baas-<accountId>` is evaluated against a resource of a deployment set up by hand under another prefix
+- **THEN** the request is not permitted, and `baas admin deployer-policy --prefix <prefix>` renders the document that deployment needs
 
 ### Requirement: Operator identity is an assumable role created by the core stack
 The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resource (not a policy attached to any user), scoped to that stack's own `S3MainBucket`, `RunnerRole`, results table, and the runner AMI pointer path. Its trust policy SHALL allow the AWS account root, so `baas admin setup` requires no additional parameter to identify who the operator is, and SHALL additionally allow the federated workload principal when federation parameters are supplied. The role's ARN SHALL be a stack output (`OperatorRoleArn`) and SHALL be printed by `baas admin setup`. The stack SHALL NOT grant `sts:AssumeRole` on this role to any specific IAM identity — that remains a manual, per-identity step performed outside the stack.
@@ -187,19 +187,19 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
 - **THEN** the AWS client is built with the `baas-operator` profile
 
 ### Requirement: Operators can bootstrap config without the deployer's machine
-`BaasCliOperatorRole` SHALL be granted `cloudformation:DescribeStacks` scoped to its own core stack. `baas config sync --name <prefix>` SHALL verify that the named installation's stack exists and record its prefix in `~/.baas/config.yaml`. `--name` SHALL be required, so that a machine holding no prior configuration declares which installation it is adopting rather than inferring one from whichever credentials happen to be active. `baas config sync` SHALL NOT store values the CLI derives from the prefix or resolves from the stack at use time.
+`BaasCliOperatorRole` SHALL be granted `cloudformation:DescribeStacks` scoped to its own core stack. `baas config sync --name <prefix>` SHALL verify that the named deployment's stack exists and record its prefix in `~/.baas/config.yaml`. `--name` SHALL be required, so that a machine holding no prior configuration declares which deployment it is adopting rather than inferring one from whichever credentials happen to be active. `baas config sync` SHALL NOT store values the CLI derives from the prefix or resolves from the stack at use time.
 
 #### Scenario: Operator on a fresh machine
 - **WHEN** an identity that has assumed `BaasCliOperatorRole` runs `baas config sync --name baas-123456789012` with no prior `config.yaml`
-- **THEN** `config.yaml` is written with that installation's prefix and `baas run` works without hand-copying any file
+- **THEN** `config.yaml` is written with that deployment's prefix and `baas run` works without hand-copying any file
 
 #### Scenario: Sync without a name is refused
 - **WHEN** `baas config sync` is invoked with no `--name`
 - **THEN** the command exits with a missing-required-option error and writes nothing
 
-#### Scenario: Adopting an installation deployed by hand
-- **WHEN** an operator runs `baas config sync --name baas-123456789012-dev`, naming an installation deployed by hand rather than by `baas admin setup`
-- **THEN** subsequent `baas run`, `baas results` and `baas admin` invocations address that installation
+#### Scenario: Adopting a deployment set up by hand
+- **WHEN** an operator runs `baas config sync --name baas-123456789012-dev`, naming a deployment set up by hand rather than by `baas admin setup`
+- **THEN** subsequent `baas run`, `baas results` and `baas admin` invocations address that deployment
 
 ### Requirement: Failed jobs leave diagnosable output
 The user-data script SHALL upload `/var/log/cloud-init-output.log` into the job's S3 prefix, alongside the job's other artifacts, before terminating the instance, on the success path, the failure path and the watchdog path.
@@ -465,9 +465,9 @@ be relied upon as a safeguard; job identifiers SHALL be unique enough that an ov
 ### Requirement: GitHub Actions federates directly into the operator role
 The core stack SHALL be able to declare, on `BaasCliOperatorRole`'s trust policy, a federated
 principal permitting a named GitHub repository's workload identity to assume that role directly. The
-statement SHALL be conditional on the federation parameters being supplied, so an installation that
+statement SHALL be conditional on the federation parameters being supplied, so a deployment that
 supplies none deploys exactly as before. The repository parameter SHALL accept more than one
-repository, so one installation can serve several without a template migration. The role's
+repository, so one deployment can serve several without a template migration. The role's
 `MaxSessionDuration` SHALL be raised to at least the configured benchmark timeout plus its
 termination margin. No intermediate role SHALL stand between the workload identity and the operator
 role.
@@ -476,12 +476,12 @@ role.
 - **WHEN** a workflow in the named repository requests credentials with its workload identity token
 - **THEN** it assumes `BaasCliOperatorRole` directly, and no second `sts:AssumeRole` call is required
 
-#### Scenario: An installation without federation is unchanged
+#### Scenario: A deployment without federation is unchanged
 - **WHEN** the core stack is deployed with no GitHub organisation or repository supplied
 - **THEN** `BaasCliOperatorRole`'s trust policy carries the account-root principal alone and no
   federated statement
 
-#### Scenario: Two repositories share one installation
+#### Scenario: Two repositories share one deployment
 - **WHEN** two repository names are supplied
 - **THEN** the trust policy admits both, without any template change
 
@@ -500,7 +500,7 @@ truth for the federation values; the CLI SHALL NOT keep a second copy of them in
 file.
 
 #### Scenario: An unrelated setup does not revoke CI access
-- **WHEN** `baas admin setup` is run again, naming no federation options, on an installation whose
+- **WHEN** `baas admin setup` is run again, naming no federation options, on a deployment whose
   federation parameters were supplied earlier
 - **THEN** the federated trust statement is still present afterwards and continuous integration
   retains access
@@ -521,7 +521,7 @@ file.
   because a parameter has no previous value
 
 #### Scenario: The values are read back from the stack, not from configuration
-- **WHEN** an operator asks which repository the installation trusts
+- **WHEN** an operator asks which repository the deployment trusts
 - **THEN** the answer comes from the deployed stack's parameters, and `~/.baas/config.yaml` holds no
   copy of the organisation, repository list or provider ARN
 
@@ -536,7 +536,7 @@ deployed before `baas admin setup` is first job with federation parameters.
 - **THEN** it declares no IAM role, and the only resource it declares is the OIDC identity provider
 
 #### Scenario: Deploy order is provider first
-- **WHEN** an installation is set up from scratch with federation
+- **WHEN** a deployment is set up from scratch with federation
 - **THEN** the identity provider exists before the core stack is deployed, and the core stack is
   given its ARN
 
@@ -547,25 +547,25 @@ deployed before `baas admin setup` is first job with federation parameters.
 ### Requirement: Resource names are derived from the caller's AWS account
 `baas admin setup` SHALL derive the resource name prefix from the caller's AWS account identifier
 as `baas-<accountId>`. The prefix SHALL NOT depend on which principal, role, session or permission
-set the caller is using, so that the same account resolves to the same installation for every
+set the caller is using, so that the same account resolves to the same deployment for every
 identity that can reach it. `baas admin setup` SHALL NOT expose any option that names or selects an
-installation — there is exactly one per account and the CLI cannot be told otherwise.
+deployment — there is exactly one per account and the CLI cannot be told otherwise.
 
-#### Scenario: Two identities on one account resolve the same installation
+#### Scenario: Two identities on one account resolve the same deployment
 - **WHEN** `baas admin setup` is run by an IAM user and again by an SSO identity in the same AWS account and region
 - **THEN** both invocations derive the prefix `baas-<accountId>` and target the same stack, bucket and results table
 
-#### Scenario: Changing permission set does not fork the installation
+#### Scenario: Changing permission set does not fork the deployment
 - **WHEN** the same human runs `baas admin setup` under one permission set and later under a different one in the same account
-- **THEN** the second job updates the existing installation rather than creating a second one
+- **THEN** the second job updates the existing deployment rather than creating a second one
 
-#### Scenario: No option selects an installation
+#### Scenario: No option selects a deployment
 - **WHEN** `baas admin setup --mode dev`, `--prefix foo` or `--name foo` is invoked
 - **THEN** picocli reports an unknown option error and nothing is deployed
 
 #### Scenario: The prefix is derivable without prior local state
 - **WHEN** a machine that has never run `baas admin setup` holds credentials for the account
-- **THEN** the installation prefix is computable from the caller's account identifier alone, with no value copied from another machine
+- **THEN** the deployment prefix is computable from the caller's account identifier alone, with no value copied from another machine
 
 ### Requirement: Resource names follow one composition rule
 Every resource the core stack names SHALL be `<prefix>`, `<prefix>-<name>`, or
@@ -574,7 +574,7 @@ when they are needed to distinguish one resource from another of the same kind. 
 carry the `baas-` namespace itself, so no resource name composes the namespace separately.
 
 #### Scenario: The stack and bucket take the bare prefix
-- **WHEN** an installation is deployed for account `123456789012`
+- **WHEN** a deployment is set up for account `123456789012`
 - **THEN** the stack is named `baas-123456789012` and the working bucket is named `baas-123456789012`
 
 #### Scenario: Resources of the same kind are distinguished by name
@@ -585,50 +585,50 @@ carry the `baas-` namespace itself, so no resource name composes the namespace s
 - **WHEN** the stack creates the Image Builder component, recipe, infrastructure configuration, distribution configuration and pipeline
 - **THEN** no two of them share a name
 
-### Requirement: VPC parameters are immutable once the installation exists
+### Requirement: VPC parameters are immutable once the deployment exists
 `baas admin setup` SHALL honour `--use-existing-vpc` and its accompanying VPC, subnet and security
-group options when it creates an installation. When the installation already exists, it SHALL
+group options when it creates a deployment. When the deployment already exists, it SHALL
 compare the submitted networking parameters against the deployed ones and SHALL refuse the update
 if they differ, naming both values and submitting nothing. Omitting the options entirely SHALL carry
 the deployed values forward.
 
 #### Scenario: Re-setup without networking options preserves existing networking
-- **WHEN** `baas admin setup` runs against an installation that was created with `--use-existing-vpc`, and names no networking options
+- **WHEN** `baas admin setup` runs against a deployment that was created with `--use-existing-vpc`, and names no networking options
 - **THEN** the deployed networking parameters are carried forward and no new VPC is created
 
 #### Scenario: Re-setup with different networking is refused
-- **WHEN** `baas admin setup --use-existing-vpc --vpc-id vpc-999 ...` runs against an installation deployed against `vpc-123`
+- **WHEN** `baas admin setup --use-existing-vpc --vpc-id vpc-999 ...` runs against a deployment set up against `vpc-123`
 - **THEN** the command exits with an error naming both the deployed and the submitted values, and no stack update is submitted
 
 #### Scenario: Re-setup with identical networking proceeds
-- **WHEN** `baas admin setup` repeats exactly the networking options the installation was deployed with
+- **WHEN** `baas admin setup` repeats exactly the networking options the deployment was set up with
 - **THEN** the update proceeds normally
 
 ### Requirement: Teardown retires the runner image
-After the core stack is deleted, `baas admin teardown` SHALL retire the installation's runner image,
+After the core stack is deleted, `baas admin teardown` SHALL retire the deployment's runner image,
 unconditionally and with no option to keep it:
 - the AMI named by `/<prefix>/runner/ami-id` SHALL be deregistered and its snapshots deleted;
 - the `/<prefix>/runner/ami-id` parameter SHALL be deleted;
-- every Image Builder image record of the installation's recipe SHALL be deleted.
+- every Image Builder image record of the deployment's recipe SHALL be deleted.
 
-`<prefix>` SHALL be the installation being torn down, so `--stack-name` retires that installation's
+`<prefix>` SHALL be the deployment being torn down, so `--stack-name` retires that deployment's
 image and not the one this machine is configured for. Retirement SHALL NOT fail the teardown: a
 pointer that is absent, a pointer naming an AMI that no longer exists, or a deletion that fails
 SHALL be reported as a warning that names what remains. The command SHALL still exit 0 once the
 stack is deleted.
 
-#### Scenario: A torn-down installation leaves no image behind
-- **WHEN** `baas admin teardown --yes` completes for an installation with a published image
+#### Scenario: A torn-down deployment leaves no image behind
+- **WHEN** `baas admin teardown --yes` completes for a deployment with a published image
 - **THEN** the pointer parameter no longer exists, the AMI it named is deregistered, that AMI's
-  snapshots are deleted, and no Image Builder image record of the installation's recipe remains
+  snapshots are deleted, and no Image Builder image record of the deployment's recipe remains
 
 #### Scenario: A later setup cannot inherit the image
-- **WHEN** the same installation is set up again after a teardown and the retained table is removed
+- **WHEN** the same deployment is set up again after a teardown and the retained table is removed
 - **THEN** `baas run` refuses to launch for want of a runner image until `baas admin build-image`
   has run
 
 #### Scenario: Nothing to retire
-- **WHEN** teardown runs for an installation whose pointer does not exist
+- **WHEN** teardown runs for a deployment whose pointer does not exist
 - **THEN** the stack is deleted, no image-related error is raised, and the command exits 0
 
 #### Scenario: The pointer names an AMI that is already gone
@@ -639,13 +639,13 @@ stack is deleted.
 - **WHEN** deregistering the AMI or deleting a snapshot fails after the stack is deleted
 - **THEN** the command warns naming the AMI or snapshot left behind and exits 0
 
-#### Scenario: Another installation's image
+#### Scenario: Another deployment's image
 - **WHEN** `baas admin teardown --stack-name baas-123456789012-dev` runs on a machine configured for
   `baas-123456789012`
 - **THEN** it retires the image published at `/baas-123456789012-dev/runner/ami-id`, and the
-  configured installation's image is untouched
+  configured deployment's image is untouched
 
-### Requirement: Setup carries the image parameters forward on an existing installation
+### Requirement: Setup carries the image parameters forward on an existing deployment
 When `baas admin setup` creates a stack, it SHALL submit a rendered value for every runner image
 parameter, so that none of the template's placeholder defaults is registered. When it updates an
 existing stack, it SHALL leave every image parameter the deployed stack has at its deployed value, and
@@ -654,17 +654,17 @@ parameters are the base version, the parent AMI, the base component, the extensi
 the contract, the recipe version and the label.
 
 #### Scenario: A plain setup does not revert an extended image
-- **WHEN** an installation holds an extension and a newer base, and `baas admin setup` runs again
+- **WHEN** a deployment holds an extension and a newer base, and `baas admin setup` runs again
   without options
 - **THEN** the stack's image parameters are unchanged after the update
 
-#### Scenario: Setup upgrades an installation from before the extension
+#### Scenario: Setup upgrades a deployment from before the extension
 - **WHEN** the deployed stack has only the base version, parent AMI and base component parameters, and
   `baas admin setup` runs with a CLI that declares the rest
 - **THEN** those three keep their deployed values, and the extension, its version, the contract, the
   recipe version and the label are submitted with rendered values
 
-#### Scenario: Setup on a new installation registers the bundled base
+#### Scenario: Setup on a new deployment registers the bundled base
 - **WHEN** `baas admin setup` creates a stack
 - **THEN** the registered base component is the rendering of the bundled `runner-image.yaml`, not the
   template's placeholder
@@ -673,7 +673,7 @@ the contract, the recipe version and the label.
 `baas admin setup` SHALL write `~/.baas/runner-image-extension.yaml` containing the starter extension —
 comments only, with a base marker naming `none` — when that file does not exist, and SHALL NOT modify it
 when it does. The starter SHALL be the same document `baas admin image --extension` prints for an
-installation holding no extension. Setup SHALL name the file and the command that pushes it.
+deployment holding no extension. Setup SHALL name the file and the command that pushes it.
 
 #### Scenario: First setup writes the starter
 - **WHEN** `baas admin setup` completes and `~/.baas/runner-image-extension.yaml` does not exist

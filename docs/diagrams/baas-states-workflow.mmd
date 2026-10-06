@@ -1,9 +1,9 @@
 %% The workflow a user walks, end to end. Transitions in [brackets] happen outside the CLI.
-%% State machines for each part: baas-states-installation, baas-states-operator, baas-states-job.
+%% State machines for each part: baas-states-deployment, baas-states-operator, baas-states-job.
 flowchart TD
     A0([empty account]) -->|"[outside] attach rendered policy<br/>← baas admin deployer-policy [--region]"| A1[deployer authorised]
     A1 -->|"baas admin setup [--region] [federation flags]<br/>the only place a region is chosen"| A2[stack deployed, no image]
-    A2 -->|"baas admin build-image [--extension f] (~15 min)"| A3[installation ready]
+    A2 -->|"baas admin build-image [--extension f] (~15 min)"| A3[deployment ready]
     A3 -->|"[outside] grant sts:AssumeRole + ~/.aws profile"| O1
     subgraph op [operator machine]
         O0([no config]) -->|"baas config sync --name P<br/>finds the region from the bucket"| O1[adopted]

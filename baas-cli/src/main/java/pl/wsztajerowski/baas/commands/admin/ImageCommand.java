@@ -33,7 +33,7 @@ public class ImageCommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     @Option(names = "--extension",
-        description = "Print the installation's runner-image extension, ready to edit and push with "
+        description = "Print the deployment's runner-image extension, ready to edit and push with "
             + "`baas admin build-image --extension`. Prints the starter when there is none.")
     boolean printExtension;
 

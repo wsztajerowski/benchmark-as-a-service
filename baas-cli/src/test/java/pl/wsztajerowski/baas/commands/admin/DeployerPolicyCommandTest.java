@@ -41,17 +41,17 @@ class DeployerPolicyCommandTest {
     }
 
     @Test
-    void defaultsToTheAccountsOwnInstallation() {
+    void defaultsToTheAccountsOwnDeployment() {
         assertThat(parsed("--for-account", "123456789012").renderedPrefix("123456789012"))
             .isEqualTo("baas-123456789012");
     }
 
     /**
-     * A by-hand development installation needs its own rendered policy, and nothing else in the
-     * CLI knows such an installation exists. This prints; it grants nothing.
+     * A by-hand development deployment needs its own rendered policy, and nothing else in the
+     * CLI knows such a deployment exists. This prints; it grants nothing.
      */
     @Test
-    void anExplicitPrefixRendersForAByHandInstallation() {
+    void anExplicitPrefixRendersForAByHandDeployment() {
         assertThat(parsed("--prefix", "baas-123456789012-dev").renderedPrefix("123456789012"))
             .isEqualTo("baas-123456789012-dev");
     }

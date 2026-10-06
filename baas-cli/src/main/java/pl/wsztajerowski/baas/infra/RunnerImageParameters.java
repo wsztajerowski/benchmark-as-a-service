@@ -77,7 +77,7 @@ public record RunnerImageParameters(Map<String, String> values, String label) {
     /**
      * {@code <base>} without an extension, {@code <base>+ext.<hash>} with one. An extended image's
      * results can therefore never share an {@code imageVersion} tag with a stock image's, and one
-     * extension is labelled alike in every installation.
+     * extension is labelled alike in every deployment.
      */
     public static String label(String baseVersion, String extension) {
         return extension.isEmpty() ? baseVersion : baseVersion + "+ext." + RunnerImageExtension.hash(extension);

@@ -22,9 +22,9 @@ import java.util.List;
  * names another.
  *
  * <p>A missing file is treated differently by where its path came from. The default path missing is
- * an unconfigured machine — an empty config, and the "no installation" error further on. A path the
+ * an unconfigured machine — an empty config, and the "no deployment" error further on. A path the
  * operator typed missing is far more likely a typo, and reading it as an empty config would fail later
- * with an error about installations rather than about the path, so a read through {@link #load()}
+ * with an error about deployments rather than about the path, so a read through {@link #load()}
  * refuses it. The commands that create configuration use {@link #loadOrEmpty()} instead.
  *
  * <p>An unknown key is warned about and skipped, never fatal. Files written by older releases still

@@ -22,21 +22,21 @@ class TeardownNoticeTest {
             .contains("aws dynamodb delete-table --table-name baas-123456789012-results");
     }
 
-    /** --stack-name names the installation whose image is retired, not this machine's. */
+    /** --stack-name names the deployment whose image is retired, not this machine's. */
     @Test
-    void theImageRetiredIsTheTornDownInstallations() {
+    void theImageRetiredIsTheTornDownDeployments() {
         var config = new pl.wsztajerowski.baas.config.BaasConfig();
         config.setPrefix("baas-123456789012");
 
         var named = new TeardownCommand();
         new picocli.CommandLine(named).parseArgs("--stack-name", "baas-123456789012-dev");
-        String dev = named.resolveInstallation(config);
+        String dev = named.resolveDeployment(config);
         assertThat(TeardownCommand.pointerPath(dev)).isEqualTo("/baas-123456789012-dev/runner/ami-id");
         assertThat(TeardownCommand.recipeName(dev)).isEqualTo("baas-123456789012-dev-recipe-runner");
 
         var configured = new TeardownCommand();
         new picocli.CommandLine(configured).parseArgs();
-        assertThat(TeardownCommand.pointerPath(configured.resolveInstallation(config)))
+        assertThat(TeardownCommand.pointerPath(configured.resolveDeployment(config)))
             .isEqualTo("/baas-123456789012/runner/ami-id");
     }
 
@@ -90,7 +90,7 @@ class TeardownNoticeTest {
     }
 
     @Test
-    void anInstallationWithoutAnExtensionWritesNothing() throws Exception {
+    void anDeploymentWithoutAnExtensionWritesNothing() throws Exception {
         assertThat(TeardownCommand.saveExtension("", dir, "p")).isEmpty();
         assertThat(TeardownCommand.saveExtension(null, dir, "p")).isEmpty();
         try (var files = java.nio.file.Files.list(dir)) {

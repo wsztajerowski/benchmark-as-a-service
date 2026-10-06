@@ -43,8 +43,8 @@ public class TeardownCommand implements Callable<Integer> {
     @Spec CommandSpec spec;
 
     @Option(names = "--stack-name",
-        description = "Installation to delete, as printed by `baas admin setup` "
-            + "(e.g. baas-123456789012). Defaults to this machine's configured installation.")
+        description = "Deployment to delete, as printed by `baas admin setup` "
+            + "(e.g. baas-123456789012). Defaults to this machine's configured deployment.")
     String stackName;
 
     @Option(names = "--yes", description = "Skip interactive confirmation.")
@@ -63,9 +63,9 @@ public class TeardownCommand implements Callable<Integer> {
 
         var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
 
-        // An explicit --stack-name still wins: it is how a by-hand installation, or one deployed
+        // An explicit --stack-name still wins: it is how a by-hand deployment, or one deployed
         // under the old caller-ARN naming, is reached.
-        String resolvedStack = resolveInstallation(config);
+        String resolvedStack = resolveDeployment(config);
 
         // Gate 1: no active jobs
         try (var ec2 = factory.ec2()) {
@@ -99,8 +99,8 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Empty + delete S3 bucket if requested. The stack declares DeletionPolicy: Retain,
         // so CloudFormation will not remove the bucket — teardown has to do it here.
-        // Derived from the installation being torn down, not from config: --stack-name may name
-        // a different installation than this machine is configured for.
+        // Derived from the deployment being torn down, not from config: --stack-name may name
+        // a different deployment than this machine is configured for.
         String bucket = resolvedStack;
         String resultsTable = resolvedStack + "-results";
 
@@ -127,12 +127,12 @@ public class TeardownCommand implements Callable<Integer> {
         }
 
         // Then the image, which build-image created outside the stack. After the stack rather than
-        // before: a failed stack deletion then leaves an installation that still has an image to
+        // before: a failed stack deletion then leaves a deployment that still has an image to
         // run on. Never fatal — the stack is gone, so the teardown has succeeded either way.
         List<String> imageLeftovers;
         try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
             imageLeftovers = new ImageBuilderService(imageBuilder, ec2, ssm)
-                .retireInstallation(pointerPath(resolvedStack), recipeName(resolvedStack));
+                .retireDeployment(pointerPath(resolvedStack), recipeName(resolvedStack));
         }
         if (imageLeftovers.isEmpty()) {
             logger.info("{}", imageRetiredNotice(resolvedStack));
@@ -146,7 +146,7 @@ public class TeardownCommand implements Callable<Integer> {
             logger.warn("""
                     S3 results bucket retained: {}
                       The name is derived from this AWS account, so any later `baas admin setup`
-                      for the same installation asks for this same bucket and fails while it
+                      for the same deployment asks for this same bucket and fails while it
                       exists — whoever runs it, not just you. Keep the results by copying them
                       out, then delete it manually or re-run teardown with --delete-bucket.""",
                 bucket);
@@ -158,16 +158,16 @@ public class TeardownCommand implements Callable<Integer> {
 
     /**
      * Writes a non-empty extension, with the marker a pull prints, to
-     * {@code runner-image-extension.<installation>.yaml} in {@code directory}; writes nothing for
-     * an installation without one. A later setup's stack holds no extension, so
+     * {@code runner-image-extension.<deployment>.yaml} in {@code directory}; writes nothing for
+     * a deployment without one. A later setup's stack holds no extension, so
      * {@code build-image --extension} accepts the file as it is.
      */
-    static Optional<Path> saveExtension(String extension, Path directory, String installation) throws IOException {
+    static Optional<Path> saveExtension(String extension, Path directory, String deployment) throws IOException {
         if (extension == null || extension.isBlank()) {
             return Optional.empty();
         }
         Files.createDirectories(directory);
-        Path file = directory.resolve("runner-image-extension." + installation + ".yaml");
+        Path file = directory.resolve("runner-image-extension." + deployment + ".yaml");
         Files.writeString(file, RunnerImageExtension.withMarker(extension));
         return Optional.of(file);
     }
@@ -217,42 +217,42 @@ public class TeardownCommand implements Callable<Integer> {
         return console;
     }
 
-    /** {@code --stack-name} when given, otherwise this machine's configured installation. */
-    String resolveInstallation(BaasConfig config) {
+    /** {@code --stack-name} when given, otherwise this machine's configured deployment. */
+    String resolveDeployment(BaasConfig config) {
         return stackName != null ? stackName : config.requirePrefix();
     }
 
     /**
-     * The installation's AMI pointer. From the installation being torn down, not this machine's
-     * configured prefix: {@code --stack-name} may name another installation, and retiring the
-     * configured one's image instead would break an installation nobody asked to touch.
+     * The deployment's AMI pointer. From the deployment being torn down, not this machine's
+     * configured prefix: {@code --stack-name} may name another deployment, and retiring the
+     * configured one's image instead would break a deployment nobody asked to touch.
      */
-    static String pointerPath(String installation) {
-        return "/" + installation + "/runner/ami-id";
+    static String pointerPath(String deployment) {
+        return "/" + deployment + "/runner/ami-id";
     }
 
-    /** The installation's Image Builder recipe, whose image records teardown deletes. */
-    static String recipeName(String installation) {
-        return installation + "-recipe-runner";
+    /** The deployment's Image Builder recipe, whose image records teardown deletes. */
+    static String recipeName(String deployment) {
+        return deployment + "-recipe-runner";
     }
 
-    static String imageRetiredNotice(String installation) {
+    static String imageRetiredNotice(String deployment) {
         return """
             Runner image retired: the AMI %1$s named, its snapshots, the pointer itself and the
-              Image Builder records of %2$s. A later setup of this installation needs
-              `baas admin build-image` before `baas run` works.""".formatted(pointerPath(installation), recipeName(installation));
+              Image Builder records of %2$s. A later setup of this deployment needs
+              `baas admin build-image` before `baas run` works.""".formatted(pointerPath(deployment), recipeName(deployment));
     }
 
-    static String imageLeftoverNotice(String installation, List<String> leftovers) {
-        return "Runner image of " + installation + " only partly retired; the stack is deleted, so "
+    static String imageLeftoverNotice(String deployment, List<String> leftovers) {
+        return "Runner image of " + deployment + " only partly retired; the stack is deleted, so "
             + "remove these by hand:\n" + leftovers.stream()
                 .map(line -> "  - " + line).collect(Collectors.joining("\n"));
     }
 
     /**
-     * Teardown leaves the configuration file alone, so it still names the installation and a plain
+     * Teardown leaves the configuration file alone, so it still names the deployment and a plain
      * {@code baas results} keeps reading the retained table. Elsewhere, the same file reaches it
-     * through {@code --config-path} — the only way to address another installation now that the
+     * through {@code --config-path} — the only way to address another deployment now that the
      * per-command {@code --results-table} override is gone.
      */
     static String retainedTableNotice(String resultsTable, Path configFile) {
@@ -260,7 +260,7 @@ public class TeardownCommand implements Callable<Integer> {
             DynamoDB results table retained: %1$s
               Benchmark history outlives the stack, so teardown never deletes it and there is
               no flag to. The name is derived from this AWS account, so a later
-              `baas admin setup` for the same installation will fail while it exists.
+              `baas admin setup` for the same deployment will fail while it exists.
               Read it any time with:  baas results --all-projects
               %2$s still names it; keep a copy to read it elsewhere with --config-path.
               Remove it with:         aws dynamodb delete-table --table-name %1$s""".formatted(resultsTable, configFile);

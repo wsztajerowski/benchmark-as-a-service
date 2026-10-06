@@ -42,7 +42,7 @@ class CiTemplateTest {
 
     /**
      * The provider is account-global and the core stack's trust policy references its ARN, so it
-     * outlives any one stack: a delete that took it with it would break every installation
+     * outlives any one stack: a delete that took it with it would break every deployment
      * federating through it.
      */
     @Test

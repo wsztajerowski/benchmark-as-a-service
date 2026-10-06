@@ -28,7 +28,7 @@ The `baas` command tree SHALL group `setup` and `teardown` under a nested `admin
 resolve the base's parent release in the stack's region, update the stack when the base or the
 extension changed, trigger the image build, poll to completion, write the resulting AMI ID to
 `/<prefix>/runner/ami-id`, retire the AMI it replaced, and report the new AMI ID and label. It SHALL
-accept `--extension <file>` to replace the installation's extension, subject to the size limit and the
+accept `--extension <file>` to replace the deployment's extension, subject to the size limit and the
 stale-push guard; without it, the deployed extension SHALL be carried forward unchanged. It SHALL run
 under deployer credentials (`aws.profile`), consistent with every other `baas admin` subcommand.
 
@@ -76,12 +76,12 @@ logger, so it remains pipeable.
   phase
 
 #### Scenario: Pulling the extension
-- **WHEN** `baas admin image --extension > ext.yaml` runs on an installation holding extension
+- **WHEN** `baas admin image --extension > ext.yaml` runs on a deployment holding extension
   `3f9a1c2e`
 - **THEN** `ext.yaml` starts with a marker naming `3f9a1c2e`, followed by the deployed extension
 
 #### Scenario: Pulling when nothing is deployed
-- **WHEN** `baas admin image --extension` runs on an installation holding no extension
+- **WHEN** `baas admin image --extension` runs on a deployment holding no extension
 - **THEN** it prints the starter document with a marker naming `none`
 
 #### Scenario: The drift warning names the bundled base
@@ -184,7 +184,7 @@ resolved to the job's stored result path rather than reconstructed from its othe
 ### Requirement: Teardown reports what it retains
 `baas admin teardown` SHALL state, before the confirmation prompt, that the results table and the working
 bucket are retained by default, so an operator is not left believing that history was deleted. Its
-messages SHALL describe the retained names as derived from the installation's AWS account, and SHALL
+messages SHALL describe the retained names as derived from the deployment's AWS account, and SHALL
 NOT attribute them to the caller's identity.
 
 #### Scenario: Retention is stated before confirmation
@@ -252,11 +252,11 @@ output holds the object alone.
   specifies, and no JSON object is written
 
 ### Requirement: Resource names the CLI needs are derived or resolved, not cached
-`~/.baas/config.yaml` SHALL store only what cannot be obtained from the installation itself: the
-credential settings, the region, the installation prefix, and the operator's own preferences. Names
+`~/.baas/config.yaml` SHALL store only what cannot be obtained from the deployment itself: the
+credential settings, the region, the deployment prefix, and the operator's own preferences. Names
 the composition rule determines — the working bucket, the results table and the runner instance
 profile — SHALL be derived from the prefix at use time. Identifiers AWS assigns, specifically the
-runner subnet and security group, SHALL be resolved from the installation's stack outputs at use
+runner subnet and security group, SHALL be resolved from the deployment's stack outputs at use
 time rather than cached, so that a replaced resource cannot leave a stale identifier behind.
 
 #### Scenario: A replaced security group does not strand the configuration
@@ -274,12 +274,12 @@ subcommand name. When `--config-path` names a file that does not exist, a comman
 configuration SHALL fail naming the path, and `baas config sync`, `baas config set` and `baas admin setup`
 SHALL create it. Without the option, behaviour on a missing `~/.baas/config.yaml` is unchanged. No command
 SHALL accept a per-invocation override of the results table or the working bucket: addressing another
-installation means naming that installation's configuration file.
+deployment means naming that deployment's configuration file.
 
-#### Scenario: Reading a retired installation's history
+#### Scenario: Reading a retired deployment's history
 - **WHEN** `baas results --config-path ~/.baas/retired.yaml --project lynx-journal` runs, and that file
-  names a retired installation's prefix
-- **THEN** that installation's measurements are reported, and `~/.baas/config.yaml` is neither read nor
+  names a retired deployment's prefix
+- **THEN** that deployment's measurements are reported, and `~/.baas/config.yaml` is neither read nor
   changed
 
 #### Scenario: A second configuration is created by sync
@@ -410,12 +410,12 @@ the file by any command except `baas admin setup`, which records the region it d
 - **THEN** the command addresses `eu-central-1`
 
 ### Requirement: `baas run` always resolves the results table
-`baas run` SHALL resolve the installation's results table on every invocation, before the runner-image
+`baas run` SHALL resolve the deployment's results table on every invocation, before the runner-image
 lookup and before any upload, and SHALL pass it to the runner. An unresolvable table SHALL fail before any
 instance is launched. `baas run` SHALL NOT offer an option that discards measurements.
 
 #### Scenario: Unresolvable table fails before provisioning
-- **WHEN** `baas run jmh -- MyBenchmark` is invoked with no installation configured
+- **WHEN** `baas run jmh -- MyBenchmark` is invoked with no deployment configured
 - **THEN** the command exits non-zero and no EC2 instance is launched
 
 #### Scenario: The discard option is gone

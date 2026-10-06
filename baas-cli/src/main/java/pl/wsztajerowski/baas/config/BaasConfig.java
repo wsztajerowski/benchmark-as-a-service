@@ -6,11 +6,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 /**
  * What {@code ~/.baas/config.yaml} holds, and — just as importantly — what it does not.
  *
- * <p>Stored: credentials, the region, the installation prefix, and the operator's own preferences.
+ * <p>Stored: credentials, the region, the deployment prefix, and the operator's own preferences.
  * Everything else is either <em>derived</em> from the prefix by the one composition rule, or
- * <em>resolved</em> from the installation's stack at use time.
+ * <em>resolved</em> from the deployment's stack at use time.
  *
- * <p>The distinction is not tidiness. A stored bucket or table name can point at one installation
+ * <p>The distinction is not tidiness. A stored bucket or table name can point at one deployment
  * while {@code prefix} names another, and a stored subnet or security-group id can outlive the
  * resource it names — replacing {@code RunnerSecurityGroup} moves its id, and a cached copy then
  * addresses a group that no longer exists. Deriving and resolving removes both failures instead of
@@ -20,9 +20,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public class BaasConfig {
 
     /**
-     * The installation this machine addresses: {@code baas-<accountId>}, plus {@code -dev} for the
-     * development installation. Written by {@code baas admin setup} and {@code baas config sync
-     * --name}. No default — a machine that has adopted no installation must say so rather than
+     * The deployment this machine addresses: {@code baas-<accountId>}, plus {@code -dev} for the
+     * development deployment. Written by {@code baas admin setup} and {@code baas config sync
+     * --name}. No default — a machine that has adopted no deployment must say so rather than
      * silently address one.
      */
     private String prefix;
@@ -55,14 +55,14 @@ public class BaasConfig {
     public String requirePrefix() {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalStateException("""
-                No installation is configured on this machine.
+                No deployment is configured on this machine.
                   Adopt one:  baas config sync --name baas-<accountId>
                   Create one: baas admin setup""");
         }
         return prefix;
     }
 
-    /** The core stack's name. Identical to the prefix — the stack is the installation. */
+    /** The core stack's name. Identical to the prefix — the stack is the deployment. */
     @JsonIgnore
     public String stackName() { return requirePrefix(); }
 
@@ -108,10 +108,10 @@ public class BaasConfig {
 
         /**
          * The region every command uses: the file's {@code aws.region}, else {@code AWS_REGION},
-         * else {@value #DEFAULT_REGION}. The file's value is the installation's own region —
+         * else {@value #DEFAULT_REGION}. The file's value is the deployment's own region —
          * {@code admin setup} writes the one it deployed to, {@code config sync} the one it found
-         * the installation's bucket in — so it wins. The environment and the default matter only
-         * before any installation is adopted: where {@code admin setup} and
+         * the deployment's bucket in — so it wins. The environment and the default matter only
+         * before any deployment is adopted: where {@code admin setup} and
          * {@code admin deployer-policy} deploy or render, and where {@code config sync} starts
          * looking (any region finds the bucket).
          *

@@ -18,7 +18,7 @@ class BaasConfigYamlTest {
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     /**
-     * {@code aws.coreStackName} is gone: the stack name and the installation prefix are the same
+     * {@code aws.coreStackName} is gone: the stack name and the deployment prefix are the same
      * string now, and storing both invited them to disagree.
      */
     @Test
@@ -35,7 +35,7 @@ class BaasConfigYamlTest {
 
     /**
      * Names the composition rule fixes are derived, not stored. Writing them into the file lets a
-     * stale copy point at a different installation than {@code prefix} names.
+     * stale copy point at a different deployment than {@code prefix} names.
      */
     @Test
     void namesTheCompositionRuleFixesAreNotStored() throws Exception {
@@ -67,7 +67,7 @@ class BaasConfigYamlTest {
     }
 
     @Test
-    void theDevInstallationDerivesItsOwnNames() {
+    void theDevDeploymentDerivesItsOwnNames() {
         BaasConfig config = new BaasConfig();
         config.setPrefix("baas-123456789012-dev");
 
@@ -76,11 +76,11 @@ class BaasConfigYamlTest {
     }
 
     /**
-     * There is no default installation. A machine that has never run setup or sync must say so
+     * There is no default deployment. A machine that has never run setup or sync must say so
      * rather than derive names for something that does not exist.
      */
     @Test
-    void anUnconfiguredInstallationIsAHardFailureRatherThanADefault() {
+    void anUnconfiguredDeploymentIsAHardFailureRatherThanADefault() {
         BaasConfig config = new BaasConfig();
 
         assertThat(config.getPrefix()).isNull();
