@@ -8,6 +8,10 @@ shape of the whole command surface, and split a vocabulary rename out into its o
 
 ## Sequence
 
+**Status 2026-10-06:** steps 1–3 done. `rename-run-to-job` merged into `next-release` as PR #80
+(archived as `openspec/changes/archive/2026-10-06-rename-run-to-job/`); the installation was rebuilt on
+the job names before the merge; this branch is rebased. Continue at *Open*, question 1.
+
 1. **`rename-run-to-job`** — its own OpenSpec change, branch from `next-release`, PR into
    `next-release`, `feat(cli)!`. Scope below.
 2. After it merges: wipe and rebuild the installation (below).
@@ -131,8 +135,11 @@ Record each in the change's `verify.md`.
 
 Asked one at a time, in this order:
 
-1. Does top-level `baas download <run>` become `baas jobs download <job>`? (With the literal-path
-   fallback gone in the rename, nothing argues for keeping it top-level except habit.)
+1. Does top-level `baas download <job>` become `baas jobs download <job>`? Coupled with the item the
+   rename deferred here (its design D6): `download` and `env diff` still accept a literal result path,
+   which only served jobs without a status item or from before the unified layout — none exist since
+   the rebuild. Removing it is a behaviour change with a spec delta (REMOVED + ADDED, since OpenSpec
+   cannot drop a scenario from a MODIFIED block), and it reverses the P11 design's "id or path".
 2. `results --job-id` versus `jobs show` — does a job's measurements view belong under `jobs`?
 3. Does `admin` stay as the deployer-credentials namespace, or become `baas image build` /
    `baas install setup`?

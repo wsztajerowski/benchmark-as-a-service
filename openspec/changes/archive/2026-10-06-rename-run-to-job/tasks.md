@@ -164,6 +164,8 @@ history left to compare with.
       requirement → code → test → gap table, open warnings under stable IDs (W1, W2…) and any
       deviation from the design or tasks.
       *Done 2026-10-06:* `verify.md` — no critical issue; W1–W7.
-- [ ] 10.2 Rebase-merge into `next-release`; archive the change and make the editorial commit of
+- [x] 10.2 Rebase-merge into `next-release`; archive the change and make the editorial commit of
       design D5 (`archive-renames.md`: capability directories, scenario titles, Purpose sections).
       Verify with `openspec validate --specs` and the 6.1 grep over `openspec/specs/`.
+      *Done 2026-10-06:* PR #80 rebase-merged into `next-release` (head `98919f2`, all checks green
+      twice); archived with every delta block landing verbatim; D5's editorial step in the archive commit.
