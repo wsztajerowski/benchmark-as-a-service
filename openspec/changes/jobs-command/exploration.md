@@ -295,7 +295,23 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   operator credentials" — tell that session if this change touches either, and send it the final
   requirement headers once proposed.
 
-Open, in order: the parked policy question; then `jobs run` options stay as they are.
+- **The deployer policy is built into setup; `baas admin deployer-policy` is removed** (2026-10-07).
+  `--for-account` dropped (no use case now). `admin deployment setup` becomes multi-step:
+  1. render the policy for this deployment (account from `sts:GetCallerIdentity`, which needs no
+     permission; region from `--region`; name from `--deployment` or derived);
+  2. check the caller's rights (`SimulatePrincipalPolicy`, when the caller may simulate);
+  3. rights missing → the policy JSON on stdout, what is missing and "attach this, then re-run" on
+     stderr, exit non-zero, nothing created; rights present or not checkable → deploy as today.
+  `baas admin deployment setup > policy.json` hands it to whoever attaches it. No `--dry-run` now
+  (addable later, non-breaking). Accepted: when rights cannot be checked, setup can still fail
+  midway as today (a failed first create leaves `ROLLBACK_COMPLETE`, cleared by teardown); an
+  administrator can no longer render a policy without deploying. The `admin policy` noun is closed;
+  infra/README's attach steps are rewritten around setup's output; "First run, in order" shrinks to
+  `admin deployment setup`, then `admin image build`.
+
+**Exploration complete.** Every layer and every action this change owns is decided.
+
+Previously open: the parked policy question; then `jobs run` options stay as they are.
 Previously open: the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
