@@ -30,6 +30,11 @@ state.
   command must name one with `--deployment`, and the error lists them. With none, every command fails
   except setup, which derives the name. `baas config sync` is never derived: with no local deployment
   it must be named.
+- **`baas config list`**: a local listing of the configured deployments (DEPLOYMENT, REGION,
+  OPERATOR PROFILE, DEPLOYER PROFILE, `--format json`). No AWS call. The ambiguity error hints at it.
+- **The deployer's credential key and option are named for the deployer. BREAKING.** `aws.profile`
+  becomes `aws.deployerProfile`, renamed by the migration, and `--aws-profile` becomes
+  `--deployer-profile` on `admin deployment setup` and `config set`, matching `--operator-profile`.
 - **Teardown deletes the deployment's configuration file**, the last one included.
 - **`--config-path` is removed. BREAKING.** A deployment is addressed by name only. Tests get the
   `~/.baas` root injected through code. No `BAAS_DEPLOYMENT` and no `BAAS_HOME`, deliberately.
@@ -53,19 +58,24 @@ None.
 - `core-stack-provisioning`: the account-derived name becomes the default rather than the only name.
   Names are validated, and the composition rule no longer assumes the `baas-` namespace. Sync's naming
   rule is restated for several deployments. Teardown's in-flight gate is scoped to its deployment.
+  Setup's options (`--deployer-profile`, no `--prefix`) and the credential-resolution rule use
+  `aws.deployerProfile`.
 - `cli-command-structure`: the alternative-configuration-file requirement is replaced by per-deployment
-  files and the selection rule. The instance's fixed tags gain `baas-deployment`.
+  files and the selection rule. `baas config list` is added, and `config set` takes
+  `--deployer-profile`. The instance's fixed tags gain `baas-deployment`.
 - `job-tracking`: runner lookups are scoped to the deployment.
 
 ## Impact
 
 - **Code:** `BaasConfig`, `ConfigService` (layout, migration, root injection), `BaasApp` (selection,
   `--config-path` removal), `SetupCommand` (`computePrefix` → default only, name validation),
-  `TeardownCommand` (file deletion, scoped gate), `ConfigSyncSubcommand`, `Ec2ProvisioningService`
+  `TeardownCommand` (file deletion, scoped gate), `ConfigSyncSubcommand`, `ConfigSetSubcommand` and
+  `ConfigShowSubcommand` (deployer-profile rename), a new `ConfigListSubcommand`, `Ec2ProvisioningService`
   (`instanceTags`, runner filter), the new `DeploymentNames`, and every caller C5 lists. The nine test
   classes that pass `--config-path`. `install-test.yml`'s sentinel check moves to `deployments/`.
 - **Docs:** `CLAUDE.md` (the "there is no option to name a different one" invariant, the instance-tag
-  invariant, the `--config-path` and `config sync --name` paragraphs), `infra/README.md`, and
+  invariant, the `--config-path` and `config sync --name` paragraphs, the `aws.operatorProfile`
+  no-fallback invariant), `README.md` and `infra/README.md` (including the profile keys), and
   `openspec/config.yaml` (the verify rule). `docs/review/open-findings.md` loses U36 and C5. A new ADR
   records the reversal of the one-deployment-per-account rule.
 - **Cost:** no standing cost for the default deployment. Each extra deployment costs what one
@@ -82,3 +92,4 @@ None.
   - The region rule (ADR 0002): each deployment's region is chosen once at setup and found from its
     bucket.
   - Nothing implicitly selects a deployment: no environment variable, no switch command.
+  - The operator profile never falls back to the deployer's. The rename changes only the name.

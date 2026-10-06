@@ -153,6 +153,32 @@ instances, not from the results table.
 - **WHEN** `baas admin teardown --yes` runs without `--delete-bucket`
 - **THEN** the core stack is deleted but the S3 bucket persists
 
+### Requirement: baas admin setup is self-sufficient
+`baas admin deployment setup` SHALL accept `--region` and `--deployer-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, deploy or update the core stack, and write the result to that deployment's configuration file. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`.
+
+#### Scenario: First run with no prior config
+- **WHEN** `baas admin deployment setup` runs and no deployment is configured
+- **THEN** the core stack is deployed using the default region and the account-derived prefix, and `~/.baas/deployments/<prefix>.yaml` is created with the deployment's prefix and the credential settings it needs
+
+#### Scenario: No --prefix option
+- **WHEN** `baas admin deployment setup --prefix foo` is invoked
+- **THEN** picocli reports an unknown option error
+
+#### Scenario: The deployer profile option is renamed
+- **WHEN** `baas admin deployment setup --aws-profile baas-admin` is invoked
+- **THEN** picocli reports an unknown option error, and `--deployer-profile baas-admin` is accepted and stored as `aws.deployerProfile`
+
+### Requirement: Day-to-day commands resolve operator credentials
+A deployment's configuration file SHALL carry `aws.operatorProfile`. `baas run`, `baas results`, and `baas config show` SHALL resolve AWS credentials from it; `baas admin deployment setup` and `baas admin deployment teardown` SHALL continue using `aws.deployerProfile`. When `aws.operatorProfile` is unset, day-to-day commands SHALL fall through to the default credential chain and SHALL NOT use `aws.deployerProfile`.
+
+#### Scenario: Deployer profile is never silently reused
+- **WHEN** the configuration has `aws.deployerProfile: baas-deployer` and no `aws.operatorProfile`, and `baas run jmh` is invoked
+- **THEN** the AWS client is built without an explicit profile, and a warning naming `baas config set --operator-profile` is printed
+
+#### Scenario: Operator profile is honoured
+- **WHEN** the configuration has `aws.operatorProfile: baas-operator` and `baas run jmh` is invoked
+- **THEN** the AWS client is built with the `baas-operator` profile
+
 ## REMOVED Requirements
 
 ### Requirement: Resource names are derived from the caller's AWS account
