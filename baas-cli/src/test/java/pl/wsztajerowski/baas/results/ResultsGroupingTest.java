@@ -15,6 +15,11 @@ class ResultsGroupingTest {
             branch == null ? Map.of() : Map.of(ResultsFilters.BRANCH, branch));
     }
 
+    private static ResultRow inMode(String mode, double score, String createdAt) {
+        return new ResultRow("job-" + createdAt, "com.example.Bench.run", "jmh", mode, score, 0.0,
+            "avgt".equals(mode) ? "ns/op" : "ops/s", createdAt, Map.of("branch", "main"), "p");
+    }
+
     private static ResultRow variant(String size, String branch, double score) {
         return new ResultRow("req-" + score, "com.acme.MapLookup.get", "jmh", "thrpt",
             score, 1.0, "ops/s", "2026-08-19T09:00:00Z", Map.of(ResultsFilters.BRANCH, branch), "p",
@@ -38,6 +43,50 @@ class ResultsGroupingTest {
     }
 
     @Test
+    void lowerIsBetterForTimePerOperation() {
+        var rows = List.of(inMode("avgt", 12.0, "a"), inMode("avgt", 9.0, "b"), inMode("avgt", 15.0, "c"));
+
+        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH))
+            .singleElement().extracting(ResultRow::score).isEqualTo(9.0);
+    }
+
+    @Test
+    void everyTimePerOperationModeKeepsTheLowest() {
+        for (String mode : List.of("avgt", "sample", "ss")) {
+            var rows = List.of(inMode(mode, 5.0, "a"), inMode(mode, 3.0, "b"));
+            assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH))
+                .as(mode).singleElement().extracting(ResultRow::score).isEqualTo(3.0);
+        }
+    }
+
+    @Test
+    void twoModesOfOneBenchmarkAreNeverCompared() {
+        var rows = List.of(inMode("thrpt", 1000.0, "a"), inMode("avgt", 9.0, "b"));
+
+        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH)).hasSize(2);
+    }
+
+    @Test
+    void theDefaultOrderIsNewestFirst() {
+        var rows = List.of(inMode("thrpt", 1.0, "2026-10-01T00:00:00.000Z"),
+            inMode("thrpt", 2.0, "2026-10-03T00:00:00.000Z"),
+            inMode("thrpt", 3.0, "2026-10-02T00:00:00.000Z"));
+
+        assertThat(ResultsGrouping.sorted(rows, "created", false))
+            .extracting(ResultRow::score).containsExactly(2.0, 3.0, 1.0);
+        assertThat(ResultsGrouping.sorted(rows, "created", true))
+            .extracting(ResultRow::score).containsExactly(1.0, 3.0, 2.0);
+    }
+
+    @Test
+    void sortingByScoreIsDescendingUnlessAscending() {
+        var rows = List.of(inMode("thrpt", 1.0, "a"), inMode("thrpt", 3.0, "b"), inMode("thrpt", 2.0, "c"));
+
+        assertThat(ResultsGrouping.sorted(rows, "score", false)).extracting(ResultRow::score).containsExactly(3.0, 2.0, 1.0);
+        assertThat(ResultsGrouping.sorted(rows, "score", true)).extracting(ResultRow::score).containsExactly(1.0, 2.0, 3.0);
+    }
+
+    @Test
     void displayOrderKeepsEachVariantsGroupsTogether() {
         var rows = List.of(
             variant("100000", "main", 40.0),
@@ -45,7 +94,7 @@ class ResultsGroupingTest {
             variant("100000", "feature-x", 45.0),
             variant("10", "main", 950.0));
 
-        var sorted = ResultsGrouping.sortedForDisplay(rows);
+        var sorted = ResultsGrouping.sorted(rows, "benchmark", true);
 
         assertThat(sorted).extracting(row -> row.params().get("size"))
             .containsExactly("10", "10", "100000", "100000");
@@ -153,12 +202,12 @@ class ResultsGroupingTest {
     }
 
     @Test
-    void displaySortsByProjectBeforeBenchmark() {
+    void sortingByProjectOrdersProjectsAlphabetically() {
         var rows = List.of(
             new ResultRow("r1", "a.A.run", "jmh", "thrpt", 1.0, 1.0, "ops/s", "t", Map.of(), "zeta"),
             new ResultRow("r2", "z.Z.run", "jmh", "thrpt", 1.0, 1.0, "ops/s", "t", Map.of(), "alpha"));
 
-        assertThat(ResultsGrouping.sortedForDisplay(rows))
+        assertThat(ResultsGrouping.sorted(rows, "project", true))
             .extracting(ResultRow::project)
             .containsExactly("alpha", "zeta");
     }

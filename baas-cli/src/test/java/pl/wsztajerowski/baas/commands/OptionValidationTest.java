@@ -91,29 +91,40 @@ class OptionValidationTest {
     }
 
     @Test
-    void aResultsLimitBelowOneIsRefused() throws Exception {
-        assertThat(baas("query", "--all-projects", "--limit", "0").exitCode()).isEqualTo(2);
-        assertThat(baas("query", "--all-projects", "--limit", "-1").exitCode())
-            .as("-1 used to mean unlimited").isEqualTo(2);
+    void aNegativeLimitOrOffsetIsRefused() throws Exception {
+        assertThat(baas("query", "--all-projects", "--limit", "-1").exitCode()).isEqualTo(2);
+        assertThat(baas("query", "--all-projects", "--offset", "-1").exitCode()).isEqualTo(2);
     }
 
     @Test
-    void jobIdRefusesTheOptionsItWouldIgnore() throws Exception {
-        var allJobs = baas("query", "--job-id", "20260820T174432812Z-a3f9c21b", "--all-jobs");
-        assertThat(allJobs.exitCode()).isEqualTo(2);
-        assertThat(allJobs.err()).contains("--all-jobs");
+    void jobIdRefusesOnlyTheOptionsThatChooseAPartition() throws Exception {
+        var project = baas("query", "--job-id", "20260820T174432812Z-a3f9c21b", "--project", "p");
+        assertThat(project.exitCode()).isEqualTo(2);
+        assertThat(project.err()).contains("--project");
 
-        var groupBy = baas("query", "--job-id", "20260820T174432812Z-a3f9c21b", "--group-by", "commit");
-        assertThat(groupBy.exitCode()).isEqualTo(2);
-        assertThat(groupBy.err()).contains("--group-by");
+        var all = baas("query", "--job-id", "20260820T174432812Z-a3f9c21b", "--all-projects");
+        assertThat(all.exitCode()).isEqualTo(2);
+        assertThat(all.err()).contains("--all-projects");
     }
 
     @Test
-    void groupByAndAllJobsCannotBeCombined() throws Exception {
-        var captured = baas("query", "--all-projects", "--all-jobs", "--group-by", "commit");
+    void theRemovedResultsOptionsAreUnknown() throws Exception {
+        for (String removed : new String[]{"--all-jobs", "--group-by=branch", "--living-branches", "--all"}) {
+            assertThat(baas("query", "--all-projects", removed).exitCode()).as(removed).isEqualTo(2);
+        }
+    }
+
+    @Test
+    void anUnknownSortFieldIsRefused() throws Exception {
+        var captured = baas("query", "--all-projects", "--sort-by", "colour");
 
         assertThat(captured.exitCode()).isEqualTo(2);
-        assertThat(captured.err()).contains("--group-by").contains("--all-jobs");
+        assertThat(captured.err()).contains("created");
+    }
+
+    @Test
+    void aMalformedExcludedTagIsRefused() throws Exception {
+        assertThat(baas("query", "--all-projects", "--exclude-tag", "branch").exitCode()).isEqualTo(2);
     }
 
     /** U41: the bare NoSuchFileException message was only the path. */
