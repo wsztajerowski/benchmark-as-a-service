@@ -264,8 +264,14 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   tags), `region` and `awsCliVersion`. Values are still captured into shell variables first; the
   machine-observed tags read the same variables. `packages.txt` stays a separate file.
 
-Open, in order: `results query` features (incl. `--exclude-tag`, `--watch`); `config` verbs (incl. the
-key rename); the parked policy question; then `jobs run` options stay as they are.
+- **`--exclude-tag k=v`** on `results query` and `jobs list`: repeatable, a row is dropped on any
+  match (mirror of `--tag`, kept on all); no key-only form, no `--where` language; the built-in
+  `exclude_from_results=true` exclusion stays its own rule, lifted by `--show-excluded`.
+- **`--watch`** on `results query` (a live feed of the newest measurements) and on `jobs list`
+  (`--in-flight --watch` follows launches): interactive only and refused without a terminal, a fixed
+  30 s interval, refused with any `--format` other than `table`.
+
+Open, in order: `config` verbs (incl. the key rename); the parked policy question; then `jobs run` options stay as they are.
 Previously open: the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
