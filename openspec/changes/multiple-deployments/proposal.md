@@ -85,8 +85,8 @@ None.
   - The default deployment's name, stack, bucket, table and IAM.
   - `RunnerRole`'s `ec2:TerminateInstances` condition, which stays on `baas-role`; the "runners can
     terminate each other" accepted risk is unchanged.
-  - The deployer policy and where it lives (parked with `jobs-command`). The extra deployment still
-    needs its own prefix-exact policy attached as customer-managed.
+  - The deployer-policy step, which `jobs-command` builds into setup. The extra deployment still
+    needs its own prefix-exact policy, which setup prints for its name, attached as customer-managed.
   - Comparability with existing results: no runner, image or user-data behaviour changes, apart from
     one more instance tag.
   - The region rule (ADR 0002): each deployment's region is chosen once at setup and found from its
