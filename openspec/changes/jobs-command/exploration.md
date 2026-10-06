@@ -165,8 +165,21 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
 - **Parked:** where the deployer policy lives (`admin policy show`, a `deployment` verb, or a separate
   command) — the user expects a deeper discussion of whether it stays a command at all.
 
-Open, in order: the verb vocabulary and whether a bare noun may imply a verb; cross-cutting
-conventions; then the full command tree; the parked policy question.
+- **A bare noun prints its usage**; short forms exist only as declared aliases.
+- **Alias rule: a top-level alias is a verb that belongs to exactly one noun.** `baas run` →
+  `baas jobs run`, `baas query` → `baas results query`. Shared verbs (`list`, `show`) are never
+  aliased, so `baas list` cannot exist; `baas results` alone prints usage.
+- **`results` has one verb, `query`** — no `results list`, so there is no list/query border to defend.
+  A later action (comparing two branches) gets its own verb, e.g. `results compare`.
+- **`query` defaults to every measurement**; `--all-jobs` becomes **`--show-excluded`** (excluded
+  rows hidden by default; `--job-id` shows them anyway).
+- **Parked for the `baas query` features discussion:** `--exclude-tag k=v`, a negative tag filter.
+- **Finding raised (not yet filed):** today's best-per-group ignores the JMH mode in its key and
+  always keeps the *highest* score (`ResultsGrouping.java:31-46`) — for `avgt`/`sample`/`ss`
+  (time per op) that is the worst, and `thrpt` and `avgt` rows of one benchmark are compared.
+
+Open, in order: the summary flag (`--best-per <tag>` vs `--best` + `--group-by`) and the "best"
+direction; cross-cutting conventions; then the full command tree; the parked policy question.
 
 ## Open — continue here after the rebase
 
