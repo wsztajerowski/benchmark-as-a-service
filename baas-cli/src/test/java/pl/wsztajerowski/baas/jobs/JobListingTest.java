@@ -5,6 +5,7 @@ import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -52,7 +53,7 @@ class JobListingTest {
     @Test
     void inFlightKeepsOnlyJobsWithALiveInstance() {
         var live = Map.of("a", "i-1");
-        var filter = JobListing.filter(null, Map.of(), true, live);
+        var filter = JobListing.filter(null, Map.of(), List.of(), true, live);
 
         assertThat(filter.test(run("a", "p", JobStatus.RUNNING, "i-1", Map.of()))).isTrue();
         assertThat(filter.test(run("b", "p", JobStatus.RUNNING, "i-2", Map.of()))).as("vanished").isFalse();
@@ -61,7 +62,7 @@ class JobListingTest {
 
     @Test
     void projectAndEveryNamedTagMustMatch() {
-        var filter = JobListing.filter("p", Map.of("source", "local", "branch", "main"), false, Map.of());
+        var filter = JobListing.filter("p", Map.of("source", "local", "branch", "main"), List.of(), false, Map.of());
 
         assertThat(filter.test(run("a", "p", JobStatus.COMPLETED, null, Map.of("source", "local", "branch", "main")))).isTrue();
         assertThat(filter.test(run("b", "p", JobStatus.COMPLETED, null, Map.of("source", "local")))).isFalse();
@@ -71,9 +72,45 @@ class JobListingTest {
     /** exclude_from_results keeps fixture measurements out of comparisons; a job is an operation. */
     @Test
     void anExcludedJobIsListedLikeAnyOther() {
-        var filter = JobListing.filter(null, Map.of(), false, Map.of());
+        var filter = JobListing.filter(null, Map.of(), List.of(), false, Map.of());
 
         assertThat(filter.test(run("ci", "p", JobStatus.RUNNING, "i-1", Map.of("exclude_from_results", "true", "source", "ci"))))
             .isTrue();
+    }
+
+    private static JobListing.Row at(String id, String created, String status, String project) {
+        var job = new JobItem(id, project, Instant.parse(created), "jobs/" + project + "/" + id, "c5.2xlarge",
+            status, null, null, Map.of("source", "local"), null);
+        return new JobListing.Row(job, status, null);
+    }
+
+    @Test
+    void anExcludedTagDropsTheJob() {
+        var filter = JobListing.filter(null, Map.of(), List.of("source=ci"), false, Map.of());
+
+        assertThat(filter.test(run("a", "p", JobStatus.COMPLETED, null, Map.of("source", "ci")))).isFalse();
+        assertThat(filter.test(run("b", "p", JobStatus.COMPLETED, null, Map.of("source", "local")))).isTrue();
+    }
+
+    @Test
+    void theDefaultOrderIsNewestFirstAndAscReversesIt() {
+        var rows = List.of(at("old", "2026-10-01T00:00:00Z", "completed", "p"),
+            at("new", "2026-10-03T00:00:00Z", "completed", "p"),
+            at("mid", "2026-10-02T00:00:00Z", "completed", "p"));
+
+        assertThat(JobListing.sorted(rows, "created", false)).extracting(r -> r.job().jobId())
+            .containsExactly("new", "mid", "old");
+        assertThat(JobListing.sorted(rows, "created", true)).extracting(r -> r.job().jobId())
+            .containsExactly("old", "mid", "new");
+    }
+
+    @Test
+    void sortingByStatusKeepsNewestFirstWithinAStatus() {
+        var rows = List.of(at("a", "2026-10-01T00:00:00Z", "running", "p"),
+            at("b", "2026-10-03T00:00:00Z", "completed", "p"),
+            at("c", "2026-10-02T00:00:00Z", "completed", "p"));
+
+        assertThat(JobListing.sorted(rows, "status", true)).extracting(r -> r.job().jobId())
+            .containsExactly("b", "c", "a");
     }
 }

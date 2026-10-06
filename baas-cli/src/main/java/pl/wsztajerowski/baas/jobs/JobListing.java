@@ -2,7 +2,10 @@ package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
+import pl.wsztajerowski.baas.results.ResultsFilters;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Predicate;
@@ -38,13 +41,37 @@ public final class JobListing {
 
     /**
      * The filter a listing pages with. {@code project} and {@code tags} are exact matches, every
-     * named tag required; {@code inFlightOnly} keeps jobs whose instance is live.
+     * named tag required; a job carrying any {@code excludedTags} pair ({@code key=value}) is dropped;
+     * {@code inFlightOnly} keeps jobs whose instance is live.
      */
-    public static Predicate<JobItem> filter(String project, Map<String, String> tags, boolean inFlightOnly,
-                                            Map<String, String> liveByJobId) {
+    public static Predicate<JobItem> filter(String project, Map<String, String> tags, List<String> excludedTags,
+                                            boolean inFlightOnly, Map<String, String> liveByJobId) {
+        List<String[]> excluded = excludedTags == null ? List.of()
+            : excludedTags.stream().map(ResultsFilters::pair).toList();
         return job -> (project == null || project.equals(job.project()))
             && tags.entrySet().stream().allMatch(t -> t.getValue().equals(job.tags().get(t.getKey())))
+            && excluded.stream().noneMatch(kv -> kv[1].equals(job.tags().get(kv[0])))
             && (!inFlightOnly || resolve(job, liveByJobId).inFlight());
+    }
+
+    /** What {@code --sort-by} accepts on {@code jobs list}. */
+    public static final List<String> SORT_FIELDS = List.of("created", "status", "project");
+
+    /**
+     * The shared ordering: newest first unless {@code --sort-by} names another field, reversed by
+     * {@code --asc}; ties fall back to newest first, then to the job id.
+     */
+    public static List<Row> sorted(List<Row> rows, String field, boolean ascending) {
+        Comparator<Row> created = Comparator.comparing((Row row) -> row.job().createdAt());
+        Comparator<Row> primary = switch (field == null ? "created" : field) {
+            case "status" -> Comparator.comparing(Row::status);
+            case "project" -> Comparator.comparing((Row row) -> row.job().project() == null ? "" : row.job().project());
+            default -> created;
+        };
+        Comparator<Row> order = ascending ? primary : primary.reversed();
+        return rows.stream()
+            .sorted(order.thenComparing(created.reversed()).thenComparing(row -> row.job().jobId()))
+            .toList();
     }
 
     /** The statuses a listing can show, for help text and documentation. */

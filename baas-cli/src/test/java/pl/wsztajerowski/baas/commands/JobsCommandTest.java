@@ -127,4 +127,32 @@ class JobsCommandTest {
 
         assertThat(terminate.confirmation().getAsBoolean()).isTrue();
     }
+
+    @Test
+    void theDefaultPageIsTheTwentyNewestAndTheCutIsAnnounced() {
+        var rows = new java.util.ArrayList<JobListing.Row>();
+        for (int day = 1; day <= 30; day++) {
+            var job = new JobItem("job-" + day, "p", Instant.parse("2026-09-%02dT00:00:00Z".formatted(day)),
+                "jobs/p/job-" + day, "c5.2xlarge", JobStatus.COMPLETED, null, null, Map.of(), null);
+            rows.add(new JobListing.Row(job, JobStatus.COMPLETED, null));
+        }
+        var notes = new java.util.ArrayList<String>();
+
+        var page = list().page(rows, notes::add);
+
+        assertThat(page).hasSize(20).first().extracting(r -> r.job().jobId()).isEqualTo("job-30");
+        assertThat(notes).singleElement().asString().contains("20 of 30");
+        assertThat(list("--offset", "20").page(rows, notes::add)).hasSize(10);
+        assertThat(list("--limit", "0").page(rows, notes::add)).hasSize(30);
+    }
+
+    @Test
+    void watchingWithoutATerminalIsRefused() throws Exception {
+        var err = new StringWriter();
+        int exit = new CommandLine(new pl.wsztajerowski.baas.BaasApp())
+            .setErr(new PrintWriter(err, true))
+            .execute("jobs", "list", "--watch");
+
+        assertThat(exit).isEqualTo(2);
+    }
 }
