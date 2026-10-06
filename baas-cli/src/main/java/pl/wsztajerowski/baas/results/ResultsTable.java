@@ -14,7 +14,7 @@ import java.util.stream.Collectors;
 
 /**
  * The {@code baas results} table, also printed by {@code baas run} after a job. Command payload,
- * so it goes to the {@link Console} rather than the logger — see {@code ResultsCommand#printJson}.
+ * so it goes to the {@link Console} rather than the logger — see {@code ResultsQuerySubcommand#printJson}.
  */
 public final class ResultsTable {
 

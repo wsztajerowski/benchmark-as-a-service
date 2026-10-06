@@ -7,23 +7,23 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class EnvCommandTest {
+class JobsDiffCommandTest {
 
     @Test
-    void envIsTopLevelAndNotUnderAdmin() {
+    void diffIsAVerbOfJobsAndEnvIsGone() {
         CommandLine root = new CommandLine(new BaasApp());
 
-        assertThat(root.getSubcommands())
-            .as("it is a read-only day-to-day command, alongside run and results")
-            .containsKey("env");
-        assertThat(root.getSubcommands().get("admin").getSubcommands())
-            .doesNotContainKey("env");
+        assertThat(root.getSubcommands().get("jobs").getSubcommands())
+            .as("comparing two jobs' environments is part of the execution domain")
+            .containsKey("diff");
+        assertThat(root.getSubcommands()).doesNotContainKey("env");
+        assertThat(root.getSubcommands().get("admin").getSubcommands()).doesNotContainKey("diff");
     }
 
     @Test
     void diffTakesTwoResultPaths() {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("env", "diff", "main/jmh/20260724_120000", "main/jmh/20260811_093000");
+            .parseArgs("jobs", "diff", "main/jmh/20260724_120000", "main/jmh/20260811_093000");
 
         CommandLine.ParseResult diff = result.subcommand().subcommand();
         assertThat(diff.commandSpec().name()).isEqualTo("diff");
@@ -32,7 +32,7 @@ class EnvCommandTest {
     }
 
     /**
-     * `baas env diff` reads S3 and nothing else, so it belongs on operator credentials with the
+     * `baas jobs diff` reads S3 and nothing else, so it belongs on operator credentials with the
      * other day-to-day commands — never on the deployer profile, which holds iam:CreateRole.
      */
     @Test
@@ -42,7 +42,7 @@ class EnvCommandTest {
         config.getAws().setOperatorProfile("baas-operator");
 
         assertThat(config.getAws().resolveOperatorProfile())
-            .as("EnvDiffSubcommand builds its S3 client from this accessor")
+            .as("JobsDiffSubcommand builds its S3 client from this accessor")
             .isEqualTo("baas-operator");
 
         assertThat(RunCommand.operatorCredentialsWarning(config))
@@ -53,7 +53,7 @@ class EnvCommandTest {
     @Test
     void helpExplainsWhereResultPathsComeFrom() {
         String usage = new CommandLine(new BaasApp())
-            .getSubcommands().get("env").getSubcommands().get("diff")
+            .getSubcommands().get("jobs").getSubcommands().get("diff")
             .getUsageMessage(CommandLine.Help.Ansi.OFF);
 
         assertThat(usage).contains("jobs/<project>/<jobId>", "job id");
@@ -69,7 +69,7 @@ class EnvCommandTest {
         var file = dir.resolve("config.yaml");
         java.nio.file.Files.writeString(file, "prefix: baas-123456789012\naws:\n  region: eu-central-1\n");
         var lookedUp = new java.util.ArrayList<String>();
-        var diff = new EnvDiffSubcommand() {
+        var diff = new JobsDiffSubcommand() {
             @Override
             pl.wsztajerowski.baas.results.ResultsQueryService jobLookup(
                 BaasConfig config, pl.wsztajerowski.baas.infra.AwsClientFactory factory) {
@@ -91,11 +91,11 @@ class EnvCommandTest {
             @Override
             @SuppressWarnings("unchecked")
             public <K> K create(Class<K> type) throws Exception {
-                return type == EnvDiffSubcommand.class ? (K) diff : defaults.create(type);
+                return type == JobsDiffSubcommand.class ? (K) diff : defaults.create(type);
             }
         });
 
-        int exit = cli.execute("--config-path", file.toString(), "env", "diff",
+        int exit = cli.execute("--config-path", file.toString(), "jobs", "diff",
             "20261002T000000000Z-00000000", "jobs/p/20261002T080250645Z-264f5dfb");
 
         assertThat(exit).isEqualTo(1);

@@ -22,28 +22,32 @@ class ConfigSyncSubcommandTest {
      */
     @Test
     void theDeploymentNameIsRequired() {
-        assertThatThrownBy(() -> new CommandLine(new ConfigSyncSubcommand()).parseArgs())
-            .isInstanceOf(CommandLine.MissingParameterException.class)
-            .hasMessageContaining("--name");
+        var err = new java.io.StringWriter();
+        int exit = new CommandLine(new pl.wsztajerowski.baas.BaasApp())
+            .setErr(new java.io.PrintWriter(err, true))
+            .execute("config", "sync");
+
+        assertThat(exit).isNotZero();
     }
 
     @Test
-    void theRemovedCoreStackNameOptionIsGone() {
-        // On the spec, not by parsing: --name is required, so picocli reports that first and a
-        // parse-based assertion would pass whether or not --core-stack-name still existed.
+    void theRemovedNameOptionsAreGone() {
         var names = new CommandLine(new ConfigSyncSubcommand()).getCommandSpec().options().stream()
             .flatMap(option -> java.util.Arrays.stream(option.names()))
             .toList();
 
-        assertThat(names).contains("--name").doesNotContain("--core-stack-name");
+        assertThat(names).doesNotContain("--name", "--core-stack-name");
     }
 
     @Test
-    void theNameIsTheDeploymentPrefix() {
-        var command = new ConfigSyncSubcommand();
-        new CommandLine(command).parseArgs("--name", "baas-123456789012-dev");
+    void theNameIsTheGlobalDeploymentOption() {
+        var parsed = new CommandLine(new pl.wsztajerowski.baas.BaasApp())
+            .parseArgs("config", "sync", "--deployment", "baas-123456789012-dev");
 
-        assertThat(command.name).isEqualTo("baas-123456789012-dev");
+        assertThat(parsed.subcommand().subcommand().commandSpec().userObject())
+            .isInstanceOf(ConfigSyncSubcommand.class);
+        assertThat(pl.wsztajerowski.baas.BaasApp.deployment(parsed.subcommand().subcommand().commandSpec()))
+            .contains("baas-123456789012-dev");
     }
 
     /**
@@ -57,7 +61,7 @@ class ConfigSyncSubcommandTest {
             ? Files.readString(ConfigService.DEFAULT_PATH) : null;
 
         int exit = new CommandLine(new BaasApp(), deployment("eu-central-1", Map.of("ResultsTableName", "t")))
-            .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-123456789012-dev");
+            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
         assertThat(ConfigService.at(file).load().getPrefix()).isEqualTo("baas-123456789012-dev");
@@ -70,7 +74,7 @@ class ConfigSyncSubcommandTest {
         Path file = dir.resolve("dev.yaml");
 
         int exit = new CommandLine(new BaasApp(), deployment("eu-central-1", Map.of()))
-            .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-nope");
+            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-nope");
 
         assertThat(exit).as("a bucket a teardown retained is not a deployment").isNotZero();
         assertThat(file).doesNotExist();
@@ -81,7 +85,7 @@ class ConfigSyncSubcommandTest {
         Path file = dir.resolve("dev.yaml");
 
         int exit = new CommandLine(new BaasApp(), deployment(null, Map.of("ResultsTableName", "t")))
-            .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-nope");
+            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-nope");
 
         assertThat(exit).isNotZero();
         assertThat(file).doesNotExist();
@@ -97,7 +101,7 @@ class ConfigSyncSubcommandTest {
         Files.writeString(file, "aws:\n  region: \"eu-west-1\"\n");
 
         int exit = new CommandLine(new BaasApp(), deployment("us-east-1", Map.of("ResultsTableName", "t")))
-            .execute("--config-path", file.toString(), "config", "sync", "--name", "baas-123456789012-dev");
+            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
         assertThat(ConfigService.at(file).load().getAws().getRegion()).isEqualTo("us-east-1");

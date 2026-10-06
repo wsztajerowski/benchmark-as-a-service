@@ -5,7 +5,6 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
-import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
@@ -29,7 +28,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     /**
-     * Required, although the prefix <em>is</em> derivable from the caller's account.
+     * The global {@code --deployment}, required here, although the prefix <em>is</em> derivable from the caller's account.
      *
      * <p>A bare {@code baas config sync} on a machine with no local state would adopt whatever
      * deployment the currently active credentials imply. In CI that is the worst place for an
@@ -39,9 +38,6 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
      * input. It is also needed anyway to reach the dev deployment, so defaulting it would only
      * shortcut one of the two cases.
      */
-    @Option(names = "--name", required = true,
-        description = "Deployment to adopt, as printed by `baas admin setup` "
-            + "(e.g. baas-123456789012, or baas-123456789012-dev).")
     String name;
 
     @Spec CommandSpec spec;
@@ -73,6 +69,13 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        var named = BaasApp.deployment(spec);
+        if (named.isEmpty()) {
+            logger.error("Name the deployment to adopt: baas config sync --deployment <name> "
+                + "(e.g. baas-123456789012, as `baas admin deployment setup` printed it).");
+            return 2;
+        }
+        name = named.get();
         BaasConfig config = configService().loadOrEmpty();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
@@ -84,8 +87,8 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         if (region.isEmpty()) {
             logger.error("""
                     No deployment named '{}' in this account: there is no bucket of that name.
-                      The name is the one `baas admin setup` printed, e.g. baas-123456789012.
-                      Or create one: baas admin setup""", name);
+                      The name is the one `baas admin deployment setup` printed, e.g. baas-123456789012.
+                      Or create one: baas admin deployment setup""", name);
             return 1;
         }
 

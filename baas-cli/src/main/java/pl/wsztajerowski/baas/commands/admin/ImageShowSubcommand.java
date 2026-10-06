@@ -22,13 +22,13 @@ import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
 import java.util.concurrent.Callable;
 
 @Command(
-    name = "image",
+    name = "show",
     mixinStandardHelpOptions = true,
     description = "Report the runner image currently published for this account, and its extension."
 )
-public class ImageCommand implements Callable<Integer> {
+public class ImageShowSubcommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(ImageCommand.class);
+    private static final Logger logger = LoggerFactory.getLogger(ImageShowSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 

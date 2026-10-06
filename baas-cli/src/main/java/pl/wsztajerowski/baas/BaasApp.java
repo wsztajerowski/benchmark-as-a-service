@@ -11,9 +11,8 @@ import picocli.CommandLine.ScopeType;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.ParseResult;
 import pl.wsztajerowski.baas.commands.ConfigCommand;
-import pl.wsztajerowski.baas.commands.DownloadCommand;
-import pl.wsztajerowski.baas.commands.EnvCommand;
 import pl.wsztajerowski.baas.commands.ResultsCommand;
+import pl.wsztajerowski.baas.commands.ResultsQuerySubcommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
 import pl.wsztajerowski.baas.commands.JobsCommand;
 import pl.wsztajerowski.baas.commands.admin.AdminCommand;
@@ -29,11 +28,11 @@ import java.nio.file.Path;
     subcommands = {
         AdminCommand.class,
         ConfigCommand.class,
-        RunCommand.class,
         JobsCommand.class,
         ResultsCommand.class,
-        DownloadCommand.class,
-        EnvCommand.class
+        // The two aliases: each a verb owned by exactly one noun, registered a second time here.
+        RunCommand.class,
+        ResultsQuerySubcommand.class
     },
     // picocli lists direct children only, so `baas admin deployer-policy` is invisible here —
     // and it is the one command a new user needs *before* anything else works. Lines stay under
@@ -76,6 +75,25 @@ public class BaasApp implements Runnable {
      * It replaced the per-command {@code --results-table}/{@code --bucket} overrides: addressing
      * another deployment means naming its configuration, not one of its resources.
      */
+    /**
+     * Every pointer to a concrete deployment is this option — it replaced {@code teardown
+     * --stack-name} and {@code config sync --name}. Never positional. While a machine holds one
+     * deployment's configuration it may only name that one, so a typo cannot aim a command at a
+     * different deployment's resources; naming several is the multiple-deployments change's.
+     */
+    @Option(names = "--deployment", scope = ScopeType.INHERIT, paramLabel = "<name>",
+        description = "Deployment to act on (default: the one this machine is configured for).")
+    String deployment;
+
+    /** The {@code --deployment} the command line named, if any. */
+    public static java.util.Optional<String> deployment(CommandSpec spec) {
+        if (spec != null && spec.root().userObject() instanceof BaasApp app && app.deployment != null
+            && !app.deployment.isBlank()) {
+            return java.util.Optional.of(app.deployment.strip());
+        }
+        return java.util.Optional.empty();
+    }
+
     @Option(names = "--config-path", scope = ScopeType.INHERIT, paramLabel = "<file>",
         description = "Configuration file to use instead of ~/.baas/config.yaml.")
     Path configPath;
@@ -106,7 +124,43 @@ public class BaasApp implements Runnable {
         if (loggingMixin.verbose) {
             System.setProperty(LoggingMixin.LEVEL_PROPERTY, "debug");
         }
+        String refusal = deploymentRefusal(parseResult);
+        if (refusal != null) {
+            LoggerFactory.getLogger(BaasApp.class).error("{}", refusal);
+            return 2;
+        }
         return new CommandLine.RunLast().execute(parseResult); // default execution strategy
+    }
+
+    /**
+     * Why {@code --deployment} cannot be honoured, or {@code null}. Checked once, here, before any
+     * command runs, so no command can forget it. Two commands check it themselves: {@code config
+     * sync}, whose job is to adopt the named deployment, and {@code admin deployment setup}, which
+     * compares it with the name it derives from the account.
+     */
+    String deploymentRefusal(ParseResult parseResult) {
+        if (deployment == null || deployment.isBlank()) {
+            return null;
+        }
+        ParseResult leaf = parseResult;
+        while (leaf.hasSubcommand()) {
+            leaf = leaf.subcommand();
+        }
+        Object command = leaf.commandSpec().userObject();
+        if (command instanceof pl.wsztajerowski.baas.commands.ConfigSyncSubcommand
+            || command instanceof pl.wsztajerowski.baas.commands.admin.SetupCommand) {
+            return null;
+        }
+        String configured = ConfigService.at(configPath).loadOrEmpty().getPrefix();
+        if (configured == null || configured.isBlank()) {
+            return "No deployment is configured on this machine, so --deployment " + deployment.strip()
+                + " cannot be reached. Adopt it with: baas config sync --deployment " + deployment.strip();
+        }
+        if (!configured.equals(deployment.strip())) {
+            return "--deployment " + deployment.strip() + " is not the deployment this machine is "
+                + "configured for (" + configured + "). Nothing was done.";
+        }
+        return null;
     }
 
     /**

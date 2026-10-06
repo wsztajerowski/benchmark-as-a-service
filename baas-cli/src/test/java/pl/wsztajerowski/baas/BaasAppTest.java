@@ -16,12 +16,13 @@ class BaasAppTest {
     @Test
     void adminSetupHelpResolvesThroughCommandTree() {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("admin", "setup", "--help");
+            .parseArgs("admin", "deployment", "setup", "--help");
 
         CommandLine.ParseResult adminResult = result.subcommand();
         assertThat(adminResult.commandSpec().name()).isEqualTo("admin");
 
-        CommandLine.ParseResult setupResult = adminResult.subcommand();
+        assertThat(adminResult.subcommand().commandSpec().name()).isEqualTo("deployment");
+        CommandLine.ParseResult setupResult = adminResult.subcommand().subcommand();
         assertThat(setupResult.commandSpec().name()).isEqualTo("setup");
         assertThat(setupResult.isUsageHelpRequested()).isTrue();
     }
@@ -29,12 +30,13 @@ class BaasAppTest {
     @Test
     void adminTeardownHelpResolvesThroughCommandTree() {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("admin", "teardown", "--help");
+            .parseArgs("admin", "deployment", "teardown", "--help");
 
         CommandLine.ParseResult adminResult = result.subcommand();
         assertThat(adminResult.commandSpec().name()).isEqualTo("admin");
 
-        CommandLine.ParseResult teardownResult = adminResult.subcommand();
+        assertThat(adminResult.subcommand().commandSpec().name()).isEqualTo("deployment");
+        CommandLine.ParseResult teardownResult = adminResult.subcommand().subcommand();
         assertThat(teardownResult.commandSpec().name()).isEqualTo("teardown");
         assertThat(teardownResult.isUsageHelpRequested()).isTrue();
     }

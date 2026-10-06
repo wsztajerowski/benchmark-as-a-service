@@ -42,11 +42,6 @@ public class TeardownCommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    @Option(names = "--stack-name",
-        description = "Deployment to delete, as printed by `baas admin setup` "
-            + "(e.g. baas-123456789012). Defaults to this machine's configured deployment.")
-    String stackName;
-
     @Option(names = "--yes", description = "Skip interactive confirmation.")
     boolean yes;
 
@@ -63,8 +58,7 @@ public class TeardownCommand implements Callable<Integer> {
 
         var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
 
-        // An explicit --stack-name still wins: it is how a by-hand deployment, or one deployed
-        // under the old caller-ARN naming, is reached.
+        // The configured deployment; a --deployment naming another one was refused before this ran.
         String resolvedStack = resolveDeployment(config);
 
         // Gate 1: no active jobs
@@ -99,8 +93,6 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Empty + delete S3 bucket if requested. The stack declares DeletionPolicy: Retain,
         // so CloudFormation will not remove the bucket — teardown has to do it here.
-        // Derived from the deployment being torn down, not from config: --stack-name may name
-        // a different deployment than this machine is configured for.
         String bucket = resolvedStack;
         String resultsTable = resolvedStack + "-results";
 
@@ -217,15 +209,13 @@ public class TeardownCommand implements Callable<Integer> {
         return console;
     }
 
-    /** {@code --stack-name} when given, otherwise this machine's configured deployment. */
+    /** This machine's configured deployment — the only one {@code --deployment} may name. */
     String resolveDeployment(BaasConfig config) {
-        return stackName != null ? stackName : config.requirePrefix();
+        return config.requirePrefix();
     }
 
     /**
-     * The deployment's AMI pointer. From the deployment being torn down, not this machine's
-     * configured prefix: {@code --stack-name} may name another deployment, and retiring the
-     * configured one's image instead would break a deployment nobody asked to touch.
+     * The deployment's AMI pointer, from the deployment being torn down.
      */
     static String pointerPath(String deployment) {
         return "/" + deployment + "/runner/ami-id";

@@ -160,7 +160,7 @@ public class JobsListSubcommand implements Callable<Integer> {
                 json(job.jobId()), json(job.project()), json(row.status()), json(job.status()),
                 json(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
                 json(job.instanceType()), json(job.createdAt().toString()), json(job.resultPath()),
-                json(job.errorCode()), ResultsCommand.jsonObject(job.tags()), i < rows.size() - 1 ? "," : "");
+                json(job.errorCode()), ResultsQuerySubcommand.jsonObject(job.tags()), i < rows.size() - 1 ? "," : "");
         }
         out.println("]");
     }
@@ -174,7 +174,7 @@ public class JobsListSubcommand implements Callable<Integer> {
                 job.jobId(), job.project(), row.status(), nullToEmpty(job.status()),
                 nullToEmpty(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
                 nullToEmpty(job.instanceType()), job.createdAt(), nullToEmpty(job.resultPath()),
-                nullToEmpty(job.errorCode()), ResultsCommand.csvField(ResultsCommand.csvTags(job.tags())));
+                nullToEmpty(job.errorCode()), ResultsQuerySubcommand.csvField(ResultsQuerySubcommand.csvTags(job.tags())));
         }
     }
 
@@ -184,7 +184,7 @@ public class JobsListSubcommand implements Callable<Integer> {
     }
 
     private static String json(String value) {
-        return value == null ? "null" : ResultsCommand.jsonString(value);
+        return value == null ? "null" : ResultsQuerySubcommand.jsonString(value);
     }
 
     private static String orDash(String value) {

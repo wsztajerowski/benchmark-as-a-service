@@ -44,9 +44,9 @@ class ResultsFormatTest {
     }
 
     private String render(String format, List<ResultRow> rows) throws Exception {
-        var command = new ResultsCommand();
+        var command = new ResultsQuerySubcommand();
         command.console = console;
-        Method method = ResultsCommand.class.getDeclaredMethod(
+        Method method = ResultsQuerySubcommand.class.getDeclaredMethod(
             format.equals("json") ? "printJson" : "printCsv", List.class);
         method.setAccessible(true);
         method.invoke(command, rows);

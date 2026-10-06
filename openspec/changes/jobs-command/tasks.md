@@ -9,31 +9,42 @@
       bucket and table is an in-place stack update, not a replacement. Verify from the CloudFormation
       documentation for both resource types, and by the change set of task 14.1 showing no
       `Replacement`.
-- [ ] 1.3 `packages.txt` lines parse as `name-version-release.arch`. Verify against the
+- [x] 1.3 `packages.txt` lines parse as `name-version-release.arch`. Verify against the
       `packages.txt` of a job downloaded from the current deployment: every line parses, or the
       exceptions are listed here with how they are reported.
-- [ ] 1.4 `sts:GetCallerIdentity` succeeds for an identity holding no policy at all, so setup can
+      *Done 2026-10-07:* the 521-line `packages.txt` of job `20261006T165241024Z-47516b65`: every
+      line parses as `name-version-release.arch` except `gpg-pubkey-d832c631-6515c85e` (no arch);
+      the parser falls back to `name-version-release`, then to the whole line as the name. No name
+      repeats there, but installonly packages (kernel) can, so a name maps to a set of versions.
+- [x] 1.4 `sts:GetCallerIdentity` succeeds for an identity holding no policy at all, so setup can
       always render. Verify from the STS documentation.
+      *Done:* AWS STS documents `GetCallerIdentity` as requiring no permissions — it succeeds even
+      when an explicit deny is attached.
 
 ## 2. Command tree (D1)
 
-- [ ] 2.1 Root: `jobs`, `results`, `config`, `admin`, plus the aliases `run` and `query`; `download`
+- [x] 2.1 Root: `jobs`, `results`, `config`, `admin`, plus the aliases `run` and `query`; `download`
       and `env` removed. Verify with `JobsCommandTest`-style parse tests: `baas download`, `baas env`,
       `baas list`, `baas show` are unknown commands.
+      *Done:* `CommandTreeTest` (17 cases incl. the removed spellings).
 - [ ] 2.2 `jobs` gains `run` (the existing `RunCommand`), `show`, `diff`, `download`; `results` becomes
       a noun with the single verb `query`; a bare noun prints usage. Verify with tests that
       `baas jobs run …` and `baas run …` parse identically, and that `baas results` and `baas jobs`
       print usage and execute nothing.
-- [ ] 2.3 `admin` gains the nouns `deployment` (`setup`, `teardown`) and `image` (`build`, `show`);
+- [x] 2.3 `admin` gains the nouns `deployment` (`setup`, `teardown`) and `image` (`build`, `show`);
       `admin setup|teardown|build-image|deployer-policy` and verb-less `admin image` are gone. Verify
       with parse tests for both new and removed spellings.
+      *Done:* `CommandTreeTest`, `ImageCommandsTest`, `AdminProfileOptionTest`, `BaasAppTest`.
 
 ## 3. Naming a deployment (D10)
 
-- [ ] 3.1 A global, inherited `--deployment <name>` that must equal the configured deployment;
+- [x] 3.1 A global, inherited `--deployment <name>` that must equal the configured deployment;
       `teardown --stack-name` and `config sync --name` removed, `config sync --deployment` required as
       `--name` was. Verify with tests: a matching name passes, another fails naming both before any AWS
       call, the removed options are unknown.
+      *Done:* `BaasApp.deploymentRefusal`, checked in the execution strategy before any command;
+      `config sync` and `admin deployment setup` check the name themselves. `DeploymentOptionTest`,
+      `ConfigSyncSubcommandTest`, `TeardownNoticeTest`.
 
 ## 4. `results query` (D2, D3, D4)
 

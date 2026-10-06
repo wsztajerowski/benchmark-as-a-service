@@ -203,7 +203,7 @@ class SetupCommandTest {
      * stops "which deployment am I on?" becoming a question a user of BaaS ever has to ask.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"--mode", "--prefix", "--name", "--deployment"})
+    @ValueSource(strings = {"--mode", "--prefix", "--name"})
     void theDeploymentCannotBeSelectedOnTheCommandLine(String rejected) {
         CommandLine cmd = new CommandLine(new SetupCommand());
 

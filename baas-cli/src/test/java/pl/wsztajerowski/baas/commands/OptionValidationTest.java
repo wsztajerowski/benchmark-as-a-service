@@ -92,25 +92,25 @@ class OptionValidationTest {
 
     @Test
     void aResultsLimitBelowOneIsRefused() throws Exception {
-        assertThat(baas("results", "--all-projects", "--limit", "0").exitCode()).isEqualTo(2);
-        assertThat(baas("results", "--all-projects", "--limit", "-1").exitCode())
+        assertThat(baas("query", "--all-projects", "--limit", "0").exitCode()).isEqualTo(2);
+        assertThat(baas("query", "--all-projects", "--limit", "-1").exitCode())
             .as("-1 used to mean unlimited").isEqualTo(2);
     }
 
     @Test
     void jobIdRefusesTheOptionsItWouldIgnore() throws Exception {
-        var allJobs = baas("results", "--job-id", "20260820T174432812Z-a3f9c21b", "--all-jobs");
+        var allJobs = baas("query", "--job-id", "20260820T174432812Z-a3f9c21b", "--all-jobs");
         assertThat(allJobs.exitCode()).isEqualTo(2);
         assertThat(allJobs.err()).contains("--all-jobs");
 
-        var groupBy = baas("results", "--job-id", "20260820T174432812Z-a3f9c21b", "--group-by", "commit");
+        var groupBy = baas("query", "--job-id", "20260820T174432812Z-a3f9c21b", "--group-by", "commit");
         assertThat(groupBy.exitCode()).isEqualTo(2);
         assertThat(groupBy.err()).contains("--group-by");
     }
 
     @Test
     void groupByAndAllJobsCannotBeCombined() throws Exception {
-        var captured = baas("results", "--all-projects", "--all-jobs", "--group-by", "commit");
+        var captured = baas("query", "--all-projects", "--all-jobs", "--group-by", "commit");
 
         assertThat(captured.exitCode()).isEqualTo(2);
         assertThat(captured.err()).contains("--group-by").contains("--all-jobs");
@@ -119,7 +119,7 @@ class OptionValidationTest {
     /** U41: the bare NoSuchFileException message was only the path. */
     @Test
     void aMissingExtensionFileIsNamedAsMissing() throws Exception {
-        var captured = baas("admin", "build-image", "--extension", dir.resolve("ext.yml").toString());
+        var captured = baas("admin", "image", "build", "--extension", dir.resolve("ext.yml").toString());
 
         assertThat(captured.exitCode()).isEqualTo(1);
         assertThat(captured.err()).contains("Extension file not found");
@@ -128,7 +128,7 @@ class OptionValidationTest {
     /** U29: job items made every job since resolvable by id, failed ones included. */
     @Test
     void envDiffNoLongerSaysAFailedJobNeedsItsPath() {
-        String help = new CommandLine(new BaasApp()).getSubcommands().get("env")
+        String help = new CommandLine(new BaasApp()).getSubcommands().get("jobs")
             .getSubcommands().get("diff").getUsageMessage();
 
         assertThat(help).doesNotContain("has no index entry");

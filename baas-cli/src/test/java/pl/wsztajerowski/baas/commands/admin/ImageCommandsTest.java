@@ -13,13 +13,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ImageCommandsTest {
 
     @ParameterizedTest
-    @ValueSource(strings = {"build-image", "image"})
+    @ValueSource(strings = {"build", "show"})
     void resolvesUnderAdmin(String subcommand) {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("admin", subcommand, "--help");
+            .parseArgs("admin", "image", subcommand, "--help");
 
         assertThat(result.subcommand().commandSpec().name()).isEqualTo("admin");
-        assertThat(result.subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
+        assertThat(result.subcommand().subcommand().commandSpec().name()).isEqualTo("image");
+        assertThat(result.subcommand().subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
     }
 
     /**
@@ -29,7 +30,7 @@ class ImageCommandsTest {
      * had pointed that field at deployer credentials.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"build-image", "image"})
+    @ValueSource(strings = {"build-image", "image", "build"})
     void isNotResolvableAsATopLevelCommand(String subcommand) {
         assertThat(new CommandLine(new BaasApp()).getSubcommands())
             .as("these sit under admin precisely because they need deployer credentials")
@@ -56,18 +57,19 @@ class ImageCommandsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"build-image", "image"})
+    @ValueSource(strings = {"build", "show"})
     void verboseIsAcceptedSoTheArgvPreScanApplies(String subcommand) {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("admin", subcommand, "-v");
+            .parseArgs("admin", "image", subcommand, "-v");
 
-        assertThat(result.subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
+        assertThat(result.subcommand().subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
     }
 
     @Test
     void adminListsBothImageCommands() {
-        assertThat(new CommandLine(new BaasApp()).getSubcommands().get("admin").getSubcommands())
-            .containsKeys("build-image", "image");
+        assertThat(new CommandLine(new BaasApp()).getSubcommands().get("admin").getSubcommands()
+            .get("image").getSubcommands())
+            .containsKeys("build", "show");
     }
 
     // ─── an older bundled base (U39) ─────────────────────────────────────────────
@@ -82,30 +84,30 @@ class ImageCommandsTest {
     /** Building it would replace the newer component, and the older one registers cleanly. */
     @Test
     void buildImageRefusesABaseOlderThanTheDeployments() {
-        assertThat(BuildImageCommand.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
             .contains("1.3.0", "1.4.0", "baas-123456789012", "Upgrade the CLI", "Nothing was changed");
     }
 
     @Test
     void buildImageAllowsTheSameOrANewerBaseAndAFirstBuild() {
-        assertThat(BuildImageCommand.olderBaseRefusal("1.3.0", "1.3.0", "p")).isNull();
-        assertThat(BuildImageCommand.olderBaseRefusal("1.4.0", "1.3.0", "p")).isNull();
-        assertThat(BuildImageCommand.olderBaseRefusal("1.3.0", null, "p"))
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", "1.3.0", "p")).isNull();
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.4.0", "1.3.0", "p")).isNull();
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", null, "p"))
             .as("a stack with no image parameter yet has nothing to downgrade")
             .isNull();
     }
 
     @Test
     void anOlderCliIsToldToUpgradeNeverToBuild() {
-        assertThat(ImageCommand.driftWarning("1.3.0", "1.4.0"))
+        assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.4.0"))
             .contains("upgrade the CLI")
             .doesNotContain("run `baas admin build-image`");
     }
 
     @Test
     void aNewerCliIsToldToBuild() {
-        assertThat(ImageCommand.driftWarning("1.4.0", "1.3.0")).contains("run `baas admin build-image`");
-        assertThat(ImageCommand.driftWarning("1.3.0", "1.3.0")).isNull();
-        assertThat(ImageCommand.driftWarning("1.3.0", null)).isNull();
+        assertThat(ImageShowSubcommand.driftWarning("1.4.0", "1.3.0")).contains("run `baas admin build-image`");
+        assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.3.0")).isNull();
+        assertThat(ImageShowSubcommand.driftWarning("1.3.0", null)).isNull();
     }
 }
