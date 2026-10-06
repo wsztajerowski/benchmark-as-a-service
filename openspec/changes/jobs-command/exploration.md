@@ -208,6 +208,17 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   `aws.deployerProfile` / `aws.operatorProfile` (a `config.yaml` migration, and the invariant that the
   operator profile never falls back to the deployer's).
 
+- **`--config-path` is removed.** A deployment is chosen by name only (`--deployment` /
+  `BAAS_DEPLOYMENT`); every pointer to a concrete deployment is that flag (as teardown's
+  `--stack-name` and sync's `--name` already became).
+- **Nothing survives a teardown.** The bucket and the results table lose `DeletionPolicy: Retain`;
+  teardown still empties the bucket first (CloudFormation will not delete a non-empty one).
+  Undone with it: the "history outlives any stack" invariants, setup's retained-resource pre-checks,
+  teardown's retained-table warning, `--delete-bucket`. U12 disappears; U2 reduces to exporting
+  first. Until `baas admin` export/import exist (the export-before-teardown change), a teardown
+  destroys the deployment's history unrecoverably. Assumed to be implemented with
+  `admin deployment teardown` in this change unless scoped otherwise.
+
 Open, in order: the full command tree, then each action; the parked policy question; `--exclude-tag`
 with the `baas query` features; the config key rename with `config`.
 
