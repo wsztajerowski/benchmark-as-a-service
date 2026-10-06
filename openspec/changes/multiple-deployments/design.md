@@ -33,9 +33,10 @@ selection rule, removing `--config-path`, the runner tag, and `DeploymentNames`.
 - A single-deployment user sees no new flag, no new file to manage and no behaviour change.
 
 **Non-Goals:**
-- Where the deployer policy lives, or how `deployer-policy --prefix` is spelt. That is parked with
-  `jobs-command`. The extra deployment still needs its own prefix-exact policy, attached as
-  customer-managed by an identity above the deployer.
+- The deployer-policy step itself. `jobs-command` removes `baas admin deployer-policy` and builds
+  the policy into `admin deployment setup` (render for this deployment's name, simulate, and on
+  missing rights print the policy and create nothing). This change only supplies the name that step
+  renders for.
 - CI against a second deployment, or a throwaway deployment per PR.
 - Any change to `RunnerRole`'s termination condition.
 - Moving or renaming an existing deployment.
@@ -183,8 +184,11 @@ down, and record the result in `verify.md`.
 - **With a dev deployment present, production commands also need `--deployment`.** This is the
   developer's own cost, and it is what makes the ambiguity safe.
 - **Free-form names can mislead** (`baas-<other account>`). Accepted by the user.
-- **The extra deployment's deployer policy is still a by-hand IAM step** (U21's blocker). This change
-  does not remove it.
+- **The extra deployment's deployer policy is still a by-hand IAM step** (U21's blocker). A first
+  `baas --deployment <name> admin deployment setup` prints the policy rendered for that name and
+  creates nothing. An identity above the deployer attaches it, as customer-managed: two prefix-exact
+  policies exceed the 5120-character inline budget. Setup then runs normally. This change does not
+  remove the step; it only makes the policy come from setup.
 - **CI writes PR-shaped job items into the default deployment's `JOB` partition.** Pre-existing and
   unchanged; a review-time question when a PR changes item shapes.
 - **Comparability:** no runner, image or user-data behaviour changes. The only runner-visible
@@ -193,11 +197,13 @@ down, and record the result in `verify.md`.
 
 ## Open Questions
 
-- **The deployer-policy surface for a named deployment** (`deployer-policy --prefix`): parked with
-  `jobs-command`. This change must not settle it.
+None.
 
 ## Resolved Questions
 
+- *Where does a named deployment's deployer policy come from?* From setup itself. `jobs-command`
+  removed `baas admin deployer-policy` (and `--prefix`, `--for-account`) on 2026-10-07: setup renders
+  the policy for the deployment's name, simulates, and on missing rights prints it and creates nothing.
 - *Does `jobs-command` accept the scope split?* Yes, on 2026-10-07 (`jobs-command` commit `4bcb9cd`),
   with `baas config list` handed to this change. `jobs-command` leaves `--config-path` in place for
   this change to remove.
