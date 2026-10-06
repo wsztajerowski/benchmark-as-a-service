@@ -1,0 +1,158 @@
+# Tasks
+
+## 1. Verify blocking assumptions
+
+- [ ] 1.1 picocli can register one command class at two places (`jobs run` and root `run`; `results
+      query` and root `query`) and render a custom help section in place of the command list. Verify
+      with a throwaway test that parses both spellings to the same options and renders the section.
+- [ ] 1.2 Changing `DeletionPolicy`/`UpdateReplacePolicy` from `Retain` to `Delete` on the existing
+      bucket and table is an in-place stack update, not a replacement. Verify from the CloudFormation
+      documentation for both resource types, and by the change set of task 14.1 showing no
+      `Replacement`.
+- [ ] 1.3 `packages.txt` lines parse as `name-version-release.arch`. Verify against the
+      `packages.txt` of a job downloaded from the current deployment: every line parses, or the
+      exceptions are listed here with how they are reported.
+- [ ] 1.4 `sts:GetCallerIdentity` succeeds for an identity holding no policy at all, so setup can
+      always render. Verify from the STS documentation.
+
+## 2. Command tree (D1)
+
+- [ ] 2.1 Root: `jobs`, `results`, `config`, `admin`, plus the aliases `run` and `query`; `download`
+      and `env` removed. Verify with `JobsCommandTest`-style parse tests: `baas download`, `baas env`,
+      `baas list`, `baas show` are unknown commands.
+- [ ] 2.2 `jobs` gains `run` (the existing `RunCommand`), `show`, `diff`, `download`; `results` becomes
+      a noun with the single verb `query`; a bare noun prints usage. Verify with tests that
+      `baas jobs run …` and `baas run …` parse identically, and that `baas results` and `baas jobs`
+      print usage and execute nothing.
+- [ ] 2.3 `admin` gains the nouns `deployment` (`setup`, `teardown`) and `image` (`build`, `show`);
+      `admin setup|teardown|build-image|deployer-policy` and verb-less `admin image` are gone. Verify
+      with parse tests for both new and removed spellings.
+
+## 3. Naming a deployment (D10)
+
+- [ ] 3.1 A global, inherited `--deployment <name>` that must equal the configured deployment;
+      `teardown --stack-name` and `config sync --name` removed, `config sync --deployment` required as
+      `--name` was. Verify with tests: a matching name passes, another fails naming both before any AWS
+      call, the removed options are unknown.
+
+## 4. `results query` (D2, D3, D4)
+
+- [ ] 4.1 Default lists every measurement; `--show-excluded` replaces `--all-jobs`; `--group-by` and
+      `--all-jobs` removed; `--job-id` combines with every filter except `--project`/`--all-projects`.
+      Verify with `ResultsQueryServiceIT` and the results command tests.
+- [ ] 4.2 `--best-per <tag>` with the JMH mode in the group key and the direction per mode (highest for
+      `thrpt`, lowest for `avgt`/`sample`/`ss`, non-finite never wins). Verify with `ResultsGroupingTest`
+      cases for each mode and for one benchmark measured in two modes.
+- [ ] 4.3 `--exclude-tag k=v` (repeatable, any match drops). Verify with `ResultsFiltersTest`.
+- [ ] 4.4 The pipeline: sort (default newest first; `--sort-by created|benchmark|score|project`,
+      `--asc`), then `--offset`, then `--limit` (default 20, `0` none) with the stderr notice. Verify
+      with tests for the default 20-of-30 cut, an offset page, and a non-default sort.
+- [ ] 4.5 `--watch` keeps its behaviour under `results query`. Verify with the existing watch tests,
+      renamed.
+
+## 5. `jobs list` (D4)
+
+- [ ] 5.1 The pipeline (`--sort-by created|status|project`, `--asc`, `--offset`, `--limit` default 20 /
+      `0`), `--exclude-tag`, and `--watch` (interactive only, refused with a machine format). Lazy
+      paging stays for the default order only. Verify with `JobListingTest` and `JobsCommandTest`.
+
+## 6. `jobs show` (D5)
+
+- [ ] 6.1 Job, Environment (by group) and Artifacts (one `ListObjectsV2`, summarised by folder)
+      sections; resolved status; stated absences; an unknown id fails before any S3 read; `--format
+      json` → `{job, environment, artifacts}`. Verify with a command test over stubbed AWS for a
+      completed, a `launch-failed` and an unknown job, and an IT listing a LocalStack prefix.
+
+## 7. `jobs download` (D8)
+
+- [ ] 7.1 Move `DownloadCommand` under `jobs`; `JobReference` accepts a job id only; a path fails
+      stating that a job id is required. Verify with `DownloadArgumentTest`, `JobReferenceTest` and
+      `S3DownloadIT`.
+
+## 8. Manifest and `jobs diff` (D6, D7)
+
+- [ ] 8.1 `UserDataScriptBuilder`: nested heredoc in seven groups, the seven fields dropped,
+      `MANIFEST_SCHEMA_VERSION` 6; values still captured into variables first; tags from the same
+      variables. Verify with `UserDataScriptBuilderTest` — `bash -n`, the rendered JSON parses with
+      exactly the eight members, `aLargeRunStaysWellUnderTheUserDataLimit` — and the
+      tags-agree-with-manifest test.
+- [ ] 8.2 `EnvironmentManifest` reads the nested form; `jobs diff` prints `Differs in:` then fields by
+      group, the same-environment message, the schema-mismatch warning, and the AMI-gated packages
+      section (changed/added/removed). Verify with `EnvironmentManifestTest`, a packages-diff unit test
+      on two fixture lists, and `ConsoleOutputTest` for the plain table.
+
+## 9. Setup renders the policy (D11)
+
+- [ ] 9.1 `admin deployment setup` renders the policy first and, on missing rights, prints it to
+      stdout, names the missing actions on stderr, creates nothing, exits non-zero; `DeployerPolicyCommand`
+      and `--for-account` removed. Verify with `SetupCommandTest` (stubbed simulator: denied → policy
+      on stdout and no CloudFormation call; allowed → proceeds; not checkable → proceeds) and
+      `DeployerPolicyTest` unchanged.
+
+## 10. Teardown removes everything (D12)
+
+- [ ] 10.1 `cf-template-core.yaml`: `DeletionPolicy`/`UpdateReplacePolicy: Delete` on the bucket and the
+      table; the lifecycle rules unchanged. Verify with `CoreTemplateTest` (new pins; the no-expiry pin
+      kept; `theRunnerSecurityGroupDescriptionIsNeverEdited` still green).
+- [ ] 10.2 Teardown always empties the bucket, deletes the stack, retires the image, reports nothing
+      retained, and warns before the prompt that everything will be deleted; `--delete-bucket` and
+      setup's retained-resource pre-checks removed. Verify with `TeardownNoticeTest`, `SetupCommandTest`.
+
+## 11. Help and hints (D9)
+
+- [ ] 11.1 Grouped `baas --help` (shortcuts, operator, deployer with full paths, role headings, no
+      config keys; first-run guidance `admin deployment setup` → `admin image build`) and `admin --help`
+      listing its two nouns. Verify with a help-rendering test pinning the three sections.
+- [ ] 11.2 Hints after `jobs run` (completed / failed), `jobs show`, `jobs list --in-flight`, an empty
+      `results query`, and `admin deployment setup`, on stderr, interactive only. Verify with tests for
+      an interactive and a non-interactive console.
+
+## 12. Grep gate
+
+- [ ] 12.1 No live code, script, workflow or doc calls a removed spelling:
+      `git grep -nP 'baas (download|env|results( |$)(?!query))|admin (setup|teardown|build-image|deployer-policy)|--stack-name|sync --name|--all-jobs|--group-by|--for-account|--delete-bucket'`
+      outside archived changes and ADRs returns nothing, or each remaining hit is listed here with why.
+
+## 13. CI, docs, findings
+
+- [ ] 13.1 `e2e-cloud-test.yml`: `results query`, `--show-excluded`, `jobs download`. Verify with
+      `actionlint` or a YAML load and the 12.1 grep.
+- [ ] 13.2 CLAUDE.md: the command names everywhere; the retention invariants rewritten ("nothing
+      survives a teardown"); the setup/teardown pre-check paragraphs; the S3 layout table's
+      `environment.json` row (groups, schema 6); the policy paragraphs (setup prints it). Verify with
+      the 12.1 grep over CLAUDE.md and a read of each touched section.
+- [ ] 13.3 README.md and infra/README.md (attach steps around setup's output; command names). Verify
+      with the 12.1 grep.
+- [ ] 13.4 `docs/diagrams/*.mmd`: command names; `baas-download-env-diff.mmd` becomes
+      `baas-jobs-show-diff.mmd`; teardown and setup sequences. Render every edited file with `mmdc` and
+      look at each PNG.
+- [ ] 13.5 `docs/review/open-findings.md`: delete P11 and U28 (closed); delete U12 (no retained table);
+      reduce U2 to exporting before teardown; record the best-per-group defect as fixed by this change
+      in the closing note. `QUEUE.md`: `jobs-command` done, `multiple-deployments` next. Verify by
+      reading both files.
+
+## 14. Deployment and verification (manual — no automated test covers the `baas run` path)
+
+At most **5 paid runs**, the same budget as `rename-run-to-job`; the image bake and the PR's CI e2e do
+not count. No score comparison: no measurement path changes (D7).
+
+- [ ] 14.1 `baas admin deployment setup` from the branch build on the existing deployment; the change set
+      shows the deletion-policy change with no replacement. Record it.
+- [ ] 14.2 Paid run 1: `baas run jmh-with-async …` (alias). Then `baas jobs show <id>` (three sections,
+      grouped environment, schema 6), `baas query --job-id <id>` and `--best-per branch`,
+      `baas jobs download <id>`, `baas jobs list --sort-by status`. Record each.
+- [ ] 14.3 Paid run 2: `baas jobs run jcstress … -- --mode sanity`. Then `baas jobs diff` of runs 1 and 2
+      ("Differs in" without `packages`, same AMI).
+- [ ] 14.4 Setup's policy step live: run `admin deployment setup` under the operator profile (lacking the
+      deployer policy) and confirm stdout holds the policy, nothing is created, exit non-zero. No paid run.
+- [ ] 14.5 Teardown removes everything: `baas admin deployment teardown --yes`, then confirm the stack,
+      bucket, table, AMI and pointer are gone; `admin deployment setup` and `admin image build` to
+      restore. No paid run (the bake is not counted).
+- [ ] 14.6 Paid run 3 on the restored deployment, then push, open the PR into `next-release`, both CI
+      e2e jobs green. Runs 4–5 are reserve for re-checking fixes.
+
+## 15. Verify
+
+- [ ] 15.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
+      requirement → code → test → gap table, open warnings under stable IDs (W1, W2…) and any deviation
+      from the design or tasks.
