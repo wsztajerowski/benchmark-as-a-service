@@ -38,7 +38,7 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
     private static final Instant LAUNCH_INSTANT = Instant.parse("2026-08-20T17:44:32.812Z");
 
     @Test
-    void aStoredRunProducesOneItemPerMeasurementAndNoOthers() throws IOException {
+    void aStoredJobProducesOneItemPerMeasurementAndNoOthers() throws IOException {
         runJmhServiceAgainstTheFakeBenchmark(new DynamoDbResultsStore(dynamoDbClient, TEST_TABLE_NAME));
 
         var items = scanTestTable();
@@ -51,10 +51,10 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
     }
 
     /**
-     * The whole one-instant-per-run property rests on {@code JmhRunResults} using
+     * The whole one-instant-per-job property rests on {@code JmhRunResults} using
      * {@code commonOptions.createdAt()} rather than reading its own clock — a single line that
      * would compile and pass every other test if it were reverted. The launching CLI mints one
-     * instant, embeds it in the run id and passes it as {@code --created-at}, so a run identifier
+     * instant, embeds it in the job id and passes it as {@code --created-at}, so a job identifier
      * and its measurements' timestamps cannot disagree; reading the clock here would break that
      * silently, and only for runs whose instance clock had drifted.
      *
@@ -79,7 +79,7 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
             .isInstanceOf(ResultsStoreException.class);
 
         assertThat(listObjectsInTestBucket().toString())
-            .as("a failed run must still be diagnosable from its S3 artifacts")
+            .as("a failed job must still be diagnosable from its S3 artifacts")
             .contains("jmh-result.json");
     }
 

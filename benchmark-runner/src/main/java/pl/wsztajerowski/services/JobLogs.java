@@ -27,12 +27,12 @@ import java.util.List;
  * {@code b/run.log} no longer overwrite each other. Files are collected before any is uploaded,
  * because {@code LocalStorageService} writes below the same working directory the walk reads.
  */
-final class RunLogs {
-    private static final Logger logger = LoggerFactory.getLogger(RunLogs.class);
+final class JobLogs {
+    private static final Logger logger = LoggerFactory.getLogger(JobLogs.class);
 
     static final int MAX_DEPTH = 8;
 
-    private RunLogs() {}
+    private JobLogs() {}
 
     static void upload(StorageService storageService, Path outputPath) {
         upload(storageService, outputPath, Paths.get(""));

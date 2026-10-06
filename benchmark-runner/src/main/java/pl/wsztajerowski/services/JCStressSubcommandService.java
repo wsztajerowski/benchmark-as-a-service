@@ -73,10 +73,10 @@ public class JCStressSubcommandService {
         logger.info("Saving test outputs on S3");
         storageService
             .saveFile(outputPath.resolve("jcstress-output.txt"), jcStressOptions.processOutput());
-        RunLogs.upload(storageService, outputPath);
+        JobLogs.upload(storageService, outputPath);
 
         // Not fatal on its own: whether JCStress exits non-zero for failed tests is not something
-        // this runner relies on, and a run whose tests failed must still store its summary. A run
+        // this runner relies on, and a job whose tests failed must still store its summary. A job
         // that left no report is what fails — naming the process, not the missing file it implies.
         Path resultFilepath = reportPath.resolve( "index.html");
         if (exitCode != 0) {
@@ -101,17 +101,17 @@ public class JCStressSubcommandService {
                 }
             );
 
-        // Store last: a run that fails here must still leave its S3 artifacts behind.
+        // Store last: a job that fails here must still leave its S3 artifacts behind.
         List<StoredMeasurement> measurements = List.of(JCStressMeasurementMapper.toMeasurement(
             jcStressResult,
             commonOptions.project(),
-            commonOptions.requestId(),
+            commonOptions.jobId(),
             commonOptions.createdAt(),
             commonOptions.tags(),
             outputPath.toString(),
             outputPath.resolve("environment.json").toString()));
 
-        logger.info("Storing JCStress summary for request {}", commonOptions.requestId());
+        logger.info("Storing JCStress summary for request {}", commonOptions.jobId());
         resultsStore.write(measurements);
     }
 

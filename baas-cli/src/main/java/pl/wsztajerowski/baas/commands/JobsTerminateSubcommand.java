@@ -14,8 +14,8 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
-import pl.wsztajerowski.baas.runs.DynamoDbRunRecorder;
-import pl.wsztajerowski.baas.runs.RunTermination;
+import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
+import pl.wsztajerowski.baas.jobs.JobTermination;
 
 import java.util.concurrent.Callable;
 import java.util.function.BooleanSupplier;
@@ -24,13 +24,13 @@ import java.util.function.Supplier;
 @Command(
     name = "terminate",
     mixinStandardHelpOptions = true,
-    description = "Stop a run: record it as cancelled and terminate its instance. Also stops a live "
-        + "instance whose run already shows an outcome.",
+    description = "Stop a job: record it as cancelled and terminate its instance. Also stops a live "
+        + "instance whose job already shows an outcome.",
     separator = " "
 )
-public class RunsTerminateSubcommand implements Callable<Integer> {
+public class JobsTerminateSubcommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(RunsTerminateSubcommand.class);
+    private static final Logger logger = LoggerFactory.getLogger(JobsTerminateSubcommand.class);
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -42,8 +42,8 @@ public class RunsTerminateSubcommand implements Callable<Integer> {
     /** Replaced in tests; reads one answer from the terminal. */
     Supplier<String> answerReader = () -> System.console().readLine();
 
-    @Parameters(index = "0", paramLabel = "<runId>", description = "The run to stop, as baas runs list shows it.")
-    String runId;
+    @Parameters(index = "0", paramLabel = "<jobId>", description = "The job to stop, as baas jobs list shows it.")
+    String jobId;
 
     @Option(names = "--yes", description = "Skip the confirmation prompt. Required without a terminal.")
     boolean yes;
@@ -56,11 +56,11 @@ public class RunsTerminateSubcommand implements Callable<Integer> {
         try (var dynamoDb = factory.dynamoDb();
              var quickDynamoDb = factory.dynamoDb(RunCommand.STOP_WRITE_TIMEOUT);
              var ec2 = factory.ec2()) {
-            return new RunTermination(
-                new DynamoDbRunRecorder(dynamoDb, config.resultsTable()),
-                new DynamoDbRunRecorder(quickDynamoDb, config.resultsTable()),
+            return new JobTermination(
+                new DynamoDbJobRecorder(dynamoDb, config.resultsTable()),
+                new DynamoDbJobRecorder(quickDynamoDb, config.resultsTable()),
                 new Ec2ProvisioningService(ec2))
-                .terminate(runId, confirmation());
+                .terminate(jobId, confirmation());
         }
     }
 
@@ -75,12 +75,12 @@ public class RunsTerminateSubcommand implements Callable<Integer> {
                 return true;
             }
             if (!console().interactive()) {
-                logger.error("Refusing to terminate run {} without confirmation: no terminal to ask on. "
-                    + "Pass --yes.", runId);
+                logger.error("Refusing to terminate job {} without confirmation: no terminal to ask on. "
+                    + "Pass --yes.", jobId);
                 return false;
             }
             // Stays on stdout: the prompt has to sit on the cursor's line; see TeardownCommand.
-            console().print("Terminate run " + runId + "? [y/N] ");
+            console().print("Terminate job " + jobId + "? [y/N] ");
             String answer = answerReader.get();
             return answer != null && ("y".equalsIgnoreCase(answer.strip()) || "yes".equalsIgnoreCase(answer.strip()));
         };

@@ -15,12 +15,12 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * One item per measurement, batched per run.
+ * One item per measurement, batched per job.
  *
  * <p>{@code BatchWriteItem} reports throttling and partial success by RETURNING the leftovers in
  * {@code unprocessedItems} rather than failing, so ignoring that field loses measurements while the
  * call looks successful. The remainder is resubmitted with backoff, and anything still unprocessed
- * at the end is fatal — a run that cannot store its results must exit non-zero.
+ * at the end is fatal — a job that cannot store its results must exit non-zero.
  */
 public class DynamoDbResultsStore implements ResultsStore {
     private static final Logger logger = LoggerFactory.getLogger(DynamoDbResultsStore.class);

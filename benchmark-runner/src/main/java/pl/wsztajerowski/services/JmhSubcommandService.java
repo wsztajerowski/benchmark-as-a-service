@@ -45,7 +45,7 @@ public class JmhSubcommandService {
             storageService
                 .saveFile(outputPath.resolve("jmh-output.txt"), jmhOptions.outputOptions().processOutput());
 
-            RunLogs.upload(storageService, outputPath);
+            JobLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -61,7 +61,7 @@ public class JmhSubcommandService {
             storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
             JmhRunResults.NO_PROFILER_OUTPUT);
 
-        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
+        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);
     }
 }

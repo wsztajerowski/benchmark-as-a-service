@@ -35,7 +35,7 @@ class ImageBuilderServiceTest {
 
     /**
      * The whole reason this ordering is spelled out in the design: retiring first would leave the
-     * pointer aimed at a deregistered AMI for the duration of the build, so every run launched in
+     * pointer aimed at a deregistered AMI for the duration of the build, so every job launched in
      * that window fails.
      */
     @Test
@@ -48,7 +48,7 @@ class ImageBuilderServiceTest {
         service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
 
         assertThat(calls)
-            .as("a deregister before the pointer write is a window in which every run fails")
+            .as("a deregister before the pointer write is a window in which every job fails")
             .containsSubsequence("putParameter:" + NEW_AMI, "deregisterImage:" + PREVIOUS_AMI);
     }
 

@@ -92,7 +92,7 @@ Parameters:
   RunnerImageLabel:
     Description: >-
       The image's label, `<base version>` or `<base version>+ext.<hash>`; tagged on the AMI and
-      recorded by every run as imageVersion.
+      recorded by every job as imageVersion.
     Type: String
     Default: "1.0.0"
 
@@ -100,7 +100,7 @@ Parameters:
   # Supplying these declares a federated principal on OperatorRole's trust policy, so a workflow
   # assumes the operator role directly. No intermediate role: a role-chained session is capped at
   # 60 minutes by STS regardless of MaxSessionDuration, against a 7200 s default benchmark timeout
-  # — and the failure mode is a red job with a good measurement, an un-terminated instance and a
+  # — and the failure mode is a red CI job with a good measurement, an un-terminated instance and a
   # full EC2 bill.
   #
   # They create no resource. The identity provider is account-global and lives in the CI stack,
@@ -291,7 +291,7 @@ Resources:
     Properties:
       BucketName: !Sub ${ResourceNamePrefix}
       VersioningConfiguration:
-        # Suspended, not Enabled. Results are write-once and a run id carries 32 bits of entropy,
+        # Suspended, not Enabled. Results are write-once and a job id carries 32 bits of entropy,
         # so the overwrite versioning guarded against no longer has a mechanism — and suspension
         # ends the noncurrent accumulation that the deleted runs/ expiry rule would otherwise let
         # grow. The consequence is stated rather than implied: there is no server-side recovery
@@ -313,10 +313,10 @@ Resources:
             Status: Enabled
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7
-          # No rule expires current objects under runs/. The rule that did rested on the premise
-          # that everything there was re-creatable from source; the unified run prefix falsifies
-          # it directly — a run's results, its manifest and the JAR it actually ran all live under
-          # runs/<project>/<runId>/ now. Reintroducing one is silent data loss.
+          # No rule expires current objects under jobs/. The rule that did rested on the premise
+          # that everything there was re-creatable from source; the unified job prefix falsifies
+          # it directly — a job's results, its manifest and the JAR it actually ran all live under
+          # jobs/<project>/<jobId>/ now. Reintroducing one is silent data loss.
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - ServerSideEncryptionByDefault:
@@ -357,7 +357,7 @@ Resources:
         - AttributeName: sk
           KeyType: RANGE
       GlobalSecondaryIndexes:
-        - IndexName: requestId-index
+        - IndexName: jobId-index
           KeySchema:
             - AttributeName: gsi1pk
               KeyType: HASH
@@ -412,7 +412,7 @@ Resources:
             Version: "2012-10-17"
             Statement:
               # Measurements only: a runner can put items in RESULT#<project> partitions and
-              # nowhere else, so it cannot forge a run item.
+              # nowhere else, so it cannot forge a job item.
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
@@ -422,8 +422,8 @@ Resources:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys:
                       - "RESULT#*"
-              # Its own run's status, written by user-data's run_status. UpdateItem only, and
-              # only in the single RUN partition — no Put, so it can never create a run item
+              # Its own job's status, written by user-data's job_status. UpdateItem only, and
+              # only in the single JOB partition — no Put, so it can never create a job item
               # (user-data's writes are also conditioned on attribute_exists(pk)).
               - Effect: Allow
                 Action: dynamodb:UpdateItem
@@ -431,7 +431,7 @@ Resources:
                 Condition:
                   ForAllValues:StringEquals:
                     dynamodb:LeadingKeys:
-                      - RUN
+                      - JOB
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -640,9 +640,9 @@ Resources:
       Path: "/"
       # Comfortably above the 7500 s wall-clock default (benchmark timeout 7200 + the 300 s
       # termination margin), and strictly above it rather than equal: `baas run` polls for the
-      # life of the run and still needs credentials afterwards to terminate the instance. A
+      # life of the job and still needs credentials afterwards to terminate the instance. A
       # session that expired mid-poll would leave the shell watchdog as the only termination
-      # layer — a red job with a good measurement and a full EC2 bill.
+      # layer — a red CI job with a good measurement and a full EC2 bill.
       MaxSessionDuration: 9000
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
@@ -770,7 +770,7 @@ Resources:
             Version: "2012-10-17"
             Statement:
               # A Query against a GSI authorises on the index ARN, not the table's — both
-              # are granted here or `baas results --request-id` fails at runtime with an
+              # are granted here or `baas results --job-id` fails at runtime with an
               # opaque AccessDenied, long after the deploy looked successful.
               # Scan is here for enumeration, not for reach: Query already covers the table
               # and its indexes, so every row a Scan returns was reachable anyway. It is
@@ -785,7 +785,7 @@ Resources:
                   - !GetAtt ResultsTable.Arn
                   - !Sub "${ResultsTable.Arn}/index/*"
               # The operator's only write on the table, granted deliberately: `baas run`
-              # reserves, confirms and cancels its run item. Restricted to the RUN partition,
+              # reserves, confirms and cancels its job item. Restricted to the JOB partition,
               # so measurements stay read-only to the operator.
               - Effect: Allow
                 Action: dynamodb:UpdateItem
@@ -793,7 +793,7 @@ Resources:
                 Condition:
                   ForAllValues:StringEquals:
                     dynamodb:LeadingKeys:
-                      - RUN
+                      - JOB
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}

@@ -52,8 +52,8 @@ public class S3UploadService {
     }
 
     /**
-     * Every key under a prefix, paginated. Used to enumerate a run's artifacts before downloading
-     * them, so an empty list is how "no such run" is detected — S3 has no directories to miss.
+     * Every key under a prefix, paginated. Used to enumerate a job's artifacts before downloading
+     * them, so an empty list is how "no such job" is detected — S3 has no directories to miss.
      */
     public List<String> listKeys(String bucket, String prefix) {
         List<String> keys = new ArrayList<>();
@@ -79,7 +79,7 @@ public class S3UploadService {
      * bucket needs before it can be deleted. Listing only current versions leaves
      * noncurrent ones behind and DeleteBucket then fails with BucketNotEmpty.
      *
-     * <p>Deletes are batched — a bucket holding a month of runs can carry tens of
+     * <p>Deletes are batched — a bucket holding a month of jobs can carry tens of
      * thousands of versions, and one request each would take minutes.
      */
     public void deleteAllObjects(String bucket) {

@@ -43,8 +43,8 @@ class ConsoleOutputTest {
         }
     }
 
-    private static ResultRow row(String requestId, String imageVersion) {
-        return new ResultRow(requestId, "com.example.B.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
+    private static ResultRow row(String jobId, String imageVersion) {
+        return new ResultRow(jobId, "com.example.B.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
             "2026-08-20T17:44:32.812Z", Map.of("imageVersion", imageVersion, "instanceType", "c5.2xlarge"));
     }
 
@@ -65,13 +65,13 @@ class ConsoleOutputTest {
     }
 
     @Test
-    void theRunSummaryStaysPlainEvenWhenColourIsOn() {
+    void theJobSummaryStaysPlainEvenWhenColourIsOn() {
         var out = new StringWriter();
         var command = new RunCommand();
         command.format = "json";
         command.console = Console.withFlags(new PrintWriter(out), true, true);
 
-        command.printRunSummary(0);
+        command.printJobSummary(0);
 
         assertThat(out.toString()).startsWith("{").doesNotContain(ESC);
     }
@@ -89,8 +89,8 @@ class ConsoleOutputTest {
 
     private static String diff(boolean colour) {
         var command = new EnvDiffSubcommand();
-        command.resultPathA = "runs/p/20260724T120000000Z-a3f9c21b";
-        command.resultPathB = "runs/p/20260811T093000000Z-b7e4d0f2";
+        command.resultPathA = "jobs/p/20260724T120000000Z-a3f9c21b";
+        command.resultPathB = "jobs/p/20260811T093000000Z-b7e4d0f2";
         Map<String, Difference> differences = new LinkedHashMap<>();
         differences.put("jdk", new Difference("25.0.3", "25.0.4"));
         differences.put("perf", new Difference("", "6.1"));
@@ -102,7 +102,7 @@ class ConsoleOutputTest {
     @Test
     void thePlainDiffIsByteIdenticalToTheOldPrintf() {
         String fmt = "%-24s %-34s %-34s%n";
-        String expected = String.format(fmt, "FIELD", "…ns/p/20260724T120000000Z-a3f9c21b", "…ns/p/20260811T093000000Z-b7e4d0f2")
+        String expected = String.format(fmt, "FIELD", "…bs/p/20260724T120000000Z-a3f9c21b", "…bs/p/20260811T093000000Z-b7e4d0f2")
             + "-".repeat(94) + System.lineSeparator()
             + String.format(fmt, "jdk", "25.0.3", "25.0.4")
             + String.format(fmt, "perf", "(absent)", "6.1");
@@ -222,7 +222,7 @@ class ConsoleOutputTest {
     // --- status line text ------------------------------------------------------------------
 
     @Test
-    void theStatusTextFitsEightyColumnsForAMaximalRun() {
+    void theStatusTextFitsEightyColumnsForAMaximalJob() {
         String text = RunCommand.statusText("shutting-down", 99 * 3600 + 59 * 60 + 59, "i-0123456789abcdef0");
 
         assertThat(text).isEqualTo("shutting-down · 99h 59m 59s elapsed · i-0123456789abcdef0");

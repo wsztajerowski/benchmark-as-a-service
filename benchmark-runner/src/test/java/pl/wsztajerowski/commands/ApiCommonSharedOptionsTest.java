@@ -2,7 +2,7 @@ package pl.wsztajerowski.commands;
 
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
-import pl.wsztajerowski.baas.model.RunId;
+import pl.wsztajerowski.baas.model.JobId;
 
 import java.time.Instant;
 
@@ -19,7 +19,7 @@ class ApiCommonSharedOptionsTest {
         assertThat(options.getProject()).isEqualTo("lynx-journal");
     }
 
-    /** Every run names a store; the option that discarded measurements is gone. */
+    /** Every job names a store; the option that discarded measurements is gone. */
     @Test
     void theDiscardOptionIsUnknown() {
         assertThatThrownBy(() -> parse("--no-database", "--project", "p"))
@@ -59,27 +59,27 @@ class ApiCommonSharedOptionsTest {
     }
 
     @Test
-    void createdAtIsStableAcrossCallsWithinOneRun() {
+    void createdAtIsStableAcrossCallsWithinOneJob() {
         var options = parse("--project", "p");
         assertThat(options.getCreatedAt()).isEqualTo(options.getCreatedAt());
     }
 
     @Test
-    void theDefaultRequestIdIsARunIdMintedFromTheRunsInstant() {
+    void theDefaultJobIdIsAJobIdMintedFromTheJobsInstant() {
         var options = parse("--project", "p", "--created-at", "2026-08-20T17:44:32.812Z");
 
-        assertThat(options.getRequestOptions().requestId())
-            .hasSize(RunId.LENGTH)
+        assertThat(options.getRequestOptions().jobId())
+            .hasSize(JobId.LENGTH)
             .startsWith("20260820T174432812Z-");
     }
 
     @Test
-    void theDefaultResultPathIsTheUnifiedRunPrefix() {
+    void theDefaultResultPathIsTheUnifiedJobPrefix() {
         var options = parse("--project", "lynx-journal", "--created-at", "2026-08-20T17:44:32.812Z");
         var requestOptions = options.getRequestOptions();
 
         assertThat(requestOptions.resultPath().toString())
-            .isEqualTo("runs/lynx-journal/" + requestOptions.requestId());
+            .isEqualTo("jobs/lynx-journal/" + requestOptions.jobId());
     }
 
     @Test
@@ -91,7 +91,7 @@ class ApiCommonSharedOptionsTest {
     }
 
     @Test
-    void theRunsInstantReachesTheSharedOptions() {
+    void theJobsInstantReachesTheSharedOptions() {
         var options = parse("--project", "p", "--created-at", "2026-08-20T17:44:32.812Z");
 
         assertThat(options.getRequestOptions().createdAt())

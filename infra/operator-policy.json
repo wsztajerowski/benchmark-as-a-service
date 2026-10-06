@@ -117,13 +117,13 @@
       ]
     },
     {
-      "Sid": "DynamoDbRunItemWrite",
+      "Sid": "DynamoDbJobItemWrite",
       "Effect": "Allow",
       "Action": "dynamodb:UpdateItem",
       "Resource": "arn:aws:dynamodb:REGION:ACCOUNT_ID:table/RESOURCE_PREFIX-results",
       "Condition": {
         "ForAllValues:StringEquals": {
-          "dynamodb:LeadingKeys": ["RUN"]
+          "dynamodb:LeadingKeys": ["JOB"]
         }
       }
     }

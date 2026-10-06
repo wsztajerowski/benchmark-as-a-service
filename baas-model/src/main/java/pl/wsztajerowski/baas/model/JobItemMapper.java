@@ -8,13 +8,13 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * The run item's attribute names, key and identity fields — the counterpart of
- * {@link MeasurementItemMapper} for {@code pk = RUN}. Writes are conditional {@code UpdateItem}s
+ * The job item's attribute names, key and identity fields — the counterpart of
+ * {@link MeasurementItemMapper} for {@code pk = JOB}. Writes are conditional {@code UpdateItem}s
  * built by the CLI, so this maps attributes rather than whole items on the way in.
  */
-public final class RunItemMapper {
+public final class JobItemMapper {
 
-    public static final String RUN_ID = "requestId";
+    public static final String JOB_ID = "jobId";
     public static final String PROJECT = "project";
     public static final String CREATED_AT = "createdAt";
     public static final String RESULT_PATH = "resultPath";
@@ -25,16 +25,16 @@ public final class RunItemMapper {
     public static final String TAGS = "tags";
     public static final String UPDATED_AT = "updatedAt";
 
-    private RunItemMapper() {}
+    private JobItemMapper() {}
 
-    public static Map<String, AttributeValue> key(Instant createdAt, String runId) {
+    public static Map<String, AttributeValue> key(Instant createdAt, String jobId) {
         return Map.of(
-            MeasurementItemMapper.PK, s(ResultKeys.RUN_PARTITION_KEY),
-            MeasurementItemMapper.SK, s(ResultKeys.runSortKey(createdAt, runId)));
+            MeasurementItemMapper.PK, s(ResultKeys.JOB_PARTITION_KEY),
+            MeasurementItemMapper.SK, s(ResultKeys.jobSortKey(createdAt, jobId)));
     }
 
-    public static Map<String, AttributeValue> key(RunItem run) {
-        return key(run.createdAt(), run.runId());
+    public static Map<String, AttributeValue> key(JobItem job) {
+        return key(job.createdAt(), job.jobId());
     }
 
     /**
@@ -42,36 +42,36 @@ public final class RunItemMapper {
      * field. Absent optional values are left out, since an {@code UpdateItem} cannot set an empty
      * {@link AttributeValue}.
      */
-    public static Map<String, AttributeValue> identityAttributes(RunItem run) {
+    public static Map<String, AttributeValue> identityAttributes(JobItem job) {
         Map<String, AttributeValue> attributes = new LinkedHashMap<>();
-        attributes.put(MeasurementItemMapper.GSI1PK, s(ResultKeys.requestIndexPartitionKey(run.runId())));
-        attributes.put(MeasurementItemMapper.GSI1SK, s(ResultKeys.RUN_INDEX_SORT_KEY));
-        attributes.put(RUN_ID, s(run.runId()));
-        attributes.put(PROJECT, s(run.project()));
-        attributes.put(CREATED_AT, s(ResultKeys.formatTimestamp(run.createdAt())));
-        putIfPresent(attributes, RESULT_PATH, run.resultPath());
-        putIfPresent(attributes, INSTANCE_TYPE, run.instanceType());
-        if (!run.tags().isEmpty()) {
-            attributes.put(TAGS, AttributeValue.fromM(run.tags().entrySet().stream()
+        attributes.put(MeasurementItemMapper.GSI1PK, s(ResultKeys.jobIndexPartitionKey(job.jobId())));
+        attributes.put(MeasurementItemMapper.GSI1SK, s(ResultKeys.JOB_INDEX_SORT_KEY));
+        attributes.put(JOB_ID, s(job.jobId()));
+        attributes.put(PROJECT, s(job.project()));
+        attributes.put(CREATED_AT, s(ResultKeys.formatTimestamp(job.createdAt())));
+        putIfPresent(attributes, RESULT_PATH, job.resultPath());
+        putIfPresent(attributes, INSTANCE_TYPE, job.instanceType());
+        if (!job.tags().isEmpty()) {
+            attributes.put(TAGS, AttributeValue.fromM(job.tags().entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> s(e.getValue())))));
         }
         return attributes;
     }
 
-    /** Whether an item read from the table is a run item rather than a measurement. */
-    public static boolean isRunItem(Map<String, AttributeValue> item) {
+    /** Whether an item read from the table is a job item rather than a measurement. */
+    public static boolean isJobItem(Map<String, AttributeValue> item) {
         AttributeValue pk = item.get(MeasurementItemMapper.PK);
-        return pk != null && ResultKeys.RUN_PARTITION_KEY.equals(pk.s());
+        return pk != null && ResultKeys.JOB_PARTITION_KEY.equals(pk.s());
     }
 
-    public static RunItem fromItem(Map<String, AttributeValue> item) {
-        if (!isRunItem(item)) {
-            throw new IllegalArgumentException("Not a run item (pk=" + str(item, MeasurementItemMapper.PK)
+    public static JobItem fromItem(Map<String, AttributeValue> item) {
+        if (!isJobItem(item)) {
+            throw new IllegalArgumentException("Not a job item (pk=" + str(item, MeasurementItemMapper.PK)
                 + ", sk=" + str(item, MeasurementItemMapper.SK) + ")");
         }
         String updatedAt = str(item, UPDATED_AT);
-        return new RunItem(
-            str(item, RUN_ID),
+        return new JobItem(
+            str(item, JOB_ID),
             str(item, PROJECT),
             Instant.parse(str(item, CREATED_AT)),
             str(item, RESULT_PATH),

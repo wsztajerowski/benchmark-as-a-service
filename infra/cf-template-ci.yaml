@@ -16,7 +16,7 @@
 # WorkflowRole used to live here. It is gone: GitHub Actions now federates directly into
 # BaasCliOperatorRole, which the core stack owns and declares. A role-chained session is capped at
 # 60 minutes by STS regardless of MaxSessionDuration, against a 7200 s default benchmark timeout —
-# and the failure mode was a red job with a good measurement, an un-terminated instance and a full
+# and the failure mode was a red CI job with a good measurement, an un-terminated instance and a full
 # EC2 bill. Its only grants OperatorRole lacked existed for the self-hosted runner action and died
 # with it.
 

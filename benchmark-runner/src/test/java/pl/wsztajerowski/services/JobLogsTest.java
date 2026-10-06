@@ -11,9 +11,9 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class RunLogsTest {
+class JobLogsTest {
 
-    private static final Path OUTPUT = Path.of("runs/lynx-journal/20260724T120000000Z-a3f9c21b");
+    private static final Path OUTPUT = Path.of("jobs/lynx-journal/20260724T120000000Z-a3f9c21b");
 
     @TempDir
     Path root;
@@ -21,7 +21,7 @@ class RunLogsTest {
     private final Map<Path, Path> uploaded = new LinkedHashMap<>();
 
     private void upload() {
-        RunLogs.upload(uploaded::put, OUTPUT, root);
+        JobLogs.upload(uploaded::put, OUTPUT, root);
     }
 
     private Path write(String relative) throws Exception {

@@ -20,7 +20,7 @@ services:
     #                             AttributeName=gsi1pk,AttributeType=S AttributeName=gsi1sk,AttributeType=S \
     #     --key-schema AttributeName=pk,KeyType=HASH AttributeName=sk,KeyType=RANGE \
     #     --global-secondary-indexes \
-    #       'IndexName=requestId-index,KeySchema=[{AttributeName=gsi1pk,KeyType=HASH},{AttributeName=gsi1sk,KeyType=RANGE}],Projection={ProjectionType=ALL}'
+    #       'IndexName=jobId-index,KeySchema=[{AttributeName=gsi1pk,KeyType=HASH},{AttributeName=gsi1sk,KeyType=RANGE}],Projection={ProjectionType=ALL}'
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"

@@ -1,6 +1,6 @@
 package pl.wsztajerowski.infra;
 
-/** Thrown when a run's measurements could not be stored. Fatal: the run must exit non-zero. */
+/** Thrown when a job's measurements could not be stored. Fatal: the job must exit non-zero. */
 public class ResultsStoreException extends RuntimeException {
 
     public ResultsStoreException(String message, Throwable cause) {

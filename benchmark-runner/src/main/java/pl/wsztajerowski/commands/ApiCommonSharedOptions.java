@@ -3,8 +3,8 @@ package pl.wsztajerowski.commands;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
-import pl.wsztajerowski.baas.model.RunId;
-import pl.wsztajerowski.baas.model.RunLayout;
+import pl.wsztajerowski.baas.model.JobId;
+import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.ResultsStoreBuilder;
@@ -26,11 +26,11 @@ public class ApiCommonSharedOptions {
     @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
     Path resultPath;
 
-    @Option(names = {"-id","--request-id"}, description = "Request ID. Default value: a generated run identifier, minted from the run's instant.")
-    String requestId;
+    @Option(names = {"-id","--job-id"}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
+    String jobId;
 
     @Option(names = "--created-at",
-        description = "The run's instant, supplied by the launching CLI so the run identifier and the "
+        description = "The job's instant, supplied by the launching CLI so the job identifier and the "
             + "stored timestamp cannot disagree. Default: now.")
     String createdAt;
 
@@ -66,9 +66,9 @@ public class ApiCommonSharedOptions {
     private Instant resolvedCreatedAt;
 
     /**
-     * Read once and cached. The runner already captures one timestamp per run rather than one per
-     * result — a per-result clock read would make two results from the same run differ by a stray
-     * millisecond — and this extends that single read one hop out, to the machine that named the run.
+     * Read once and cached. The runner already captures one timestamp per job rather than one per
+     * result — a per-result clock read would make two results from the same job differ by a stray
+     * millisecond — and this extends that single read one hop out, to the machine that named the job.
      */
     public Instant getCreatedAt() {
         if (resolvedCreatedAt == null) {
@@ -80,29 +80,29 @@ public class ApiCommonSharedOptions {
     }
 
     public CommonSharedOptions getRequestOptions(){
-        String nonNullRequestId = getRequestId();
+        String nonNullJobId = getJobId();
         String resolvedProject = getProject();
         Path nonNullResultPath = Optional.ofNullable(resultPath)
-            .orElseGet(() -> Path.of(RunLayout.runPrefix(resolvedProject, nonNullRequestId)));
+            .orElseGet(() -> Path.of(JobLayout.jobPrefix(resolvedProject, nonNullJobId)));
         Map<String, String> tagMap = Optional.ofNullable(tags)
             .orElse(Collections.emptyMap());
         return new CommonSharedOptions(
-            nonNullResultPath, nonNullRequestId, getCreatedAt(), resolvedProject, tagMap);
+            nonNullResultPath, nonNullJobId, getCreatedAt(), resolvedProject, tagMap);
     }
 
     /**
-     * Minted from the run's own instant rather than from a second clock read, so the identifier's
+     * Minted from the job's own instant rather than from a second clock read, so the identifier's
      * timestamp and the stored {@code createdAt} are the same value rather than two nearby ones.
      */
-    public String getRequestId() {
-        return (requestId == null || requestId.isBlank()) ? RunId.generate(getCreatedAt()) : requestId;
+    public String getJobId() {
+        return (jobId == null || jobId.isBlank()) ? JobId.generate(getCreatedAt()) : jobId;
     }
 
     /**
      * Falls back to a {@code project} tag so {@code baas run}'s existing {@code --tag project=…}
      * keeps working, and then stops. No {@code unknown} placeholder: it silently writes measurements
      * to a partition nobody queries — CI has been doing exactly that — and under the unified layout
-     * it would also scatter a run's S3 artifacts under a placeholder prefix.
+     * it would also scatter a job's S3 artifacts under a placeholder prefix.
      */
     public String getProject() {
         if (project != null && !project.isBlank()) {

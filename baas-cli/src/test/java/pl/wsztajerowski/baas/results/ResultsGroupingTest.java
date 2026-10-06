@@ -52,7 +52,7 @@ class ResultsGroupingTest {
     }
 
     @Test
-    void keepsTheHighestScoringRunPerGroup() {
+    void keepsTheHighestScoringJobPerGroup() {
         var rows = List.of(
             row("com.example.Bench.run", "main", 100.0),
             row("com.example.Bench.run", "main", 300.0),

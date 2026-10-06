@@ -1,8 +1,8 @@
 package pl.wsztajerowski.baas.infra;
 
-import pl.wsztajerowski.baas.model.RunStatus;
+import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
-import pl.wsztajerowski.baas.runs.DynamoDbRunRecorder;
+import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -25,51 +25,51 @@ public class UserDataScriptBuilder {
 
     // Static script body — variables are prepended by build()
     private static final String SCRIPT_BODY = withoutCommentLines("""
-        # Run status lives on the run item (pk = RUN) in the results table, not in S3. Defined
+        # Job status lives on the job item (pk = JOB) in the results table, not in S3. Defined
         # first, before anything else runs: the watchdog below is a forked subshell, which sees
-        # only the functions defined before the fork, and `run_status timed-out` runs in it. A
+        # only the functions defined before the fork, and `job_status timed-out` runs in it. A
         # definition cannot fail, so the watchdog still starts as soon as INSTANCE_ID resolves.
         # The instance writes only its status (and its instance id, if the CLI could not), only to
         # the item the CLI's reservation created — attribute_exists(pk), so a wrong key creates
-        # nothing — and never over a terminal status (RUN_STATUS_GUARD, rendered from the CLI's own
+        # nothing — and never over a terminal status (JOB_STATUS_GUARD, rendered from the CLI's own
         # expression). Every value spliced into the JSON is constrained: the sort key is a fixed
-        # timestamp plus the run id, the status comes from a fixed set, the instance id from IMDS.
+        # timestamp plus the job id, the status comes from a fixed set, the instance id from IMDS.
         # Retries and timeouts are set on this one command and exported nowhere — the runner's Java
         # SDK reads the same variables. Each attempt is bounded at 5 s to connect and 10 s to read;
         # the second argument caps the attempts (default 3). Standard-mode backoff adds up to 2 s
         # after the first attempt and 4 s after the second, so 3 attempts cost at most ~51 s and 2
         # cost ~32 s. A failure is logged and never stops the script: the boot log upload and the
         # termination after it must still run. Returns 0 when the status was recorded, 2 when the
-        # condition refused it (the run already has an outcome, or there is no run item at this
+        # condition refused it (the job already has an outcome, or there is no job item at this
         # key), and 1 on any other failure.
-        run_status() {
+        job_status() {
           local status="$1" attempts="${2:-3}" update names values err rc
           if [[ -n "${INSTANCE_ID}" ]]; then
             update='SET #status = :s, #instanceId = if_not_exists(#instanceId, :iid)'
             names='{"#status":"status","#instanceId":"instanceId"}'
-            values='{":s":{"S":"'"${status}"'"},":iid":{"S":"'"${INSTANCE_ID}"'"},'"${RUN_STATUS_GUARD_VALUES}"'}'
+            values='{":s":{"S":"'"${status}"'"},":iid":{"S":"'"${INSTANCE_ID}"'"},'"${JOB_STATUS_GUARD_VALUES}"'}'
           else
             update='SET #status = :s'
             names='{"#status":"status"}'
-            values='{":s":{"S":"'"${status}"'"},'"${RUN_STATUS_GUARD_VALUES}"'}'
+            values='{":s":{"S":"'"${status}"'"},'"${JOB_STATUS_GUARD_VALUES}"'}'
           fi
           err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS="${attempts}" aws dynamodb update-item \
             --region "${AWS_REGION}" --table-name "${RESULTS_TABLE}" \
-            --key '{"pk":{"S":"RUN"},"sk":{"S":"'"${RUN_SORT_KEY}"'"}}' \
+            --key '{"pk":{"S":"JOB"},"sk":{"S":"'"${JOB_SORT_KEY}"'"}}' \
             --update-expression "${update}" \
-            --condition-expression "attribute_exists(pk) AND ${RUN_STATUS_GUARD}" \
+            --condition-expression "attribute_exists(pk) AND ${JOB_STATUS_GUARD}" \
             --expression-attribute-names "${names}" \
             --expression-attribute-values "${values}" \
             --cli-connect-timeout 5 --cli-read-timeout 10 2>&1 >/dev/null)
           rc=$?
           if [[ $rc -eq 0 ]]; then
-            echo "run_status: ${status}"
+            echo "job_status: ${status}"
             return 0
           elif [[ "${err}" == *ConditionalCheckFailedException* ]]; then
-            echo "run_status: ${status} not recorded: status already terminal, or no run item at this key"
+            echo "job_status: ${status} not recorded: status already terminal, or no job item at this key"
             return 2
           fi
-          echo "run_status: ${status} not recorded (exit ${rc}): ${err}"
+          echo "job_status: ${status} not recorded (exit ${rc}): ${err}"
           return 1
         }
 
@@ -83,7 +83,7 @@ public class UserDataScriptBuilder {
           sleep ${WALL_CLOCK_HARD_KILL}
           echo "WATCHDOG: hard-kill cap exceeded; terminating $INSTANCE_ID"
           # Before the log upload, so the outcome is on record even if the upload stalls.
-          run_status timed-out
+          job_status timed-out
           # This path never reaches the normal upload below, and it is exactly the
           # case a user needs the log for — ship it before the instance disappears.
           aws s3 cp /var/log/cloud-init-output.log \\
@@ -95,15 +95,15 @@ public class UserDataScriptBuilder {
         # After the watchdog, never before it. Fills in the instance id when the CLI's own
         # `launched` write did not land. Two attempts rather than three: everything before the JVM
         # starts has to fit in the watchdog margin, whose floor is 60 s.
-        # A refusal means the run already has an outcome — cancelled by a Ctrl+C or `baas runs
+        # A refusal means the job already has an outcome — cancelled by a Ctrl+C or `baas jobs
         # terminate` that could not find this instance while it was still launching — or that
-        # there is no run item at this key. Either way nobody wants this benchmark, so it is not
-        # run: the instance ships its boot log and terminates. Without this, a cancelled run whose
+        # there is no job item at this key. Either way nobody wants this benchmark, so it is not
+        # run: the instance ships its boot log and terminates. Without this, a cancelled job whose
         # instance the CLI missed would run to its timeout, paid, and hidden from `--in-flight`.
-        # Any other failure is not a refusal, and the run goes ahead unrecorded.
-        run_status running 2
+        # Any other failure is not a refusal, and the job goes ahead unrecorded.
+        job_status running 2
         if [[ $? -eq 2 ]]; then
-          echo "Run already has an outcome, or has no run item: not starting the benchmark."
+          echo "Job already has an outcome, or has no job item: not starting the benchmark."
           aws s3 cp /var/log/cloud-init-output.log \\
             "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
           kill $WATCHDOG_PID 2>/dev/null || true
@@ -123,7 +123,7 @@ public class UserDataScriptBuilder {
         cd /app
 
         # ── Environment manifest ──────────────────────────────────────────────────
-        # Written and uploaded BEFORE the benchmark, so a run that crashes still leaves a
+        # Written and uploaded BEFORE the benchmark, so a job that crashes still leaves a
         # record of what it crashed on — the same reasoning that ships cloud-init-output.log.
         # This is the observation; infra/runner-image.yaml is only the declaration, and this
         # additionally carries what the image cannot control: instance type, CPU model,
@@ -179,9 +179,9 @@ public class UserDataScriptBuilder {
         PERF_EVENT_PARANOID=$(sysctl -n kernel.perf_event_paranoid 2>/dev/null)
         KPTR_RESTRICT=$(sysctl -n kernel.kptr_restrict 2>/dev/null)
         TRANSPARENT_HUGEPAGES=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null)
-        # The run's own identity. The run id is opaque by design, so what it stopped carrying the
+        # The job's own identity. The job id is opaque by design, so what it stopped carrying the
         # manifest has to carry — and the manifest is written before the benchmark, so this is what
-        # a run that dies early leaves behind. A project or branch name can contain " or \\.
+        # a job that dies early leaves behind. A project or branch name can contain " or \\.
         PROJECT=$(json_escape "${PROJECT_NAME}")
         BRANCH=$(json_escape "${BRANCH_NAME}")
 
@@ -214,7 +214,7 @@ public class UserDataScriptBuilder {
           "benchmarkType": "${BENCHMARK_TYPE}",
           "project": "${PROJECT}",
           "branch": "${BRANCH}",
-          "requestId": "${REQUEST_ID}",
+          "jobId": "${JOB_ID}",
           "createdAt": "${CREATED_AT}"
         }
         MANIFEST
@@ -227,7 +227,7 @@ public class UserDataScriptBuilder {
         aws s3 cp /app/packages.txt "s3://${S3_BUCKET}/${RESULT_PATH}/packages.txt"
 
         # The runner JAR comes from the bucket and nowhere else. It used to be resolved at boot
-        # from an unpinned upstream "newest release" pointer, so two runs a week apart could
+        # from an unpinned upstream "newest release" pointer, so two jobs a week apart could
         # execute different runner code under a tool whose entire product is comparability — the
         # same class of drift as the boot-time package upgrade that finding A8 removed from this
         # script. The CLI now pins it to its own version and seeds it checksum-verified, which is
@@ -239,9 +239,9 @@ public class UserDataScriptBuilder {
         # Layer 2: benchmark process with its own timeout
         # --results-table: the table name is not a secret — unlike the Mongo connection string it
         # replaced, it carries no credentials, so it travels in user-data instead of being fetched
-        # from SSM at boot. Access is granted by RunnerRole, not by knowing the name. Every run
+        # from SSM at boot. Access is granted by RunnerRole, not by knowing the name. Every job
         # names the table: `baas run` resolves it before provisioning and fails when it cannot, and
-        # run status lives there too, so there is no run without one.
+        # job status lives there too, so there is no job without one.
         # BENCHMARK_PARAMS_ARRAY and RUNNER_TAGS_ARRAY are array literals written by build(),
         # one quoted element per argument, so bash parses them once, as data — no eval.
         # RunCommand.buildRunnerTags already rejects a caller tag whose key is
@@ -257,7 +257,7 @@ public class UserDataScriptBuilder {
         # the observed value in charge even if a reserved key ever slips past the
         # CLI-side guard above.
         timeout "${BENCHMARK_TIMEOUT}" java -jar /app/benchmark-runner.jar "${BENCHMARK_TYPE}" \\
-          --request-id     "${REQUEST_ID}" \\
+          --job-id     "${JOB_ID}" \\
           --created-at     "${CREATED_AT}" \\
           --result-path    "${RESULT_PATH}" \\
           --s3-bucket      "${S3_BUCKET}" \\
@@ -273,12 +273,12 @@ public class UserDataScriptBuilder {
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 
-        # The outcome, on the run item — what `baas run` polls and `baas runs list` shows.
+        # The outcome, on the job item — what `baas run` polls and `baas jobs list` shows.
         STATUS="completed"; [[ $EXIT_CODE -ne 0 ]] && STATUS="failed:${EXIT_CODE}"
-        run_status "${STATUS}"
+        job_status "${STATUS}"
 
         # Ship the boot log before self-terminating — the instance is about to disappear
-        # and this is the only record of what went wrong on a failed run.
+        # and this is the only record of what went wrong on a failed job.
         aws s3 cp /var/log/cloud-init-output.log \\
           "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
 
@@ -288,10 +288,10 @@ public class UserDataScriptBuilder {
         """);
 
     public String build(String region, String bucket, String benchmarkType,
-                        String requestId, String resultPath, String createdAt,
+                        String jobId, String resultPath, String createdAt,
                         String benchmarkJarS3Key, int benchmarkTimeoutSeconds,
                         int wallClockHardKillSeconds, String imageVersion, String amiId,
-                        String runnerJarS3Key, String resultsTableName, String runSortKey,
+                        String runnerJarS3Key, String resultsTableName, String jobSortKey,
                         List<String> benchmarkParams, Map<String, String> runnerTags) {
         List<String> tagArgs = runnerTags.entrySet().stream()
             .flatMap(e -> Stream.of("--tag", e.getKey() + "=" + e.getValue()))
@@ -302,9 +302,9 @@ public class UserDataScriptBuilder {
             export("AWS_REGION", region) +
             export("S3_BUCKET", bucket) +
             export("BENCHMARK_TYPE", benchmarkType) +
-            export("REQUEST_ID", requestId) +
+            export("JOB_ID", jobId) +
             export("RESULT_PATH", resultPath) +
-            // One clock read per run: this instant named the run's prefix and is what the runner
+            // One clock read per job: this instant named the job's prefix and is what the runner
             // stores as createdAt, so the two cannot disagree. The instance's own clock is not
             // consulted.
             export("CREATED_AT", createdAt) +
@@ -325,9 +325,9 @@ public class UserDataScriptBuilder {
             // Built by ResultKeys in the CLI and handed down verbatim. CREATED_AT above is
             // Instant.toString(), whose width varies, so a key the shell rebuilt from it would
             // address a different item from the one the CLI reserved.
-            export("RUN_SORT_KEY", runSortKey) +
-            export("RUN_STATUS_GUARD", DynamoDbRunRecorder.NOT_TERMINAL) +
-            export("RUN_STATUS_GUARD_VALUES", guardValues()) +
+            export("JOB_SORT_KEY", jobSortKey) +
+            export("JOB_STATUS_GUARD", DynamoDbJobRecorder.NOT_TERMINAL) +
+            export("JOB_STATUS_GUARD_VALUES", guardValues()) +
             array("BENCHMARK_PARAMS_ARRAY", benchmarkParams) +
             array("RUNNER_TAGS_ARRAY", tagArgs) +
             "\n" +
@@ -343,16 +343,16 @@ public class UserDataScriptBuilder {
     }
 
     /**
-     * The values {@link DynamoDbRunRecorder#NOT_TERMINAL} names, as the body of a JSON object, so
-     * the shell's guard reads the same terminal set the CLI's does — from {@link RunStatus}.
+     * The values {@link DynamoDbJobRecorder#NOT_TERMINAL} names, as the body of a JSON object, so
+     * the shell's guard reads the same terminal set the CLI's does — from {@link JobStatus}.
      */
     static String guardValues() {
         return Stream.of(
-                Map.entry(":completed", RunStatus.COMPLETED),
-                Map.entry(":timedOut", RunStatus.TIMED_OUT),
-                Map.entry(":cancelled", RunStatus.CANCELLED),
-                Map.entry(":launchFailed", RunStatus.LAUNCH_FAILED),
-                Map.entry(":failedPrefix", RunStatus.FAILED_PREFIX))
+                Map.entry(":completed", JobStatus.COMPLETED),
+                Map.entry(":timedOut", JobStatus.TIMED_OUT),
+                Map.entry(":cancelled", JobStatus.CANCELLED),
+                Map.entry(":launchFailed", JobStatus.LAUNCH_FAILED),
+                Map.entry(":failedPrefix", JobStatus.FAILED_PREFIX))
             .map(e -> "\"" + e.getKey() + "\":{\"S\":\"" + e.getValue() + "\"}")
             .collect(java.util.stream.Collectors.joining(","));
     }

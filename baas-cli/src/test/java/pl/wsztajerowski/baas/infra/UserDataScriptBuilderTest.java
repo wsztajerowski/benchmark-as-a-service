@@ -31,17 +31,17 @@ class UserDataScriptBuilderTest {
         return script(runnerTags, "baas-a1b2c3d4-results");
     }
 
-    private static final String RUN_SORT_KEY = "2026-07-24T12:00:00.000Z#20260724T120000000Z-a3f9c21b";
+    private static final String JOB_SORT_KEY = "2026-07-24T12:00:00.000Z#20260724T120000000Z-a3f9c21b";
 
     private String script(Map<String, String> runnerTags, String resultsTable) {
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-a1b2c3d4", "jmh",
             "20260724T120000000Z-a3f9c21b",
-            "runs/lynx-journal/20260724T120000000Z-a3f9c21b",
+            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b",
             "2026-07-24T12:00:00Z",
-            "runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
+            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
             7200, 7500,
-            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, RUN_SORT_KEY,
+            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, JOB_SORT_KEY,
             List.of("MyBenchmark", "-f", "1"), runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
@@ -128,7 +128,7 @@ class UserDataScriptBuilderTest {
 
     /**
      * Under {@code set -e} a failed IMDSv2 fetch exits before the watchdog starts and orphans a
-     * paid instance. Errors are handled by exit code and the run item's status instead.
+     * paid instance. Errors are handled by exit code and the job item's status instead.
      */
     @Test
     void hasNoSetE() {
@@ -140,7 +140,7 @@ class UserDataScriptBuilderTest {
     /**
      * cloud-init starts the script in /, and the runner walks the tree below its cwd looking
      * for .log files to upload. From / that walks the entire root filesystem and aborts on
-     * /proc entries that disappear mid-walk, which fails the run after the benchmark has
+     * /proc entries that disappear mid-walk, which fails the job after the benchmark has
      * already completed.
      */
     @Test
@@ -169,8 +169,8 @@ class UserDataScriptBuilderTest {
         List<String> params = List.of("MyBenchmark", "-p", "pattern=a$b", "-jvmArgs", "-Dx=\"q\" `id`",
             "$(touch " + marker + ")", "it's", "two words", "back\\slash", "a;b");
         String encoded = new UserDataScriptBuilder().build(
-            "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "runs/p/id", "2026-07-24T12:00:00Z",
-            "runs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", RUN_SORT_KEY,
+            "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "jobs/p/id", "2026-07-24T12:00:00Z",
+            "jobs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", JOB_SORT_KEY,
             params, Map.of());
 
         List<String> elements = evaluateArray(
@@ -211,7 +211,7 @@ class UserDataScriptBuilderTest {
     /**
      * Not cosmetic: while this fetch existed the runner picked up MONGO_CONNECTION_STRING from
      * the environment and wrote to Atlas, so a leftover line here would send measurements to a
-     * store the CLI can no longer read — and the run would still report success.
+     * store the CLI can no longer read — and the job would still report success.
      */
     @Test
     void fetchesNoMongoConnectionStringFromSsm() {
@@ -225,7 +225,7 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * Every run names the table: its status is recorded there too, so there is no run without one,
+     * Every job names the table: its status is recorded there too, so there is no job without one,
      * and the runner is never told to discard measurements.
      */
     @Test
@@ -237,21 +237,21 @@ class UserDataScriptBuilderTest {
             .hasSize(1);
     }
 
-    // ─── Run status on the run item ──────────────────────────────────────────────
+    // ─── Job status on the job item ──────────────────────────────────────────────
 
     @Test
-    void writesNoRunStatusObjectToS3() {
+    void writesNoJobStatusObjectToS3() {
         assertThat(script()).doesNotContain("/run-status");
     }
 
     /** Built by ResultKeys in the CLI; the shell must not rebuild it from CREATED_AT. */
     @Test
-    void theRunItemKeyArrivesVerbatim() {
+    void theJobItemKeyArrivesVerbatim() {
         String script = script();
 
-        assertThat(script).contains("export RUN_SORT_KEY='" + RUN_SORT_KEY + "'");
+        assertThat(script).contains("export JOB_SORT_KEY='" + JOB_SORT_KEY + "'");
         assertThat(script).contains(
-            "--key '{\"pk\":{\"S\":\"RUN\"},\"sk\":{\"S\":\"'\"${RUN_SORT_KEY}\"'\"}}'");
+            "--key '{\"pk\":{\"S\":\"JOB\"},\"sk\":{\"S\":\"'\"${JOB_SORT_KEY}\"'\"}}'");
         assertThat(script).doesNotContain("${CREATED_AT}#");
     }
 
@@ -260,8 +260,8 @@ class UserDataScriptBuilderTest {
     void theTerminalGuardIsTheCLIsOwn() {
         String script = script();
 
-        assertThat(script).contains("export RUN_STATUS_GUARD='" + pl.wsztajerowski.baas.runs.DynamoDbRunRecorder.NOT_TERMINAL + "'");
-        assertThat(script).contains("--condition-expression \"attribute_exists(pk) AND ${RUN_STATUS_GUARD}\"");
+        assertThat(script).contains("export JOB_STATUS_GUARD='" + pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder.NOT_TERMINAL + "'");
+        assertThat(script).contains("--condition-expression \"attribute_exists(pk) AND ${JOB_STATUS_GUARD}\"");
         assertThat(UserDataScriptBuilder.guardValues())
             .contains("\":completed\":{\"S\":\"completed\"}", "\":failedPrefix\":{\"S\":\"failed:\"}",
                 "\":timedOut\":{\"S\":\"timed-out\"}", "\":cancelled\":{\"S\":\"cancelled\"}",
@@ -270,14 +270,14 @@ class UserDataScriptBuilderTest {
 
     /**
      * The watchdog is a forked subshell, which sees only the functions defined before the fork:
-     * defined after it, `run_status timed-out` would be "command not found" on exactly the path
+     * defined after it, `job_status timed-out` would be "command not found" on exactly the path
      * it exists for — and {@code bash -n} would not notice.
      */
     @Test
-    void runStatusIsDefinedBeforeTheWatchdogForks() {
+    void jobStatusIsDefinedBeforeTheWatchdogForks() {
         String script = script();
 
-        assertThat(script.indexOf("run_status() {"))
+        assertThat(script.indexOf("job_status() {"))
             .isPositive()
             .isLessThan(script.indexOf("INSTANCE_ID=$("))
             .isLessThan(script.indexOf("sleep ${WALL_CLOCK_HARD_KILL}"));
@@ -287,7 +287,7 @@ class UserDataScriptBuilderTest {
     void recordsRunningOnlyAfterTheWatchdogStarts() {
         String script = script();
 
-        assertThat(script.indexOf("run_status running"))
+        assertThat(script.indexOf("job_status running"))
             .isGreaterThan(script.indexOf("WATCHDOG_PID=$!"))
             .isLessThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
     }
@@ -297,7 +297,7 @@ class UserDataScriptBuilderTest {
         String script = script();
         int benchmark = script.indexOf("java -jar /app/benchmark-runner.jar");
 
-        assertThat(script.indexOf("run_status \"${STATUS}\"", benchmark))
+        assertThat(script.indexOf("job_status \"${STATUS}\"", benchmark))
             .isPositive()
             .isLessThan(script.lastIndexOf("cloud-init-output.log"));
     }
@@ -316,12 +316,12 @@ class UserDataScriptBuilderTest {
         // one write on the path to the JVM, inside the 60 s minimum watchdog margin. Three attempts
         // would be ~51 s, leaving the boot, the manifest and four downloads under 10 s.
         assertThat(script).contains("--cli-connect-timeout 5 --cli-read-timeout 10");
-        assertThat(script).contains("run_status running 2\n");
+        assertThat(script).contains("job_status running 2\n");
     }
 
     /**
      * Executes the rendered block after the {@code running} write against a stub {@code aws}. A
-     * refusal — the run was cancelled while its instance was launching, or has no item — must stop
+     * refusal — the job was cancelled while its instance was launching, or has no item — must stop
      * the instance before the benchmark: the CLI may have cancelled it without finding the instance,
      * and nothing else would then end it before its timeout.
      */
@@ -338,7 +338,7 @@ class UserDataScriptBuilderTest {
         assertThat(calls.get(2)).startsWith("ec2 terminate-instances").contains("i-0abc");
     }
 
-    /** Only a refusal stops the run; a table that cannot be reached is no reason to waste the instance. */
+    /** Only a refusal stops the job; a table that cannot be reached is no reason to waste the instance. */
     @Test
     void aRecordedOrFailedRunningWriteLetsTheBenchmarkStart() throws Exception {
         String block = runningWriteBlock(script());
@@ -354,7 +354,7 @@ class UserDataScriptBuilderTest {
     }
 
     private static String runningWriteBlock(String script) {
-        int start = script.indexOf("run_status running 2");
+        int start = script.indexOf("job_status running 2");
         assertThat(start).as("running write").isPositive();
         return script.substring(start, script.indexOf("\nfi\n", start) + "\nfi\n".length());
     }
@@ -365,7 +365,7 @@ class UserDataScriptBuilderTest {
      * outsized but plausible run and holds it well under the limit.
      */
     @Test
-    void aLargeRunStaysWellUnderTheUserDataLimit() {
+    void aLargeJobStaysWellUnderTheUserDataLimit() {
         Map<String, String> tags = new java.util.LinkedHashMap<>();
         tags.put("project", "benchmark-as-a-service");
         tags.put("branch", "feature/some-fairly-long-branch-name-for-a-change");
@@ -379,11 +379,11 @@ class UserDataScriptBuilderTest {
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-381492019823", "jmh-with-async",
             "20260724T120000000Z-a3f9c21b",
-            "runs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b",
+            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b",
             "2026-07-24T12:00:00.123Z",
-            "runs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
+            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
             7200, 7500, "1.2.0", "ami-0ae60d9d990dc00df", "releases/6.1.0/benchmark-runner.jar",
-            "baas-381492019823-results", RUN_SORT_KEY, params, tags);
+            "baas-381492019823-results", JOB_SORT_KEY, params, tags);
         int rawBytes = Base64.getDecoder().decode(encoded).length;
 
         assertThat(rawBytes).isLessThan(UserDataScriptBuilder.USER_DATA_LIMIT_BYTES * 3 / 4);
@@ -421,32 +421,32 @@ class UserDataScriptBuilderTest {
     void aRefusedStatusWriteIsExpectedAndAFailedOneIsLoggedButNeitherStopsTheScript() throws Exception {
         String script = script();
 
-        assertThat(runStatusOutput(script, "ok")).contains("run_status: completed").contains("after");
-        assertThat(runStatusOutput(script, "conditional"))
-            .contains("run_status: completed not recorded: status already terminal, or no run item at this key")
+        assertThat(jobStatusOutput(script, "ok")).contains("job_status: completed").contains("after");
+        assertThat(jobStatusOutput(script, "conditional"))
+            .contains("job_status: completed not recorded: status already terminal, or no job item at this key")
             .contains("after");
-        assertThat(runStatusOutput(script, "fail"))
-            .contains("run_status: completed not recorded (exit 255): boom")
+        assertThat(jobStatusOutput(script, "fail"))
+            .contains("job_status: completed not recorded (exit 255): boom")
             .contains("after");
     }
 
     /** Without an instance id (IMDS failed) the write still lands, just without that attribute. */
     @Test
     void theStatusWriteWorksWithoutAnInstanceId() throws Exception {
-        List<String> calls = runAgainstStubAws(script(), "ok", "INSTANCE_ID=\nrun_status running\n");
+        List<String> calls = runAgainstStubAws(script(), "ok", "INSTANCE_ID=\njob_status running\n");
 
         assertThat(calls).singleElement().asString()
             .contains("SET #status = :s").doesNotContain("instanceId");
     }
 
-    private String runStatusOutput(String script, String mode) throws Exception {
+    private String jobStatusOutput(String script, String mode) throws Exception {
         Path log = tempDir.resolve("out-" + mode);
-        runAgainstStubAws(script, mode, "INSTANCE_ID=i-0abc\nrun_status completed > " + log + "\necho after >> " + log + "\n");
+        runAgainstStubAws(script, mode, "INSTANCE_ID=i-0abc\njob_status completed > " + log + "\necho after >> " + log + "\n");
         return Files.readString(log);
     }
 
     /**
-     * Runs the script's exports, its {@code run_status} definition and {@code body} under bash,
+     * Runs the script's exports, its {@code job_status} definition and {@code body} under bash,
      * with {@code aws} replaced by a stub that appends its arguments to a file and then succeeds,
      * fails a condition, or fails outright.
      */
@@ -465,7 +465,7 @@ class UserDataScriptBuilderTest {
             """);
         assertThat(aws.toFile().setExecutable(true)).isTrue();
         String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
-        String function = script.substring(script.indexOf("run_status() {"), script.indexOf("\n}\n", script.indexOf("run_status() {")) + 3);
+        String function = script.substring(script.indexOf("job_status() {"), script.indexOf("\n}\n", script.indexOf("job_status() {")) + 3);
 
         ProcessBuilder builder = new ProcessBuilder("bash", "-c", exports + function + body)
             .redirectErrorStream(true);
@@ -487,7 +487,7 @@ class UserDataScriptBuilderTest {
         int benchmarkStart = script.indexOf("java -jar /app/benchmark-runner.jar");
 
         assertThat(script.indexOf("${RESULT_PATH}/environment.json"))
-            .as("a run that crashes must still leave a record of what it crashed on")
+            .as("a job that crashes must still leave a record of what it crashed on")
             .isNotNegative()
             .isLessThan(benchmarkStart);
         assertThat(script.indexOf("${RESULT_PATH}/packages.txt"))
@@ -507,7 +507,7 @@ class UserDataScriptBuilderTest {
             script.indexOf("java -jar /app/benchmark-runner.jar"));
 
         assertThat(betweenUploadAndBenchmark)
-            .as("a conditional here would lose the manifest on exactly the runs that need it")
+            .as("a conditional here would lose the manifest on exactly the jobs that need it")
             .doesNotContain("exit ")
             .doesNotContain("EXIT_CODE");
     }
@@ -515,7 +515,7 @@ class UserDataScriptBuilderTest {
     @Test
     void manifestRecordsWhatTheImageCannotControl() {
         assertThat(script())
-            .as("instance type and CPU model are properties of the run, not of the image, and "
+            .as("instance type and CPU model are properties of the job, not of the image, and "
                 + "they move a score further than a JDK patch level does")
             .contains("\"instanceType\": \"${INSTANCE_TYPE}\"")
             .contains("\"cpuModel\": \"${CPU_MODEL}\"");
@@ -607,7 +607,7 @@ class UserDataScriptBuilderTest {
     //
     // These three tags are captured as shell variables ON the instance, the same rule that
     // already governs imageVersion/instanceType — a result's tags must never be able to disagree
-    // with that same run's environment.json. `jdk` is derived from JVM_VERSION_RAW, the SAME
+    // with that same job's environment.json. `jdk` is derived from JVM_VERSION_RAW, the SAME
     // single `java -version` observation the manifest's escaped jvmVersion is built from, not a
     // second independent call.
 
@@ -902,16 +902,16 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * environment.json is written before the benchmark, so it is what a run that died early
-     * leaves behind — and it is what buys back the self-description the opaque run id gave up.
+     * environment.json is written before the benchmark, so it is what a job that died early
+     * leaves behind — and it is what buys back the self-description the opaque job id gave up.
      */
     @Test
-    void theManifestIdentifiesARunThatStoredNothing() {
+    void theManifestIdentifiesAJobThatStoredNothing() {
         String script = script(Map.of("project", "lynx-journal", "branch", "main"));
 
         assertThat(script).contains("\"project\": \"${PROJECT}\"")
             .contains("\"branch\": \"${BRANCH}\"")
-            .contains("\"requestId\": \"${REQUEST_ID}\"")
+            .contains("\"jobId\": \"${JOB_ID}\"")
             .contains("\"createdAt\": \"${CREATED_AT}\"");
         assertThat(script).contains("PROJECT=$(json_escape")
             .contains("BRANCH=$(json_escape");
@@ -926,19 +926,19 @@ class UserDataScriptBuilderTest {
     }
 
     @Test
-    void theBenchmarkJarComesFromTheRunsOwnInputPrefix() {
+    void theBenchmarkJarComesFromTheJobsOwnInputPrefix() {
         String script = script();
 
         assertThat(script).contains(
-            "export BENCHMARK_JAR_S3_KEY='runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar'");
+            "export BENCHMARK_JAR_S3_KEY='jobs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar'");
         assertThat(script).contains(
             "aws s3 cp \"s3://${S3_BUCKET}/${BENCHMARK_JAR_S3_KEY}\" /app/benchmark-under-test.jar");
-        assertThat(script).doesNotContain("/runs/${REQUEST_ID}/benchmark.jar");
+        assertThat(script).doesNotContain("/jobs/${JOB_ID}/benchmark.jar");
     }
 
     /**
      * The script is heredoc-heavy and nothing else parses it before cloud-init does, on a paid
-     * instance, after the watchdog has already started. A syntax error there costs a run and shows
+     * instance, after the watchdog has already started. A syntax error there costs a job and shows
      * up only in cloud-init-output.log.
      */
     @Test
@@ -966,8 +966,8 @@ class UserDataScriptBuilderTest {
         Path marker = tempDir.resolve("PWNED");
         String hostile = "x';touch " + marker + ";'";
         String encoded = new UserDataScriptBuilder().build(
-            hostile, hostile, hostile, hostile, "runs/" + hostile + "/id", hostile,
-            "runs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
+            hostile, hostile, hostile, hostile, "jobs/" + hostile + "/id", hostile,
+            "jobs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
             hostile, hostile, hostile, hostile, hostile,
             List.of(hostile), Map.of("project", hostile, "branch", hostile));
         String script = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
@@ -982,7 +982,7 @@ class UserDataScriptBuilderTest {
         assertThat(process.exitValue()).as("bash said: " + output).isZero();
         assertThat(Files.exists(marker)).as("an exported value must never run as shell").isFalse();
         assertThat(output.lines()).containsExactly(
-            "runs/" + hostile + "/id", "runs/" + hostile + "/id/input/benchmark.jar", hostile);
+            "jobs/" + hostile + "/id", "jobs/" + hostile + "/id/input/benchmark.jar", hostile);
     }
 
     /**

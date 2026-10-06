@@ -27,7 +27,7 @@ class TagKeysTest {
     }
 
     /**
-     * How a run was triggered is not something the instance observes, so reserving it would buy no
+     * How a job was triggered is not something the instance observes, so reserving it would buy no
      * protection — the reserved keys exist to stop a result's tags disagreeing with its own
      * environment.json. Leaving it caller-overridable is what lets a consumer label a nightly or
      * release run.

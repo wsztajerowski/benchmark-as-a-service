@@ -67,7 +67,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("  runnerInstanceProfile:    ").append(installation(config, BaasConfig::runnerInstanceProfile)).append('\n')
             .append("  amiPointer:               ").append(installation(config, BaasConfig::amiParameterPath)).append('\n')
             // subnetId and securityGroupId are deliberately absent: they are resolved from the
-            // stack on every run, so there is no local value to report and none to go stale.
+            // stack on every job, so there is no local value to report and none to go stale.
             .append("ec2:\n")
             .append("  defaultInstanceType:      ").append(config.getEc2().getDefaultInstanceType()).append('\n')
             .append("  benchmarkTimeoutSeconds:  ").append(config.getEc2().getBenchmarkTimeoutSeconds()).append('\n')

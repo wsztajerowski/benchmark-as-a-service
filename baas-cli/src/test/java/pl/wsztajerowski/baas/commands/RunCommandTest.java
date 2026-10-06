@@ -32,7 +32,7 @@ class RunCommandTest {
     }
 
     /**
-     * {@code --show-toplevel} returns the worktree directory, so a run launched from
+     * {@code --show-toplevel} returns the worktree directory, so a job launched from
      * {@code .claude/worktrees/ddb-phase3} was attributed to project {@code ddb-phase3} — a
      * partition {@code baas results} would never look in.
      */
@@ -98,7 +98,7 @@ class RunCommandTest {
     }
 
     /**
-     * Before the cutover, absent store configuration selected a no-op adapter: the run booted an
+     * Before the cutover, absent store configuration selected a no-op adapter: the job booted an
      * instance, measured, reported success and discarded every number. Failing here — before the
      * runner-image lookup, the upload and the launch — is what replaced that, so the cost of a
      * misconfigured CLI is an error message rather than a paid instance and no data.
@@ -157,8 +157,8 @@ class RunCommandTest {
     }
 
     /**
-     * The runner reads the project from this tag, while the S3 prefix and the run item take
-     * --project: a caller value stored the measurements under one project and the run under another.
+     * The runner reads the project from this tag, while the S3 prefix and the job item take
+     * --project: a caller value stored the measurements under one project and the job under another.
      */
     @Test
     void aProjectTagIsRejectedInFavourOfTheProjectOption() {
@@ -237,7 +237,7 @@ class RunCommandTest {
     // matters — verifying that CI and laptop runs are comparable.
 
     @Test
-    void aLaptopRunIsTaggedLocal() {
+    void aLaptopJobIsTaggedLocal() {
         var command = new RunCommand();
 
         assertThat(command.buildRunnerTags("jmh", "lynx-journal", Map.of()))
@@ -245,7 +245,7 @@ class RunCommandTest {
     }
 
     @Test
-    void aContinuousIntegrationRunIsTaggedCi() {
+    void aContinuousIntegrationJobIsTaggedCi() {
         var command = new RunCommand();
 
         assertThat(command.buildRunnerTags("jmh", "lynx-journal",
@@ -254,7 +254,7 @@ class RunCommandTest {
     }
 
     /**
-     * Unlike a machine-observed key, `source` is caller-overridable — it says how a run was
+     * Unlike a machine-observed key, `source` is caller-overridable — it says how a job was
      * triggered, which the instance never observes, so a supplied value cannot make a result's
      * tags disagree with its own environment.json. This is what lets a consumer label a nightly.
      */
@@ -280,7 +280,7 @@ class RunCommandTest {
 
     /**
      * Some environments set {@code CI=false} to opt out; honouring that is what stops a developer
-     * machine carrying a stray {@code CI} export from mislabelling every local run.
+     * machine carrying a stray {@code CI} export from mislabelling every local job.
      */
     @Test
     void ciSetToFalseIsNotContinuousIntegration() {
@@ -338,7 +338,7 @@ class RunCommandTest {
     }
 
     /**
-     * type is derived from the executed subcommand — overriding it would make a JMH run report
+     * type is derived from the executed subcommand — overriding it would make a JMH job report
      * type=jcstress while the manifest and the actual subcommand disagree, the same defect class
      * as the other five reserved keys.
      */
@@ -377,7 +377,7 @@ class RunCommandTest {
     }
 
     @Test
-    void aRunOutsideARepositoryStillCarriesItsProjectAndType() {
+    void aJobOutsideARepositoryStillCarriesItsProjectAndType() {
         var command = new RunCommand();
 
         assertThat(command.buildRunnerTags("jmh", "explicit-project"))
@@ -403,7 +403,7 @@ class RunCommandTest {
     }
 
     /**
-     * Every run records its status in the results table, so there is no run without one; the
+     * Every job records its status in the results table, so there is no job without one; the
      * option that discarded measurements is gone rather than kept as a no-op.
      */
     @Test
@@ -506,7 +506,7 @@ class RunCommandTest {
     }
 
     /**
-     * A reactor build cannot name a release, so it cannot pin the runner JAR a run executes. The
+     * A reactor build cannot name a release, so it cannot pin the runner JAR a job executes. The
      * refusal is the same no-fallback stance the runner AMI takes, and it lands before the project
      * or results table is resolved, before any upload and before the first AWS client is
      * constructed — reachable in a unit test precisely because nothing AWS-shaped happens first.

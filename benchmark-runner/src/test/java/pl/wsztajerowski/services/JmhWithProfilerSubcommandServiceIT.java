@@ -105,7 +105,7 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
     /**
      * Only {@code async} and {@code jfr} write artifacts into a per-benchmark directory; the profilers
      * reporting secondary metrics alone ({@code gc}, {@code comp}, {@code cl}, ...) create none. The
-     * test above always includes {@code jfr}, which is how a run with {@code gc} alone could fail
+     * test above always includes {@code jfr}, which is how a job with {@code gc} alone could fail
      * after the benchmark finished, before its measurements were stored (finding A12).
      */
     @Test
@@ -144,7 +144,7 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
         // then
         String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
         helper.assertFindResult(collectionName,
-            new BsonDocument("measurement.requestId", new BsonString("req-gc-only")), documents ->
+            new BsonDocument("measurement.jobId", new BsonString("req-gc-only")), documents ->
                 assertThat(documents.first())
                     .isNotNull()
                     .extracting("measurement", as(MAP))

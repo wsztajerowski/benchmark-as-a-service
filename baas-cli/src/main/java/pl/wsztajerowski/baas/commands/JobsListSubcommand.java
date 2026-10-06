@@ -16,8 +16,8 @@ import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.model.TagKeys;
-import pl.wsztajerowski.baas.runs.DynamoDbRunRecorder;
-import pl.wsztajerowski.baas.runs.RunListing;
+import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
+import pl.wsztajerowski.baas.jobs.JobListing;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -33,13 +33,13 @@ import java.util.concurrent.Callable;
 @Command(
     name = "list",
     mixinStandardHelpOptions = true,
-    description = "The most recent runs of every project and status, newest first. A run whose "
+    description = "The most recent jobs of every project and status, newest first. A job whose "
         + "instance is gone without an outcome shows as vanished.",
     separator = " "
 )
-public class RunsListSubcommand implements Callable<Integer> {
+public class JobsListSubcommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(RunsListSubcommand.class);
+    private static final Logger logger = LoggerFactory.getLogger(JobsListSubcommand.class);
 
     static final List<String> FORMATS = List.of("table", "json", "csv");
 
@@ -47,7 +47,7 @@ public class RunsListSubcommand implements Callable<Integer> {
         DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm", Locale.ROOT).withZone(ZoneOffset.UTC);
 
     private static final List<Column> COLUMNS = List.of(
-        Column.left("RUN_ID", 28),
+        Column.left("JOB_ID", 28),
         Column.left("PROJECT", 24),
         Column.left("STATUS", 13),
         Column.left("SOURCE", 6),
@@ -63,16 +63,16 @@ public class RunsListSubcommand implements Callable<Integer> {
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
 
-    @Option(names = "--limit", defaultValue = "20", description = "Maximum runs to show (default 20).")
+    @Option(names = "--limit", defaultValue = "20", description = "Maximum jobs to show (default 20).")
     int limit;
 
-    @Option(names = "--in-flight", description = "Only runs whose instance is pending or running.")
+    @Option(names = "--in-flight", description = "Only jobs whose instance is pending or running.")
     boolean inFlight;
 
-    @Option(names = "--project", description = "Only this project's runs.")
+    @Option(names = "--project", description = "Only this project's jobs.")
     String project;
 
-    @Option(names = "--tag", description = "Only runs carrying this tag (key=value), repeatable; all must match.")
+    @Option(names = "--tag", description = "Only jobs carrying this tag (key=value), repeatable; all must match.")
     Map<String, String> tags = new LinkedHashMap<>();
 
     @Option(names = "--format", defaultValue = "table", description = "Output format: table (default), json, csv.")
@@ -93,27 +93,27 @@ public class RunsListSubcommand implements Callable<Integer> {
         var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
 
         // One DescribeInstances of the live runners decides every row: its size is bounded by what
-        // is running, not by how many runs vanished before.
+        // is running, not by how many jobs vanished before.
         Map<String, String> live = new HashMap<>();
         try (var ec2 = factory.ec2()) {
             for (var runner : new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances()) {
-                if (runner.runId() != null) {
-                    live.put(runner.runId(), runner.instanceId());
+                if (runner.jobId() != null) {
+                    live.put(runner.jobId(), runner.instanceId());
                 }
             }
         }
-        List<RunListing.Row> rows;
+        List<JobListing.Row> rows;
         try (var dynamoDb = factory.dynamoDb()) {
-            rows = new DynamoDbRunRecorder(dynamoDb, config.resultsTable())
-                .newestFirst(RunListing.filter(project, tags, inFlight, live), limit).stream()
-                .map(run -> RunListing.resolve(run, live))
+            rows = new DynamoDbJobRecorder(dynamoDb, config.resultsTable())
+                .newestFirst(JobListing.filter(project, tags, inFlight, live), limit).stream()
+                .map(job -> JobListing.resolve(job, live))
                 .toList();
         }
         print(rows, Instant.now());
         return 0;
     }
 
-    void print(List<RunListing.Row> rows, Instant now) {
+    void print(List<JobListing.Row> rows, Instant now) {
         switch (format.toLowerCase(Locale.ROOT)) {
             case "json" -> printJson(rows);
             case "csv" -> printCsv(rows);
@@ -122,59 +122,59 @@ public class RunsListSubcommand implements Callable<Integer> {
     }
 
     /** Command payload, so it goes to the {@link Console}; an empty answer is payload too. */
-    private void printTable(List<RunListing.Row> rows, Instant now) {
+    private void printTable(List<JobListing.Row> rows, Instant now) {
         var out = console();
         if (rows.isEmpty()) {
-            out.println(inFlight ? "No runs in flight." : "No runs found.");
+            out.println(inFlight ? "No jobs in flight." : "No jobs found.");
             return;
         }
         var table = new Table(out, 140, COLUMNS);
         table.printHeader();
         for (var row : rows) {
-            var run = row.run();
-            String instance = row.liveInstanceId() != null ? row.liveInstanceId() : run.instanceId();
+            var job = row.job();
+            String instance = row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId();
             table.printRow(
-                run.runId(),
-                run.project(),
+                job.jobId(),
+                job.project(),
                 row.status(),
-                orDash(run.tags().get(TagKeys.SOURCE)),
+                orDash(job.tags().get(TagKeys.SOURCE)),
                 orDash(instance),
-                orDash(run.instanceType()),
-                STARTED.format(run.createdAt()),
-                row.inFlight() ? elapsed(Duration.between(run.createdAt(), now)) : "—");
+                orDash(job.instanceType()),
+                STARTED.format(job.createdAt()),
+                row.inFlight() ? elapsed(Duration.between(job.createdAt(), now)) : "—");
             // A failed launch's reason, on its own line so no column moves for it.
-            if (run.errorCode() != null) {
-                out.println("  " + run.errorCode());
+            if (job.errorCode() != null) {
+                out.println("  " + job.errorCode());
             }
         }
     }
 
-    private void printJson(List<RunListing.Row> rows) {
+    private void printJson(List<JobListing.Row> rows) {
         var out = console();
         out.println("[");
         for (int i = 0; i < rows.size(); i++) {
             var row = rows.get(i);
-            var run = row.run();
-            out.printf("  {\"runId\":%s,\"project\":%s,\"status\":%s,\"storedStatus\":%s,\"instanceId\":%s,"
+            var job = row.job();
+            out.printf("  {\"jobId\":%s,\"project\":%s,\"status\":%s,\"storedStatus\":%s,\"instanceId\":%s,"
                     + "\"instanceType\":%s,\"createdAt\":%s,\"resultPath\":%s,\"errorCode\":%s,\"tags\":%s}%s%n",
-                json(run.runId()), json(run.project()), json(row.status()), json(run.status()),
-                json(row.liveInstanceId() != null ? row.liveInstanceId() : run.instanceId()),
-                json(run.instanceType()), json(run.createdAt().toString()), json(run.resultPath()),
-                json(run.errorCode()), ResultsCommand.jsonObject(run.tags()), i < rows.size() - 1 ? "," : "");
+                json(job.jobId()), json(job.project()), json(row.status()), json(job.status()),
+                json(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
+                json(job.instanceType()), json(job.createdAt().toString()), json(job.resultPath()),
+                json(job.errorCode()), ResultsCommand.jsonObject(job.tags()), i < rows.size() - 1 ? "," : "");
         }
         out.println("]");
     }
 
-    private void printCsv(List<RunListing.Row> rows) {
+    private void printCsv(List<JobListing.Row> rows) {
         var out = console();
-        out.println("runId,project,status,storedStatus,instanceId,instanceType,createdAt,resultPath,errorCode,tags");
+        out.println("jobId,project,status,storedStatus,instanceId,instanceType,createdAt,resultPath,errorCode,tags");
         for (var row : rows) {
-            var run = row.run();
+            var job = row.job();
             out.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
-                run.runId(), run.project(), row.status(), nullToEmpty(run.status()),
-                nullToEmpty(row.liveInstanceId() != null ? row.liveInstanceId() : run.instanceId()),
-                nullToEmpty(run.instanceType()), run.createdAt(), nullToEmpty(run.resultPath()),
-                nullToEmpty(run.errorCode()), ResultsCommand.csvField(ResultsCommand.csvTags(run.tags())));
+                job.jobId(), job.project(), row.status(), nullToEmpty(job.status()),
+                nullToEmpty(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
+                nullToEmpty(job.instanceType()), job.createdAt(), nullToEmpty(job.resultPath()),
+                nullToEmpty(job.errorCode()), ResultsCommand.csvField(ResultsCommand.csvTags(job.tags())));
         }
     }
 

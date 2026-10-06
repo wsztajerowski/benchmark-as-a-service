@@ -9,7 +9,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 @Command(
     name = "env",
     mixinStandardHelpOptions = true,
-    description = "Compare the environments two runs measured on.",
+    description = "Compare the environments two jobs measured on.",
     subcommands = EnvDiffSubcommand.class
 )
 public class EnvCommand implements Runnable {

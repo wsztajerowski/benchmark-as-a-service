@@ -60,7 +60,7 @@ public class JmhWithProfilerSubcommandService {
             logger.info("Saving benchmark profiler(s) process output on S3");
             storageService
                 .saveFile(outputPath.resolve("jmh-profiler-output.txt"), jmhOptions.outputOptions().processOutput());
-            RunLogs.upload(storageService, outputPath);
+            JobLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -78,7 +78,7 @@ public class JmhWithProfilerSubcommandService {
             storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
             this::profilerOutputPathFor);
 
-        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
+        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);
     }
 
@@ -96,7 +96,7 @@ public class JmhWithProfilerSubcommandService {
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
             Path storageDir = Path.of(profilerOutputPathFor(jmhResult));
             // Only async and jfr write a per-benchmark directory; gc, comp, cl and the rest report
-            // secondary metrics and create none. Listing a missing one failed the run after the
+            // secondary metrics and create none. Listing a missing one failed the job after the
             // benchmark had finished, before its measurements were stored.
             if (!Files.isDirectory(storageDir)) {
                 logger.debug("No profiler artifacts for {}", jmhResult.benchmark());

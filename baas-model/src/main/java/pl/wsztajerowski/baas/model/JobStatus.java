@@ -3,14 +3,14 @@ package pl.wsztajerowski.baas.model;
 import java.util.List;
 
 /**
- * The run item's status vocabulary, defined once: the CLI's conditional writes, user-data's
- * {@code run_status} and every reader classify a status through this class, so "terminal" cannot
+ * The job item's status vocabulary, defined once: the CLI's conditional writes, user-data's
+ * {@code job_status} and every reader classify a status through this class, so "terminal" cannot
  * mean one thing to the writer and another to the guard that protects it.
  *
  * <p>Stored as plain strings rather than an enum because {@code failed:<exitCode>} carries a value,
  * and because the shell writes them.
  */
-public final class RunStatus {
+public final class JobStatus {
 
     public static final String LAUNCHING = "launching";
     public static final String LAUNCHED = "launched";
@@ -31,7 +31,7 @@ public final class RunStatus {
     /** The terminal statuses matched exactly; {@code failed:<n>} is matched by prefix. */
     public static final List<String> EXACT_TERMINAL = List.of(COMPLETED, TIMED_OUT, CANCELLED, LAUNCH_FAILED);
 
-    private RunStatus() {}
+    private JobStatus() {}
 
     public static String failed(int exitCode) {
         return FAILED_PREFIX + exitCode;

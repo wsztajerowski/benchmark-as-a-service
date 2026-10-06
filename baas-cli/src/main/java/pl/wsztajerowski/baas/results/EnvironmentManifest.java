@@ -10,12 +10,12 @@ import java.util.Optional;
 import java.util.TreeSet;
 
 /**
- * One run's {@code <result-path>/environment.json} — the observation, as opposed to the
+ * One job's {@code <result-path>/environment.json} — the observation, as opposed to the
  * declaration in {@code infra/runner-image.yaml}.
  *
  * <p>Held as a flat {@code Map} rather than a record with named fields on purpose: a manifest
  * written by a newer runner carries fields this CLI has never heard of, and those are exactly the
- * ones worth reporting when two runs disagree. A record would silently drop them.
+ * ones worth reporting when two jobs disagree. A record would silently drop them.
  */
 public record EnvironmentManifest(String resultPath, Map<String, String> fields) {
 

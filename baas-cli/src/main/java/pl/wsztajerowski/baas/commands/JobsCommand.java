@@ -12,12 +12,12 @@ import pl.wsztajerowski.baas.LoggingMixin;
  * {@code terminate} beside read-only listing options.
  */
 @Command(
-    name = "runs",
+    name = "jobs",
     mixinStandardHelpOptions = true,
-    description = "List benchmark runs, and stop one that is still in flight.",
-    subcommands = {RunsListSubcommand.class, RunsTerminateSubcommand.class}
+    description = "List benchmark jobs, and stop one that is still in flight.",
+    subcommands = {JobsListSubcommand.class, JobsTerminateSubcommand.class}
 )
-public class RunsCommand implements Runnable {
+public class JobsCommand implements Runnable {
 
     @Mixin LoggingMixin loggingMixin;
 

@@ -8,17 +8,17 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class RunIdTest {
+class JobIdTest {
 
     @Test
     void hasFixedWidth() {
-        assertThat(RunId.generate()).hasSize(RunId.LENGTH);
-        assertThat(RunId.generate(Instant.parse("2026-01-01T00:00:00Z"))).hasSize(RunId.LENGTH);
+        assertThat(JobId.generate()).hasSize(JobId.LENGTH);
+        assertThat(JobId.generate(Instant.parse("2026-01-01T00:00:00Z"))).hasSize(JobId.LENGTH);
     }
 
     @Test
     void usesAnAlphabetThatCannotCorruptASortKey() {
-        String id = RunId.generate();
+        String id = JobId.generate();
         assertThat(id).matches("[0-9A-Za-z-]+");
         assertThat(id).doesNotContain(ResultKeys.SEPARATOR).doesNotContain("/");
     }
@@ -31,7 +31,7 @@ class RunIdTest {
             Instant.parse("2026-01-31T23:59:59.999Z"),
             Instant.parse("2026-02-01T00:00:00.000Z"));
 
-        List<String> ids = new ArrayList<>(chronological.stream().map(RunId::generate).toList());
+        List<String> ids = new ArrayList<>(chronological.stream().map(JobId::generate).toList());
         List<String> sorted = new ArrayList<>(ids);
         sorted.sort(String::compareTo);
 
@@ -41,12 +41,12 @@ class RunIdTest {
     @Test
     void twoIdsFromTheSameInstantDiffer() {
         Instant fixed = Instant.parse("2026-08-20T17:44:32.812Z");
-        assertThat(RunId.generate(fixed)).isNotEqualTo(RunId.generate(fixed));
+        assertThat(JobId.generate(fixed)).isNotEqualTo(JobId.generate(fixed));
     }
 
     @Test
     void encodesTheInstantAtMillisecondPrecision() {
-        assertThat(RunId.generate(Instant.parse("2026-08-20T17:44:32.812Z")))
+        assertThat(JobId.generate(Instant.parse("2026-08-20T17:44:32.812Z")))
             .startsWith("20260820T174432812Z-");
     }
 
@@ -55,14 +55,14 @@ class RunIdTest {
         String sk = "com.example.Bench" + ResultKeys.SEPARATOR + "method"
             + ResultKeys.SEPARATOR + "thrpt"
             + ResultKeys.SEPARATOR + "2026-08-20T17:44:32.812Z"
-            + ResultKeys.SEPARATOR + RunId.generate();
+            + ResultKeys.SEPARATOR + JobId.generate();
         assertThat(sk.split(ResultKeys.SEPARATOR)).hasSize(5);
     }
 
     @Test
     void theDeclaredLengthMatchesTheFormat() {
-        assertThat(RunId.LENGTH).isEqualTo(28);
-        assertThat(RunId.generate(Instant.parse("2026-08-20T17:44:32.812Z")))
-            .hasSize(RunId.LENGTH);
+        assertThat(JobId.LENGTH).isEqualTo(28);
+        assertThat(JobId.generate(Instant.parse("2026-08-20T17:44:32.812Z")))
+            .hasSize(JobId.LENGTH);
     }
 }

@@ -24,7 +24,7 @@ class CoreTemplateTest {
 
 /**
      * Inverted, not deleted. This assertion previously pinned 27017's PRESENCE, because Atlas does
-     * not serve clients on 443 and omitting the rule made every run fail at the database write.
+     * not serve clients on 443 and omitting the rule made every job fail at the database write.
      * Measurements go to DynamoDB over a gateway endpoint now, so the rule grants egress nothing
      * uses — and a security group rule nobody can explain is one somebody restores. Keeping the
      * test as a negative is what makes its removal deliberate rather than reversible by accident.
@@ -118,7 +118,7 @@ class CoreTemplateTest {
     }
 
     /**
-     * Suspended, not enabled: results are write-once and a run id carries 32 bits of entropy, so
+     * Suspended, not enabled: results are write-once and a job id carries 32 bits of entropy, so
      * the overwrite versioning guarded against no longer has a mechanism. Stated rather than
      * implied — there is now no server-side recovery from one.
      */
@@ -132,14 +132,14 @@ class CoreTemplateTest {
     }
 
     /**
-     * The deleted rule's premise — everything under {@code runs/} is re-creatable from source — is
+     * The deleted rule's premise — everything under {@code jobs/} is re-creatable from source — is
      * exactly what the unified layout falsifies: results live there now, and the uploaded JAR is
      * the only copy of what a measurement actually ran. Asserted as an absence so the rule cannot
      * come back unnoticed.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void noLifecycleRuleExpiresCurrentObjectsUnderRuns() {
+    void noLifecycleRuleExpiresCurrentObjectsUnderJobs() {
         var lifecycle = (Map<String, Object>)
             InfraFixtures.properties(template, "S3MainBucket").get("LifecycleConfiguration");
         var rules = (List<Map<String, Object>>) lifecycle.get("Rules");
@@ -341,7 +341,7 @@ class CoreTemplateTest {
             ((Map<String, Object>) distributions.getFirst().get("AmiDistributionConfiguration")).get("AmiTags");
 
         assertThat(amiTags)
-            .as("baas admin image and every run read the image's identity from this tag; with an "
+            .as("baas admin image and every job read the image's identity from this tag; with an "
                 + "extension it must name the extension too, or the image passes for a stock one")
             .containsEntry("baas-image-version", "RunnerImageLabel");
     }
@@ -404,7 +404,7 @@ class CoreTemplateTest {
             .toList();
 
         assertThat(statements)
-            .as("named slots or a second pointer would let two runs disagree about which image "
+            .as("named slots or a second pointer would let two jobs disagree about which image "
                 + "'the' image is")
             .containsExactly(
                 "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id");
@@ -459,12 +459,12 @@ class CoreTemplateTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void theResultsTableHasExactlyOneIndexKeyedOnRequestId() {
+    void theResultsTableHasExactlyOneIndexKeyedOnJobId() {
         var properties = InfraFixtures.properties(template, "ResultsTable");
         var indexes = (List<Map<String, Object>>) properties.get("GlobalSecondaryIndexes");
 
         assertThat(indexes).hasSize(1);
-        assertThat(indexes.get(0).get("IndexName")).isEqualTo(ResultKeys.REQUEST_ID_INDEX_NAME);
+        assertThat(indexes.get(0).get("IndexName")).isEqualTo(ResultKeys.JOB_ID_INDEX_NAME);
 
         var keySchema = (List<Map<String, Object>>) indexes.get(0).get("KeySchema");
         assertThat(keySchema).hasSize(2);
@@ -523,11 +523,11 @@ class CoreTemplateTest {
     }
 
     /**
-     * The runner's puts are confined to measurement partitions, so it cannot forge a run item,
-     * and its one update is confined to the RUN partition, so it cannot rewrite a measurement.
+     * The runner's puts are confined to measurement partitions, so it cannot forge a job item,
+     * and its one update is confined to the JOB partition, so it cannot rewrite a measurement.
      */
     @Test
-    void theRunnerPutsOnlyMeasurementsAndUpdatesOnlyRunItems() {
+    void theRunnerPutsOnlyMeasurementsAndUpdatesOnlyJobItems() {
         var runner = dynamoDbPolicyDocumentFor("RunnerRole");
 
         assertThat(leadingKeysCondition(runner, "dynamodb:PutItem"))
@@ -535,14 +535,14 @@ class CoreTemplateTest {
         assertThat(leadingKeysCondition(runner, "dynamodb:BatchWriteItem"))
             .isEqualTo(Map.of("ForAllValues:StringLike", List.of("RESULT#*")));
         assertThat(leadingKeysCondition(runner, "dynamodb:UpdateItem"))
-            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("RUN")));
+            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("JOB")));
     }
 
-    /** The operator's first write on the table, and it reaches run items only. */
+    /** The operator's first write on the table, and it reaches job items only. */
     @Test
-    void theOperatorUpdatesOnlyRunItems() {
+    void theOperatorUpdatesOnlyJobItems() {
         assertThat(leadingKeysCondition(dynamoDbPolicyDocumentFor("OperatorRole"), "dynamodb:UpdateItem"))
-            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("RUN")));
+            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("JOB")));
     }
 
     /**
@@ -639,12 +639,12 @@ class CoreTemplateTest {
 
     /**
      * A session that expired mid-poll would leave the shell watchdog as the only termination
-     * layer: the job goes red, the measurement is fine and the full instance-lifetime is billed.
+     * layer: the CI job goes red, the measurement is fine and the full instance-lifetime is billed.
      * Strictly above the 7500 s wall-clock default, because terminating the instance needs
-     * credentials too — after the run has finished.
+     * credentials too — after the job has finished.
      */
     @Test
-    void theOperatorSessionOutlastsTheRunItPolls() {
+    void theOperatorSessionOutlastsTheJobItPolls() {
         assertThat((Integer) InfraFixtures.properties(template, "OperatorRole")
             .get("MaxSessionDuration"))
             .isGreaterThan(7500);

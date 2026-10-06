@@ -280,7 +280,7 @@ class SetupCommandTest {
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
-    /** Onboarding steps are true only of a stack this run created (U17). */
+    /** Onboarding steps are true only of a stack this job created (U17). */
     @Test
     void anUpdateDoesNotClaimTheOperatorRoleWasJustCreated() {
         String arn = "arn:aws:iam::123456789012:role/baas-123456789012-role-operator";

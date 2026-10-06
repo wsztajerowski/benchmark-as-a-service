@@ -58,9 +58,9 @@ class Ec2ProvisioningServiceTest {
 
         var tags = ec2.request.tagSpecifications().getFirst().tags();
         assertThat(tags).extracting(Tag::key)
-            .containsExactlyInAnyOrder("project", "baas-role", "baas-request-id");
+            .containsExactlyInAnyOrder("project", "baas-role", "baas-job-id");
         assertThat(tags).extracting(Tag::key).doesNotHaveDuplicates();
-        assertThat(tags).filteredOn(tag -> tag.key().equals("baas-request-id"))
+        assertThat(tags).filteredOn(tag -> tag.key().equals("baas-job-id"))
             .extracting(Tag::value).containsExactly("20261002T080250645Z-264f5dfb");
     }
 
@@ -80,13 +80,13 @@ class Ec2ProvisioningServiceTest {
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
     }
 
-    /** Teardown and `baas runs list` name runs from the tag, with no read of the results table. */
+    /** Teardown and `baas jobs list` name runs from the tag, with no read of the results table. */
     @Test
-    void eachLiveRunnerCarriesItsRunIdFromTheTag() {
+    void eachLiveRunnerCarriesItsJobIdFromTheTag() {
         var ec2 = new CapturingEc2();
         ec2.answer = DescribeInstancesResponse.builder().reservations(r -> r.instances(
             Instance.builder().instanceId("i-1").state(s -> s.name("running"))
-                .tags(Tag.builder().key("baas-request-id").value("20261003T000000000Z-a3f9c21b").build()).build(),
+                .tags(Tag.builder().key("baas-job-id").value("20261003T000000000Z-a3f9c21b").build()).build(),
             Instance.builder().instanceId("i-2").state(s -> s.name("pending")).build())).build();
 
         assertThat(new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances()).containsExactly(
@@ -95,7 +95,7 @@ class Ec2ProvisioningServiceTest {
     }
 
     @Test
-    void aRunsLiveInstanceIsFoundByItsRunIdTag() {
+    void aJobsLiveInstanceIsFoundByItsJobIdTag() {
         var ec2 = new CapturingEc2();
         ec2.answer = DescribeInstancesResponse.builder()
             .reservations(r -> r.instances(Instance.builder().instanceId("i-9").build())).build();
@@ -103,7 +103,7 @@ class Ec2ProvisioningServiceTest {
         assertThat(new Ec2ProvisioningService(ec2).findLive("run-1")).contains("i-9");
         assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
             .containsExactlyInAnyOrder(
-                org.assertj.core.groups.Tuple.tuple("tag:baas-request-id", java.util.List.of("run-1")),
+                org.assertj.core.groups.Tuple.tuple("tag:baas-job-id", java.util.List.of("run-1")),
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
     }
 

@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The detection rule every terminal effect hangs on. The environment is passed in, so these run
+ * The detection rule every terminal effect hangs on. The environment is passed in, so these job
  * without a terminal; what the JVM reports on a real one is the design's spike, not a unit test.
  */
 class ConsoleTest {

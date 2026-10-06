@@ -8,36 +8,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 class DownloadArgumentTest {
 
     @Test
-    void aRunIdentifierIsRecognised() {
-        assertThat(RunReference.looksLikeRunId("20260820T174432812Z-a3f9c21b")).isTrue();
+    void aJobIdentifierIsRecognised() {
+        assertThat(JobReference.looksLikeJobId("20260820T174432812Z-a3f9c21b")).isTrue();
     }
 
-    /** The branch that keeps every run stored before the unified layout retrievable. */
+    /** The branch that keeps every job stored before the unified layout retrievable. */
     @Test
-    void anOldLayoutPathIsNotARunIdentifier() {
-        assertThat(RunReference.looksLikeRunId("main/jmh/20260819_090000")).isFalse();
+    void anOldLayoutPathIsNotAJobIdentifier() {
+        assertThat(JobReference.looksLikeJobId("main/jmh/20260819_090000")).isFalse();
     }
 
     @Test
-    void aNewLayoutPathIsNotARunIdentifier() {
-        assertThat(RunReference.looksLikeRunId("runs/lynx-journal/20260820T174432812Z-a3f9c21b"))
+    void aNewLayoutPathIsNotAJobIdentifier() {
+        assertThat(JobReference.looksLikeJobId("jobs/lynx-journal/20260820T174432812Z-a3f9c21b"))
             .isFalse();
     }
 
     @Test
-    void aLegacyRequestIdIsNotMistakenForOne() {
-        assertThat(RunReference.looksLikeRunId("jmh-20260819_090000")).isFalse();
+    void aLegacyJobIdIsNotMistakenForOne() {
+        assertThat(JobReference.looksLikeJobId("jmh-20260819_090000")).isFalse();
     }
 
     @Test
-    void nothingIsNotARunIdentifier() {
-        assertThat(RunReference.looksLikeRunId(null)).isFalse();
-        assertThat(RunReference.looksLikeRunId("")).isFalse();
+    void nothingIsNotAJobIdentifier() {
+        assertThat(JobReference.looksLikeJobId(null)).isFalse();
+        assertThat(JobReference.looksLikeJobId("")).isFalse();
     }
 
     @Test
     void aLiteralPathNeedsNoResultsTable() {
-        assertThat(RunReference.looksLikeRunId("main/jmh/20260819_090000"))
+        assertThat(JobReference.looksLikeJobId("main/jmh/20260819_090000"))
             .as("the literal-path branch never reaches the table lookup")
             .isFalse();
     }

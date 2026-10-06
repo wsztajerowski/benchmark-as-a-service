@@ -369,7 +369,7 @@ public class SetupCommand implements Callable<Integer> {
     }
 
     /**
-     * What to do next. The onboarding steps are true only of a stack this run created: on an update
+     * What to do next. The onboarding steps are true only of a stack this job created: on an update
      * the operator role already existed — someone may well be assuming it — and the image may be
      * built, so repeating "nobody can assume it yet" and "build the image" there was simply wrong.
      */
@@ -380,7 +380,7 @@ public class SetupCommand implements Callable<Integer> {
         }
         // Setup deliberately does not build the image — that is a ~15-minute operation and every
         // re-setup would pay for it. It is a hard precondition of `baas run`, so say so here
-        // rather than letting the first run be where the user finds out.
+        // rather than letting the first job be where the user finds out.
         return """
             BaasCliOperatorRole created: %s
             Nobody can assume it yet. Two one-time steps:
@@ -534,7 +534,7 @@ public class SetupCommand implements Callable<Integer> {
      * deployed value and the submitted one and submits nothing, so the operator can decide.
      *
      * <p>Replacing a subnet or security group under a running installation moves resource ids that
-     * other machines' configuration and in-flight runs are holding, which is why this is immutable
+     * other machines' configuration and in-flight jobs are holding, which is why this is immutable
      * rather than merely discouraged.
      */
     static void requireNetworkingUnchanged(Map<String, String> submitted,
