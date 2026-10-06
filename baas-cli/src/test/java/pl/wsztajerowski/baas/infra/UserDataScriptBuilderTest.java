@@ -648,8 +648,8 @@ class UserDataScriptBuilderTest {
     @Test
     void manifestSchemaVersionIsBumpedForTheNewField() {
         assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION)
-            .as("4 added jvmVendor, jvmVendorVersion and jvmName")
-            .isEqualTo(4);
+            .as("4 added jvmVendor, jvmVendorVersion and jvmName; 5 renamed requestId to jobId")
+            .isEqualTo(5);
     }
 
     // ─── JVM vendor ──────────────────────────────────────────────────────────────
