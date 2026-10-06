@@ -33,7 +33,7 @@ recommendations for all of them may be written out together; the *questions* are
 ## What this is
 
 Runs JMH and JCStress benchmarks on throwaway EC2 instances. Measurements go to a DynamoDB table,
-one item per measurement, and each run's status to one run item in the same table; process output,
+one item per measurement, and each job's status to one job item in the same table; process output,
 the verbatim result JSON and profiling artifacts go to S3.
 
 | Module | Runs where |
@@ -44,7 +44,7 @@ the verbatim result JSON and profiling artifacts go to S3.
 | `fake-jmh-benchmarks`, `fake-stress-tests` | Test fixtures |
 
 One trigger path: `baas run`. CI does not have a second one — `e2e-cloud-test.yml` is two
-`ubuntu-latest` jobs that federate into `OperatorRole` and call `baas run`, so a regression in the
+`ubuntu-latest` CI jobs that federate into `OperatorRole` and call `baas run`, so a regression in the
 CLI cannot pass CI. `benchmark-runner.yml`, `exec-single-benchmark.yml`, `start-ec2-runner.yml`,
 `stop-ec2-runner.yml` and the `act` harness under `.github/test/` are deleted; the consumer
 contract is *install the CLI*, not *call our reusable workflow*.
@@ -55,7 +55,7 @@ ends the statement). **Every `.mmd` edit is rendered and looked at before it is 
 `mmdc -i docs/diagrams/<file>.mmd -o <scratch>/<file>.png`, then open the PNG and check the change reads as
 intended — a clean exit only proves it parsed, not that the arrow landed in the right branch. The render stays out
 of the repository. Mermaid CLI is installed globally (`npm install -g @mermaid-js/mermaid-cli`); nothing in CI
-renders these files, so a broken diagram is otherwise found by its next reader. State machines for the installation, an operator machine and a run: `docs/diagrams/baas-states-*.mmd`. Design rationale and open risks:
+renders these files, so a broken diagram is otherwise found by its next reader. State machines for the installation, an operator machine and a job: `docs/diagrams/baas-states-*.mmd`. Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md); later decisions, and the hardenings declined
 with their reasons, in `docs/adr/0002`–`0005`. Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
@@ -83,7 +83,7 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
 **User-data generation (`UserDataScriptBuilder`)**
 
 - **No `set -e`.** If the IMDSv2 instance-id fetch fails under `set -e`, the script exits *before*
-  starting the watchdog and orphans the instance. Errors are handled by exit code and the run
+  starting the watchdog and orphans the instance. Errors are handled by exit code and the job
   item's status instead. (The Image Builder component rendered by `RunnerImageRenderer`
   *does* use `set -euxo pipefail` — opposite context: a half-installed toolchain must abort the
   bake, and there is no paid instance to orphan.)
@@ -92,11 +92,11 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
 - **Comment-only lines are stripped from `SCRIPT_BODY` when it is rendered.** EC2 refuses user-data
   over 16 KB raw, and the comments were most of the script. So a line beginning with `#` never
   reaches the instance — nothing may depend on one, inside the manifest heredoc included.
-  `aLargeRunStaysWellUnderTheUserDataLimit` holds an outsized run under 12 KB.
+  `aLargeJobStaysWellUnderTheUserDataLimit` holds an outsized run under 12 KB.
 - **User-data installs nothing.** No `yum`, no JDK, no async-profiler download. The toolchain is
   baked into the AMI by `baas admin build-image`; a runner that installed its own would measure on
   a slightly different machine every time, which is the drift this design exists to remove.
-- **The environment manifest is written and uploaded *before* the benchmark starts.** A run that
+- **The environment manifest is written and uploaded *before* the benchmark starts.** A job that
   crashes still has to say what it crashed on — same reasoning as `cloud-init-output.log`.
 - **Every manifest value is captured into a shell variable first.** The heredoc body is nothing but
   `${VAR}` references. Inlining command substitutions puts quotes, parens and awk programs inside a
@@ -107,20 +107,20 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   `ResultsQueryService` reads the item's top-level `tags` map; tagging the *instance* leaves every stored
   result with a null `imageVersion`, and `--tag`/`--group-by` on it silently match nothing. The tag values are the
   ones observed on the box, so a result's tags cannot disagree with its own `environment.json`.
-- **The benchmark runs from `/app`, never `/`.** The runner (`RunLogs`, every benchmark type) scans
+- **The benchmark runs from `/app`, never `/`.** The runner (`JobLogs`, every benchmark type) scans
   below its working directory for `.log` files to upload, and cloud-init starts user-data in `/`.
   The walk itself is now bounded — 8 levels, unreadable entries skipped — so from `/` it would no
   longer abort on vanishing `/proc` entries, but it would still ship any `.log` the root filesystem
-  holds into the run's results.
+  holds into the job's results.
 - **The results table name *does* go into user-data, and that is deliberate.** It replaced an SSM
   fetch of the mongo connection string, which had to stay out of instance metadata because it
   carried credentials. A table name carries none — access comes from `RunnerRole`, not from knowing
-  the name — so fetching it at boot would buy nothing and cost a round trip on every run. Don't
+  the name — so fetching it at boot would buy nothing and cost a round trip on every job. Don't
   "restore" the SSM indirection.
 - **`baas run` forwards `project` and every `--tag` — `branch` and `commit` included — to the
   *runner*, and never to the instance.** They reach the item's top-level `tags` map, which is the
   only query surface `baas results` has. The instance carries only `project=baas`, `baas-role` and
-  `baas-request-id` (`Ec2ProvisioningService.instanceTags`, which takes no extra tags on purpose): a
+  `baas-job-id` (`Ec2ProvisioningService.instanceTags`, which takes no extra tags on purpose): a
   copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
   was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
   machine-observed key (`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`,
@@ -138,16 +138,16 @@ The watchdog is the only one that survives a deadlocked JVM.
    is there because the watchdog counts from launch and `timeout` from JVM start — below it the
    instance can die before its final status is written. `RunCommand.watchdogBound` is the one place
    the bound is computed; it is also the CLI's poll cap. The watchdog records `timed-out` before
-   its log upload, through `run_status` — which is why that function is defined *before* the
+   its log upload, through `job_status` — which is why that function is defined *before* the
    watchdog forks: a subshell sees only the functions defined before it, and `bash -n` would not
    notice the difference
 2. Process `timeout` around `java -jar benchmark-runner.jar`
 3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C, registered *before* `RunInstances` so an
-   interrupt mid-launch can look the instance up by its `baas-request-id` tag. That lookup can
+   interrupt mid-launch can look the instance up by its `baas-job-id` tag. That lookup can
    miss — the instance may not exist yet, and `DescribeInstances` lags — so the instance covers it:
    its `running` write is refused over the recorded `cancelled`, and a refused `running` means it
    ships its boot log and terminates without starting the benchmark. It, the poll cap
-   (`timed-out`) and `baas runs terminate` share `RunSession.stop`: record why under a 5 s timeout,
+   (`timed-out`) and `baas jobs terminate` share `JobSession.stop`: record why under a 5 s timeout,
    then terminate whatever the write did — unless the write was refused because the instance had
    already recorded `completed`/`failed:<n>`, when it is mid-upload and terminates itself. A status
    write never holds a termination back
@@ -162,7 +162,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   reconstruct — from 1.2.0 onward; 1.0.0 and 1.1.0 predate the file and cannot be rebuilt. An
   extension has no archive: the stack holds only the current one.
 - **The pointer is repointed *before* the replaced AMI is deregistered.** Retiring first aims the
-  pointer at a deleted AMI for the whole ~15-minute build, failing every run launched in that window.
+  pointer at a deleted AMI for the whole ~15-minute build, failing every job launched in that window.
 - **Teardown retires the image, always, and only after the stack is gone.** The pointer, the AMI,
   its snapshot and the recipe's Image Builder records live outside the stack, so deleting the stack
   left them, and a later setup could launch that inherited AMI without any `build-image`. Retiring
@@ -235,27 +235,27 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 **Other rules that exist because something broke**
 
-- **One run is one prefix, one id and one instant.** Everything a run produces or consumes lives
-  under `runs/<project>/<runId>/`, built only by `RunLayout`/`RunId` in `baas-model` — the same
+- **One job is one prefix, one id and one instant.** Everything a job produces or consumes lives
+  under `jobs/<project>/<jobId>/`, built only by `JobLayout`/`JobId` in `baas-model` — the same
   reason `ResultKeys` owns DynamoDB keys. A hand-built prefix does not fail to compile; it points at
   nothing, and that presents as an empty download rather than as an error. Splitting inputs and
   results back into two trees is the split this design removed.
-- **`baas run` reads the clock once per run.** That instant names the prefix and travels to the
+- **`baas run` reads the clock once per job.** That instant names the prefix and travels to the
   runner as `--created-at`, so the id's timestamp and the stored `createdAt` are the same value
   rather than two that happen to be close. The instance's clock never reaches the record. CI mints
   its id in bash and must pass the same instant, or the property holds for `baas run` and quietly
   fails there.
 - **The instance contacts no host outside the account.** Its only runner-JAR source is
   `releases/<version>/benchmark-runner.jar` in the bucket, seeded by the CLI. Restoring a
-  network fetch reintroduces both the drift — two runs a week apart executing different runner
+  network fetch reintroduces both the drift — two jobs a week apart executing different runner
   code — and the egress `private-runner-network` exists to remove.
 - **`releases/<version>/benchmark-runner.jar` is seeded once and never overwritten.** That
   immutability is what the whole pinning argument rests on. A corrupted object therefore does not
-  self-repair: delete the key and the next run re-seeds it, checksum-verified.
-- **Bucket versioning is `Suspended` and no lifecycle rule expires current objects under `runs/`.**
+  self-repair: delete the key and the next job re-seeds it, checksum-verified.
+- **Bucket versioning is `Suspended` and no lifecycle rule expires current objects under `jobs/`.**
   Both are load-bearing. The deleted `expire-uploaded-benchmark-jars` rule assumed everything under
-  `runs/` was re-creatable from source; results live there now, so restoring it is silent data loss
-  (`CoreTemplateTest` pins its absence). Versioning only ever guarded an overwrite that the run
+  `jobs/` was re-creatable from source; results live there now, so restoring it is silent data loss
+  (`CoreTemplateTest` pins its absence). Versioning only ever guarded an overwrite that the job
   id's 32-bit entropy suffix now prevents — and the consequence is stated, not implied: there is no
   server-side recovery from one.
 - **`RunnerSecurityGroup` allows egress on 443 only — no 80, no 27017, and adding either back is a
@@ -268,7 +268,7 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **Editing `RunnerSecurityGroup`'s `GroupDescription` replaces the security group.** It is an
   immutable property, so CloudFormation deletes and recreates the resource and the group *id
   changes*. Anything holding the old id is then pointing at a group that no longer exists —
-  `~/.baas/config.yaml` most obviously, which `baas admin setup` rewrites, but not a run already in
+  `~/.baas/config.yaml` most obviously, which `baas admin setup` rewrites, but not a job already in
   flight. Observed: removing the 27017 rule also touched the description, and the id moved. Change
   the rules without touching the description unless you intend the replacement. Its text still says
   "443/80" for exactly this reason, and `theRunnerSecurityGroupDescriptionIsNeverEdited` pins it.
@@ -309,7 +309,7 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **`~/.baas/config.yaml` stores credential *profile names*, region, `prefix` and preferences — nothing
   else, and no secret.** The credentials themselves stay in `~/.aws`.
   The bucket, results table and runner instance profile are *derived* from the prefix; the runner
-  subnet and security group are *resolved* from the stack's outputs on every run. Neither kind is
+  subnet and security group are *resolved* from the stack's outputs on every job. Neither kind is
   cached, because a stored name can point at one installation while `prefix` names another, and a
   stored security-group id outlives the group when `GroupDescription` forces a replacement — the
   failure that rule previously only documented. `aws.coreStackName` is gone (the stack name *is*
@@ -328,7 +328,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   finds it: the bucket carries the prefix's name, bucket names are global, and `HeadBucket` from any
   region answers a wrong-region request with 301/400 carrying `x-amz-bucket-region` (a 404 is no
   bucket) — under the `s3:ListBucket` the operator already holds. Sync stores the region, CI
-  included, so a job follows the installation rather than its `AWS_REGION`. There is no
+  included, so a CI job follows the installation rather than its `AWS_REGION`. There is no
   `config set --region`: set by hand it aimed a machine at a region with no installation, and `run`
   then advised building an image there. Moving an installation is a rebuild in the new region, after
   which every machine re-runs the same `config sync --name`.
@@ -350,7 +350,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   installer, so the script installing version X is always version X's own.
 - **`commit` and `branch` are absent unless the caller tags them, never `"unknown"`.** A placeholder
   value is indistinguishable from a real one at query time — the same non-answer wearing a value's
-  clothing that produced `RESULT#unknown` (below). Tags are the entire query surface, so a fake value
+  clothing that produced `RESULT#unknown` (*What isn't there*). Tags are the entire query surface, so a fake value
   there is worse than a missing one. They are never derived: only `--tag branch=… --tag commit=…`
   supplies them.
 - **Git is consulted only when `git.resolveProject` is on, and only for `project`.** Off by default
@@ -366,9 +366,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   runner is `./jmh-with-profiler.sh` / `./jmh-with-async.sh` against LocalStack.
 - **Measurements live in DynamoDB, and a verbatim `jmh-result.json` now exists in S3.** The item
   carries what a table view needs; `rawData` and `scorePercentiles` are dropped from it and are
-  recoverable only from that JSON, via `baas download <runId>` (a literal result path also works,
-  which is what keeps pre-unified-layout runs retrievable).
-- **A reactor build cannot launch a run.** The CLI pins the runner JAR to its own released version,
+  recoverable only from that JSON, via `baas download <jobId>` (a literal result path also works).
+- **A reactor build cannot launch a job.** The CLI pins the runner JAR to its own released version,
   and `0.0.0-semantically-released` names no release — so `baas run` fails immediately, before
   resolving the project or the results table, unless `--runner-jar` is passed. Same no-fallback
   stance as the runner AMI. Every `baas` in
@@ -376,15 +375,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   the reactor checkout is now the developer's explicit special case rather than the implicit
   default.
 - **The runner refuses an unresolved project.** `getProject()` used to fall back to `"unknown"`,
-  and CI has been writing `RESULT#unknown` because of it — a partition nobody queries. It now
-  throws, before the benchmark runs. The historical `RESULT#unknown` rows stay where they are; 36
-  of them are CI fixture runs against `fake-jmh-benchmarks` and nobody recorded what the rest
-  measured.
+  and CI had been writing `RESULT#unknown` because of it — a partition nobody queries. It now
+  throws, before the benchmark runs.
 - **Absent store configuration is a hard failure, and nothing discards measurements.** `baas run`
   resolves the table before the runner-image lookup and before any upload, and `benchmark-runner`
-  rejects a missing selection outright. `--no-database` is gone from both: every run records its
-  status in the table, so a run without one could not be seen at all, and local runs name a
-  LocalStack table. The old behaviour — unset URI selects a no-op store, run reports success,
+  rejects a missing selection outright. `--no-database` is gone from both: every job records its
+  status in the table, so a job without one could not be seen at all, and local runner invocations name a
+  LocalStack table. The old behaviour — unset URI selects a no-op store, the job reports success,
   numbers vanish — is gone, and reintroducing any fallback brings it back.
 - **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
   `benchmark-runner` keeps one, selectable by `--mongo-connection-string`, purely so the JAR still
@@ -397,7 +394,7 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **The GitHub Actions benchmark path is gone, not fixed.** It was broken six ways at once — a
   deleted SSM mongo parameter, a revoked IAM grant, no 27017 egress, an expired PAT, an
   unresolvable project, and an assertion (`tags.source == gha-e2e-test`) no job could ever satisfy
-  because the runs were tagged `gha-e2e-test-async`. Deleting the bash orchestrator and calling
+  because the jobs were tagged `gha-e2e-test-async`. Deleting the bash orchestrator and calling
   `baas run` dissolved all six rather than repairing them. It was also forced:
   `private-runner-network` moves runners onto a subnet with no route to `github.com`, which a
   self-hosted Actions runner agent must reach. Any reference you find to
@@ -436,30 +433,30 @@ The watchdog is the only one that survives a deadlocked JVM.
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
 - **`e2e-cloud-test.yml` drives `baas run` end to end, and it is the only thing that does.** Two
-  `ubuntu-latest` jobs, each launching its own instance: `benchmark` runs `jmh-with-async` against
+  `ubuntu-latest` CI jobs, each launching its own instance: `benchmark` runs `jmh-with-async` against
   `fake-jmh-benchmarks` on the real runner AMI, so a bad bake fails CI rather than surviving it;
   `jcstress` runs `fake-stress-tests` in JCStress sanity mode (`-- --mode sanity`) and asserts the
   stored item's shape only, never pass/fail counts — the fixture's `TestWithForbiddenResults` races
   nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
-  provisions a paid instance per job per triggering event, and it tags
-  itself `exclude_from_results=true` — which is why `queryByRequestId` carries no exclusion
+  provisions a paid instance per CI job per triggering event, and it tags
+  itself `exclude_from_results=true` — which is why `queryByJobId` carries no exclusion
   filter. **The path filter bounds it per PR, not per push:** GitHub evaluates a `pull_request`
   path filter against the PR's cumulative diff, so once a PR touches `baas-cli/**` *every*
   subsequent push to it launches another instance, including one that only edits an unrelated
   workflow. Accepted (2026-09-20) — cents per push, and a measurement per revision is worth
   having. `cancel-in-progress` stays `false` deliberately: cancelling mid-`baas run` can kill the
   CLI before its shutdown hook fires, leaving the shell watchdog as the only termination layer,
-  which is the red-job-and-full-bill failure this design exists to remove. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
-  JVM test (the JSON summary's shape is pinned against `printRunSummary`, and the wiring through
+  which is the red-CI-job-and-full-bill failure this design exists to remove. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
+  JVM test (the JSON summary's shape is pinned against `printJobSummary`, and the wiring through
   `call()` only on a path that fails before AWS).
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
   table if you want one.
 - **`scripts/install.sh` is the one script CI does invoke.** `release.yml`'s `prepareCmd` `sed`s the
   released version into it and publishes it as a release asset, but `install-test.yml` never installs
-  that asset: it builds a fixture release in the job (`BAAS_BASE_URL: file://…/fixture`) and runs
+  that asset: it builds a fixture release in the CI job (`BAAS_BASE_URL: file://…/fixture`) and runs
   the working-tree installer against it, on `ubuntu-latest` and `macos-latest`. No CI job exercises
-  a published installer or the release-time `sed` bake — those run only during a real release. The
+  a published installer or the release-time `sed` bake — those job only during a real release. The
   other utilities under `scripts/` still have no CI coverage.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
   S3-object-create trigger path. Any reference you find is stale.
@@ -484,7 +481,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   (and so `latest`) exits 55 without `LOCALSTACK_AUTH_TOKEN`, and this repository holds no secrets. The pin
   replaced `0.12.16`, which took 25–65 s to start against Testcontainers' 60 s wait and stored the SDK's
   `aws-chunked` upload framing as object bytes — `StorageServiceIT` had asserted that corrupted size.
-- **A JCStress run's mode is `--mode`, not `-m`.** The runner forwards it to JCStress as `-m`, but
+- **A JCStress job's mode is `--mode`, not `-m`.** The runner forwards it to JCStress as `-m`, but
   on the runner `-m` is `--mongo-connection-string` on every subcommand, so `baas run jcstress -- -m
   sanity` is read as a Mongo URI. The short form can follow once `retire-mongodb` frees `-m`.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
@@ -536,7 +533,7 @@ is no `cf-template-main.yaml` and no bootstrap stack.
   reuse that ARN rather than deploy this stack, which fails with `EntityAlreadyExists`.
   `WorkflowRole` is deleted — GitHub Actions federates straight into `OperatorRole`, because a
   role-chained session is capped at 60 minutes by STS whatever `MaxSessionDuration` says, against
-  a 7200 s default benchmark timeout. That failure was not an error but a red job with a good
+  a 7200 s default benchmark timeout. That failure was not an error but a red CI job with a good
   measurement, an un-terminated instance and a full EC2 bill.
 
 IAM is split deliberately: `deployer-policy.json` → `BaasCliDeployerPolicy`, elevated, only for
@@ -585,11 +582,11 @@ deleted along with the workflows that read them.
 
 ## S3 result layout
 
-One run is one prefix: `<result-path>` = `runs/<project>/<runId>/`, where `runId` is
+One job is one prefix: `<result-path>` = `jobs/<project>/<jobId>/`, where `jobId` is
 `<UTC instant, ISO basic, milliseconds>Z-<8 hex>` (e.g. `20260820T174432812Z-a3f9c21b`) — fixed 28
-characters, time-ordered so a listing reads chronologically, entropy-suffixed so two runs starting
+characters, time-ordered so a listing reads chronologically, entropy-suffixed so two jobs starting
 in the same millisecond cannot collide. Nothing parses it; the format is a readability convention,
-not a contract. Built only by `RunLayout`/`RunId` in `baas-model`, never by hand.
+not a contract. Built only by `JobLayout`/`JobId` in `baas-model`, never by hand.
 
 Per-type stdout lands in `jmh-output.txt`, `jmh-profiler-output.txt`, `jmh-with-async-output.txt`,
 or `jcstress-output.txt`; profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The
@@ -597,22 +594,15 @@ non-obvious entries:
 
 | Key | Meaning |
 |---|---|
-| `launch-error.txt` | Only for a run whose `RunInstances` failed: the AWS error code, message and request id, and what was requested. There is no instance and so no boot log; this is what `baas download <runId>` then has to show |
-| `run-status` | **Gone.** Runs before `run-status-in-dynamodb` have one (`completed` / `failed:<n>`), kept as an artifact; status lives on the run item now, and nothing reads the object |
-| `cloud-init-output.log` | Runner boot log, uploaded before self-termination — start here when a run fails before producing output |
-| `environment.json` | The environment the run measured on: `schemaVersion`, image version + AMI, instance type, CPU model/topology, memory, OS + kernel, JVM and tool versions, kernel tunables. Written **before** the benchmark, so it survives a failed run. Read by `baas env diff`. |
+| `launch-error.txt` | Only for a job whose `RunInstances` failed: the AWS error code, message and job id, and what was requested. There is no instance and so no boot log; this is what `baas download <jobId>` then has to show |
+| `cloud-init-output.log` | Runner boot log, uploaded before self-termination — start here when a job fails before producing output |
+| `environment.json` | The environment the job measured on: `schemaVersion`, image version + AMI, instance type, CPU model/topology, memory, OS + kernel, JVM and tool versions, kernel tunables. Written **before** the benchmark, so it survives a failed job. Read by `baas env diff`. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/async-output/` |
-| `input/` | The run's own inputs — `benchmark.jar`, and `runner.jar` only when `--runner-jar` overrode the pinned one. Inside the run prefix, so a consumer has one sub-prefix to skip rather than filenames to special-case |
-| `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the run tree. Seeded once by the CLI and never overwritten. `releases/`, not `runner/`, because a prefix one character from `runs/` would need disambiguating in every listing |
-| `image-builds/` | Image Builder build logs (written by the build instance, not by a run) |
-
-Two id shapes coexist and always will: runs recorded before the unified layout keep their original
-`<type>-<timestamp>` request id, because that id is inside every sort key and *is* the GSI partition
-key. Nothing parses the id, so nothing needs to tell them apart. `baas download` follows each item's
-stored `resultPath` rather than reconstructing one, which is what keeps every historical path
-resolving; it also accepts a bare run id, resolved through `requestId-index`.
+| `input/` | The job's own inputs — `benchmark.jar`, and `runner.jar` only when `--runner-jar` overrode the pinned one. Inside the job prefix, so a consumer has one sub-prefix to skip rather than filenames to special-case |
+| `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the job tree. Seeded once by the CLI and never overwritten. `releases/`, not `runner/`, because a prefix one character from `jobs/` would need disambiguating in every listing |
+| `image-builds/` | Image Builder build logs (written by the build instance, not by a job) |
 
 `environment.json` is the **observation**; `infra/runner-image.yaml` is the **declaration**. The
 observation is strictly richer — it carries what the image cannot control (instance type, CPU
@@ -625,15 +615,15 @@ Never infer the environment of a past run from the declaration in the working tr
 any single stack, which is also why `baas admin setup` pre-checks for a retained table exactly as it
 does for the retained bucket, and why teardown names both.
 
-Two kinds of item: one per measurement — per JMH benchmark method, per JCStress *run* (JCStress
-names only non-passing tests, so per-test items would cover failures alone) — and one per run (*Run
+Two kinds of item: one per measurement — per JMH benchmark method, per JCStress *job* (JCStress
+names only non-passing tests, so per-test items would cover failures alone) — and one per job (*Job
 items*, below). No derived index items.
 
 | | |
 |---|---|
 | `pk` | `RESULT#<project>` — `--project`, or the benchmark JAR's git repository when `git.resolveProject` is on |
-| `sk` | `<class>#<method>#<mode>#<timestamp>#<requestId>[#<params>]`, or `JCSTRESS#<timestamp>#<requestId>` |
-| GSI `requestId-index` | `gsi1pk` = request ID; the one access path that is not a project sweep |
+| `sk` | `<class>#<method>#<mode>#<timestamp>#<jobId>[#<params>]`, or `JCSTRESS#<timestamp>#<jobId>` |
+| GSI `jobId-index` | `gsi1pk` = job ID; the one access path that is not a project sweep |
 
 `mode` is in the sort key because a `-bm thrpt,avgt` run produces two results whose class and method
 are identical; without it they differ only by a millisecond and one silently overwrites the other.
@@ -642,13 +632,13 @@ trailing zeros, which makes keys of differing length that misorder as strings, a
 missing rows rather than as an error.
 
 `#<params>` is there for the same reason as `mode`, one level down: a `@Param` sweep's variants share
-class, method, mode and the run's single timestamp. Without it, `BatchWriteItem` rejected the whole batch
-(`Provided list of item keys contains duplicates`), failing the run and taking any other benchmark in the
+class, method, mode and the job's single timestamp. Without it, `BatchWriteItem` rejected the whole batch
+(`Provided list of item keys contains duplicates`), failing the job and taking any other benchmark in the
 batch with it; across batches, the last variant silently overwrote the rest. It is `name=value` sorted by
 name, joined by `,` (`ResultKeys.formatParams`), and **appended only when present** — not a fixed field
 like `mode` — so every key written before it, and every benchmark without params, is byte-identical.
 Nothing parses a key, so an optional trailing field costs nothing. The GSI sort key carries no params:
-that index is queried by request id alone and need not be unique. Params are a benchmark's identity,
+that index is queried by job id alone and need not be unique. Params are a benchmark's identity,
 not a tag: they are a separate `params` map on the item, not part of the query surface.
 
 **Keys are constructed only in `ResultKeys`, items only in `MeasurementItemMapper`**, both in
@@ -666,9 +656,9 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and run item take `--project`, and two inputs split one run across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a run was triggered is not something the instance observes |
+| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
-| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--all-runs` (shown faint) and `--request-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
+| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--all-jobs` (shown faint) and `--job-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
 
 `imageVersion` is the image's *label*: the base version (`1.3.0`), or `1.3.0+ext.<sha256[0:8]>` when
 the installation has an extension. A filter on `1.3.0` therefore never returns an extended image's
@@ -688,17 +678,12 @@ because a sweep's variants are different workloads, and the best across them is 
 The table never shows params in its columns — `-v` prints a `params` line above the `tags` line.
 `--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
 
-The retired `benchmark_overview.sh` also hard-coded `tags.project: 'lynx-journal'`. `baas results`
-has no such filter, which explains row-count differences against historical output — and migrated
-rows that carried no `project` tag at all are in `unknown-migrated`, deliberately not folded into
-`lynx-journal`, since 36 of them are CI fixture runs against `fake-jmh-benchmarks`.
+### Job items
 
-### Run items
-
-Every run since `run-status-in-dynamodb` also has one **run item**: `pk = RUN` (one partition for
-every project — the questions it answers, *what is in flight* and *what happened to my run*, are
-installation-wide), `sk = <createdAt>#<runId>`, `gsi1pk = <runId>`, `gsi1sk = RUN`. Keys come from
-`ResultKeys`, the item from `RunItemMapper`, the status vocabulary and terminal set from `RunStatus`.
+Every job since `run-status-in-dynamodb` also has one **job item**: `pk = JOB` (one partition for
+every project — the questions it answers, *what is in flight* and *what happened to my job*, are
+installation-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`. Keys come from
+`ResultKeys`, the item from `JobItemMapper`, the status vocabulary and terminal set from `JobStatus`.
 
 - **Only the CLI's `launching` reservation creates it**, with every identity field and the
   CLI-side tags. It is written before `RunInstances`, and a reservation that cannot be written
@@ -706,18 +691,18 @@ installation-wide), `sk = <createdAt>#<runId>`, `gsi1pk = <runId>`, `gsi1sk = RU
   `timed-out`, `cancelled`, `launch-failed` — is a conditional `UpdateItem` requiring
   `attribute_exists(pk)` and refusing to replace a terminal status: the first outcome wins.
 - **The instance writes only `status` and `instanceId`, and no timestamp**, with the key the CLI
-  built (`RUN_SORT_KEY`). The shell never rebuilds the key from `CREATED_AT`, which is
+  built (`JOB_SORT_KEY`). The shell never rebuilds the key from `CREATED_AT`, which is
   `Instant.toString()` and varies in width. Its guard expression is the CLI's own
-  (`DynamoDbRunRecorder.NOT_TERMINAL`), exported verbatim.
+  (`DynamoDbJobRecorder.NOT_TERMINAL`), exported verbatim.
 - **`vanished` is never stored**: a non-terminal status whose instance is not pending or running.
-  `baas runs list` decides that from one `DescribeInstances` of the live runners and writes nothing.
-- **Every measurement reader excludes run items**: both Scans filter `begins_with(pk, RESULT#)`, the
+  `baas jobs list` decides that from one `DescribeInstances` of the live runners and writes nothing.
+- **Every measurement reader excludes job items**: both Scans filter `begins_with(pk, RESULT#)`, the
   index query filters `attribute_exists(kind)` — a filter on `gsi1sk` is refused, it is a key
   attribute — and `MeasurementItemMapper.fromItem` throws on anything else, so a reader that forgets
-  fails loudly. A CLI from before run items does none of this: once one exists, its
+  fails loudly. A CLI from before job items does none of this: once one exists, its
   `--all-projects`, picker and lookups by id fail. Every CLI must be upgraded (accepted 2026-10-02).
-- **IAM**: operator and runner may `UpdateItem` only where `dynamodb:LeadingKeys = RUN`; the runner's
-  `PutItem`/`BatchWriteItem` only `RESULT#*`. Teardown reads no item — it names in-flight runs from
+- **IAM**: operator and runner may `UpdateItem` only where `dynamodb:LeadingKeys = JOB`; the runner's
+  `PutItem`/`BatchWriteItem` only `RESULT#*`. Teardown reads no item — it names in-flight jobs from
   their instances' tags, since the deployer holds no read of the table.
 
 ## Adding a benchmark type
@@ -739,7 +724,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
 
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + margin` (300 s by default). Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
-| Runners can terminate each other | `RunnerRole`'s `ec2:TerminateInstances` is scoped by the shared `baas-role=benchmark-runner` tag, not to the calling instance, so code on one runner can kill every concurrent run. Accepted (2026-10-02): only an operator can supply a benchmark JAR, and `OperatorRole` already terminates any runner; the runner role's bucket and table writes are the larger exposure. The self-only scoping (`ec2:SourceInstanceARN`) was declined because a subtly wrong condition would silently disable self-termination *and* the watchdog, found only when a paid run hangs. Revisit if more than one team ever shares an installation. |
+| Runners can terminate each other | `RunnerRole`'s `ec2:TerminateInstances` is scoped by the shared `baas-role=benchmark-runner` tag, not to the calling instance, so code on one runner can kill every concurrent job. Accepted (2026-10-02): only an operator can supply a benchmark JAR, and `OperatorRole` already terminates any runner; the runner role's bucket and table writes are the larger exposure. The self-only scoping (`ec2:SourceInstanceARN`) was declined because a subtly wrong condition would silently disable self-termination *and* the watchdog, found only when a paid job hangs. Revisit if more than one team ever shares an installation. |
 | `OperatorRole` trusts the account root | The trust policy names `:root` with no condition, so any principal in the account whose identity policy allows `sts:AssumeRole` on `*` can become an operator. Accepted (2026-10-02): that is AWS's standard same-account delegation, and in practice such principals (admins, `PowerUserAccess`) already hold the EC2, S3 and DynamoDB rights the role grants. A `aws:PrincipalArn` allow-list was declined — every new teammate would need a deployer re-run, SSO role ARNs churn on re-provisioning (the A10 failure), and a wrong pattern locks every operator out. `sts:ExternalId` was declined as a same-account no-op. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin build-image`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. Teardown retires the image, so a torn-down installation costs nothing. |

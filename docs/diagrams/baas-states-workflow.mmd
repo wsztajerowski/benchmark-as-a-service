@@ -1,5 +1,5 @@
 %% The workflow a user walks, end to end. Transitions in [brackets] happen outside the CLI.
-%% State machines for each part: baas-states-installation, baas-states-operator, baas-states-run.
+%% State machines for each part: baas-states-installation, baas-states-operator, baas-states-job.
 flowchart TD
     A0([empty account]) -->|"[outside] attach rendered policy<br/>← baas admin deployer-policy [--region]"| A1[deployer authorised]
     A1 -->|"baas admin setup [--region] [federation flags]<br/>the only place a region is chosen"| A2[stack deployed, no image]
@@ -9,9 +9,9 @@ flowchart TD
         O0([no config]) -->|"baas config sync --name P<br/>finds the region from the bucket"| O1[adopted]
         O1 -->|"baas config set --operator-profile p<br/>(or ambient: OIDC, AWS_PROFILE)"| O2[operator]
     end
-    O2 -->|"baas run --benchmark-jar J --project X TYPE -- …"| R1{{one run}}
-    R1 -->|"baas runs list / runs terminate ID"| R1
-    R1 -->|completed| Q1["baas results [--project X | --request-id ID]"]
+    O2 -->|"baas run --benchmark-jar J --project X TYPE -- …"| R1{{one job}}
+    R1 -->|"baas jobs list / jobs terminate ID"| R1
+    R1 -->|completed| Q1["baas results [--project X | --job-id ID]"]
     R1 -->|"failed / timed-out / vanished"| Q2["baas download ID → cloud-init-output.log"]
     Q1 --> Q3["baas download ID · baas env diff ID ID"]
     A3 -->|"baas admin teardown [--delete-bucket]<br/>saves the extension, retires the image"| A4[residue: table, bucket]

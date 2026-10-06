@@ -25,7 +25,7 @@ sequenceDiagram
         opt no ResultsTableName output
             CS-->>User: warn: stack predates the results table
         end
-        Note over CS: Outputs are read to prove existence only -- nothing is copied.<br/>Bucket, table, profile, pointer are derived from the prefix --<br/>subnet + security group are resolved per run.
+        Note over CS: Outputs are read to prove existence only -- nothing is copied.<br/>Bucket, table, profile, pointer are derived from the prefix --<br/>subnet + security group are resolved per job.
         CS->>CFG: set prefix AND aws.region (the installation's), save
         CS-->>User: Adopted <prefix> in <region> -- bucket, table -- exit 0
     end

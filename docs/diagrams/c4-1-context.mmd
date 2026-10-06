@@ -5,12 +5,12 @@ C4Context
     Person(admin, "Installation admin", "Deploys, re-bakes and tears down the account's one installation. Holds deployer credentials.")
     Person(iamAdmin, "Account IAM admin", "Attaches the rendered deployer policy; deploys cf-template-ci.yaml (the OIDC provider) by hand.")
 
-    System(baas, "Benchmark as a Service", "baas CLI plus one per-account cloud installation: throwaway runners, results table, run artifacts.")
+    System(baas, "Benchmark as a Service", "baas CLI plus one per-account cloud installation: throwaway runners, results table, job artifacts.")
 
     System_Ext(gha, "GitHub Actions", "e2e-cloud-test.yml: federates into OperatorRole via OIDC and calls baas run.")
     System_Ext(ghReleases, "GitHub Releases", "baas-cli.jar, benchmark-runner.jar + .sha256, install.sh.")
     System_Ext(aws, "AWS platform", "IAM/STS, CloudFormation, EC2, Image Builder, S3, DynamoDB, SSM in one account and region.")
-    System_Ext(upstream, "Package sources", "AL2023 dnf repos and the async-profiler release — reached only by the image build, never by a run.")
+    System_Ext(upstream, "Package sources", "AL2023 dnf repos and the async-profiler release — reached only by the image build, never by a job.")
 
     Rel(author, baas, "baas run / results / download / env diff / config")
     Rel(admin, baas, "baas admin setup / build-image / image / teardown")

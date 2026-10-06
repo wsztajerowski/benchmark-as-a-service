@@ -132,7 +132,7 @@ Bump imageVersion in infra/runner-image.yaml.
 ```
 
 Exactly one image exists at a time. A successful build publishes the new AMI to
-`/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a run launched during
+`/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a job launched during
 a build never resolves a deleted AMI. `baas admin image` reports what is currently published, and
 flags when the definition bundled in the CLI you are running declares a version that isn't built yet.
 
@@ -183,37 +183,37 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and the
 > instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
 > `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
-> values the run's own `environment.json` records, so the two can never disagree.
+> values the job's own `environment.json` records, so the two can never disagree.
 
-> **A run with nowhere to record itself fails before it costs anything.** If no installation is
+> **A job with nowhere to record itself fails before it costs anything.** If no installation is
 > configured, `baas run` stops before any upload — before any AWS call at all — and tells you to run
-> `baas config sync`. There is no option to discard measurements: every run records its status in
-> the results table, so a run without one could not be seen.
+> `baas config sync`. There is no option to discard measurements: every job records its status in
+> the results table, so a job without one could not be seen.
 
-> **Every run is recorded before it launches.** `baas run` writes the run to the results table, then
+> **Every job is recorded before it launches.** `baas run` writes the job to the results table, then
 > launches; if that write fails, nothing is launched. A launch that fails is recorded too, with
-> the AWS error in `launch-error.txt`, so `baas download <runId>` works for it.
+> the AWS error in `launch-error.txt`, so `baas download <jobId>` works for it.
 
-`-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved run
+`-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved job
 parameters, the AMI, the CloudFormation parameters, and the full generated user-data script. It
 must come before the `--` separator, or it is passed to the benchmark instead.
 
-### 5. See your runs
+### 5. See your jobs
 
 ```bash
-baas runs list                 # the 20 most recent runs, every project and status
-baas runs list --in-flight     # only runs whose instance is still pending or running
-baas runs terminate <runId>    # record it as cancelled and terminate its instance
+baas jobs list                 # the 20 most recent jobs, every project and status
+baas jobs list --in-flight     # only jobs whose instance is still pending or running
+baas jobs terminate <jobId>    # record it as cancelled and terminate its instance
 ```
 
-A run whose CLI died — killed, a laptop gone to sleep, a dropped network — is still listed, and can
-still be stopped. `list` shows `RUN_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE |
+A job whose CLI died — killed, a laptop gone to sleep, a dropped network — is still listed, and can
+still be stopped. `list` shows `JOB_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE |
 STARTED | ELAPSED`, takes `--limit`, `--project`, `--tag key=value` and `--format table|json|csv`, and
-hides nothing by default, CI runs included. A run whose instance is gone without an outcome shows as
+hides nothing by default, CI jobs included. A job whose instance is gone without an outcome shows as
 `vanished`. `terminate` asks first on a terminal; pass `--yes` in scripts.
 
-> **Upgrade every `baas` that points at the installation.** A CLI from before run tracking reads
-> run items as measurements: its `baas results --all-projects`, project picker and lookups by run id
+> **Upgrade every `baas` that points at the installation.** A CLI from before job tracking reads
+> job items as measurements: its `baas results --all-projects`, project picker and lookups by job id
 > fail once one exists. `baas results --project <name>` keeps working.
 
 ### 6. Read results
@@ -222,7 +222,7 @@ hides nothing by default, CI runs included. A run whose instance is gone without
 baas results --project my-benchmarks
 ```
 
-Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | UNIT`, reading the table directly. With `-v`,
+Prints `BENCHMARK | JOB_ID | TYPE | MODE | SCORE | UNIT`, reading the table directly. With `-v`,
 each row is followed by an indented line carrying all of its tags. JSON and CSV always carry the
 tags, and the score error the table leaves out.
 
@@ -237,36 +237,35 @@ groups by `(project, benchmark, branch)` and keeps the best score in each group.
 | `--all-projects` | Every project, with a PROJECT column. Reads the whole table |
 | `--tag key=value` | Repeatable; repeated tags must **all** match |
 | `--benchmark-name <regex>` | Match on the benchmark name |
-| `--request-id <id>` | Every measurement of one run. Cannot be combined with `--project`, `--all-projects`, `--benchmark-name` or `--tag` |
+| `--job-id <id>` | Every measurement of one job. Cannot be combined with `--project`, `--all-projects`, `--benchmark-name` or `--tag` |
 | `--group-by <tag>` | Group by something other than `branch` |
-| `--all-runs` | Every measurement, not just the best per group — including excluded runs, shown faint |
+| `--all-jobs` | Every measurement, not just the best per group — including excluded jobs, shown faint |
 | `--limit <n>`, `--format json\|csv` | Bound and reshape the output |
 
 Every command takes `--config-path <file>` to use a configuration other than `~/.baas/config.yaml` —
 the way to read another installation, such as a torn-down one whose table was retained.
 
-### 7. Fetch everything a run produced
+### 7. Fetch everything a job produced
 
 ```bash
 baas download 20260820T174432812Z-a3f9c21b
 ```
 
-Takes the run id `baas run` printed (or a literal S3 result path, `runs/<project>/<runId>` — also
-accepted for a run stored before the unified layout, at its original `<branch>/<type>/<timestamp>`
-path), and pulls down the whole run: the verbatim `jmh-result.json`, `environment.json`, process
+Takes the job id `baas run` printed (or a literal S3 result path, `jobs/<project>/<jobId>` — also
+accepted for a job stored before the unified layout, at its original `<branch>/<type>/<timestamp>`
+path), and pulls down the whole job: the verbatim `jmh-result.json`, `environment.json`, process
 output, logs and profiling artifacts. The stored measurement deliberately drops JMH's `rawData`
 and `scorePercentiles` — per-iteration numbers dominate a result's size — so this is where you go
 when you need them.
 
 ### 8. Check that two results are comparable
 
-Every run records the environment it measured on, in two tiers.
+Every job records the environment it measured on, in two tiers.
 
 **Tier 1 — the results store.** Each result carries the environment it observed as tags —
 `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` — so you can see and slice by it
 without fetching anything: `-v` prints them under each row, `--tag imageVersion=1.2.0` keeps one
-image's results, and `--group-by instanceType` keeps the best per instance type. Runs recorded
-before these tags existed carry none.
+image's results, and `--group-by instanceType` keeps the best per instance type.
 
 **Tier 2 — the manifest.** `<result-path>/environment.json` holds ~20 fields describing what
 actually ran: image version and AMI, instance type, CPU model and topology, memory, OS and kernel,
@@ -274,18 +273,18 @@ JVM and tool versions, and the kernel tunables in effect. `<result-path>/package
 full `rpm -qa`, kept separate so it doesn't drown the readable file.
 
 ```bash
-baas env diff runs/lynx-journal/20260724T120000000Z-a3f9c21b \
-              runs/lynx-journal/20260811T093000000Z-b7e4d0f2
+baas env diff jobs/lynx-journal/20260724T120000000Z-a3f9c21b \
+              jobs/lynx-journal/20260811T093000000Z-b7e4d0f2
 ```
 
 ```
-FIELD          <run A>                         <run B>
+FIELD          <job A>                         <job B>
 amiId          ami-091ea218d041f91eb           ami-0a89e2bd4bf6f208a
 imageVersion   1.0.0                           1.1.0
 jvmVersion     openjdk version "25.0.4" ...    openjdk version "25.0.3" ...
 ```
 
-Result paths are `runs/<project>/<runId>`, as printed by `baas run`. A run recorded before the
+Result paths are `jobs/<project>/<jobId>`, as printed by `baas run`. A job recorded before the
 unified layout keeps its original `<branch>/<type>/<timestamp>` path; both shapes still resolve.
 Identical environments report no differences and exit 0.
 
@@ -312,13 +311,13 @@ baas run
   ├─ resolve the results table and the runner AMI from /<prefix>/runner/ami-id
   │    (fails here if either is missing, before any upload or launch —
   │    --benchmark-jar is required; baas run builds nothing)
-  ├─ upload --benchmark-jar to s3://<bucket>/runs/<project>/<runId>/input/benchmark.jar
+  ├─ upload --benchmark-jar to s3://<bucket>/jobs/<project>/<jobId>/input/benchmark.jar
   ├─ seed releases/<version>/benchmark-runner.jar from GitHub Releases, checksum-
   │    verified, the first time that version runs — never overwritten after
-  ├─ record the run (launching) in the results table — no record, no launch
+  ├─ record the job (launching) in the results table — no record, no launch
   └─ ec2:RunInstances from that AMI, with a generated user-data script
        ├─ record the environment: environment.json + packages.txt, uploaded
-       │    BEFORE the benchmark starts, so a crashed run still says what it
+       │    BEFORE the benchmark starts, so a crashed job still says what it
        │    crashed on  (nothing is installed — the toolchain is already baked)
        ├─ download benchmark-runner.jar from S3 — the instance reaches no host
        │    outside the account
@@ -326,11 +325,11 @@ baas run
        │    └─ launch the benchmark JAR as a subprocess, parse results,
        │       upload output and the verbatim result JSON to S3, then write
        │       one item per measurement, tagged with what it observed
-       ├─ record running, then completed / failed:<n> on the run item
+       ├─ record running, then completed / failed:<n> on the job item
        │    (the watchdog records timed-out)
        └─ self-terminate
-  ├─ poll the run item every 15s
-  └─ print this run's measurements from the table
+  ├─ poll the job item every 15s
+  └─ print this job's measurements from the table
 ```
 
 Instances self-terminate through **three** independent mechanisms — a process `timeout`, a
@@ -342,7 +341,7 @@ stored, so a stored row always has its full-fidelity counterpart to point at. Th
 a table view needs; `rawData` and `scorePercentiles` live only in S3, reachable with
 `baas download`.
 
-**Nothing is silently discarded.** A run with no store configured fails before any upload, and a
+**Nothing is silently discarded.** A job with no store configured fails before any upload, and a
 store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. No option
 discards measurements.
 
@@ -467,7 +466,7 @@ Variables (no secrets — a role ARN is not sensitive, and nothing else is left 
 `e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its
 `pull_request` trigger is path-filtered and there is no schedule. It tags its own measurements
 `exclude_from_results=true` — it benchmarks fixture code — so they never reach a comparison, while
-`baas results --request-id <runId>` still returns them.
+`baas results --job-id <jobId>` still returns them.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
 real version is set at release time. The bump comes from the commit subjects under the

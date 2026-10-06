@@ -12,24 +12,24 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
   in [`docs/adr/`](../adr/). ADRs 0002–0005 hold what was closed or declined up to 2026-10-05.
 - **Excluded on purpose:** everything in CLAUDE.md's *Accepted risks*, and the hardenings and
   intended behaviour recorded in [ADR 0005](../adr/0005-declined-hardenings-and-intended-behaviour.md).
-- State machines for the installation, an operator machine and a run, which locate most `U`
+- State machines for the installation, an operator machine and a job, which locate most `U`
   findings: `docs/diagrams/baas-states-*.mmd`.
 
 ## Index
 
 | ID | Finding | Sev | Where it goes |
 |---|---|---|---|
-| S14 | `RunnerRole` can overwrite the pinned runner JAR every later run executes | Med | `narrow-bucket-grants` |
+| S14 | `RunnerRole` can overwrite the pinned runner JAR every later job executes | Med | `narrow-bucket-grants` |
 | S7 | `RunnerRole`'s bucket-wide `s3:DeleteObject`/`PutObject` (table half already fixed) | Med | `narrow-bucket-grants` |
 | S15 | `OperatorRole` — so every CI workflow — holds bucket-wide `s3:DeleteObject` no command uses | Low | `narrow-bucket-grants` |
-| P11 | `env diff` compares run-identity fields, so "No differences" can never print | Low | `runs-command` |
-| U28 | No lookup of one run by id | Low | `runs-command` |
+| P11 | `env diff` compares job-identity fields, so "No differences" can never print | Low | `jobs-command` |
+| U28 | No lookup of one job by id | Low | `jobs-command` |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | Low | `retire-mongodb` |
 | U2 | No CLI path from teardown residue to an empty account | Low | `export-before-teardown` |
 | U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | `export-before-teardown` |
-| DR1 | `run --detach` with today's shutdown hook would cancel and terminate the run it just launched | High if shipped naively | `detached-run` |
-| DR4 | The archived non-goal rejecting `--detach` cites a reason run items removed | Info | `detached-run` |
+| DR1 | `run --detach` with today's shutdown hook would cancel and terminate the job it just launched | High if shipped naively | `detached-run` |
+| DR4 | The archived non-goal rejecting `--detach` cites a reason job items removed | Info | `detached-run` |
 | U21 | Live check: an installation outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
 | U40 | Live check: teardown saving a non-empty extension (fixed in code) | — | deferred, blocked on IAM |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | High → reduced | open |
@@ -52,61 +52,61 @@ below is what the proposal starts from.
 includes `releases/<version>/benchmark-runner.jar`. CLAUDE.md rests the pinning argument on that
 object being "seeded once and never overwritten", but that holds only by CLI convention:
 `RunnerJarResolver.resolve` treats any object already present as trusted and never re-verifies it.
-So code in one benchmark JAR can replace the runner that **every later run of that version
+So code in one benchmark JAR can replace the runner that **every later job of that version
 executes**, for as long as the version is in use. Versioning is `Suspended`, so the original cannot
 be recovered.
 
 **S7.** The runner executes an arbitrary user JAR under that same grant, which also carries
 `DeleteObject` bucket-wide. Its table access is already minimal — `PutItem`/`BatchWriteItem` on
-`RESULT#*` and `UpdateItem` on `RUN` only (`dynamodb-results-store`, `run-status-in-dynamodb`) —
+`RESULT#*` and `UpdateItem` on `JOB` only (`dynamodb-results-store`, `run-status-in-dynamodb`) —
 but `BatchWriteItem` still carries `DeleteRequest`s within `RESULT#`.
 
 **S15.** `${prefix}-policy-operator-s3` and `operator-policy.json` grant `s3:DeleteObject` on the
 whole bucket. Nothing under the operator role deletes an object (the only delete is teardown's
 `deleteAllObjects`, under deployer credentials). CI federates into this role on `pull_request`, so
-any same-repository branch's workflow can wipe every run's artifacts, unrecoverably.
+any same-repository branch's workflow can wipe every job's artifacts, unrecoverably.
 
 **Decided (2026-10-04), one small change, one `baas admin setup` re-run per installation:**
-1. The runner's S3 grant: `PutObject` and `GetObject` on `runs/*`, `GetObject` on `releases/*`
+1. The runner's S3 grant: `PutObject` and `GetObject` on `jobs/*`, `GetObject` on `releases/*`
    (user-data's `aws s3 cp` of the runner), no `DeleteObject`. Pin it in `CoreTemplateTest`. What
-   remains of S7 is overwriting another run's objects under `runs/*`, which has no per-run IAM scope.
+   remains of S7 is overwriting another job's objects under `jobs/*`, which has no per-job IAM scope.
 2. The seed itself becomes non-overwriting: `PutObject` with `If-None-Match: *` in
-   `RunnerJarResolver`, which also removes the head-then-put race between two first runs of a new
+   `RunnerJarResolver`, which also removes the head-then-put race between two first jobs of a new
    version. A bucket-policy enforcement on `releases/*` is left out as extra mechanism.
 3. `s3:DeleteObject` leaves both operator documents; `OperatorPolicyDriftTest` keeps them in step.
 
-### `runs-command` — P11, U28
+### `jobs-command` — P11, U28
 
-**P11.** `environment.json` carries run-identity fields — `benchmarkType`, `project`, `branch`,
-`requestId`, `createdAt` — and `EnvironmentManifest.diff` compares every key. Any two runs differ on
-`requestId` and `createdAt`, so `No differences. Both runs measured on the same environment.` can
+**P11.** `environment.json` carries job-identity fields — `benchmarkType`, `project`, `branch`,
+`jobId`, `createdAt` — and `EnvironmentManifest.diff` compares every key. Any two jobs differ on
+`jobId` and `createdAt`, so `No differences. Both runs measured on the same environment.` can
 never print, and a cross-type diff always reports `benchmarkType`.
 
-**U28.** `baas runs list` has no run-id filter and pages newest-first to `--limit`;
-`baas results --request-id` returns measurements only, so a failed run reads "No results found".
-An older run is reachable only by raising `--limit` until it appears. (CI no longer needs this:
-since U27 it reads `runStatus` from `baas run`'s summary.)
+**U28.** `baas jobs list` has no run-id filter and pages newest-first to `--limit`;
+`baas results --job-id` returns measurements only, so a failed job reads "No results found".
+An older job is reachable only by raising `--limit` until it appears. (CI no longer needs this:
+since U27 it reads `jobStatus` from `baas run`'s summary.)
 
 **Decided (2026-10-02, U28 added 2026-10-04):**
-- `baas env` / `baas env diff` are replaced by `baas runs show <run>` and
-  `baas runs diff [--run | --system | --all] <runA> <runB>`, both accepting a run id **or** a result
-  path through `RunReference`.
+- `baas env` / `baas env diff` are replaced by `baas jobs show <job>` and
+  `baas jobs diff [--job | --system | --all] <jobA> <jobB>`, both accepting a job id **or** a result
+  path through `JobReference`.
 - `show` prints the manifest in two sections; `diff` compares the selected one(s):
-  - **run** — `project`, `branch`, `benchmarkType`, `amiId`, `instanceType`, instance family
+  - **job** — `project`, `branch`, `benchmarkType`, `amiId`, `instanceType`, instance family
     (derived from the type, e.g. `c5` from `c5.2xlarge`);
   - **system** — `cpuModel`, `cpuArch`, `cpuCores`, `cpuThreadsPerCore`, `cpuMaxMhz`,
     `memoryTotalKb`, `swapTotalKb`, `imageVersion`, `jvmVersion`, `jvmVendor` (added by
     `custom-runner-image`), `perfVersion`, `asyncProfilerVersion`, `osVersion`, `kernelRelease`,
     `perfEventParanoid`, `kptrRestrict`, `transparentHugepages`.
 - `schemaVersion` is its own section, checked on every `diff` whatever is selected; a mismatch is loud.
-- The manifest stops writing `requestId` and `createdAt` (the result path identifies the run and the
-  run id carries the instant), `region` and `awsCliVersion`; `schemaVersion` bumps. The spec scenario
-  requiring a crashed run's manifest to record its run id and instant changes accordingly.
-- **`show` is also the lookup by id:** above the manifest it prints the run item — stored and
+- The manifest stops writing `jobId` and `createdAt` (the result path identifies the job and the
+  job id carries the instant), `region` and `awsCliVersion`; `schemaVersion` bumps. The spec scenario
+  requiring a crashed job's manifest to record its job id and instant changes accordingly.
+- **`show` is also the lookup by id:** above the manifest it prints the job item — stored and
   resolved status (`vanished` when the instance is gone without an outcome), instance id and type,
-  `createdAt`, result path, `errorCode`, tags. A run with no manifest (`launch-failed`, cancelled
-  before boot, pre-prebaked-image) still shows its item and says the manifest is absent. A run from
-  before run items shows its manifest only. `--format json` prints both as one object.
+  `createdAt`, result path, `errorCode`, tags. A job with no manifest (`launch-failed`, cancelled
+  before boot, pre-prebaked-image) still shows its item and says the manifest is absent. A job from
+  before job items shows its manifest only. `--format json` prints both as one object.
 - Breaking CLI change: `feat(cli)!`, next major.
 
 ### `retire-mongodb` — C4, A13
@@ -120,7 +120,7 @@ user is known. **Every service IT stores through `MongoResultsStore`** (via
 exercised by the store contract suite but by no end-to-end runner test.
 
 **A13.** `LocalStorageService.saveFile` evaluates `Files.readString` as a `logger.trace` argument
-whatever the level, so a binary file (`profile.jfr`, a `.bin.gz`) throws and fails the run. Local mode
+whatever the level, so a binary file (`profile.jfr`, a `.bin.gz`) throws and fails the job. Local mode
 only (no `--s3-bucket`), which no script, test or README section uses.
 
 **Decided (2026-10-04), as its own change:** first move the service ITs onto LocalStack DynamoDB —
@@ -147,18 +147,18 @@ then a teardown that deletes the bucket and table behind a second typed confirma
 ### `detached-run` — DR1, DR4
 
 Not yet in `QUEUE.md`: a stub change, explored on 2026-10-05, that comes after `jcstress-e2e` and
-`runs-command`. Its full exploration, with every decision, is
+`jobs-command`. Its full exploration, with every decision, is
 [`openspec/changes/detached-run/exploration.md`](../../openspec/changes/detached-run/exploration.md).
 
 **DR1.** The shutdown hook is registered before `RunInstances` (`RunCommand` l.443), and it calls
 `session.stop(CANCELLED)` whenever the session has not ended. A detached `run` returning after
 `confirmLaunched` would therefore cancel and terminate its own instance at JVM exit. **Decided:**
 keep the hook armed through the launch, then disarm it. An ADR amends CLAUDE.md's
-three-termination-layers rule: for a detached run, `baas runs terminate` replaces the CLI's Ctrl+C
+three-termination-layers rule: for a detached job, `baas jobs terminate` replaces the CLI's Ctrl+C
 layer.
 
 **DR4.** The archived `run-status-in-dynamodb` design lists `--detach`/`attach` as a non-goal,
-"rejected in the usage analysis §5", whose reason (it would need discovery by tag) the run items
+"rejected in the usage analysis §5", whose reason (it would need discovery by tag) the job items
 removed. The `detached-run` ADR supersedes it explicitly.
 
 ## Deferred live checks
@@ -203,9 +203,9 @@ third-party `machulav/ec2-github-runner` that made this sharper is gone. **Propo
 
 ### N3 — a failed reservation strands the uploaded `input/` · Low
 
-`baas run` uploads `benchmark.jar` (and a `--runner-jar`) before it reserves the run item, so a
-reservation that cannot be written leaves `runs/<project>/<runId>/input/` with no run item: invisible
-to `runs list` and never expired (no lifecycle rule under `runs/`, by design). U25 removed the other
+`baas run` uploads `benchmark.jar` (and a `--runner-jar`) before it reserves the job item, so a
+reservation that cannot be written leaves `jobs/<project>/<jobId>/input/` with no job item: invisible
+to `runs list` and never expired (no lifecycle rule under `jobs/`, by design). U25 removed the other
 way into this state. Reserving first would instead leave a `launching` item for a failed upload,
 which lists as `vanished` — arguably the better failure.
 
@@ -237,7 +237,7 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
 - **U14.** After a teardown and setup, the AWS CLI (not `baas`) fails with `InvalidClientTokenId` on
   the operator profile until its cached session in `~/.aws/cli/cache` expires: the role was
   recreated with a new id. The SDK does not read that cache.
-- **U31.** `baas runs list` shows a run as `vanished` for the few seconds between its reservation and
+- **U31.** `baas jobs list` shows a job as `vanished` for the few seconds between its reservation and
   `DescribeInstances` seeing its tagged instance, and `--in-flight` hides it then. Nothing is written.
 - **U33.** `baas admin teardown --stack-name <typo>` under credentials broader than the deployer
   reports success: `DeleteStack` on a missing stack is a no-op and the notices still print. Under the

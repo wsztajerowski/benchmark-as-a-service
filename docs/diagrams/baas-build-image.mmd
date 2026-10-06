@@ -59,7 +59,7 @@ sequenceDiagram
     end
 
     BIC->>SSM: putParameter(/<prefix>/runner/ami-id = newAmiId, String)
-    Note over BIC,SSM: REPOINT BEFORE RETIRE. Deregistering first would aim the<br/>pointer at a deleted AMI for the whole ~15-minute build,<br/>failing every run launched in that window.
+    Note over BIC,SSM: REPOINT BEFORE RETIRE. Deregistering first would aim the<br/>pointer at a deleted AMI for the whole ~15-minute build,<br/>failing every job launched in that window.
     opt a previous, different AMI existed
         BIC->>EC2: describeImages(previousAmiId) -> snapshot ids
         BIC->>EC2: deregisterImage(previousAmiId)

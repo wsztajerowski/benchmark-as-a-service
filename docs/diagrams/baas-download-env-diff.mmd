@@ -2,22 +2,22 @@ sequenceDiagram
     actor User as Operator or CI job
     participant DL as DownloadCommand
     participant ED as EnvDiffSubcommand
-    participant DDB as DynamoDB<br/>requestId-index
+    participant DDB as DynamoDB<br/>jobId-index
     participant S3 as S3 bucket <prefix>
     participant FS as Local directory
 
     rect rgb(240, 248, 255)
-        Note over User,FS: baas download <runId|resultPath> [-o dir]
+        Note over User,FS: baas download <jobId|resultPath> [-o dir]
         User->>DL: baas download 20260820T174432812Z-a3f9c21b
-        alt argument matches the run-id shape
-            DL->>DDB: resultPathForRun(id)
-            Note over DL,DDB: the run item first (gsi1sk = RUN), so a failed or never-launched run<br/>resolves too. A run from before run items resolves through a measurement.
-            alt no item (only: a run from before run items that stored nothing)
-                DL-->>User: "No run found", exit 1 -- nothing written
+        alt argument matches the job-id shape
+            DL->>DDB: resultPathForJob(id)
+            Note over DL,DDB: the job item first (gsi1sk = JOB), so a failed or never-launched job<br/>resolves too. A job from before job items resolves through a measurement.
+            alt no item (only: a job from before job items that stored nothing)
+                DL-->>User: "No job found", exit 1 -- nothing written
             end
-            DDB-->>DL: stored resultPath (old runs keep their old path)
+            DDB-->>DL: stored resultPath (read, never reconstructed)
         else anything else is taken as a literal result path
-            Note over DL: runs/<project>/<runId> or a pre-unified-layout path
+            Note over DL: jobs/<project>/<jobId> or a pre-unified-layout path
         end
         DL->>S3: ListObjectsV2(prefix/)
         alt empty
@@ -32,17 +32,17 @@ sequenceDiagram
             end
         end
         opt any key skipped
-            DL-->>User: exit 1 -- the run's prefix holds keys BaaS never wrote
+            DL-->>User: exit 1 -- the job's prefix holds keys BaaS never wrote
         end
     end
 
     rect rgb(245, 255, 245)
-        Note over User,FS: baas env diff <runA> <runB> -- each a run id or a result path,<br/>resolved by the same RunReference as download
-        User->>ED: baas env diff <runIdA> <runIdB>
-        loop each argument shaped like a run id
-            ED->>DDB: resultPathForRun(id)
-            alt no item (also: a run that failed before storing a measurement)
-                ED-->>User: "No run found with id ..." naming the path form, exit 1 -- S3 not read
+        Note over User,FS: baas env diff <jobA> <jobB> -- each a job id or a result path,<br/>resolved by the same JobReference as download
+        User->>ED: baas env diff <jobIdA> <jobIdB>
+        loop each argument shaped like a job id
+            ED->>DDB: resultPathForJob(id)
+            alt no item (also: a job that failed before storing a measurement)
+                ED-->>User: "No job found with id ..." naming the path form, exit 1 -- S3 not read
             end
         end
         ED->>S3: GetObject <A>/environment.json

@@ -1,10 +1,10 @@
-%% One run: the run item's status. Writers: C = baas run, H = its shutdown hook,
-%% T = baas runs terminate (any operator), I = the instance's user-data, W = the instance's watchdog.
+%% One job: the job item's status. Writers: C = baas run, H = its shutdown hook,
+%% T = baas jobs terminate (any operator), I = the instance's user-data, W = the instance's watchdog.
 %% Every write after the reservation is a conditional UpdateItem that never replaces a terminal status.
 %% completed and failed:<n> are written only by I: no CLI path terminates or overrides them (ADR 0003).
-%% Never stored, computed by readers: vanished (non-terminal, no live tagged instance — runs list and
+%% Never stored, computed by readers: vanished (non-terminal, no live tagged instance — jobs list and
 %% the poll), status-lost (as vanished but measurements exist — the poll only). baas run --format json
-%% reports the status it ended with as runStatus.
+%% reports the status it ended with as jobStatus.
 stateDiagram-v2
     direction TB
     state "launching" as Launching
@@ -21,7 +21,7 @@ stateDiagram-v2
     Refused: Refused — nothing uploaded, no item
     Preflight --> Uploaded: C uploads benchmark.jar<br/>(+ runner.jar, or seeds releases/)
     Uploaded --> Stranded: reservation write fails (N3)
-    Stranded: Stranded — input/ in S3, no run item
+    Stranded: Stranded — input/ in S3, no job item
     Uploaded --> Launching: C reserves the item
     Launching --> Launched: C, after RunInstances (only while still launching)
     Launching --> LaunchFailed: C, RunInstances error (+ launch-error.txt)

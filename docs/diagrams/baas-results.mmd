@@ -6,29 +6,29 @@ sequenceDiagram
     participant DDB as DynamoDB<br/><prefix>-results
     participant Out as stdout (Console)
 
-    User->>RC: baas results [--project p | --all-projects | --request-id id]<br/>[--benchmark-name re] [--tag k=v]… [--group-by tag] [--all-runs]<br/>[--limit n] [--format table|json|csv] [--watch]
+    User->>RC: baas results [--project p | --all-projects | --job-id id]<br/>[--benchmark-name re] [--tag k=v]… [--group-by tag] [--all-jobs]<br/>[--limit n] [--format table|json|csv] [--watch]
 
     rect rgb(255, 235, 235)
         Note over RC: Usage checks, before config or AWS -- exit 2
         RC->>RC: --format not table/json/csv?
         RC->>RC: --watch with a non-table format, or without a terminal?
-        RC->>RC: --request-id with --project / --benchmark-name / --tag / --all-projects?
+        RC->>RC: --job-id with --project / --benchmark-name / --tag / --all-projects?
         RC->>RC: --project with --all-projects?
     end
 
     RC->>CFG: load() -- table = <prefix>-results, or exit 1 "No installation"
 
-    alt --request-id id
-        RC->>DDB: Query requestId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the run item
+    alt --job-id id
+        RC->>DDB: Query jobId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the job item
     else --all-projects
-        RC->>DDB: Scan, begins_with(pk, RESULT#) (exclude_from_results filtered unless --all-runs)
+        RC->>DDB: Scan, begins_with(pk, RESULT#) (exclude_from_results filtered unless --all-jobs)
     else project-scoped
         alt --project p
             Note over RC: p
         else git.resolveProject = true and cwd is in a repository
             RC->>Git: repository name of cwd
         else otherwise
-            RC->>DDB: Scan for visible projects, begins_with(pk, RESULT#) -- run items never offer a project
+            RC->>DDB: Scan for visible projects, begins_with(pk, RESULT#) -- job items never offer a project
             alt none
                 RC-->>User: error, exit 1
             else no terminal, or format is json/csv
@@ -41,7 +41,7 @@ sequenceDiagram
         RC->>DDB: Query pk = RESULT#<project>
     end
 
-    Note over RC: Unless --request-id: filter by name regex and tags (warn on a tag no row carries),<br/>then keep the best score per (project, benchmark, group-by tag) unless --all-runs.<br/>Sort, then cut to --limit.
+    Note over RC: Unless --job-id: filter by name regex and tags (warn on a tag no row carries),<br/>then keep the best score per (project, benchmark, group-by tag) unless --all-jobs.<br/>Sort, then cut to --limit.
     alt --watch
         loop every 30 s until Ctrl+C (alternate screen)
             RC->>DDB: same query

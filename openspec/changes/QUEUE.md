@@ -6,10 +6,11 @@ Set 2026-10-02.
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | `runs-command` | P11, U28 | Decided, no change directory yet. Design in `docs/review/open-findings.md` (*runs-command*), with U28 | `/opsx:propose runs-command` |
-| 2 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2, U12 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
-| 3 | `narrow-bucket-grants` | S14, S7, S15 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*narrow-bucket-grants*): runner S3 grant scoped to `PutObject`/`GetObject` on `runs/*` + `GetObject` on `releases/*`, no `DeleteObject`; the operator's unused `DeleteObject` removed; the runner-JAR seed made an `If-None-Match: *` put. No bucket policy. Installations pick it up on their next `baas admin setup` | `/opsx:propose narrow-bucket-grants` |
-| 4 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
+| 1 | [`rename-run-to-job`](rename-run-to-job/proposal.md) | — (prerequisite of `jobs-command`) | In progress on branch `rename-run-to-job`: "run" as a noun becomes "job" project-wide, storage included; the installation is rebuilt before merge | `/opsx:apply rename-run-to-job` |
+| 2 | [`jobs-command`](jobs-command/exploration.md) (was `runs-command`) | P11, U28 | Explored 2026-10-06 on branch `jobs-command`, which rebases onto `next-release` once the rename merges. Design in `docs/review/open-findings.md` (*jobs-command*) plus the exploration's *Open* list, starting with `download` | `/opsx:explore jobs-command` |
+| 3 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2, U12 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
+| 4 | `narrow-bucket-grants` | S14, S7, S15 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*narrow-bucket-grants*): runner S3 grant scoped to `PutObject`/`GetObject` on `jobs/*` + `GetObject` on `releases/*`, no `DeleteObject`; the operator's unused `DeleteObject` removed; the runner-JAR seed made an `If-None-Match: *` put. No bucket policy. Installations pick it up on their next `baas admin setup` | `/opsx:propose narrow-bucket-grants` |
+| 5 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
 
 ## Deferred checks
 
