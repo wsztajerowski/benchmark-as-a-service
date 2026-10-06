@@ -9,15 +9,15 @@ shape of the whole command surface, and split a vocabulary rename out into its o
 ## Sequence
 
 **Status 2026-10-06:** steps 1–3 done. `rename-run-to-job` merged into `next-release` as PR #80
-(archived as `openspec/changes/archive/2026-10-06-rename-run-to-job/`); the installation was rebuilt on
+(archived as `openspec/changes/archive/2026-10-06-rename-run-to-job/`); the deployment was rebuilt on
 the job names before the merge; this branch is rebased. Continue at *Open*, question 1.
 
 1. **`rename-run-to-job`** — its own OpenSpec change, branch from `next-release`, PR into
    `next-release`, `feat(cli)!`. Scope below.
-2. After it merges: wipe and rebuild the installation (below).
+2. After it merges: wipe and rebuild the deployment (below).
 3. Rebase the `jobs-command` branch onto `next-release` and continue exploring this change from
    *Open*, starting with `download`.
-4. The installation is rebuilt once more if `jobs-command` changes anything stored.
+4. The deployment is rebuilt once more if `jobs-command` changes anything stored.
 
 ## Decisions
 
@@ -34,7 +34,7 @@ the job names before the merge; this branch is rebased. Continue at *Open*, ques
   keeps the confusable name alive while it exists.
 - **The rename is project-wide, storage included** — not only the CLI noun. One thing, one name: a
   CLI saying `job` over storage saying `run` (and, today, `requestId`) is the split being removed.
-- **The installation holds only test data, so it is wiped and rebuilt** — no dual reading of old
+- **The deployment holds only test data, so it is wiped and rebuilt** — no dual reading of old
   names, no migration. Confirm before teardown that the migrated `lynx-journal` / `unknown-migrated`
   rows are disposable: `export-before-teardown` is not built and the bucket is unversioned.
 - **`runner` is not renamed** (`benchmark-runner`, `<prefix>-role-runner`, `-profile-runner`,
@@ -127,7 +127,7 @@ A run launched by an old CLI and still in flight when setup switches `LeadingKey
 record its outcome — rebuild with nothing in flight.
 
 **Verification budget: up to 5 paid runs** after the rebuild, to check the renamed path end to end
-(e.g. `jmh-with-async` and `jcstress` sanity on the rebuilt installation; `jobs list`, `jobs terminate`,
+(e.g. `jmh-with-async` and `jcstress` sanity on the rebuilt deployment; `jobs list`, `jobs terminate`,
 `results --job-id`, `download <jobId>` against them; the CI e2e run on the PR counts separately).
 Record each in the change's `verify.md`.
 
@@ -150,11 +150,11 @@ baas  [--deployment X]  [admin]  <noun>  <verb>  [args] [options]
   `results --job-id` stays and `jobs show` shows no measurements (a stderr hint may point across).
   `config` = this machine's binding. Deployer: `deployment` (setup, teardown) and `image`.
 - **The deployer noun is `deployment`** (`baas admin deployment setup | teardown`), chosen over
-  `installation` for pairing with the deployer workload; `instance` rejected (the EC2 runner).
+  `deployment` for pairing with the deployer workload; `instance` rejected (the EC2 runner).
 - **Scope:** global, inherited `--deployment <name>` plus `BAAS_DEPLOYMENT`; never positional; absent
   means the account's deployment. Same word as the noun, as kubectl's `--namespace` / `namespaces`.
-  Coordinates with the second-installation exploration (session `0d0d679c`), which was leaning to
-  `--installation`. Renaming "installation" in messages and docs to "deployment" is owed by
+  Coordinates with the second-deployment exploration (session `0d0d679c`), which was leaning to
+  `--deployment`. Renaming "deployment" in messages and docs to "deployment" is owed by
   whichever change introduces the selector.
 - **`download` becomes `baas jobs download <job>`**, job id only; the literal-result-path form goes.
 - **`build-image` / `image` become `baas admin image build | show`.**

@@ -170,7 +170,7 @@ public class ImageBuilderService {
             // stripTrailing, not equals: Image Builder drops the trailing newline when it stores a
             // component document, and renderComponent() ends with one because its template is a
             // Java text block. Comparing exactly reported "content differs" for content that was
-            // identical, and blocked every build on a fresh installation — `baas admin setup`
+            // identical, and blocked every build on a fresh deployment — `baas admin setup`
             // registers the component, so `build-image` always finds a stored copy to compare
             // against. Only trailing whitespace is forgiven; a real edit still fails.
             if (!registered.stripTrailing().equals(renderedComponent.stripTrailing())) {
@@ -273,9 +273,9 @@ public class ImageBuilderService {
     }
 
     /**
-     * Removes everything {@code build-image} created outside the stack, for an installation being
+     * Removes everything {@code build-image} created outside the stack, for a deployment being
      * torn down: the AMI the pointer names (with its snapshots), the pointer itself, and every
-     * Image Builder record of the installation's recipe.
+     * Image Builder record of the deployment's recipe.
      *
      * <p>Every step catches its own failure and carries on, because by the time this runs the
      * stack is already gone and the teardown has succeeded. A leftover is a cost leak, not a
@@ -285,7 +285,7 @@ public class ImageBuilderService {
      * @return one line per leftover, naming it and the command that removes it; empty when
      *         nothing is left
      */
-    public List<String> retireInstallation(String parameterName, String recipeName) {
+    public List<String> retireDeployment(String parameterName, String recipeName) {
         List<String> leftovers = new ArrayList<>();
 
         Optional<String> pointed = Optional.empty();
@@ -325,7 +325,7 @@ public class ImageBuilderService {
 
     /**
      * Every build version of every image version named after the recipe. Records cost nothing,
-     * but they are the last trace of the installation and they number the next installation's
+     * but they are the last trace of the deployment and they number the next deployment's
      * builds — after the 2026-10-01 wipe the first rebuild came out as {@code /2}.
      */
     private List<String> deleteImageRecords(String recipeName) {

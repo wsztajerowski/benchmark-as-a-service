@@ -81,7 +81,7 @@ class ImageCommandsTest {
 
     /** Building it would replace the newer component, and the older one registers cleanly. */
     @Test
-    void buildImageRefusesABaseOlderThanTheInstallations() {
+    void buildImageRefusesABaseOlderThanTheDeployments() {
         assertThat(BuildImageCommand.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
             .contains("1.3.0", "1.4.0", "baas-123456789012", "Upgrade the CLI", "Nothing was changed");
     }

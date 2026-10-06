@@ -1,12 +1,12 @@
 Parameters:
   ResourceNamePrefix:
-    # The installation's whole name stem, "baas-<accountId>" plus the mode's suffix — the `baas-`
+    # The deployment's whole name stem, "baas-<accountId>" plus the mode's suffix — the `baas-`
     # namespace lives inside this value rather than being composed at each use. Every resource here
     # is therefore `${ResourceNamePrefix}` or `${ResourceNamePrefix}-<type>-<name>`, one rule with
     # no exceptions, so knowing the prefix is enough to predict every name. The default is a
     # placeholder that names nothing: `baas admin setup` always supplies the real value.
     Description: >-
-      Installation name stem, e.g. baas-123456789012 or baas-123456789012-dev. Supplied by
+      Deployment name stem, e.g. baas-123456789012 or baas-123456789012-dev. Supplied by
       `baas admin setup`; every resource name in this stack is derived from it.
     Type: String
     Default: "baas-000000000000"
@@ -120,7 +120,7 @@ Parameters:
       `repo:<org>/<name>:*` form. `baas admin setup` composes them from --github-org and each
       --github-repo, so the template needs no per-element rendering: CloudFormation cannot iterate
       a list, and every in-template trick for it relies on Fn::Sub re-scanning substituted text,
-      which it does not do. Several patterns let one installation serve several repositories
+      which it does not do. Several patterns let one deployment serve several repositories
       without a template migration.
     Type: CommaDelimitedList
     Default: ""
@@ -511,7 +511,7 @@ Resources:
     Condition: HasRunnerImageExtension
     Properties:
       Name: !Sub ${ResourceNamePrefix}-component-extension
-      Description: The installation's own additions to the runner image.
+      Description: The deployment's own additions to the runner image.
       Platform: Linux
       Version: !Ref RunnerImageExtensionVersion
       Data: !Ref RunnerImageExtensionData
@@ -653,7 +653,7 @@ Resources:
             Action: sts:AssumeRole
           # Additive: the account-root principal above survives, so local operators keep working
           # and revoking federation cannot lock anyone out. Present only when the federation
-          # parameters are supplied, so an installation that wants none deploys exactly as before.
+          # parameters are supplied, so a deployment that wants none deploys exactly as before.
           - !If
             - FederateGitHub
             - Effect: Allow

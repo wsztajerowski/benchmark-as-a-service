@@ -42,12 +42,12 @@ class DownloadArgumentTest {
             .isFalse();
     }
 
-    // ─── Reading another installation's results ─────────────────────────────────
+    // ─── Reading another deployment's results ─────────────────────────────────
 
     /**
      * The per-command table and bucket overrides gave way to the inherited --config-path, which
-     * names a whole installation. No command — read or write — declares either any more, so none can
-     * be aimed at one installation's table while its configuration names another.
+     * names a whole deployment. No command — read or write — declares either any more, so none can
+     * be aimed at one deployment's table while its configuration names another.
      */
     @Test
     void noCommandDeclaresATableOrBucketOverride() {

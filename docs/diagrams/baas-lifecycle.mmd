@@ -1,13 +1,13 @@
 sequenceDiagram
     autonumber
     actor IA as Account IAM admin
-    actor Adm as Installation admin<br/>(deployer creds)
+    actor Adm as Deployment admin<br/>(deployer creds)
     actor Op as Benchmark author<br/>(operator creds)
     participant CLI as baas CLI
     participant CFG as ~/.baas/config.yaml
     participant AWS as AWS account
 
-    Note over IA,AWS: The whole life of one installation, from an empty account to an empty account.<br/>Commands in brackets are not baas commands — the CLI cannot do them.
+    Note over IA,AWS: The whole life of one deployment, from an empty account to an empty account.<br/>Commands in brackets are not baas commands — the CLI cannot do them.
 
     rect rgb(240, 240, 255)
         Note over IA,AWS: 0. One-time IAM

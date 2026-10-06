@@ -4,7 +4,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Parsed {@code infra/runner-image.yaml} — the declaration of the measurement environment's base.
- * An installation's extension is not part of it: that is an operator-owned AWSTOE document held in
+ * A deployment's extension is not part of it: that is an operator-owned AWSTOE document held in
  * the stack, with no schema here.
  *
  * <p>Deliberately not the same shape as {@code <result-path>/environment.json}: this is what was

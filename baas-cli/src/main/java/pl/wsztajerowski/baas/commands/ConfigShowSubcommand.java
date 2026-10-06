@@ -61,11 +61,11 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append(config.getAws().getRegion() != null ? "" : "  (not in the file: AWS_REGION, else the default)")
             .append('\n')
             .append("derived from prefix (not stored):\n")
-            .append("  stack:                    ").append(installation(config, BaasConfig::stackName)).append('\n')
-            .append("  bucket:                   ").append(installation(config, BaasConfig::bucket)).append('\n')
-            .append("  resultsTable:             ").append(installation(config, BaasConfig::resultsTable)).append('\n')
-            .append("  runnerInstanceProfile:    ").append(installation(config, BaasConfig::runnerInstanceProfile)).append('\n')
-            .append("  amiPointer:               ").append(installation(config, BaasConfig::amiParameterPath)).append('\n')
+            .append("  stack:                    ").append(deployment(config, BaasConfig::stackName)).append('\n')
+            .append("  bucket:                   ").append(deployment(config, BaasConfig::bucket)).append('\n')
+            .append("  resultsTable:             ").append(deployment(config, BaasConfig::resultsTable)).append('\n')
+            .append("  runnerInstanceProfile:    ").append(deployment(config, BaasConfig::runnerInstanceProfile)).append('\n')
+            .append("  amiPointer:               ").append(deployment(config, BaasConfig::amiParameterPath)).append('\n')
             // subnetId and securityGroupId are deliberately absent: they are resolved from the
             // stack on every job, so there is no local value to report and none to go stale.
             .append("ec2:\n")
@@ -80,15 +80,15 @@ public class ConfigShowSubcommand implements Callable<Integer> {
     }
 
     /**
-     * A derived name, or the reason there isn't one. An unconfigured machine has no installation
+     * A derived name, or the reason there isn't one. An unconfigured machine has no deployment
      * to derive from, and {@code config show} is exactly where an operator should learn that.
      */
-    private static String installation(BaasConfig config,
+    private static String deployment(BaasConfig config,
                                        java.util.function.Function<BaasConfig, String> name) {
         try {
             return name.apply(config);
-        } catch (IllegalStateException noInstallation) {
-            return "<no installation> — run: baas config sync --name baas-<accountId>";
+        } catch (IllegalStateException noDeployment) {
+            return "<no deployment> — run: baas config sync --name baas-<accountId>";
         }
     }
 }

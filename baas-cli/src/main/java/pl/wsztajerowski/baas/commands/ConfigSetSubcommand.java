@@ -49,13 +49,13 @@ public class ConfigSetSubcommand implements Callable<Integer> {
             + "benchmark JAR's repository, baas results from the current directory's.")
     Boolean gitResolveProject;
 
-    // No --prefix. Adopting an installation is `baas config sync --name`, which checks the stack
+    // No --prefix. Adopting a deployment is `baas config sync --name`, which checks the stack
     // exists first; this option wrote the same field unchecked, so a typo surfaced only as the
     // first real command's AWS error. It dated from when the prefix was a name you chose.
     //
-    // No --region, for the same reason. The region is the installation's: `baas admin setup
+    // No --region, for the same reason. The region is the deployment's: `baas admin setup
     // --region` chooses it and `config sync` finds it from the bucket. Set by hand, it aimed a
-    // machine at a region with no installation, and `run` then advised building an image there.
+    // machine at a region with no deployment, and `run` then advised building an image there.
 
     @Spec CommandSpec spec;
 

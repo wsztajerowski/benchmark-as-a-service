@@ -28,7 +28,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "build-image",
     mixinStandardHelpOptions = true,
-    description = "Build the runner AMI — the bundled base, the installation's extension, the BaaS contract — and publish it.",
+    description = "Build the runner AMI — the bundled base, the deployment's extension, the BaaS contract — and publish it.",
     footer = {
         "",
         "Takes ~15 minutes. Without --extension the deployed extension is kept as it is.",
@@ -42,20 +42,20 @@ public class BuildImageCommand implements Callable<Integer> {
 
     /**
      * Why this CLI must not build, or {@code null} when it may. A CLI bundling an older base than
-     * the installation's would submit that base and replace the newer component — the older version
+     * the deployment's would submit that base and replace the newer component — the older version
      * no longer exists once replaced, so nothing else refuses it — silently moving every later
      * result onto the older environment. There is no override: rebuilding a historical base is
      * done from a checkout of that commit, as re-measuring a past environment always was.
      */
-    static String olderBaseRefusal(String bundledBase, String deployedBase, String installation) {
+    static String olderBaseRefusal(String bundledBase, String deployedBase, String deployment) {
         if (deployedBase == null || RunnerImageParameters.compareVersions(bundledBase, deployedBase) >= 0) {
             return null;
         }
         return """
-            This CLI bundles runner-image base %s, but installation %s is built on %s.
+            This CLI bundles runner-image base %s, but deployment %s is built on %s.
               Building would move every later result onto the older environment.
               Upgrade the CLI first:  ~/.local/share/baas/install.sh --update
-            Nothing was changed.""".formatted(bundledBase, installation, deployedBase);
+            Nothing was changed.""".formatted(bundledBase, deployment, deployedBase);
     }
 
     private static final Logger logger = LoggerFactory.getLogger(BuildImageCommand.class);
@@ -63,7 +63,7 @@ public class BuildImageCommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     @Option(names = "--extension", paramLabel = "<file>",
-        description = "Replace the installation's runner-image extension with this AWSTOE document. "
+        description = "Replace the deployment's runner-image extension with this AWSTOE document. "
             + "A file of comments only removes it.")
     Path extensionFile;
 

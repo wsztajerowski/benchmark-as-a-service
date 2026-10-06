@@ -19,13 +19,13 @@ sequenceDiagram
     Note over SC: apply --region / --aws-profile over config defaults
     SC->>STS: sts.getCallerIdentity()
     STS-->>SC: account id
-    Note over SC: prefix = "baas-" + accountId + mode.suffix()<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results"<br/>Nothing about the CALLER reaches the name -- one installation<br/>per account, plus --mode dev. Not user-selectable.
+    Note over SC: prefix = "baas-" + accountId + mode.suffix()<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results"<br/>Nothing about the CALLER reaches the name -- one deployment<br/>per account, plus --mode dev. Not user-selectable.
     SC->>S3: headBucket(bucketName) -- bucketRegion?
     Note over SC,S3: global: a wrong-region request answers 301/400 with x-amz-bucket-region,<br/>and 404 = no bucket. Needs only s3:ListBucket on the prefix bucket
     alt bucket in ANOTHER region
-        SC-->>User: the installation lives there -- setup --region <it>, exit 1, no delete advice (U23)
+        SC-->>User: the deployment lives there -- setup --region <it>, exit 1, no delete advice (U23)
     end
-    Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second installation
+    Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second deployment
     SC->>IAM: SimulatePrincipalPolicy(critical actions) -- opportunistic preflight
     alt denied
         SC-->>User: name the denied actions + print the rendered deployer policy, exit 1
@@ -75,7 +75,7 @@ sequenceDiagram
     alt created
         SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>Next: baas admin build-image (~15 min)
     else updated
-        SC-->>User: "Installation <prefix> is deployed. Operator role: <arn>"
+        SC-->>User: "Deployment <prefix> is deployed. Operator role: <arn>"
     end
 
     SC-->>User: exit 0

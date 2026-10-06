@@ -16,7 +16,7 @@ sequenceDiagram
         RC->>Sub: git rev-parse --path-format=absolute --git-common-dir (in the JAR's directory)
         Sub-->>RC: repo root -> project name, or "not a git repository"
     end
-    Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project and nothing derived -> exit 1 naming --project.<br/>No installation in config -> exit 1 naming `baas config sync`.<br/>No option discards measurements: every job records its status<br/>in the results table, so every job needs one.<br/>branch/commit are never derived: only --tag supplies them.<br/>watchdog bound = timeout + margin (margin >= 60).
+    Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project and nothing derived -> exit 1 naming --project.<br/>No deployment in config -> exit 1 naming `baas config sync`.<br/>No option discards measurements: every job records its status<br/>in the results table, so every job needs one.<br/>branch/commit are never derived: only --tag supplies them.<br/>watchdog bound = timeout + margin (margin >= 60).
     Note over RC: the --benchmark-jar option is required, and checked for existence here --<br/>before the runner-image lookup and before any upload.<br/>Missing -> exit 1 naming --benchmark-jar. Nothing is built.
     RC->>SSM: ssm.getParameter(/<prefix>/runner/ami-id)
     SSM-->>RC: amiId, or ParameterNotFound
@@ -24,7 +24,7 @@ sequenceDiagram
     EC2-->>RC: image + tags (baas-image-version), or InvalidAMIID.NotFound
     Note over RC: no image -> exit 1 naming `baas admin build-image`.<br/>Checked before any upload, so a missing image costs two API<br/>calls rather than a wasted upload. There is no fallback to<br/>AL2023 + yum.
     Note over RC: ONE clock read: jobInstant = Instant.now().<br/>jobId = JobId.generate(jobInstant) -- 20260820T174432812Z-a3f9c21b<br/>resultPath = JobLayout.jobPrefix(project, jobId)<br/>= jobs/<project>/<jobId>.<br/>The same instant travels on as --created-at, so the prefix<br/>name and the stored createdAt cannot disagree.
-    RC->>CF: describeStacks(prefix) -- SubnetId, SecurityGroupId, BEFORE any upload<br/>(a missing installation fails here, having uploaded nothing)
+    RC->>CF: describeStacks(prefix) -- SubnetId, SecurityGroupId, BEFORE any upload<br/>(a missing deployment fails here, having uploaded nothing)
     RC->>S3: s3.putObject(bucket, jobs/<project>/<jobId>/input/benchmark.jar)
     S3-->>RC: PutObjectResponse
     alt --runner-jar given

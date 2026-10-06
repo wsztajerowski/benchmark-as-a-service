@@ -41,14 +41,14 @@ public class DeployerPolicyCommand implements Callable<Integer> {
     String forAccount;
 
     /**
-     * Renders for an installation other than the account's own {@code baas-<accountId>} — a
-     * scratch installation deployed by hand for BaaS development, most of all. This only changes
+     * Renders for a deployment other than the account's own {@code baas-<accountId>} — a
+     * scratch deployment set up by hand for BaaS development, most of all. This only changes
      * what is <em>printed</em>; it grants nothing and {@code baas admin setup} still derives its
      * own name. See infra/README.md.
      */
     @Option(names = "--prefix",
-        description = "Render for this installation instead of the account's own "
-            + "baas-<accountId> — e.g. a by-hand development installation.")
+        description = "Render for this deployment instead of the account's own "
+            + "baas-<accountId> — e.g. a by-hand development deployment.")
     String prefix;
 
     /**
@@ -58,7 +58,7 @@ public class DeployerPolicyCommand implements Callable<Integer> {
      * one attached first was usually wrong. Used for this rendering only; nothing is saved.
      */
     @Option(names = "--region",
-        description = "Region the installation will live in, as later passed to `baas admin setup "
+        description = "Region the deployment will live in, as later passed to `baas admin setup "
             + "--region`. Default: the configured region, else AWS_REGION, else eu-central-1.")
     String region;
 
@@ -88,7 +88,7 @@ public class DeployerPolicyCommand implements Callable<Integer> {
         }
 
         String resolved = renderedPrefix(accountId);
-        logger.info("Policy for installation {} (account {}, region {}). Attach it as a "
+        logger.info("Policy for deployment {} (account {}, region {}). Attach it as a "
             + "customer-managed policy — see infra/README.md.", resolved, accountId, renderedRegion);
         // Payload, so the Console, never coloured: `baas admin deployer-policy > policy.json`
         // has to stay clean.

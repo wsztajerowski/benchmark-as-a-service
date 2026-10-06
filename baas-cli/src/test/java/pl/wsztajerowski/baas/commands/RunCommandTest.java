@@ -104,7 +104,7 @@ class RunCommandTest {
      * misconfigured CLI is an error message rather than a paid instance and no data.
      */
     @Test
-    void refusesToRunWhenNoInstallationIsConfigured() {
+    void refusesToRunWhenNoDeploymentIsConfigured() {
         var config = configWithResultsTable(null);
 
         assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
@@ -114,7 +114,7 @@ class RunCommandTest {
     }
 
     @Test
-    void treatsABlankInstallationAsUnconfigured() {
+    void treatsABlankDeploymentAsUnconfigured() {
         var config = new BaasConfig();
         config.setPrefix("   ");
 
@@ -123,14 +123,14 @@ class RunCommandTest {
     }
 
     @Test
-    void derivesTheResultsTableFromTheConfiguredInstallation() {
+    void derivesTheResultsTableFromTheConfiguredDeployment() {
         var config = configWithResultsTable("baas-123456789012-results");
 
         assertThat(RunCommand.resolveResultsTable(config))
             .isEqualTo("baas-123456789012-results");
     }
 
-    /** The table is derived from the installation, so "no table" means "no installation". */
+    /** The table is derived from the deployment, so "no table" means "no deployment". */
     private static BaasConfig configWithResultsTable(String table) {
         var config = new BaasConfig();
         if (table != null) {

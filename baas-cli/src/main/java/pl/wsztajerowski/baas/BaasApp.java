@@ -74,7 +74,7 @@ public class BaasApp implements Runnable {
      * Inherited, so it parses on either side of any subcommand — and picocli writes every copy back
      * to this one field, which is why commands read it from the root rather than declaring their own.
      * It replaced the per-command {@code --results-table}/{@code --bucket} overrides: addressing
-     * another installation means naming its configuration, not one of its resources.
+     * another deployment means naming its configuration, not one of its resources.
      */
     @Option(names = "--config-path", scope = ScopeType.INHERIT, paramLabel = "<file>",
         description = "Configuration file to use instead of ~/.baas/config.yaml.")

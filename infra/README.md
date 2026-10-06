@@ -33,7 +33,7 @@ via `StartImagePipelineExecution`.
 reads results, launches instances, or touches IAM.
 
 The recipe runs three components in order: the **base**, rendered from the bundled
-`infra/runner-image.yaml`; the installation's optional **extension** (below); and the BaaS
+`infra/runner-image.yaml`; the deployment's optional **extension** (below); and the BaaS
 **contract**, which writes the image label and, in its `test` phase on an instance booted from the
 new image, fails the build when Java ≥ the runner's version, the AWS CLI, async-profiler, a `perf`
 matching the kernel, `perf_event_paranoid ≤ 1` or `kptr_restrict = 0` is missing. Image tests are
@@ -75,7 +75,7 @@ aws cloudformation describe-stacks \
 
 ### Extending the runner image
 
-An installation can add anything to its runner image — an observability agent, another profiler, a
+A deployment can add anything to its runner image — an observability agent, another profiler, a
 native library — without a checkout. The extension is a raw
 [AWSTOE component document](https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-use-documents.html),
 run after the base and before the contract, stored in the stack exactly as written.
@@ -147,7 +147,7 @@ baas admin setup \
 
 All three are required together: a partial set deploys a trust condition that is always false, so
 the stack would report success while CI has no access — `baas admin setup` rejects that outright.
-`--github-repo` is repeatable (and accepts a comma-separated list), so one installation can serve
+`--github-repo` is repeatable (and accepts a comma-separated list), so one deployment can serve
 several repositories.
 
 A later `baas admin setup` that names none of them **carries the deployed values forward** rather
@@ -182,16 +182,16 @@ Required by `baas admin setup`, `baas admin build-image` and `baas admin teardow
 only to identities that provision, image or tear down the core stack — it should not be held as a
 standing policy for routine benchmark jobs.
 
-**It is rendered per installation, not shared.** Every resource it names derives from the
-account, the region and the installation prefix — `<prefix>` for the stack and bucket,
+**It is rendered per deployment, not shared.** Every resource it names derives from the
+account, the region and the deployment prefix — `<prefix>` for the stack and bucket,
 `<prefix>-role-runner` for the role, `<prefix>-results` for the table.
 [`deployer-policy.json`](./deployer-policy.json) is therefore a *template* carrying
 `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders, and must never be attached in that form.
 
 Note what changed: the prefix is `baas-<accountId>[-dev]`, so everyone on one account renders the
-*same* policy for the *same* installation. It is no longer per-caller, and it was never a
+*same* policy for the *same* deployment. It is no longer per-caller, and it was never a
 multi-tenancy boundary — the deployer policy is effectively account admin (see CLAUDE.md's
-accepted risks). What it still does is keep an account's `shared` and `dev` installations apart,
+accepted risks). What it still does is keep an account's `shared` and `dev` deployments apart,
 and keep one account out of another's.
 
 It covers the table's **lifecycle only** — `CreateTable`, `DeleteTable`, `UpdateTable`,
@@ -331,13 +331,13 @@ baas config sync --name baas-123456789012
 ```
 
 `--name` is required even though the prefix *is* derivable from the account, because a bare sync
-on a machine with no local state would adopt whichever installation the active credentials imply.
+on a machine with no local state would adopt whichever deployment the active credentials imply.
 In CI — a wrong federated role, or a leftover `AWS_PROFILE` — that binds the machine to another
-account's installation and fails much later, after something has been provisioned. `baas admin
+account's deployment and fails much later, after something has been provisioned. `baas admin
 setup` prints the name; `baas config sync --name` adopts it. Use `--name baas-<accountId>-dev` to
-point a machine at the development installation.
+point a machine at the development deployment.
 
-Sync also finds the installation's region — from its bucket, whose name is global — and stores it,
+Sync also finds the deployment's region — from its bucket, whose name is global — and stores it,
 so a machine never needs a region typed. The region is chosen once, by `baas admin setup --region`;
 there is no `config set --region`.
 
@@ -357,14 +357,14 @@ carrying that condition would evaluate false for the other five and deny the who
 the instance-type constraint lives on an instance-scoped statement and the supporting
 resources get their own.
 
-## A second installation, for developing BaaS itself
+## A second deployment, for developing BaaS itself
 
 `baas admin setup` derives its name from the caller's AWS account and takes **no option to name a
-different one**: there is exactly one installation per account, and the CLI cannot be told
-otherwise. That is deliberate. A user of BaaS should never have to ask which installation they are
+different one**: there is exactly one deployment per account, and the CLI cannot be told
+otherwise. That is deliberate. A user of BaaS should never have to ask which deployment they are
 on, and a development convenience has no business in the released command surface.
 
-Developing BaaS itself is the case that wants a second, throwaway installation — somewhere to
+Developing BaaS itself is the case that wants a second, throwaway deployment — somewhere to
 exercise a template change or an image bake without disturbing the account's real one. It is a
 procedure, not a feature:
 
@@ -395,7 +395,7 @@ baas admin build-image        # renders the real component and updates the stack
 
 #    ...work...
 
-# 4. Tear it down, and go back to the account's own installation.
+# 4. Tear it down, and go back to the account's own deployment.
 baas admin teardown --stack-name "$DEV" --delete-bucket
 baas config sync --name "baas-${ACCT}"
 ```
@@ -410,15 +410,15 @@ Three things worth knowing before you use it:
   version. Bump `imageVersion` before doing dev work at `1.0.0`. The contract's placeholder needs no
   such care: its version is derived, and moves past the placeholder's on the first build.
 - **Teardown retains the bucket and the results table** unless you pass `--delete-bucket`, and
-  there is no flag for the table. A dev installation left half-removed will block the next deploy
+  there is no flag for the table. A dev deployment left half-removed will block the next deploy
   of the same prefix with a CloudFormation error that never mentions which resource; delete
   `$DEV` and `$DEV-results` by hand.
 - **It costs a second AMI snapshot** (~$0.20/month for 30 GB) for as long as it exists, and the
-  one-image rule only retires images the *same* installation replaced — so deregister the dev AMI
-  and delete its snapshot when you tear the installation down.
+  one-image rule only retires images the *same* deployment replaced — so deregister the dev AMI
+  and delete its snapshot when you tear the deployment down.
 
 If you would rather not manage the policy juggling, a **separate AWS account** gives the same
-isolation for free: account-derived naming distinguishes the two installations with no prefix
+isolation for free: account-derived naming distinguishes the two deployments with no prefix
 games, `baas admin setup` works unmodified in both, and each account's deployer policy names only
 its own account.
 

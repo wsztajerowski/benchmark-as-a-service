@@ -52,7 +52,7 @@ class SetupCommandTest {
     }
 
     /**
-     * One installation serving two repositories is otherwise a template migration. The patterns
+     * One deployment serving two repositories is otherwise a template migration. The patterns
      * are composed here because CloudFormation cannot iterate a list.
      */
     @Test
@@ -86,7 +86,7 @@ class SetupCommandTest {
      * three <em>empty</em> unconditionally, which silently discarded the federation options the
      * invocation named: `baas admin setup --github-org ... --oidc-provider-arn ...` reported
      * success against a fresh stack and deployed a role CI could not assume. Found by pointing CI
-     * at a freshly created installation.
+     * at a freshly created deployment.
      */
     @Test
     void aCreateCarriesTheFederationOptionsItWasGiven() {
@@ -164,17 +164,17 @@ class SetupCommandTest {
             .noneMatch(name -> name.contains("oidc"));
     }
 
-    // ─── Installation naming ─────────────────────────────────────────────────────
+    // ─── Deployment naming ─────────────────────────────────────────────────────
 
     @Test
-    void theInstallationIsNamedAfterTheAccountAlone() {
+    void theDeploymentIsNamedAfterTheAccountAlone() {
         assertThat(SetupCommand.computePrefix("123456789012")).isEqualTo("baas-123456789012");
     }
 
     /**
      * The point of the change: the identity holding the credentials must not reach the name. An
      * IAM user, an SSO session and a role-chained session on one account all address the same
-     * installation.
+     * deployment.
      */
     @Test
     void theCallerIdentityNeverReachesThePrefix() {
@@ -183,7 +183,7 @@ class SetupCommandTest {
     }
 
     @Test
-    void differentAccountsAreDifferentInstallations() {
+    void differentAccountsAreDifferentDeployments() {
         assertThat(SetupCommand.computePrefix("123456789012"))
             .isNotEqualTo(SetupCommand.computePrefix("210987654321"));
     }
@@ -196,22 +196,22 @@ class SetupCommandTest {
     }
 
     /**
-     * There is exactly one installation per account and the CLI cannot be told otherwise. A second
-     * installation — the one a BaaS developer wants for scratch work — is created by deploying the
+     * There is exactly one deployment per account and the CLI cannot be told otherwise. A second
+     * deployment — the one a BaaS developer wants for scratch work — is created by deploying the
      * core template by hand with a different {@code ResourceNamePrefix}, and adopted with
      * {@code baas config sync --name}. See infra/README.md. Keeping that out of the CLI is what
-     * stops "which installation am I on?" becoming a question a user of BaaS ever has to ask.
+     * stops "which deployment am I on?" becoming a question a user of BaaS ever has to ask.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"--mode", "--prefix", "--name", "--installation"})
-    void theInstallationCannotBeSelectedOnTheCommandLine(String rejected) {
+    @ValueSource(strings = {"--mode", "--prefix", "--name", "--deployment"})
+    void theDeploymentCannotBeSelectedOnTheCommandLine(String rejected) {
         CommandLine cmd = new CommandLine(new SetupCommand());
 
         assertThatThrownBy(() -> cmd.parseArgs(rejected, "dev"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
-    // ─── Networking is immutable once the installation exists ───────────────────
+    // ─── Networking is immutable once the deployment exists ───────────────────
 
     @Test
     void namingNoNetworkingOptionsSubmitsNoNetworkingParameters() {
@@ -232,7 +232,7 @@ class SetupCommandTest {
 
     /**
      * The failure this closes: {@code SetupCommand} used to send these four unconditionally, so a
-     * teammate's plain {@code baas admin setup} against a shared installation deployed with
+     * teammate's plain {@code baas admin setup} against a shared deployment set up with
      * {@code --use-existing-vpc} submitted {@code UseExistingVpc=false} and rebuilt the networking
      * underneath everyone.
      */
@@ -295,7 +295,7 @@ class SetupCommandTest {
 
     // ─── an existing bucket blocking a create (U23) ──────────────────────────────
 
-    /** The account's installation is elsewhere: deleting its bucket is exactly the wrong advice. */
+    /** The account's deployment is elsewhere: deleting its bucket is exactly the wrong advice. */
     @Test
     void aBucketInAnotherRegionNamesThatRegionAndNeverAdvisesDeletingIt() {
         String message = SetupCommand.bucketBlocksSetup("baas-123456789012", "baas-123456789012",

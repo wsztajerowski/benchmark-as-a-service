@@ -16,7 +16,7 @@ sequenceDiagram
         RC->>RC: --project with --all-projects?
     end
 
-    RC->>CFG: load() -- table = <prefix>-results, or exit 1 "No installation"
+    RC->>CFG: load() -- table = <prefix>-results, or exit 1 "No deployment"
 
     alt --job-id id
         RC->>DDB: Query jobId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the job item

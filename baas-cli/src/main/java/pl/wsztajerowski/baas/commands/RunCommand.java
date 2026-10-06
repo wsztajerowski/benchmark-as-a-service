@@ -156,7 +156,7 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * The runner subnet and security group, read from the installation's stack outputs.
+     * The runner subnet and security group, read from the deployment's stack outputs.
      *
      * <p>Not cached in {@code ~/.baas/config.yaml}: editing {@code RunnerSecurityGroup}'s
      * {@code GroupDescription} replaces the security group and changes its id, and a stored copy
@@ -179,7 +179,7 @@ public class RunCommand implements Callable<Integer> {
             throw new IllegalStateException(
                 "Stack %s did not report %s. Run `baas admin setup`, or point this machine at a "
                     .formatted(config.stackName(), String.join(", ", missing))
-                    + "deployed installation with `baas config sync --name <prefix>`.");
+                    + "existing deployment with `baas config sync --name <prefix>`.");
         }
         return outputs;
     }
@@ -352,7 +352,7 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
 
-        // Before naming the job and before any upload: a torn-down or wrong installation used to
+        // Before naming the job and before any upload: a torn-down or wrong deployment used to
         // upload the benchmark JAR and only then fail here. Resolved per job rather than cached in
         // config: replacing RunnerSecurityGroup moves its id, and a stored copy then names a group
         // that no longer exists. The operator role already holds cloudformation:DescribeStacks on
@@ -429,7 +429,7 @@ public class RunCommand implements Callable<Integer> {
         } catch (RuntimeException e) {
             logger.error("""
                 Could not record run {} in the results table, so nothing was launched: {}
-                If the operator role lacks dynamodb:UpdateItem, the installation predates run \
+                If the operator role lacks dynamodb:UpdateItem, the deployment predates run \
                 tracking — update it with `baas admin setup`.""", jobId, e.getMessage());
             return 1;
         }
@@ -741,7 +741,7 @@ public class RunCommand implements Callable<Integer> {
      * discarded measurements had outlived any use.
      */
     static String resolveResultsTable(BaasConfig config) {
-        // Throws, naming the command that adopts an installation, when none is configured.
+        // Throws, naming the command that adopts a deployment, when none is configured.
         return config.resultsTable();
     }
 

@@ -45,8 +45,8 @@ public class DownloadCommand implements Callable<Integer> {
             + "(e.g. main/jmh/20260819_090000) for a job stored before the unified layout.")
     String resultPath;
 
-    // No --results-table or --bucket: another installation is reached by naming its configuration
-    // with the inherited --config-path, which addresses the whole installation at once.
+    // No --results-table or --bucket: another deployment is reached by naming its configuration
+    // with the inherited --config-path, which addresses the whole deployment at once.
 
     @Option(names = {"-o", "--output-dir"},
         description = "Local directory to write into. Default: ./<last path segment>.")
@@ -66,15 +66,15 @@ public class DownloadCommand implements Callable<Integer> {
         String bucket;
         try {
             bucket = config.bucket();
-        } catch (IllegalStateException noInstallation) {
-            logger.error("{}", noInstallation.getMessage());
+        } catch (IllegalStateException noDeployment) {
+            logger.error("{}", noDeployment.getMessage());
             return 1;
         }
 
         var factory = new AwsClientFactory(
             config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
 
-        // No separate table check: config.bucket() above has already required the installation,
+        // No separate table check: config.bucket() above has already required the deployment,
         // which is the only thing config.resultsTable() could fail on.
         String resolvedPath;
         try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
