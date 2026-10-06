@@ -28,17 +28,17 @@ import java.util.concurrent.Callable;
 @Command(
     name = "diff",
     mixinStandardHelpOptions = true,
-    description = "Report the environment fields that differ between two runs.",
+    description = "Report the environment fields that differ between two jobs.",
     footer = {
         "",
-        "Name each run by the id baas run and baas results show, or by its",
-        "result path (runs/<project>/<runId>):",
+        "Name each job by the id baas run and baas results show, or by its",
+        "result path (jobs/<project>/<jobId>):",
         "  baas env diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2",
         "",
-        "Every run since run items existed resolves by id, failed ones included;",
-        "an older run that stored no measurement needs its result path.",
+        "Every job since job items existed resolves by id, failed ones included;",
+        "an older job that stored no measurement needs its result path.",
         "",
-        "A run recorded before the unified layout keeps its original path",
+        "A job recorded before the unified layout keeps its original path",
         "(<branch>/<type>/<timestamp>); both shapes still resolve."
     }
 )
@@ -53,19 +53,19 @@ public class EnvDiffSubcommand implements Callable<Integer> {
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
 
-    @Parameters(index = "0", paramLabel = "<runA>",
-        description = "First run: its run id, or its result path.")
+    @Parameters(index = "0", paramLabel = "<jobA>",
+        description = "First job: its job id, or its result path.")
     String resultPathA;
 
-    @Parameters(index = "1", paramLabel = "<runB>",
-        description = "Second run: its run id, or its result path.")
+    @Parameters(index = "1", paramLabel = "<jobB>",
+        description = "Second job: its job id, or its result path.")
     String resultPathB;
 
     /**
-     * Resolves a run id to its stored result path. Overridden by tests, which have no table. Only
-     * called for an argument shaped like a run id, so two literal paths never touch DynamoDB.
+     * Resolves a job id to its stored result path. Overridden by tests, which have no table. Only
+     * called for an argument shaped like a job id, so two literal paths never touch DynamoDB.
      */
-    ResultsQueryService runLookup(BaasConfig config, AwsClientFactory factory) {
+    ResultsQueryService jobLookup(BaasConfig config, AwsClientFactory factory) {
         return new ResultsQueryService(factory.dynamoDb(), config.resultsTable());
     }
 
@@ -85,13 +85,13 @@ public class EnvDiffSubcommand implements Callable<Integer> {
 
         String pathA;
         String pathB;
-        try (var lookup = runLookup(config, factory)) {
-            pathA = RunReference.resolve(resultPathA, lookup::resultPathForRun);
-            pathB = RunReference.resolve(resultPathB, lookup::resultPathForRun);
+        try (var lookup = jobLookup(config, factory)) {
+            pathA = JobReference.resolve(resultPathA, lookup::resultPathForJob);
+            pathB = JobReference.resolve(resultPathB, lookup::resultPathForJob);
         }
         for (var unresolved : new String[][]{{resultPathA, pathA}, {resultPathB, pathB}}) {
             if (unresolved[1] == null) {
-                logger.error("{}", RunReference.noSuchRun(unresolved[0]));
+                logger.error("{}", JobReference.noSuchJob(unresolved[0]));
                 return 1;
             }
         }
@@ -127,11 +127,11 @@ public class EnvDiffSubcommand implements Callable<Integer> {
     /**
      * Command payload, so the {@link Console} rather than the logger — a timestamp prefix on every
      * line breaks redirecting this to a file, the same reasoning as ResultsCommand#printJson. The
-     * two runs' values are coloured apart when the terminal allows it.
+     * two jobs' values are coloured apart when the terminal allows it.
      */
     void printDiff(Console out, Map<String, EnvironmentManifest.Difference> differences) {
         if (differences.isEmpty()) {
-            out.println("No differences. Both runs measured on the same environment.");
+            out.println("No differences. Both jobs measured on the same environment.");
             return;
         }
         var table = new Table(out, 94, List.of(
@@ -159,7 +159,7 @@ public class EnvDiffSubcommand implements Callable<Integer> {
             logger.error("""
                 No environment.json at s3://{}/{}
                   Runs from before the prebaked-image change carry no environment manifest, and
-                  a run that never started writes none.""", bucket, key);
+                  a job that never started writes none.""", bucket, key);
             return Optional.empty();
         }
         return Optional.of(EnvironmentManifest.parse(resultPath, body.get()));

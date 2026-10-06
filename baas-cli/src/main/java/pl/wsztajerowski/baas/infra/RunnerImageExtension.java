@@ -46,7 +46,7 @@ public final class RunnerImageExtension {
         # The contract fails the bake if the image no longer has: Java at or above the runner's
         # version on PATH, the aws CLI, async-profiler under /app/async-profiler, a perf matching the
         # running kernel, kernel.perf_event_paranoid <= 1 and kernel.kptr_restrict = 0. Everything
-        # else (another JDK vendor, transparent hugepages, swap) is yours to change, and every run
+        # else (another JDK vendor, transparent hugepages, swap) is yours to change, and every job
         # records what it measured on in environment.json.
         #
         # Never put a credential here: anyone who can describe the stack can read this document.

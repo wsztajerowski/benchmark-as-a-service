@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Config file, then AWS_REGION, then the default. CI's fresh config names no region, and used to get
- * eu-central-1 whatever the job's credentials step was told — right only while the two matched.
+ * eu-central-1 whatever the CI job's credentials step was told — right only while the two matched.
  */
 class RegionResolutionTest {
 
@@ -34,7 +34,7 @@ class RegionResolutionTest {
             .isEqualTo(BaasConfig.AwsConfig.DEFAULT_REGION);
     }
 
-    /** Otherwise one `config sync` in CI would pin that job's AWS_REGION into the file for good. */
+    /** Otherwise one `config sync` in CI would pin that CI job's AWS_REGION into the file for good. */
     @Test
     void savingAConfigWithNoRegionWritesNone() throws Exception {
         var config = new BaasConfig();

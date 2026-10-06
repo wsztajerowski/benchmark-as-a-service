@@ -76,7 +76,7 @@ public class ApiJmhOptions {
         @Option(names = {"-tu", "--time-unit"}, description = "Override time unit in benchmark results. Available time units are: [m, s, ms, us, ns]. (default: SECONDS)")
         String timeUnit;
 
-        @Option(names = {"-e", "--exclude-benchmark-regex"}, description = "Benchmarks to exclude from the run.")
+        @Option(names = {"-e", "--exclude-benchmark-regex"}, description = "Benchmarks to exclude from the job.")
         String excludeBenchmarkRegex;
 
         @Parameters(index = "0", description = "Test name regex", arity = "0..1")
@@ -99,7 +99,7 @@ public class ApiJmhOptions {
         @Option(names = {"-wm", "--warmup-mode"}, description = "Warmup mode for warming up selected benchmarks. Warmup modes are: INDI = Warmup each benchmark individually, then measure it. BULK = Warmup all benchmarks first, then do all the measurements. BULK_INDI = Warmup all benchmarks first, then re-warmup each benchmark individually, then measure it. (default: INDI)")
         String warmupMode;
 
-        @Option(names = {"-wmb", "--warmup-benchmarks"}, description = "Warmup benchmarks to include in the run in addition to already selected by the primary filters. Harness will not measure these benchmarks, but only use them for the warmup.")
+        @Option(names = {"-wmb", "--warmup-benchmarks"}, description = "Warmup benchmarks to include in the job in addition to already selected by the primary filters. Harness will not measure these benchmarks, but only use them for the warmup.")
         String warmupBenchmarks;
     }
 

@@ -1,8 +1,8 @@
-package pl.wsztajerowski.baas.runs;
+package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.model.RunItem;
-import pl.wsztajerowski.baas.model.RunStatus;
+import pl.wsztajerowski.baas.model.JobItem;
+import pl.wsztajerowski.baas.model.JobStatus;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -16,14 +16,14 @@ import java.util.function.Predicate;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class RunSessionTest {
+class JobSessionTest {
 
-    private static final RunItem RUN = new RunItem("20261003T000000000Z-a3f9c21b", "p",
-        Instant.parse("2026-10-03T00:00:00Z"), "runs/p/20261003T000000000Z-a3f9c21b", "c5.2xlarge",
-        RunStatus.LAUNCHING, null, null, Map.of(), null);
+    private static final JobItem JOB = new JobItem("20261003T000000000Z-a3f9c21b", "p",
+        Instant.parse("2026-10-03T00:00:00Z"), "jobs/p/20261003T000000000Z-a3f9c21b", "c5.2xlarge",
+        JobStatus.LAUNCHING, null, null, Map.of(), null);
 
-    /** The run item in memory, applying the same rules the DynamoDB conditions enforce. */
-    static final class FakeRecorder implements RunRecorder {
+    /** The job item in memory, applying the same rules the DynamoDB conditions enforce. */
+    static final class FakeRecorder implements JobRecorder {
         final List<String> writes = new ArrayList<>();
         String status;
         String instanceId;
@@ -34,30 +34,30 @@ class RunSessionTest {
         Runnable beforeStop = () -> { };
 
         @Override
-        public void reserve(RunItem run) {
+        public void reserve(JobItem job) {
             if (failReserve != null) throw failReserve;
             writes.add("reserve");
-            status = RunStatus.LAUNCHING;
+            status = JobStatus.LAUNCHING;
         }
 
         @Override
-        public Write launched(RunItem run, String id) {
+        public Write launched(JobItem job, String id) {
             if (failLaunched != null) throw failLaunched;
             writes.add("launched");
-            if (!RunStatus.LAUNCHING.equals(status)) return Write.REFUSED;
-            status = RunStatus.LAUNCHED;
+            if (!JobStatus.LAUNCHING.equals(status)) return Write.REFUSED;
+            status = JobStatus.LAUNCHED;
             instanceId = id;
             return Write.WRITTEN;
         }
 
         @Override
-        public Write launchFailed(RunItem run, String errorCode) {
+        public Write launchFailed(JobItem job, String errorCode) {
             writes.add("launch-failed:" + errorCode);
-            return guarded(RunStatus.LAUNCH_FAILED);
+            return guarded(JobStatus.LAUNCH_FAILED);
         }
 
         @Override
-        public Write stop(RunItem run, String s) {
+        public Write stop(JobItem job, String s) {
             if (failStop != null) throw failStop;
             beforeStop.run();
             writes.add("stop:" + s);
@@ -70,31 +70,31 @@ class RunSessionTest {
         }
 
         private Write guarded(String s) {
-            if (status == null || RunStatus.isTerminal(status)) return Write.REFUSED;
+            if (status == null || JobStatus.isTerminal(status)) return Write.REFUSED;
             status = s;
             return Write.WRITTEN;
         }
 
         @Override
-        public Optional<RunItem> read(RunItem run) {
-            return status == null ? Optional.empty() : Optional.of(new RunItem(run.runId(), run.project(),
-                run.createdAt(), run.resultPath(), run.instanceType(), status, instanceId, null, Map.of(), null));
+        public Optional<JobItem> read(JobItem job) {
+            return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
+                job.createdAt(), job.resultPath(), job.instanceType(), status, instanceId, null, Map.of(), null));
         }
 
         @Override
-        public Optional<RunItem> find(String runId) {
-            return read(RUN);
+        public Optional<JobItem> find(String jobId) {
+            return read(JOB);
         }
 
         @Override
-        public List<RunItem> newestFirst(Predicate<RunItem> filter, int limit) {
-            return read(RUN).filter(filter).stream().toList();
+        public List<JobItem> newestFirst(Predicate<JobItem> filter, int limit) {
+            return read(JOB).filter(filter).stream().toList();
         }
     }
 
-    static final class FakeInstances implements RunSession.Instances {
+    static final class FakeInstances implements JobSession.Instances {
         final Map<String, String> states = new HashMap<>();
-        final Map<String, String> byRunId = new HashMap<>();
+        final Map<String, String> byJobId = new HashMap<>();
         final List<String> terminated = new ArrayList<>();
         RuntimeException failTerminate;
 
@@ -104,8 +104,8 @@ class RunSessionTest {
         }
 
         @Override
-        public Optional<String> findLive(String runId) {
-            return Optional.ofNullable(byRunId.get(runId));
+        public Optional<String> findLive(String jobId) {
+            return Optional.ofNullable(byJobId.get(jobId));
         }
 
         @Override
@@ -118,7 +118,7 @@ class RunSessionTest {
 
     private final FakeRecorder recorder = new FakeRecorder();
     private final FakeInstances instances = new FakeInstances();
-    private final RunSession session = new RunSession(RUN, recorder, recorder, instances);
+    private final JobSession session = new JobSession(JOB, recorder, recorder, instances);
 
     // ─── reserve and launch ──────────────────────────────────────────────────────
 
@@ -134,8 +134,8 @@ class RunSessionTest {
     void aConfirmedLaunchRecordsTheInstance() {
         session.reserve();
 
-        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CONFIRMED);
-        assertThat(recorder.status).isEqualTo(RunStatus.LAUNCHED);
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.CONFIRMED);
+        assertThat(recorder.status).isEqualTo(JobStatus.LAUNCHED);
         assertThat(session.instanceId()).isEqualTo("i-1");
     }
 
@@ -145,32 +145,32 @@ class RunSessionTest {
         session.reserve();
         recorder.failLaunched = new IllegalStateException("network down");
 
-        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.UNCONFIRMED);
-        session.stop(RunStatus.CANCELLED);
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.UNCONFIRMED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(instances.terminated).containsExactly("i-1");
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
     }
 
     @Test
-    void aRunCancelledWhileLaunchingTerminatesTheInstanceItJustLaunched() {
+    void aJobCancelledWhileLaunchingTerminatesTheInstanceItJustLaunched() {
         session.reserve();
-        recorder.stop(RUN, RunStatus.CANCELLED);   // another operator's `baas runs terminate`
+        recorder.stop(JOB, JobStatus.CANCELLED);   // another operator's `baas jobs terminate`
 
-        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CANCELLED_WHILE_LAUNCHING);
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.CANCELLED_WHILE_LAUNCHING);
         assertThat(instances.terminated).containsExactly("i-1");
         assertThat(session.ended()).isTrue();
-        assertThat(session.endStatus()).isEqualTo(RunStatus.CANCELLED);
+        assertThat(session.endStatus()).isEqualTo(JobStatus.CANCELLED);
     }
 
     /** The instance's `running` landed first; the late `launched` must not move it backwards. */
     @Test
     void aLateLaunchedWriteDoesNotMoveTheStatusBack() {
         session.reserve();
-        recorder.instanceWrites(RunStatus.RUNNING);
+        recorder.instanceWrites(JobStatus.RUNNING);
 
-        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CONFIRMED);
-        assertThat(recorder.status).isEqualTo(RunStatus.RUNNING);
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.CONFIRMED);
+        assertThat(recorder.status).isEqualTo(JobStatus.RUNNING);
         assertThat(instances.terminated).isEmpty();
     }
 
@@ -180,10 +180,10 @@ class RunSessionTest {
 
         session.recordLaunchFailed("InsufficientInstanceCapacity");
 
-        assertThat(recorder.status).isEqualTo(RunStatus.LAUNCH_FAILED);
+        assertThat(recorder.status).isEqualTo(JobStatus.LAUNCH_FAILED);
         assertThat(recorder.writes).contains("launch-failed:InsufficientInstanceCapacity");
         assertThat(session.ended()).as("the shutdown hook then has nothing to stop").isTrue();
-        assertThat(session.endStatus()).isEqualTo(RunStatus.LAUNCH_FAILED);
+        assertThat(session.endStatus()).isEqualTo(JobStatus.LAUNCH_FAILED);
     }
 
     // ─── stop ────────────────────────────────────────────────────────────────────
@@ -193,16 +193,16 @@ class RunSessionTest {
         session.reserve();
         session.confirmLaunched("i-1");
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(recorder.writes).containsSubsequence("stop:cancelled");
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
         assertThat(instances.terminated).containsExactly("i-1");
-        assertThat(session.endStatus()).isEqualTo(RunStatus.CANCELLED);
+        assertThat(session.endStatus()).isEqualTo(JobStatus.CANCELLED);
     }
 
     @Test
-    void aRunStillGoingHasNoEndStatus() {
+    void aJobStillGoingHasNoEndStatus() {
         session.reserve();
         session.confirmLaunched("i-1");
 
@@ -215,7 +215,7 @@ class RunSessionTest {
         session.confirmLaunched("i-1");
         recorder.failStop = new IllegalStateException("timed out after 5s");
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(instances.terminated).containsExactly("i-1");
     }
@@ -224,9 +224,9 @@ class RunSessionTest {
     @Test
     void anInterruptBeforeTheLaunchReturnedFindsTheInstanceByItsTag() {
         session.reserve();
-        instances.byRunId.put(RUN.runId(), "i-tagged");
+        instances.byJobId.put(JOB.jobId(), "i-tagged");
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(instances.terminated).containsExactly("i-tagged");
     }
@@ -240,25 +240,25 @@ class RunSessionTest {
     void anInterruptWhoseInstanceIsNotYetVisibleStillRecordsTheCancellation() {
         session.reserve();
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(instances.terminated).isEmpty();
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
-        assertThat(recorder.instanceWrites(RunStatus.RUNNING)).isEqualTo(RunRecorder.Write.REFUSED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
+        assertThat(recorder.instanceWrites(JobStatus.RUNNING)).isEqualTo(JobRecorder.Write.REFUSED);
     }
 
     /** Ctrl+C between the instance's final write and the next poll: its log upload must finish. */
     @Test
     void anInterruptAfterTheInstanceRecordedItsOutcomeLeavesItToTerminateItself() {
-        for (String outcome : List.of(RunStatus.COMPLETED, RunStatus.failed(3))) {
+        for (String outcome : List.of(JobStatus.COMPLETED, JobStatus.failed(3))) {
             FakeRecorder recorder = new FakeRecorder();
             FakeInstances instances = new FakeInstances();
-            RunSession session = new RunSession(RUN, recorder, recorder, instances);
+            JobSession session = new JobSession(JOB, recorder, recorder, instances);
             session.reserve();
             session.confirmLaunched("i-1");
             recorder.instanceWrites(outcome);
 
-            session.stop(RunStatus.CANCELLED);
+            session.stop(JobStatus.CANCELLED);
 
             assertThat(instances.terminated).as(outcome).isEmpty();
             assertThat(recorder.status).as(outcome).isEqualTo(outcome);
@@ -270,9 +270,9 @@ class RunSessionTest {
     void anInterruptAfterACancellationFromElsewhereStillTerminates() {
         session.reserve();
         session.confirmLaunched("i-1");
-        recorder.stop(RUN, RunStatus.CANCELLED);
+        recorder.stop(JOB, JobStatus.CANCELLED);
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(instances.terminated).containsExactly("i-1");
     }
@@ -283,17 +283,17 @@ class RunSessionTest {
         session.confirmLaunched("i-1");
         instances.failTerminate = new IllegalStateException("UnauthorizedOperation");
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
     }
 
     @Test
-    void stopIsANoOpOnceTheRunEnded() {
+    void stopIsANoOpOnceTheJobEnded() {
         session.reserve();
         session.recordLaunchFailed("X");
 
-        session.stop(RunStatus.CANCELLED);
+        session.stop(JobStatus.CANCELLED);
 
         assertThat(recorder.writes).doesNotContain("stop:cancelled");
     }
@@ -302,7 +302,7 @@ class RunSessionTest {
 
     private final AtomicLong clock = new AtomicLong();
 
-    private RunSession.Outcome await(int capSeconds, boolean measurementsStored, Runnable onEachSleep)
+    private JobSession.Outcome await(int capSeconds, boolean measurementsStored, Runnable onEachSleep)
         throws InterruptedException {
         return session.await(capSeconds, 15_000, clock::get, millis -> {
             clock.addAndGet(millis);
@@ -320,20 +320,20 @@ class RunSessionTest {
     void completionExitsZero() throws Exception {
         launched();
 
-        var outcome = await(600, false, () -> recorder.instanceWrites(RunStatus.COMPLETED));
+        var outcome = await(600, false, () -> recorder.instanceWrites(JobStatus.COMPLETED));
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
         assertThat(instances.terminated).as("the instance terminates itself after its log upload").isEmpty();
-        assertThat(session.endStatus()).isEqualTo(RunStatus.COMPLETED);
+        assertThat(session.endStatus()).isEqualTo(JobStatus.COMPLETED);
     }
 
     @Test
     void aFailedBenchmarkExitsOneAsItAlwaysHas() throws Exception {
         launched();
 
-        var outcome = await(600, false, () -> recorder.instanceWrites(RunStatus.failed(3)));
+        var outcome = await(600, false, () -> recorder.instanceWrites(JobStatus.failed(3)));
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome("failed:3", 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome("failed:3", 1));
         assertThat(session.endStatus()).isEqualTo("failed:3");
     }
 
@@ -341,10 +341,10 @@ class RunSessionTest {
     void theWatchdogsTimeoutExitsOne() throws Exception {
         launched();
 
-        var outcome = await(600, false, () -> recorder.instanceWrites(RunStatus.TIMED_OUT));
+        var outcome = await(600, false, () -> recorder.instanceWrites(JobStatus.TIMED_OUT));
 
         assertThat(outcome.exitCode()).isEqualTo(1);
-        assertThat(outcome.status()).isEqualTo(RunStatus.TIMED_OUT);
+        assertThat(outcome.status()).isEqualTo(JobStatus.TIMED_OUT);
     }
 
     @Test
@@ -353,9 +353,9 @@ class RunSessionTest {
 
         var outcome = await(60, false, () -> { });
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.TIMED_OUT, 1));
-        assertThat(session.endStatus()).isEqualTo(RunStatus.TIMED_OUT);
-        assertThat(recorder.status).isEqualTo(RunStatus.TIMED_OUT);
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.TIMED_OUT, 1));
+        assertThat(session.endStatus()).isEqualTo(JobStatus.TIMED_OUT);
+        assertThat(recorder.status).isEqualTo(JobStatus.TIMED_OUT);
         assertThat(instances.terminated).containsExactly("i-1");
     }
 
@@ -365,10 +365,10 @@ class RunSessionTest {
         launched();
 
         var outcome = await(60, false, () -> {
-            if (clock.get() > 60_000) recorder.instanceWrites(RunStatus.COMPLETED);
+            if (clock.get() > 60_000) recorder.instanceWrites(JobStatus.COMPLETED);
         });
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
         assertThat(instances.terminated).isEmpty();
     }
 
@@ -376,12 +376,12 @@ class RunSessionTest {
     @Test
     void theCapReportsAnOutcomeThatBeatItsOwnWrite() throws Exception {
         launched();
-        recorder.beforeStop = () -> recorder.instanceWrites(RunStatus.COMPLETED);
+        recorder.beforeStop = () -> recorder.instanceWrites(JobStatus.COMPLETED);
 
         var outcome = await(60, false, () -> { });
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
-        assertThat(recorder.status).isEqualTo(RunStatus.COMPLETED);
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
+        assertThat(recorder.status).isEqualTo(JobStatus.COMPLETED);
         assertThat(instances.terminated).isEmpty();
     }
 
@@ -389,9 +389,9 @@ class RunSessionTest {
     void aCancellationFromElsewhereStillTerminatesALiveInstance() throws Exception {
         launched();
 
-        var outcome = await(600, false, () -> recorder.stop(RUN, RunStatus.CANCELLED));
+        var outcome = await(600, false, () -> recorder.stop(JOB, JobStatus.CANCELLED));
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.CANCELLED, 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.CANCELLED, 1));
         assertThat(instances.terminated).containsExactly("i-1");
     }
 
@@ -401,20 +401,20 @@ class RunSessionTest {
 
         var outcome = await(600, false, () -> {
             instances.states.put("i-1", "terminated");
-            recorder.instanceWrites(RunStatus.COMPLETED);
+            recorder.instanceWrites(JobStatus.COMPLETED);
         });
 
         assertThat(outcome.exitCode()).isZero();
     }
 
     @Test
-    void aGoneInstanceWithStoredMeasurementsIsALostStatusNotAVanishedRun() throws Exception {
+    void aGoneInstanceWithStoredMeasurementsIsALostStatusNotAVanishedJob() throws Exception {
         launched();
 
         var outcome = await(600, true, () -> instances.states.put("i-1", "terminated"));
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunSession.Outcome.STATUS_LOST, 1));
-        assertThat(session.endStatus()).isEqualTo(RunSession.Outcome.STATUS_LOST);
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobSession.Outcome.STATUS_LOST, 1));
+        assertThat(session.endStatus()).isEqualTo(JobSession.Outcome.STATUS_LOST);
     }
 
     @Test
@@ -423,38 +423,38 @@ class RunSessionTest {
 
         var outcome = await(600, false, () -> instances.states.put("i-1", "terminated"));
 
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.VANISHED, 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.VANISHED, 1));
         assertThat(session.ended()).isTrue();
-        assertThat(session.endStatus()).isEqualTo(RunStatus.VANISHED);
+        assertThat(session.endStatus()).isEqualTo(JobStatus.VANISHED);
     }
 
     // ─── U38: an outcome that beat the launch confirmation ───────────────────────
 
     /**
-     * RunInstances answered after the whole run (seen live on a slow link): the instance recorded
-     * completed before the CLI could record launched. That is a finished run, not a cancelled one.
+     * RunInstances answered after the whole job (seen live on a slow link): the instance recorded
+     * completed before the CLI could record launched. That is a finished job, not a cancelled one.
      */
     @Test
-    void aRunThatFinishedBeforeItsLaunchWasConfirmedIsReportedAsFinished() throws Exception {
+    void aJobThatFinishedBeforeItsLaunchWasConfirmedIsReportedAsFinished() throws Exception {
         session.reserve();
-        recorder.instanceWrites(RunStatus.RUNNING);
-        recorder.instanceWrites(RunStatus.COMPLETED);
+        recorder.instanceWrites(JobStatus.RUNNING);
+        recorder.instanceWrites(JobStatus.COMPLETED);
 
-        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CONFIRMED);
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.CONFIRMED);
         assertThat(instances.terminated).as("it is uploading its boot log and terminates itself").isEmpty();
 
         instances.states.put("i-1", "shutting-down");
         var outcome = await(600, true, () -> { });
-        assertThat(outcome).isEqualTo(new RunSession.Outcome(RunStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
     }
 
     @Test
-    void aFailedRunThatBeatTheConfirmationIsReportedAsFailedNotCancelled() throws Exception {
+    void aFailedJobThatBeatTheConfirmationIsReportedAsFailedNotCancelled() throws Exception {
         session.reserve();
-        recorder.instanceWrites(RunStatus.failed(7));
+        recorder.instanceWrites(JobStatus.failed(7));
 
-        assertThat(session.confirmLaunched("i-1")).isEqualTo(RunSession.Confirmation.CONFIRMED);
+        assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.CONFIRMED);
         assertThat(instances.terminated).isEmpty();
-        assertThat(await(600, false, () -> { })).isEqualTo(new RunSession.Outcome("failed:7", 1));
+        assertThat(await(600, false, () -> { })).isEqualTo(new JobSession.Outcome("failed:7", 1));
     }
 }

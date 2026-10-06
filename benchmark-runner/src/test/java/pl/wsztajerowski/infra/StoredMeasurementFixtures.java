@@ -14,7 +14,7 @@ final class StoredMeasurementFixtures {
         return jmh(method, Map.of(), 1234.5);
     }
 
-    /** One variant of a {@code @Param} sweep: same run, method and mode, its own params and score. */
+    /** One variant of a {@code @Param} sweep: same job, method and mode, its own params and score. */
     static StoredMeasurement jmh(String method, Map<String, String> params, double score) {
         return new StoredMeasurement(
             "lynx-journal",

@@ -67,7 +67,7 @@ public class TeardownCommand implements Callable<Integer> {
         // under the old caller-ARN naming, is reached.
         String resolvedStack = resolveInstallation(config);
 
-        // Gate 1: no active runs
+        // Gate 1: no active jobs
         try (var ec2 = factory.ec2()) {
             var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances();
             if (!running.isEmpty()) {
@@ -187,7 +187,7 @@ public class TeardownCommand implements Callable<Integer> {
 
     /**
      * {@code --yes}, or the stack name typed back on a terminal. Without a terminal only
-     * {@code --yes} proceeds, as for {@code baas runs terminate}: reading a closed stdin used to
+     * {@code --yes} proceeds, as for {@code baas jobs terminate}: reading a closed stdin used to
      * crash with "No line found". An abort exits 1, so a script can tell it from a teardown done.
      */
     boolean confirmed(String stack) {
@@ -267,17 +267,17 @@ public class TeardownCommand implements Callable<Integer> {
     }
 
     /**
-     * Names each in-flight run by the {@code baas-request-id} tag its instance carries, read from
+     * Names each in-flight job by the {@code baas-job-id} tag its instance carries, read from
      * the same {@code DescribeInstances} the gate already makes: teardown runs with deployer
      * credentials, which hold no read of the results table, and need none for this.
      */
     static String inFlightRefusal(List<Ec2ProvisioningService.LiveRunner> running) {
         String rows = running.stream()
             .map(r -> "  %-30s %-21s %s".formatted(
-                r.runId() == null ? "(no run id tag)" : r.runId(), r.instanceId(), r.state()))
+                r.jobId() == null ? "(no job id tag)" : r.jobId(), r.instanceId(), r.state()))
             .collect(Collectors.joining("\n"));
-        return (running.size() == 1 ? "Aborting: 1 run is" : "Aborting: " + running.size() + " runs are")
+        return (running.size() == 1 ? "Aborting: 1 job is" : "Aborting: " + running.size() + " jobs are")
             + " still in flight:\n" + rows + "\n"
-            + "Wait for them to finish, or stop each one:  baas runs terminate <runId>";
+            + "Wait for them to finish, or stop each one:  baas jobs terminate <jobId>";
     }
 }

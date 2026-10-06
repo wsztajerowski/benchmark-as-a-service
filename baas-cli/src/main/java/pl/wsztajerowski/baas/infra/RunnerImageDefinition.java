@@ -15,7 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * missing value. Each CLI reads only the copy bundled in its own JAR, so no older file carries
  * retired keys — and leniency here turned a typo ({@code perf_event_paranoid}) into a silently
  * permissive image: the field defaulted to {@code 0}, below the declared {@code 1}, and the bake,
- * the component and every run's manifest reported it as though it had been chosen.
+ * the component and every job's manifest reported it as though it had been chosen.
  */
 public record RunnerImageDefinition(
     String imageVersion,

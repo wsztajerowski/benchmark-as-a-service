@@ -49,12 +49,12 @@ class S3UploadServiceIT {
     void emptiesAVersionedBucketCompletely() {
         // Three versions of one key, plus a delete marker on a second key.
         for (int i = 0; i < 3; i++) {
-            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/benchmark.jar").build(),
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/benchmark.jar").build(),
                 RequestBody.fromString("payload-" + i));
         }
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/result.json").build(),
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/result.json").build(),
             RequestBody.fromString("{}"));
-        s3.deleteObject(r -> r.bucket(bucket).key("runs/result.json"));
+        s3.deleteObject(r -> r.bucket(bucket).key("jobs/result.json"));
 
         new S3UploadService(s3).deleteAllObjects(bucket);
 
@@ -77,7 +77,7 @@ class S3UploadServiceIT {
      */
     @Test
     void removesTheBucketItselfNotJustItsContents() {
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/result.json").build(),
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/result.json").build(),
             RequestBody.fromString("{}"));
 
         var service = new S3UploadService(s3);
@@ -109,7 +109,7 @@ class S3UploadServiceIT {
     void batchesDeletesAcrossMoreThanOnePage() {
         // listObjectVersions pages at 1000 keys; this crosses that boundary.
         for (int i = 0; i < 1005; i++) {
-            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/obj-" + i).build(),
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/obj-" + i).build(),
                 RequestBody.fromString("x"));
         }
 
@@ -130,16 +130,16 @@ class S3UploadServiceIT {
     @Test
     void emptyingWalksVersionsWrittenBeforeSuspension() {
         for (int i = 0; i < 2; i++) {
-            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/input/benchmark.jar").build(),
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/p/id/input/benchmark.jar").build(),
                 RequestBody.fromString("payload-" + i));
         }
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/gone.txt").build(),
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/p/id/gone.txt").build(),
             RequestBody.fromString("x"));
-        s3.deleteObject(r -> r.bucket(bucket).key("runs/p/id/gone.txt"));
+        s3.deleteObject(r -> r.bucket(bucket).key("jobs/p/id/gone.txt"));
 
         s3.putBucketVersioning(r -> r.bucket(bucket)
             .versioningConfiguration(v -> v.status(BucketVersioningStatus.SUSPENDED)));
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("runs/p/id/cloud-init-output.log").build(),
+        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/p/id/cloud-init-output.log").build(),
             RequestBody.fromString("completed"));
 
         new S3UploadService(s3).deleteAllObjects(bucket);

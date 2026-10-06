@@ -17,10 +17,10 @@ import static java.util.Objects.requireNonNull;
  * Selects exactly one results store.
  *
  * <p>Absent configuration is a hard failure, and nothing discards measurements. An older builder
- * returned a no-op when the connection string was null or empty, which let a paid run report
+ * returned a no-op when the connection string was null or empty, which let a paid job report
  * success while discarding its measurements — the single most expensive silent failure this
- * project had. Its explicit successor, {@code --no-database}, is gone too: a CLI run records its
- * status in the results table, so it always has one, and a local run names a LocalStack table.
+ * project had. Its explicit successor, {@code --no-database}, is gone too: a CLI job records its
+ * status in the results table, so it always has one, and a local job names a LocalStack table.
  */
 public class ResultsStoreBuilder {
     private static final Logger logger = LoggerFactory.getLogger(ResultsStoreBuilder.class);

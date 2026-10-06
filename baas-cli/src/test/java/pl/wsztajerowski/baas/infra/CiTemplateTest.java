@@ -25,7 +25,7 @@ class CiTemplateTest {
 
     /**
      * A role-chained session is capped at 60 minutes by STS whatever MaxSessionDuration says,
-     * against a 7200 s default benchmark timeout — and the failure mode was a red job with a good
+     * against a 7200 s default benchmark timeout — and the failure mode was a red CI job with a good
      * measurement, an un-terminated instance and a full EC2 bill.
      */
     @Test

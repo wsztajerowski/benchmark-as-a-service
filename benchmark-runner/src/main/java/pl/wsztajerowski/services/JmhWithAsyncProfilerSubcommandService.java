@@ -60,7 +60,7 @@ public class JmhWithAsyncProfilerSubcommandService {
                 .saveFile(outputPath.resolve("jmh-with-async-output.txt"), jmhOptions.outputOptions().processOutput());
             // Covers async-profiler's own logs too: its output directory sits below the working
             // directory, so they land under logs/async-output/.
-            RunLogs.upload(storageService, outputPath);
+            JobLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -78,7 +78,7 @@ public class JmhWithAsyncProfilerSubcommandService {
             storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
             this::profilerOutputPathFor);
 
-        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
+        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);
     }
 
@@ -86,7 +86,7 @@ public class JmhWithAsyncProfilerSubcommandService {
      * The S3 prefix holding one result's profiling artifacts. Recorded on the measurement so a
      * reader can list it, rather than re-deriving JMH's mode-dependent directory suffix elsewhere.
      * Note this is the storage prefix, not the local one — async-profiler writes under its own
-     * output path and the files are uploaded into the run's result path.
+     * output path and the files are uploaded into the job's result path.
      */
     private String profilerOutputPathFor(JmhResult jmhResult) {
         return outputPath.resolve(benchmarkDirName(jmhResult)).toString();

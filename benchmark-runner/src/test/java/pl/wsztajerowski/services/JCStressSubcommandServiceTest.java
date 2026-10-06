@@ -48,7 +48,7 @@ class JCStressSubcommandServiceTest {
         assertThat(sut.jcstressProcess().commands()).containsSubsequence("-m", "sanity");
     }
 
-    /** Without --mode JCStress keeps its default, so results stay comparable with earlier runs. */
+    /** Without --mode JCStress keeps its default, so results stay comparable with earlier jobs. */
     @Test
     void noModeAddsNoModeArgument(@TempDir Path tmp) {
         var sut = serviceWith(tmp, null);

@@ -1,39 +1,39 @@
-package pl.wsztajerowski.baas.runs;
+package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.model.RunStatus;
+import pl.wsztajerowski.baas.model.JobStatus;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-class RunTerminationTest {
+class JobTerminationTest {
 
-    private final RunSessionTest.FakeRecorder recorder = new RunSessionTest.FakeRecorder();
-    private final RunSessionTest.FakeInstances instances = new RunSessionTest.FakeInstances();
-    private final RunTermination termination = new RunTermination(recorder, recorder, instances);
+    private final JobSessionTest.FakeRecorder recorder = new JobSessionTest.FakeRecorder();
+    private final JobSessionTest.FakeInstances instances = new JobSessionTest.FakeInstances();
+    private final JobTermination termination = new JobTermination(recorder, recorder, instances);
 
     private void runningOn(String instanceId) {
-        recorder.status = RunStatus.RUNNING;
+        recorder.status = JobStatus.RUNNING;
         recorder.instanceId = instanceId;
         instances.states.put(instanceId, "running");
     }
 
     @Test
-    void anInFlightRunIsCancelledAndItsInstanceTerminated() {
+    void anInFlightJobIsCancelledAndItsInstanceTerminated() {
         runningOn("i-1");
 
         assertThat(termination.terminate("r", () -> true)).isZero();
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
         assertThat(instances.terminated).containsExactly("i-1");
     }
 
     @Test
-    void aFinishedRunIsLeftAlone() {
-        recorder.status = RunStatus.COMPLETED;
+    void aFinishedJobIsLeftAlone() {
+        recorder.status = JobStatus.COMPLETED;
         recorder.instanceId = "i-1";
         instances.states.put("i-1", "terminated");
 
         assertThat(termination.terminate("r", () -> { throw new AssertionError("not asked"); })).isZero();
-        assertThat(recorder.status).isEqualTo(RunStatus.COMPLETED);
+        assertThat(recorder.status).isEqualTo(JobStatus.COMPLETED);
         assertThat(instances.terminated).isEmpty();
     }
 
@@ -41,11 +41,11 @@ class RunTerminationTest {
     @Test
     void aLiveInstanceIsStoppedEvenWhenTheItemIsAlreadyTerminal() {
         runningOn("i-1");
-        recorder.status = RunStatus.CANCELLED;
+        recorder.status = JobStatus.CANCELLED;
 
         assertThat(termination.terminate("r", () -> true)).isZero();
         assertThat(instances.terminated).containsExactly("i-1");
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
     }
 
     @Test
@@ -57,14 +57,14 @@ class RunTerminationTest {
     }
 
     @Test
-    void anUnknownRunFails() {
+    void anUnknownJobFails() {
         assertThat(termination.terminate("no-such-run", () -> true)).isEqualTo(1);
     }
 
-    /** Launched by a CLI from before run items: only the instance's tag knows the run id. */
+    /** Launched by a CLI from before job items: only the instance's tag knows the job id. */
     @Test
-    void aRunWithNoItemIsStoppedByItsInstanceTag() {
-        instances.byRunId.put("20261001T000000000Z-0badc0de", "i-old");
+    void aJobWithNoItemIsStoppedByItsInstanceTag() {
+        instances.byJobId.put("20261001T000000000Z-0badc0de", "i-old");
 
         assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> true)).isZero();
         assertThat(instances.terminated).containsExactly("i-old");
@@ -72,8 +72,8 @@ class RunTerminationTest {
     }
 
     @Test
-    void aRunWithNoItemIsLeftAloneWhenTheConfirmationIsDeclined() {
-        instances.byRunId.put("20261001T000000000Z-0badc0de", "i-old");
+    void aJobWithNoItemIsLeftAloneWhenTheConfirmationIsDeclined() {
+        instances.byJobId.put("20261001T000000000Z-0badc0de", "i-old");
 
         assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> false)).isEqualTo(1);
         assertThat(instances.terminated).isEmpty();
@@ -84,30 +84,30 @@ class RunTerminationTest {
         runningOn("i-1");
 
         assertThat(termination.terminate("r", () -> false)).isEqualTo(1);
-        assertThat(recorder.status).isEqualTo(RunStatus.RUNNING);
+        assertThat(recorder.status).isEqualTo(JobStatus.RUNNING);
         assertThat(instances.terminated).isEmpty();
     }
 
     @Test
-    void aLaunchingRunWithNoInstanceIdIsFoundByItsTag() {
-        recorder.status = RunStatus.LAUNCHING;
-        instances.byRunId.put(recorder.find("r").orElseThrow().runId(), "i-tagged");
+    void aLaunchingJobWithNoInstanceIdIsFoundByItsTag() {
+        recorder.status = JobStatus.LAUNCHING;
+        instances.byJobId.put(recorder.find("r").orElseThrow().jobId(), "i-tagged");
 
         assertThat(termination.terminate("r", () -> true)).isZero();
         assertThat(instances.terminated).containsExactly("i-tagged");
-        assertThat(recorder.status).isEqualTo(RunStatus.CANCELLED);
+        assertThat(recorder.status).isEqualTo(JobStatus.CANCELLED);
     }
 
     /** U30: the instance wrote this outcome and is uploading its boot log before it terminates. */
     @Test
-    void aRunTheInstanceFinishedIsLeftToTerminateItself() {
+    void aJobTheInstanceFinishedIsLeftToTerminateItself() {
         runningOn("i-1");
-        recorder.status = RunStatus.COMPLETED;
+        recorder.status = JobStatus.COMPLETED;
 
         assertThat(termination.terminate("r", () -> { throw new AssertionError("not asked"); })).isZero();
         assertThat(instances.terminated).isEmpty();
 
-        recorder.status = RunStatus.failed(3);
+        recorder.status = JobStatus.failed(3);
         assertThat(termination.terminate("r", () -> { throw new AssertionError("not asked"); })).isZero();
         assertThat(instances.terminated).isEmpty();
     }

@@ -31,7 +31,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "download",
     mixinStandardHelpOptions = true,
-    description = "Download every S3 artifact for a run: result JSON, environment.json, process output, logs and profiling artifacts."
+    description = "Download every S3 artifact for a job: result JSON, environment.json, process output, logs and profiling artifacts."
 )
 public class DownloadCommand implements Callable<Integer> {
 
@@ -39,10 +39,10 @@ public class DownloadCommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Parameters(index = "0", paramLabel = "<runId|resultPath>",
-        description = "The run identifier `baas run` printed and `baas results` shows "
+    @Parameters(index = "0", paramLabel = "<jobId|resultPath>",
+        description = "The job identifier `baas run` printed and `baas results` shows "
             + "(e.g. 20260820T174432812Z-a3f9c21b), or a literal S3 result path "
-            + "(e.g. main/jmh/20260819_090000) for a run stored before the unified layout.")
+            + "(e.g. main/jmh/20260819_090000) for a job stored before the unified layout.")
     String resultPath;
 
     // No --results-table or --bucket: another installation is reached by naming its configuration
@@ -78,11 +78,11 @@ public class DownloadCommand implements Callable<Integer> {
         // which is the only thing config.resultsTable() could fail on.
         String resolvedPath;
         try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
-            resolvedPath = RunReference.resolve(resultPath, results::resultPathForRun);
+            resolvedPath = JobReference.resolve(resultPath, results::resultPathForJob);
         }
-        // Before anything is written, so an unknown run leaves no partial directory behind.
+        // Before anything is written, so an unknown job leaves no partial directory behind.
         if (resolvedPath == null) {
-            logger.error("{} Nothing was written.", RunReference.noSuchRun(resultPath));
+            logger.error("{} Nothing was written.", JobReference.noSuchJob(resultPath));
             return 1;
         }
         logger.debug("{} resolves to {}", resultPath, resolvedPath);
@@ -100,10 +100,10 @@ public class DownloadCommand implements Callable<Integer> {
             var storage = new S3UploadService(s3);
             List<String> keys = storage.listKeys(bucket, prefix);
 
-            // Listed before anything is written: the spec requires an unknown run to leave no
+            // Listed before anything is written: the spec requires an unknown job to leave no
             // partial directory behind, and S3 has no directory whose absence we could check.
             if (keys.isEmpty()) {
-                logger.error("No artifacts found for run '{}' in bucket {}. Nothing was written.",
+                logger.error("No artifacts found for job '{}' in bucket {}. Nothing was written.",
                     resultPath, bucket);
                 return 1;
             }
@@ -120,9 +120,9 @@ public class DownloadCommand implements Callable<Integer> {
                 logger.debug("Downloading {} -> {}", key, destination.get());
                 storage.download(bucket, key, destination.get());
             }
-            logger.info("Downloaded {} artifact(s) for run '{}' to {}",
+            logger.info("Downloaded {} artifact(s) for job '{}' to {}",
                 keys.size() - refused, resultPath, destinationRoot.toAbsolutePath().normalize());
-            // A key that climbs out of the run's directory was never written by BaaS, so the run's
+            // A key that climbs out of the job's directory was never written by BaaS, so the job's
             // prefix has been tampered with — worth a non-zero exit, not just a log line.
             if (refused > 0) {
                 logger.error("{} key(s) under {} point outside the output directory and were not "
@@ -137,7 +137,7 @@ public class DownloadCommand implements Callable<Integer> {
     /**
      * Where a key lands under {@code root}, or empty when it would land anywhere else. An S3 key is
      * an arbitrary string, and anything holding {@code s3:PutObject} on the bucket — the runner role,
-     * so any code in a benchmark JAR — can write one under a run's prefix; {@code ../} or a leading
+     * so any code in a benchmark JAR — can write one under a job's prefix; {@code ../} or a leading
      * {@code /} in it must not choose where this command writes on the operator's machine.
      */
     static Optional<Path> destinationFor(Path root, String prefix, String key) {
@@ -147,7 +147,7 @@ public class DownloadCommand implements Callable<Integer> {
     }
 
     /**
-     * The run prefix's last segment — the run identifier — names the directory. A literal path
+     * The job prefix's last segment — the job identifier — names the directory. A literal path
      * ending in {@code .} or {@code ..} names none, and would otherwise make the working directory
      * or its parent the root.
      */
@@ -156,7 +156,7 @@ public class DownloadCommand implements Callable<Integer> {
         String last = trimmed.substring(trimmed.lastIndexOf('/') + 1);
         if (last.isEmpty() || last.equals(".") || last.equals("..")) {
             throw new IllegalArgumentException(
-                "'" + resolvedPath + "' does not end in a run directory; name one with --output-dir.");
+                "'" + resolvedPath + "' does not end in a job directory; name one with --output-dir.");
         }
         return Path.of(last);
     }

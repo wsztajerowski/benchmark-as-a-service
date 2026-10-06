@@ -56,7 +56,7 @@ class ResultsFormatTest {
     /**
      * A locale whose decimal separator is a comma turns {@code 8234574.73} into
      * {@code 8234574,73}, which is not a JSON number and splits a CSV column in two. Found on a
-     * real run: the default locale here produced a document jq refused outright.
+     * real job: the default locale here produced a document jq refused outright.
      */
     @Test
     void jsonIsValidUnderALocaleThatUsesACommaDecimalSeparator() throws Exception {
@@ -73,7 +73,7 @@ class ResultsFormatTest {
 
     /**
      * JMH reports NaN score error for a single-iteration run, and JSON has no NaN literal — the
-     * document has to stay parseable on exactly the runs a user is most likely to be inspecting.
+     * document has to stay parseable on exactly the jobs a user is most likely to be inspecting.
      */
     @Test
     void nonFiniteScoreErrorBecomesJsonNull() throws Exception {
@@ -115,18 +115,18 @@ class ResultsFormatTest {
      * a user copies into {@code baas download}, so a truncated one is unusable.
      */
     @Test
-    void theRunIdentifierRendersWhole() {
-        String runId = "20260820T174432812Z-a3f9c21b";
-        var row = new ResultRow(runId, "com.example.MyBenchmark.run", "jmh", "thrpt",
+    void theJobIdentifierRendersWhole() {
+        String jobId = "20260820T174432812Z-a3f9c21b";
+        var row = new ResultRow(jobId, "com.example.MyBenchmark.run", "jmh", "thrpt",
             1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
 
         ResultsTable.print(console, List.of(row));
 
-        assertThat(captured.toString()).contains(runId);
+        assertThat(captured.toString()).contains(jobId);
     }
 
     @Test
-    void twoRunsOfOneTypeOnOneDayRenderDistinctly() {
+    void twoJobsOfOneTypeOnOneDayRenderDistinctly() {
         var first = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.B.run", "jmh",
             "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
         var second = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.B.run", "jmh",

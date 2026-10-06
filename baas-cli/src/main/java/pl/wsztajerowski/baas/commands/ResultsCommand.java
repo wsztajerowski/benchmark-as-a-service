@@ -44,7 +44,7 @@ public class ResultsCommand implements Callable<Integer> {
     private static final Logger logger = LoggerFactory.getLogger(ResultsCommand.class);
 
     /**
-     * Fixed: a run lands minutes after the previous one, and each refresh is one partition
+     * Fixed: a job lands minutes after the previous one, and each refresh is one partition
      * {@code Query}. An option can be added when someone needs a different pace.
      */
     static final Duration WATCH_INTERVAL = Duration.ofSeconds(30);
@@ -74,8 +74,8 @@ public class ResultsCommand implements Callable<Integer> {
         + "Reads the whole table.")
     boolean allProjects;
 
-    @Option(names = "--request-id", description = "Return every measurement of one run. Cannot be combined with other filters.")
-    String requestId;
+    @Option(names = "--job-id", description = "Return every measurement of one job. Cannot be combined with other filters.")
+    String jobId;
 
     @Option(names = "--benchmark-name", description = "Filter by benchmark name (regex).")
     String benchmarkName;
@@ -87,9 +87,9 @@ public class ResultsCommand implements Callable<Integer> {
         defaultValue = ResultsFilters.BRANCH)
     String groupBy;
 
-    @Option(names = "--all-runs", description = "Report every measurement instead of the best per group, "
-        + "including runs tagged exclude_from_results=true.")
-    boolean allRuns;
+    @Option(names = "--all-jobs", description = "Report every measurement instead of the best per group, "
+        + "including jobs tagged exclude_from_results=true.")
+    boolean allJobs;
 
     @Option(names = "--limit", description = "Maximum rows to report.")
     Integer limit;
@@ -125,13 +125,13 @@ public class ResultsCommand implements Callable<Integer> {
             logger.error("--limit must be at least 1; got {}.", limit);
             return 2;
         }
-        if (allRuns && groupByNamed()) {
-            logger.error("--group-by chooses the best per group, which --all-runs turns off: pass one of them.");
+        if (allJobs && groupByNamed()) {
+            logger.error("--group-by chooses the best per group, which --all-jobs turns off: pass one of them.");
             return 2;
         }
-        String conflict = requestIdConflict();
+        String conflict = jobIdConflict();
         if (conflict != null) {
-            logger.error("--request-id names one run, so it cannot be combined with {}.", conflict);
+            logger.error("--job-id names one job, so it cannot be combined with {}.", conflict);
             return 2;
         }
         if (project != null && allProjects) {
@@ -152,7 +152,7 @@ public class ResultsCommand implements Callable<Integer> {
 
         try (var results = openResults(config, tableName)) {
             // Once, before --watch enters the alternate screen: a prompt cannot be answered there.
-            if (requestId == null && !allProjects) {
+            if (jobId == null && !allProjects) {
                 Optional<String> chosen = resolveProject(config, results);
                 if (chosen.isEmpty()) {
                     return 1;
@@ -186,19 +186,19 @@ public class ResultsCommand implements Callable<Integer> {
      */
     private List<ResultRow> fetch(ResultsQueryService results, Consumer<String> warn, Consumer<String> info) {
         List<ResultRow> rows;
-        if (requestId != null) {
-            rows = results.queryByRequestId(requestId);
+        if (jobId != null) {
+            rows = results.queryByJobId(jobId);
         } else if (allProjects) {
-            rows = results.scanAllProjects(allRuns);
+            rows = results.scanAllProjects(allJobs);
         } else {
-            rows = results.queryProject(project, allRuns);
+            rows = results.queryProject(project, allJobs);
         }
 
-        if (requestId == null) {
+        if (jobId == null) {
             rows = ResultsFilters.byBenchmarkName(rows, benchmarkName);
             rows = ResultsFilters.byTags(rows, tags);
             ResultsFilters.unknownTagWarning(rows, tags).ifPresent(warn);
-            if (!allRuns) {
+            if (!allJobs) {
                 rows = ResultsGrouping.bestPerGroup(rows, groupBy);
             }
         }
@@ -295,20 +295,20 @@ public class ResultsCommand implements Callable<Integer> {
     }
 
     /**
-     * {@code --request-id} reads a different index and returns one run whole; combining it with a
+     * {@code --job-id} reads a different index and returns one job whole; combining it with a
      * filter would silently ignore the filter, which reads as the filter being broken. A project is
-     * refused too: one run is already narrower than any project, and a project that disagreed with
-     * the run's own would be ignored without a word.
+     * refused too: one job is already narrower than any project, and a project that disagreed with
+     * the job's own would be ignored without a word.
      */
-    private String requestIdConflict() {
-        if (requestId == null) {
+    private String jobIdConflict() {
+        if (jobId == null) {
             return null;
         }
         if (project != null) return "--project";
         if (benchmarkName != null) return "--benchmark-name";
         if (tags != null && !tags.isEmpty()) return "--tag";
         if (allProjects) return "--all-projects";
-        if (allRuns) return "--all-runs";
+        if (allJobs) return "--all-jobs";
         if (groupByNamed()) return "--group-by";
         return null;
     }
@@ -344,7 +344,7 @@ public class ResultsCommand implements Callable<Integer> {
         List<String> projects = results.listVisibleProjects();
         if (projects.isEmpty()) {
             logger.error("No project holds results outside exclude_from_results. "
-                + "To see everything: baas results --all-projects --all-runs");
+                + "To see everything: baas results --all-projects --all-jobs");
             return Optional.empty();
         }
         if (!console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {
@@ -389,14 +389,14 @@ public class ResultsCommand implements Callable<Integer> {
             ResultRow r = rows.get(i);
             // imageVersion/instanceType ride along so a machine consumer can tell comparable rows
             // from incomparable ones — the table says so in prose, and `| jq` cannot read prose.
-            // Null for every run recorded before the prebaked-image change. They stay flat even
+            // Null for every job recorded before the prebaked-image change. They stay flat even
             // though `tags` now repeats them: CI and anyone else's `jq '.[0].imageVersion'` reads
             // them there.
             out.printf(
-                "  {\"requestId\":\"%s\",\"benchmarkName\":\"%s\",\"benchmarkType\":\"%s\"," +
+                "  {\"jobId\":\"%s\",\"benchmarkName\":\"%s\",\"benchmarkType\":\"%s\"," +
                 "\"mode\":\"%s\",\"score\":%s,\"scoreError\":%s,\"scoreUnit\":\"%s\"," +
                 "\"createdAt\":\"%s\",\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s}%s%n",
-                r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
+                r.jobId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
                 jsonNumber(r.score()), jsonNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
                 jsonOrNull(r.imageVersion()), jsonOrNull(r.instanceType()), jsonObject(r.tags()),
                 jsonObject(r.params()), i < rows.size() - 1 ? "," : "");
@@ -408,12 +408,12 @@ public class ResultsCommand implements Callable<Integer> {
         var out = console();
         out.println(
             // params last, so a consumer reading columns by position is not shifted.
-            "requestId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags,params");
+            "jobId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags,params");
         for (ResultRow r : rows) {
             // Locale.ROOT for the same reason as printJson — a comma decimal separator turns one
             // CSV column into two.
             out.printf("%s,%s,%s,%s,%.6f,%.6f,%s,%s,%s,%s,%s,%s%n",
-                r.requestId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
+                r.jobId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
                 r.score(), r.scoreError(), r.scoreUnit(), r.createdAt(),
                 r.imageVersion() != null ? r.imageVersion() : "",
                 r.instanceType() != null ? r.instanceType() : "",

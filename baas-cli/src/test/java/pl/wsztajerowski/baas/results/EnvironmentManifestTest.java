@@ -45,8 +45,8 @@ class EnvironmentManifestTest {
     @Test
     void sameVersionFromAnotherVendorIsReportedByVendor() {
         String corretto = BASE.replace("\"kernelRelease\"", "\"jvmVendor\": \"Amazon.com Inc.\",\n  \"kernelRelease\"");
-        var a = EnvironmentManifest.parse("runs/p/a", corretto);
-        var b = EnvironmentManifest.parse("runs/p/b", corretto.replace("Amazon.com Inc.", "Eclipse Adoptium"));
+        var a = EnvironmentManifest.parse("jobs/p/a", corretto);
+        var b = EnvironmentManifest.parse("jobs/p/b", corretto.replace("Amazon.com Inc.", "Eclipse Adoptium"));
 
         assertThat(EnvironmentManifest.diff(a, b))
             .containsOnlyKeys("jvmVendor")

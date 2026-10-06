@@ -12,7 +12,7 @@ import java.util.Map;
  */
 public record StoredMeasurement(
     String project,
-    String requestId,
+    String jobId,
     Instant createdAt,
     MeasurementKind kind,
     String benchmarkClass,
@@ -20,7 +20,7 @@ public record StoredMeasurement(
     String mode,
     /**
      * JMH's resolved {@code @Param} values, empty for a benchmark without any. Part of what a
-     * measurement <em>is</em>, not a tag: a sweep's variants share class, method, mode and run, and
+     * measurement <em>is</em>, not a tag: a sweep's variants share class, method, mode and job, and
      * only these tell them apart — in the sort key and in {@code baas results}' grouping alike.
      */
     Map<String, String> params,
@@ -34,7 +34,7 @@ public record StoredMeasurement(
     String resultJsonKey,
     String environmentJsonKey,
     /**
-     * S3 prefix holding this measurement's profiling artifacts, or null when the run produced
+     * S3 prefix holding this measurement's profiling artifacts, or null when the job produced
      * none. A prefix rather than the previous name-to-key map: listing it yields every artifact,
      * the field stays one bounded string however many the profiler emits, and callers do not have
      * to re-derive JMH's {@code -Throughput}-style directory suffix, which is exactly the kind of
@@ -44,7 +44,7 @@ public record StoredMeasurement(
 ) {
     public StoredMeasurement {
         require(project, "project");
-        require(requestId, "requestId");
+        require(jobId, "jobId");
         if (createdAt == null) throw new IllegalArgumentException("createdAt is required");
         // Truncated because the sort-key format carries exactly three fractional digits; keeping
         // sub-millisecond precision here would make fromItem(toItem(m)) unequal to m for any
@@ -67,13 +67,13 @@ public record StoredMeasurement(
     }
 
     public StoredMeasurement withTags(Map<String, String> newTags) {
-        return new StoredMeasurement(project, requestId, createdAt, kind, benchmarkClass,
+        return new StoredMeasurement(project, jobId, createdAt, kind, benchmarkClass,
             benchmarkMethod, mode, params, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
             newTags, resultPath, resultJsonKey, environmentJsonKey, profilerOutputPath);
     }
 
     public StoredMeasurement withBenchmarkClass(String newBenchmarkClass) {
-        return new StoredMeasurement(project, requestId, createdAt, kind, newBenchmarkClass,
+        return new StoredMeasurement(project, jobId, createdAt, kind, newBenchmarkClass,
             benchmarkMethod, mode, params, score, scoreError, scoreUnit, secondaryMetrics, jcstress,
             tags, resultPath, resultJsonKey, environmentJsonKey, profilerOutputPath);
     }

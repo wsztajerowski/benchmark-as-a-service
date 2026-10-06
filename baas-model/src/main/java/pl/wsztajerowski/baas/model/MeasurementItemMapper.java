@@ -20,7 +20,7 @@ public final class MeasurementItemMapper {
     /**
      * Public so {@code baas-cli}'s {@code CoreTemplateTest} can assert the CloudFormation table
      * definition against these instead of re-typing the literals: a rename on either side then
-     * fails to compile instead of only failing at runtime, per run, after the EC2 instance is
+     * fails to compile instead of only failing at runtime, per job, after the EC2 instance is
      * already paid for.
      */
     public static final String PK = "pk";
@@ -28,10 +28,10 @@ public final class MeasurementItemMapper {
     public static final String GSI1PK = "gsi1pk";
     public static final String GSI1SK = "gsi1sk";
     static final String PROJECT = "project";
-    static final String REQUEST_ID = "requestId";
+    static final String JOB_ID = "jobId";
     static final String CREATED_AT = "createdAt";
-    /** Public because a measurement always carries it and a run item never does, which is how a
-     * reader of the request-ID index tells them apart without filtering on a key attribute. */
+    /** Public because a measurement always carries it and a job item never does, which is how a
+     * reader of the job-ID index tells them apart without filtering on a key attribute. */
     public static final String KIND = "kind";
     static final String BENCHMARK_CLASS = "benchmarkClass";
     static final String BENCHMARK_METHOD = "benchmarkMethod";
@@ -73,11 +73,11 @@ public final class MeasurementItemMapper {
 
         item.put(PK, s(ResultKeys.partitionKey(m.project())));
         item.put(SK, s(ResultKeys.sortKey(m)));
-        item.put(GSI1PK, s(ResultKeys.requestIndexPartitionKey(m.requestId())));
+        item.put(GSI1PK, s(ResultKeys.jobIndexPartitionKey(m.jobId())));
         item.put(GSI1SK, s(ResultKeys.requestIndexSortKey(m)));
 
         item.put(PROJECT, s(m.project()));
-        item.put(REQUEST_ID, s(m.requestId()));
+        item.put(JOB_ID, s(m.jobId()));
         item.put(CREATED_AT, s(ResultKeys.formatTimestamp(m.createdAt())));
         item.put(KIND, s(m.kind().name()));
 
@@ -126,7 +126,7 @@ public final class MeasurementItemMapper {
         int size = serializedSize(item);
         if (size > MAX_ITEM_BYTES) {
             throw new IllegalStateException(
-                "Measurement for request " + m.requestId() + " serializes to " + size
+                "Measurement for request " + m.jobId() + " serializes to " + size
                     + " bytes, above DynamoDB's 400 KB item limit. Refusing to truncate — "
                     + "reduce the tag set or move the payload to S3.");
         }
@@ -134,7 +134,7 @@ public final class MeasurementItemMapper {
     }
 
     /**
-     * Refuses anything outside a {@code RESULT#} partition. The table also holds run items, and a
+     * Refuses anything outside a {@code RESULT#} partition. The table also holds job items, and a
      * reader that forgot to exclude them would otherwise render one as an empty row or offer its
      * project in the picker; failing here makes that mistake loud.
      */
@@ -142,11 +142,11 @@ public final class MeasurementItemMapper {
         String pk = str(item, PK);
         if (pk == null || !pk.startsWith(ResultKeys.PK_PREFIX)) {
             throw new IllegalArgumentException("Not a measurement item (pk=" + pk + ", sk="
-                + str(item, SK) + "): every reader of measurements must exclude run items");
+                + str(item, SK) + "): every reader of measurements must exclude job items");
         }
         return new StoredMeasurement(
             str(item, PROJECT),
-            str(item, REQUEST_ID),
+            str(item, JOB_ID),
             Instant.parse(str(item, CREATED_AT)),
             MeasurementKind.valueOf(str(item, KIND)),
             str(item, BENCHMARK_CLASS),

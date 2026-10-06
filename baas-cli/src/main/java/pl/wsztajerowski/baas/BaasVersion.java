@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas;
 
 /**
- * The CLI's own released version, which is what pins the runner JAR a run executes.
+ * The CLI's own released version, which is what pins the runner JAR a job executes.
  *
  * <p>A reactor build has no released version, and there is deliberately no fallback: two
  * provisioning paths would produce silently incomparable results, the same reason {@code baas run}

@@ -44,7 +44,7 @@ interface ResultsStoreContractTest {
 
     /**
      * Review A11: a {@code @Param} sweep yields one result per combination, all sharing class,
-     * method, mode and the run's single timestamp. Keyed on those alone they collided — DynamoDB
+     * method, mode and the job's single timestamp. Keyed on those alone they collided — DynamoDB
      * rejects a batch holding two equal keys, and across batches the last variant overwrote the
      * rest. Every variant must be stored, in one write, as the runner issues it.
      */

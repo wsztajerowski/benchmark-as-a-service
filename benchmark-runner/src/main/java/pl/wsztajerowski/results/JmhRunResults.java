@@ -21,9 +21,9 @@ import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
  *
  * <p>The stored item is deliberately thin — {@code rawData} and {@code scorePercentiles} are
  * dropped — so the unmodified JMH JSON has to go somewhere retrievable. It goes to S3 under the
- * run's result path, and every measurement from that run points at it via {@code resultJsonKey}.
+ * job's result path, and every measurement from that job points at it via {@code resultJsonKey}.
  *
- * <p>The upload happens before the store write, because a run that fails at the store must still
+ * <p>The upload happens before the store write, because a job that fails at the store must still
  * leave its artifacts behind.
  */
 public final class JmhRunResults {
@@ -44,10 +44,10 @@ public final class JmhRunResults {
         storageService.saveFile(resultJsonKey, machineReadableOutput);
 
         String environmentJsonKey = outputPath.resolve("environment.json").toString();
-        // One timestamp per run, not one per result: the sort key already separates measurements
+        // One timestamp per job, not one per result: the sort key already separates measurements
         // by class, method and mode, and a per-result clock read would make two results from the
-        // same run differ by a stray millisecond. The instant comes from whoever named the run, so
-        // the run identifier's timestamp and this one are the same value, not two nearby ones.
+        // same job differ by a stray millisecond. The instant comes from whoever named the job, so
+        // the job identifier's timestamp and this one are the same value, not two nearby ones.
         Instant createdAt = commonOptions.createdAt();
 
         List<StoredMeasurement> measurements = new ArrayList<>();
@@ -56,7 +56,7 @@ public final class JmhRunResults {
             measurements.add(JmhMeasurementMapper.toMeasurement(
                 jmhResult,
                 commonOptions.project(),
-                commonOptions.requestId(),
+                commonOptions.jobId(),
                 createdAt,
                 commonOptions.tags(),
                 outputPath.toString(),

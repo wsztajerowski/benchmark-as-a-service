@@ -23,7 +23,7 @@ import java.util.Optional;
  * <p>The ordering in {@link #publish} is the part that matters: the pointer is repointed
  * <em>before</em> the replaced image is retired. Retiring first would aim
  * {@code /<prefix>/runner/ami-id} at a deregistered AMI for the whole ~15-minute build, failing
- * every run launched in that window.
+ * every job launched in that window.
  */
 public class ImageBuilderService {
 
@@ -77,7 +77,7 @@ public class ImageBuilderService {
         writePointer(parameterName, newAmiId);
         logger.info("Published {} to {}", newAmiId, parameterName);
 
-        // Only after the repoint. The remaining race — a run that read the old ID before this
+        // Only after the repoint. The remaining race — a job that read the old ID before this
         // write and calls RunInstances after the deregister — is accepted: single-operator
         // scale, and it fails loudly as InvalidAMIID.NotFound rather than silently.
         replaced
@@ -91,7 +91,7 @@ public class ImageBuilderService {
      * A build that fails in its test stage — the contract rejecting what an extension did — has
      * already registered its AMI, and Image Builder leaves it. Nothing else ever names it, so it
      * would bill for its snapshot indefinitely. The pointer has not moved, so this can only ever be
-     * an image no run uses. Found live: the first contract failure left one.
+     * an image no job uses. Found live: the first contract failure left one.
      */
     private void retireFailedOutput(software.amazon.awssdk.services.imagebuilder.model.Image image) {
         if (image.outputResources() == null) {

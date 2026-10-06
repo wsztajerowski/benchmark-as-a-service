@@ -26,7 +26,7 @@ final class GitProject {
     /**
      * {@code --git-common-dir} resolves to the main repository's {@code .git} in a linked worktree
      * and is a no-op for an ordinary clone. {@code --show-toplevel} returns the worktree directory,
-     * which attributed a run launched from {@code .claude/worktrees/ddb-phase3} to project
+     * which attributed a job launched from {@code .claude/worktrees/ddb-phase3} to project
      * {@code ddb-phase3} — a partition {@code baas results} would never look in.
      */
     static String fromCommonDir(String commonDir) {

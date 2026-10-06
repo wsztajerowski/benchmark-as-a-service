@@ -19,7 +19,7 @@ public final class JmhMeasurementMapper {
     private JmhMeasurementMapper() {}
 
     public static StoredMeasurement toMeasurement(
-        JmhResult result, String project, String requestId, Instant createdAt,
+        JmhResult result, String project, String jobId, Instant createdAt,
         Map<String, String> tags, String resultPath, String resultJsonKey, String environmentJsonKey,
         String profilerOutputPath) {
 
@@ -33,7 +33,7 @@ public final class JmhMeasurementMapper {
         var primary = result.primaryMetric();
         return new StoredMeasurement(
             project,
-            requestId,
+            jobId,
             createdAt,
             MeasurementKind.JMH,
             fullyQualified.substring(0, lastDot),
@@ -54,7 +54,7 @@ public final class JmhMeasurementMapper {
 
     /**
      * {@code SecondaryMetric.score} is a primitive, so a JMH metric carrying a null score would
-     * NPE on unboxing and take the whole run's write down with it. Such an entry is dropped
+     * NPE on unboxing and take the whole job's write down with it. Such an entry is dropped
      * instead. Non-finite scores are NOT filtered here — {@code MeasurementItemMapper} already
      * drops those on the way into DynamoDB, and duplicating that would hide the case from the
      * test which covers it.
