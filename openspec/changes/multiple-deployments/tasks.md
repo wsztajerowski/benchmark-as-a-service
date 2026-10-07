@@ -23,8 +23,8 @@
 
 ## 3. Name validation
 
-- [ ] 3.1 Add the deployment-name rule (length 3..N with N from `DeploymentNames`, pattern, no `--`, reserved prefixes and suffix), each failure naming its rule. Verify with a parameterised unit test covering every rule, the boundary lengths, and `baas-999999999999` accepted.
-- [ ] 3.2 Call it from `admin deployment setup` before the preflight and any AWS call. Verify with a test that an invalid name exits non-zero with no SDK client invoked.
+- [x] 3.1 Add the deployment-name rule (length 3..N with N from `DeploymentNames`, pattern, no `--`, reserved prefixes and suffix), each failure naming its rule. Verify with a parameterised unit test covering every rule, the boundary lengths, and `baas-999999999999` accepted.
+- [x] 3.2 Call it from `admin deployment setup` before the preflight and any AWS call. Verify with a test that an invalid name exits non-zero with no SDK client invoked.
 
 ## 4. Per-deployment configuration
 
