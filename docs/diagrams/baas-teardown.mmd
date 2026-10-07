@@ -8,12 +8,12 @@ sequenceDiagram
     participant IB as EC2 Image Builder
 
     Note over User,IB: baas admin deployment teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Nothing survives it: empties the bucket, deletes the CORE stack (bucket and results table with it),<br/>then retires the runner image `admin image build` created outside it. The CI stack is untouched.
-    User->>TD: baas admin deployment teardown [--deployment] [--yes]
-    Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = the configured prefix (the stack IS the prefix) -- a different --deployment was refused already
+    User->>TD: baas [--deployment D] admin deployment teardown [--yes]
+    Note over TD: ConfigService.load() -- ~/.baas/deployments/D.yaml, or the only one configured.<br/>Two or more configured and no --deployment: refused, listing them. stack = the prefix (the stack IS the prefix)
 
     rect rgb(255, 235, 235)
         Note over TD,EC2: Gate 1 -- never tear down under a live job
-        TD->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
+        TD->>EC2: describeInstances(tag baas-role=benchmark-runner, tag baas-deployment=prefix, state=pending|running)<br/>another deployment's runners in the region do not count
         EC2-->>TD: instances, with each one's baas-job-id tag
         alt running runner instances found
             TD-->>User: abort naming each job id (from the tag), instance and state,<br/>and `baas jobs terminate <jobId>` -- exit 1. No table read: the deployer has none
@@ -36,7 +36,7 @@ sequenceDiagram
     TD->>CF: describeStacks -> RunnerImageExtensionData
     CF-->>TD: the deployed extension, or empty
     opt an extension is deployed
-        Note over TD: written with its marker to runner-image-extension.<prefix>.yaml<br/>beside the config file -- the stack holds its only copy (U40).<br/>Cannot read or write it -> exit 1, nothing deleted
+        Note over TD: written with its marker to runner-image-extension.<prefix>.yaml<br/>in ~/.baas, beside deployments/ -- the stack holds its only copy (U40).<br/>Cannot read or write it -> exit 1, nothing deleted
     end
 
     Note over TD,S3: CloudFormation will not delete a non-empty bucket, so it is emptied first
@@ -70,4 +70,5 @@ sequenceDiagram
         end
     end
 
-    TD-->>User: exit 0 -- nothing of the deployment is left in the account
+    TD->>TD: delete ~/.baas/deployments/<prefix>.yaml -- the last one included
+    TD-->>User: exit 0 -- nothing of the deployment is left in the account or on this machine

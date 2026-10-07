@@ -10,7 +10,7 @@ sequenceDiagram
     participant GH as GitHub Releases (laptop only)
 
     User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--tag k=v] [--format json] [--config-path]
-    Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() from --config-path, else ~/.baas/config.yaml
+    Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() -- deployments/D.yaml for --deployment D, else the only one configured
     Note over RC: an unreleased CLI (0.0.0-semantically-released) names no<br/>release to pin the runner JAR to, so it exits 1 naming<br/>--runner-jar -- before any upload. baas run builds nothing.
     opt no --project and git.resolveProject enabled
         RC->>Sub: git rev-parse --path-format=absolute --git-common-dir (in the JAR's directory)
@@ -43,7 +43,7 @@ sequenceDiagram
     Note over RC: reservation fails -> exit 1, NOTHING is launched.<br/>An instance without a record is the invisible job `baas jobs` exists to show.
     Note over RC: register JVM shutdown hook NOW, before RunInstances: on Ctrl+C it records<br/>cancelled (5 s timeout) and terminates -- the instance id, or, if RunInstances<br/>has not returned yet, whatever instance carries this job's baas-job-id tag.<br/>That lookup can miss: the instance then finds its running write refused<br/>and terminates itself without starting the benchmark.<br/>Does nothing once the job has an outcome (the instance terminates itself).
     RC->>EC2: ec2.runInstances(amiId, instanceType, subnetId, sgId, instanceProfile, userData, jobId)
-    Note over EC2: min=1 max=1<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: ONLY project=baas, baas-role=benchmark-runner,<br/>baas-job-id=jobId -- no caller --tag ever reaches the instance
+    Note over EC2: min=1 max=1<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: ONLY project=baas, baas-role=benchmark-runner,<br/>baas-job-id=jobId, baas-deployment=prefix -- no caller --tag ever reaches the instance
     alt RunInstances fails
         RC->>DDB: UpdateItem status launch-failed + AWS error code (best effort)
         RC->>S3: putObject(jobs/<project>/<jobId>/launch-error.txt) (best effort)

@@ -34,9 +34,8 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | S10 | Actions on mutable tags; dependabot covers only Maven | Low | open |
 | N3 | A failed run-item reservation strands the uploaded `input/` | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | Low | open, by hand |
-| C5 | Deployment names hand-built beside `BaasConfig`'s derivations | Low | next change adding a name |
 | U8 | `runner.sourceRepo` can only be set by editing YAML | Info | open |
-| U14, U31, U33, U36 | Informational, see the last section | Info | — |
+| U14, U31 | Informational, see the last section | Info | — |
 
 ## Queued as OpenSpec changes
 
@@ -125,13 +124,13 @@ removed. The `detached-run` ADR supersedes it explicitly.
 ### U21, U40 — a deployment outside the account's own prefix and region
 
 Both are fixed in code and unit-tested ([ADR 0004](../adr/0004-runner-image-only-moves-forward.md)).
-Live, they need a throwaway deployment such as `baas-381492019823-dev` in `us-east-1`: U21 is the
-setup → `build-image` → run there, U40 a teardown with a pushed extension. **Blocked on an IAM grant**
-(2026-10-05): `baas-admin` is the prefix- and region-exact deployer and `lynx` holds no IAM, so no
-identity in the account may deploy elsewhere. Attach
-the deployer policy for `baas-381492019823-dev` in `us-east-1` (filled from `infra/deployer-policy.json` by hand, see infra/README *A second deployment*, until `multiple-deployments` lets setup render it) as a customer-managed
-policy, or use a second account. The steps are in `openspec/changes/QUEUE.md` (*Deferred checks*)
-and `infra/README.md` (*A second deployment* — override `RunnerParentAmiId` outside eu-central-1).
+Live, they need a second deployment in `us-east-1`: U21 is the setup → `admin image build` → run
+there, U40 a teardown with a pushed extension. `multiple-deployments` makes that a CLI procedure
+(`infra/README.md`, *A second deployment*) and performs both checks in its live run (its tasks 7.x).
+**Still blocked on an IAM grant** (2026-10-05): `baas-admin` is the prefix- and region-exact
+deployer and `lynx` holds no IAM, so no identity in the account may deploy elsewhere. A first
+`baas --deployment <name> admin deployment setup --region us-east-1` prints the policy that
+deployment needs; an identity above the deployer attaches it as customer-managed.
 
 ## Open, not scheduled
 
@@ -175,15 +174,6 @@ replaced, still exists: the `baas-operator` profile in `~/.aws/config` assumes i
 (2026-10-05). The deployer cannot remove it (outside its prefix). Delete it, and the profile, with an
 identity above the deployer.
 
-### C5 — deployment names hand-built beside `BaasConfig` · Low
-
-The pointer path, `-results`, `-recipe-runner`, `-component-runner`, `-role-runner` and
-`-role-operator` are rebuilt by hand in `RunCommand`, `BuildImageCommand`, `TeardownCommand` and
-`DeployerPreflight`. No live bug — every copy matches — but drift would silently bring back U1
-(teardown retiring a pointer that does not exist). **Decided (2026-10-04):** no dedicated work; the
-next change that adds a resource name introduces one `DeploymentNames.of(prefix)` and moves these
-onto it.
-
 ### U8 — `runner.sourceRepo` can only be set by editing YAML · Info
 
 `RunnerJarResolver` names it in its error message as the thing to change, but `config set` has no
@@ -198,8 +188,4 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
   recreated with a new id. The SDK does not read that cache.
 - **U31.** `baas jobs list` shows a job as `vanished` for the few seconds between its reservation and
   `DescribeInstances` seeing its tagged instance, and `--in-flight` hides it then. Nothing is written.
-- **U33.** `baas admin deployment teardown --deployment <typo>` under credentials broader than the deployer
-  reports success: `DeleteStack` on a missing stack is a no-op and the notices still print. Under the
-  prefix-exact deployer policy it is an `AccessDenied`.
-- **U36.** Teardown's in-flight gate lists every `baas-role=benchmark-runner` instance in the region,
-  so a by-hand `-dev` deployment and the account's own block each other's teardown.
+

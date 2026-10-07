@@ -8,7 +8,7 @@ sequenceDiagram
     participant SSM as AWS SSM
 
     User->>BIC: baas admin image build [--extension ext.yaml]
-    Note over BIC: ConfigService.load()<br/>deployer credentials (aws.profile), NOT aws.operatorProfile --<br/>this needs imagebuilder:*, ssm:PutParameter and a widened iam:PassRole
+    Note over BIC: ConfigService.load()<br/>deployer credentials (aws.deployerProfile), NOT aws.operatorProfile --<br/>this needs imagebuilder:*, ssm:PutParameter and a widened iam:PassRole
     opt --extension
         Note over BIC: read the file, strip its #35; baas-extension-base marker,<br/>comments only = no extension, over 4096 bytes -> exit 1<br/>before any AWS call
     end

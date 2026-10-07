@@ -2,14 +2,14 @@ C4Container
     title BaaS — Containers (level 2)
 
     Person(author, "Benchmark author / CI job", "Operator credentials: a profile assuming OperatorRole, or OIDC in CI")
-    Person(admin, "Deployment admin", "Deployer credentials (aws.profile)")
+    Person(admin, "Deployment admin", "Deployer credentials (aws.deployerProfile)")
 
     System_Boundary(local, "Operator machine (laptop or GitHub-hosted runner)") {
         Container(cli, "baas CLI", "Java 25, picocli, AWS SDK v2", "One fat JAR. Bundles the core template, the deployer policy template and runner-image.yaml.")
-        ContainerDb(config, "~/.baas/config.yaml", "YAML", "Credentials profile names, region, prefix, preferences. Nothing derivable or resolvable.")
+        ContainerDb(config, "~/.baas/deployments/*.yaml", "YAML, one file per deployment", "Credentials profile names, region, prefix, preferences. Nothing derivable or resolvable.")
     }
 
-    System_Boundary(install, "Deployment <prefix> = baas-<accountId>, one per account") {
+    System_Boundary(install, "Deployment <prefix> (default baas-<accountId>; more by name)") {
         Container(stack, "Core stack", "CloudFormation", "Networking, bucket, table, RunnerRole, OperatorRole, Image Builder pipeline")
         ContainerDb(bucket, "Job bucket <prefix>", "S3, deleted with the deployment, versioning suspended", "jobs/<project>/<jobId>/…, releases/<v>/benchmark-runner.jar, image-builds/")
         ContainerDb(table, "Results table <prefix>-results", "DynamoDB on-demand, deleted with the deployment", "One item per measurement, one job item per job (pk JOB); GSI jobId-index")

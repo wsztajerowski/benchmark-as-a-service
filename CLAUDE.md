@@ -65,7 +65,7 @@ intended — a clean exit only proves it parsed, not that the arrow landed in th
 of the repository. Mermaid CLI is installed globally (`npm install -g @mermaid-js/mermaid-cli`); nothing in CI
 renders these files, so a broken diagram is otherwise found by its next reader. State machines for the deployment, an operator machine and a job: `docs/diagrams/baas-states-*.mmd`. Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md); later decisions, and the hardenings declined
-with their reasons, in `docs/adr/0002`–`0005`. Per-change
+with their reasons, in `docs/adr/0002`–`0006`. Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
 **OpenSpec changes use the stock `spec-driven` schema**, driven by `/opsx:explore` → `/opsx:propose`
@@ -127,8 +127,10 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   "restore" the SSM indirection.
 - **`baas run` forwards `project` and every `--tag` — `branch` and `commit` included — to the
   *runner*, and never to the instance.** They reach the item's top-level `tags` map, which is the
-  only query surface `baas results query` has. The instance carries only `project=baas`, `baas-role` and
-  `baas-job-id` (`Ec2ProvisioningService.instanceTags`, which takes no extra tags on purpose): a
+  only query surface `baas results query` has. The instance carries only `project=baas`, `baas-role`,
+  `baas-job-id` and `baas-deployment` (`Ec2ProvisioningService.instanceTags`, which takes no caller
+  tags on purpose; `baas-deployment` is fixed, set by the CLI, and scopes every live-runner query to
+  its deployment, so two deployments in one region never count each other's runners): a
   copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
   was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
   machine-observed key (`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`,
@@ -276,42 +278,50 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **Editing `RunnerSecurityGroup`'s `GroupDescription` replaces the security group.** It is an
   immutable property, so CloudFormation deletes and recreates the resource and the group *id
   changes*. Anything holding the old id is then pointing at a group that no longer exists —
-  `~/.baas/config.yaml` most obviously, which `baas admin deployment setup` rewrites, but not a job already in
+  a deployment's `~/.baas/deployments/<name>.yaml` most obviously, which `baas admin deployment setup` rewrites, but not a job already in
   flight. Observed: removing the 27017 rule also touched the description, and the id moved. Change
   the rules without touching the description unless you intend the replacement. Its text still says
   "443/80" for exactly this reason, and `theRunnerSecurityGroupDescriptionIsNeverEdited` pins it.
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.
-- **`aws.operatorProfile` must not fall back to `aws.profile`.** That field holds deployer
+- **`aws.operatorProfile` must not fall back to `aws.deployerProfile`.** That field holds deployer
   credentials; the fallback would silently hand day-to-day commands elevated rights. Don't
-  "helpfully" add it.
-- **Every resource name is `<prefix>` or `<prefix>-<type>-<name>`, and the prefix is
-  `baas-<accountId>[-dev]`.** One rule, no exceptions: the `baas-` namespace lives *inside* the
-  prefix value, so `ResourceNamePrefix` is the whole name stem and knowing it predicts every name
-  (`<prefix>` stack and bucket, `<prefix>-results`, `<prefix>-role-runner`,
-  `<prefix>-profile-runner`, `<prefix>-pipeline-runner`, `/<prefix>/runner/ami-id`). Composing
-  `baas-` again at a use site yields `baas-baas-123456789012`.
-  It is derived from `sts:GetCallerIdentity().account()` and **nothing about the calling
+  "helpfully" add it. (It was `aws.profile`, and `--aws-profile`, until `multiple-deployments`; the
+  old key is still read and is rewritten on the next save.)
+- **Every resource name is `<prefix>` or `<prefix>-<type>-<name>`, and the prefix is the deployment's
+  name, verbatim.** One rule, no exceptions: `ResourceNamePrefix` is the whole name stem and knowing
+  it predicts every name (`<prefix>` stack and bucket, `<prefix>-results`, `<prefix>-role-runner`,
+  `<prefix>-profile-runner`, `<prefix>-pipeline-runner`, `/<prefix>/runner/ami-id`), and only
+  `DeploymentNames` composes them (C5). The default name, `baas-<accountId>`, carries the `baas-`
+  namespace inside it — composing `baas-` again at a use site yields `baas-baas-123456789012` — and
+  a named deployment carries whatever its name does.
+  The default is derived from `sts:GetCallerIdentity().account()` and **nothing about the calling
   principal reaches it** — that is the point. It used to be
   `lowercase(base32(sha256(callerArn)))[0:8]`, which moved when an SSO permission set was switched
   or re-provisioned and differed per human on one account; a moved prefix did not fail, it deployed
-  a second complete deployment beside the first (finding A10). The pinned AMI and the results
-  table are account-level assets, so a name that moved with the caller forked them silently.
-  **There is no option to name a different one** — not `--mode`, not `--prefix`. Exactly one
-  deployment per account, and the CLI cannot be told otherwise, so a user never has to ask which
-  one they are on. Developing BaaS itself is the case that wants a second, throwaway deployment;
-  that is a documented by-hand procedure (`infra/README.md`, *A second deployment*), not a
-  feature, and it stays out of the released command surface (several deployments are the
-  `multiple-deployments` change's).
+  a second complete deployment beside the first (finding A10). **A second deployment exists only
+  because someone typed its name** into the global `--deployment` (`baas --deployment wiktor-dev
+  admin deployment setup`), which is what keeps A10 closed (ADR 0006): nothing derives a name from
+  the caller, and nothing derives one silently. Setup validates a name once, as the lowest common
+  denominator of every service carrying it — 3–47 characters (the longest composed role name within
+  IAM's 64), `^[a-z][a-z0-9-]*[a-z0-9]$`, no `--`, not starting `aws`/`ssm` (SSM refuses the
+  `/<prefix>/…` hierarchy) or `sthree-`/`amzn-s3-demo-`, not ending `-s3alias` — and checks nothing
+  else; a name that looks like another account's default is the user's call.
 - **Networking is immutable once a deployment exists.** `--use-existing-vpc` and its three
   companions are honoured on create; on update, `SetupCommand` compares them against the deployed
   values and refuses a difference before submitting anything. They used to be sent unconditionally,
   so on a shared deployment a teammate's plain `baas admin deployment setup` submitted `UseExistingVpc=false`
   and rebuilt the networking underneath everyone. Carrying them forward silently would close the
   hole while discarding a flag the operator typed; refusing names both values instead.
-- **`~/.baas/config.yaml` stores credential *profile names*, region, `prefix` and preferences — nothing
-  else, and no secret.** The credentials themselves stay in `~/.aws`.
+- **Each deployment is one file, `~/.baas/deployments/<name>.yaml`, storing credential *profile
+  names*, region, `prefix` and preferences — nothing else, and no secret.** The credentials themselves
+  stay in `~/.aws`. One file per deployment, not one file with a map: an older CLI's save drops keys
+  it does not know, so a map would vanish the first time an older CLI ran `config set`. The flat
+  `~/.baas/config.yaml` of earlier releases is moved there on first look and removed; an older CLI
+  then finds nothing and says so, loudly, rather than addressing any deployment. `~/.baas` is not
+  relocatable — no option, no environment variable; tests pass a root to `new BaasApp(root)`, and
+  surefire gives unit tests their own `user.home` so none can touch a developer's real `~/.baas`.
   The bucket, results table and runner instance profile are *derived* from the prefix; the runner
   subnet and security group are *resolved* from the stack's outputs on every job. Neither kind is
   cached, because a stored name can point at one deployment while `prefix` names another, and a
@@ -319,13 +329,21 @@ The watchdog is the only one that survives a deadlocked JVM.
   failure that rule previously only documented. `aws.coreStackName` is gone (the stack name *is*
   the prefix), as are `aws.vpcId` and `benchmark.asyncProfilerVersion`, both of which were read by
   nothing but `config show`; the latter printed `4.0` regardless of what the AMI held.
-- **`baas config sync --deployment <prefix>` is required, though the prefix is derivable.** A bare sync
-  on a machine with no local state would adopt whatever deployment the active credentials imply —
-  in CI, a wrong role or a leftover `AWS_PROFILE` binds the machine to another account's
-  deployment and fails later, after provisioning. Setup derives and prints; sync adopts what it
-  is told. A deployment is named only by the global `--deployment`, never by a per-command
-  `--results-table` or `--bucket`, which are gone: an override of one resource could aim a command
-  at one deployment's table while its configuration named another.
+- **Absent `--deployment` means "the only one", never a guess.** With exactly one deployment
+  configured a command uses it; with two or more every command — teardown included — refuses,
+  listing them and hinting `baas config list`; with none only setup proceeds, deriving
+  `baas-<accountId>`. Nothing else selects a deployment: no `BAAS_DEPLOYMENT`, no stored default, no
+  `config use` — each is invisible state that changes what a command hits. A developer with a
+  second deployment reaches it through an alias that carries the flag. `--config-path` is gone for
+  the same reason. Teardown deletes the deployment's file, the last one included.
+- **`baas config sync` is never derived, though the prefix is derivable.** With nothing configured it
+  must be named: a bare sync on a machine with no local state would adopt whatever deployment the
+  active credentials imply — in CI, a wrong role or a leftover `AWS_PROFILE` binds the machine to
+  another account's deployment and fails later, after provisioning. With exactly one configured, a
+  bare sync re-syncs that one. Setup derives and prints; sync adopts what it is told. A deployment
+  is named only by the global `--deployment`, never by a per-command `--results-table` or
+  `--bucket`, which are gone: an override of one resource could aim a command at one deployment's
+  table while its configuration named another.
 - **The region is chosen once, by `baas admin deployment setup --region`, and never typed again.** `config sync`
   finds it: the bucket carries the prefix's name, bucket names are global, and `HeadBucket` from any
   region answers a wrong-region request with 301/400 carrying `x-amz-bucket-region` (a 404 is no
@@ -341,9 +359,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   guarded; it needs its own change.
 - **A deployer policy is prefix-exact, so it covers one deployment only.** Two rendered documents
   are ~8.5k non-whitespace characters against IAM's 5120-character *inline* budget, which is shared
-  across every inline policy on the principal — so a by-hand second deployment needs its policy
-  attached as customer-managed (6144 each), not inline alongside the first. The failure when you
-  forget is an opaque `AccessDenied` at `baas admin deployment setup` or `build-image`.
+  across every inline policy on the principal — so a second deployment needs its policy attached as
+  customer-managed (6144 each), not inline alongside the first. Setup prints the one it needs and
+  creates nothing until it is attached.
 - **The installer installs released artifacts only, and the repository copy refuses.**
   `scripts/install.sh` carries `BAAS_VERSION_DEFAULT`, rewritten at release time by `release.yml`'s
   `prepareCmd` and never committed back. A checkout copy holds the placeholder and exits naming

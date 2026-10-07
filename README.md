@@ -37,7 +37,7 @@ Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/`, a launche
 `~/.local/bin/baas`, and a copy of the installer itself alongside the jar — that stored copy is
 what makes `--update` reachable later, since a piped install leaves nothing else on disk to
 re-invoke. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never touches
-`~/.baas/config.yaml`, which belongs to `baas admin deployment setup`.
+`~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config sync`.
 
 Installer options: `--version <v>` (install a specific release instead of the latest),
 `--update`, `--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides:
@@ -82,8 +82,8 @@ baas admin deployment setup
 
 This deploys the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 and
 DynamoDB gateway endpoints, security group, the results bucket, the results table, and the
-runner/operator IAM roles — then writes the outputs, including the table name, to
-`~/.baas/config.yaml`. Nothing sensitive goes in that file.
+runner/operator IAM roles — then records the deployment in `~/.baas/deployments/<name>.yaml`: its
+name, region and credential profile names. Nothing sensitive goes in that file.
 
 Two things to know: the stack, bucket and table are all named after the deployment,
 `baas-<accountId>`, which setup derives from your AWS account — you don't choose it. And **nothing
@@ -362,7 +362,7 @@ Two roles, deliberately separate:
 | Deployer | `infra/deployer-policy.json` | `baas admin deployment setup` / `baas admin image build` / `baas admin deployment teardown` |
 | Operator | `infra/operator-policy.json` (role created by the stack) | `baas run` / `baas results query` |
 
-`aws.operatorProfile` in `~/.baas/config.yaml` does **not** fall back to `aws.profile`. That's
+`aws.operatorProfile` in a deployment's file does **not** fall back to `aws.deployerProfile`. That's
 intentional: the fallback would silently hand everyday commands deploy-level rights.
 [`infra/README.md`](infra/README.md) covers the assume-role setup.
 

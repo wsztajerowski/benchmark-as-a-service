@@ -10,15 +10,15 @@ sequenceDiagram
     participant FS as Local Filesystem
 
     Note over User,FS: baas admin deployment setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas admin deployment setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
     picocli->>SC: parse and bind options into fields
     Note over SC: validate federation and networking options before anything is loaded --<br/>a partial federation set, or --vpc-id/--subnet-id/--sg-id without<br/>--use-existing-vpc (or the flag without all three) -> exit 2 (U34)
     SC->>FS: ConfigService.load()
-    FS-->>SC: BaasConfig from ~/.baas/config.yaml
-    Note over SC: apply --region / --aws-profile over config defaults
+    FS-->>SC: loadForSetup() -- deployments/D.yaml (or a new one named D), else the only one,<br/>else empty: the name is derived below. Two or more and no D: refused. D validated first, before any AWS call
+    Note over SC: apply --region / --deployer-profile over config defaults
     SC->>STS: sts.getCallerIdentity()
     STS-->>SC: account id
-    Note over SC: prefix = "baas-" + accountId + mode.suffix()<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results"<br/>Nothing about the CALLER reaches the name -- one deployment<br/>per account, plus --mode dev. Not user-selectable.
+    Note over SC: prefix = D, the only configured one, else "baas-" + accountId<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results" (DeploymentNames)<br/>Nothing about the CALLER reaches the name -- a second<br/>deployment exists only because its name was typed.
     SC->>S3: headBucket(bucketName) -- bucketRegion?
     Note over SC,S3: global: a wrong-region request answers 301/400 with x-amz-bucket-region,<br/>and 404 = no bucket. Needs only s3:ListBucket on the prefix bucket
     alt bucket in ANOTHER region
@@ -55,8 +55,8 @@ sequenceDiagram
     end
 
     SC->>CF: describeStacks() -- OperatorRoleArn output, to print only
-    SC->>FS: ConfigService.save() -- prefix, aws.profile, resolved aws.region
-    SC->>FS: write runner-image-extension.yaml beside config.yaml, only if absent
+    SC->>FS: ConfigService.save() -- deployments/<prefix>.yaml: prefix, aws.deployerProfile, resolved aws.region
+    SC->>FS: write ~/.baas/runner-image-extension.yaml (beside deployments/, never in it), only if absent
     Note over SC,FS: nothing derivable or resolvable is stored
 
     alt created

@@ -159,7 +159,7 @@ baas admin deployment setup --revoke-github-oidc
 
 The account-root principal on the trust policy survives either way, so neither federating nor
 revoking can lock a local operator out. The deployed stack's parameters are the single source of
-truth for what the trust policy says — `~/.baas/config.yaml` holds no copy:
+truth for what the trust policy says — no deployment file under `~/.baas/deployments/` holds a copy:
 
 ```bash
 aws cloudformation describe-stacks --stack-name PREFIX \
@@ -306,33 +306,37 @@ rather than assuming the operator role:
 baas config set --operator-profile baas-operator
 ```
 
-`~/.baas/config.yaml` keeps the two identities separate:
+Each deployment's file, `~/.baas/deployments/<name>.yaml`, keeps the two identities separate:
 
 ```yaml
 aws:
-  profile: baas-deployer          # baas admin deployment setup / baas admin deployment teardown
-  operatorProfile: baas-operator  # baas run / baas results query / baas config
+  deployerProfile: baas-deployer  # baas admin …
+  operatorProfile: baas-operator  # baas run / baas results query / baas jobs / baas config
 ```
 
-`aws.operatorProfile` deliberately does **not** fall back to `aws.profile`. `baas admin
-setup` writes the deployer profile into `aws.profile`, and silently reusing it would give
-every benchmark job `iam:CreateRole` and `cloudformation:*` — the exact standing privilege
-the operator role exists to avoid.
+`aws.operatorProfile` deliberately does **not** fall back to `aws.deployerProfile`. `baas admin
+deployment setup --deployer-profile` writes the deployer profile there, and silently reusing it
+would give every benchmark job `iam:CreateRole` and `cloudformation:*` — the exact standing
+privilege the operator role exists to avoid. (The key was `aws.profile`, and the option
+`--aws-profile`, before `multiple-deployments`; an old file is read and rewritten with the new key.)
 
 If you are setting up on a machine that never ran `baas admin deployment setup` — the usual case when
-the deployer and the operator are different people — pull the stack's values instead of
-copying `config.yaml` by hand:
+the deployer and the operator are different people — adopt the deployment instead of copying its
+file by hand:
 
 ```bash
-baas config sync --deployment baas-123456789012
+baas --deployment baas-123456789012 config sync
 ```
 
-`--name` is required even though the prefix *is* derivable from the account, because a bare sync
-on a machine with no local state would adopt whichever deployment the active credentials imply.
-In CI — a wrong federated role, or a leftover `AWS_PROFILE` — that binds the machine to another
-account's deployment and fails much later, after something has been provisioned. `baas admin
-setup` prints the name; `baas config sync --deployment` adopts it. Use `--name baas-<accountId>-dev` to
-point a machine at the development deployment.
+With nothing configured, the name is required even though the prefix *is* derivable from the
+account, because a bare sync on a machine with no local state would adopt whichever deployment the
+active credentials imply. In CI — a wrong federated role, or a leftover `AWS_PROFILE` — that binds
+the machine to another account's deployment and fails much later, after something has been
+provisioned. `baas admin deployment setup` prints the name; `config sync` adopts it. With exactly
+one deployment configured, a bare `baas config sync` re-syncs it.
+
+`baas config list` shows what this machine is configured for — each deployment with its region and
+both profiles — from the files alone, with no AWS call.
 
 Sync also finds the deployment's region — from its bucket, whose name is global — and stores it,
 so a machine never needs a region typed. The region is chosen once, by `baas admin deployment setup --region`;
@@ -356,72 +360,51 @@ resources get their own.
 
 ## A second deployment, for developing BaaS itself
 
-`baas admin deployment setup` derives its name from the caller's AWS account and takes **no option to name a
-different one**: there is exactly one deployment per account, and the CLI cannot be told
-otherwise. That is deliberate. A user of BaaS should never have to ask which deployment they are
-on, and a development convenience has no business in the released command surface.
-
-Developing BaaS itself is the case that wants a second, throwaway deployment — somewhere to
-exercise a template change or an image bake without disturbing the account's real one. It is a
-procedure, not a feature:
+An account can hold more than one deployment, each named explicitly ([ADR 0006](../docs/adr/0006-more-than-one-deployment-per-account.md)).
+Developing BaaS itself is the case that wants one — somewhere to exercise a template change, an IAM
+edit or an image bake without disturbing the account's real deployment. **A change touching
+`infra/`, IAM or the runner image is verified this way before it merges**: CI's e2e runs the PR's
+CLI against the default deployment's stack, IAM and AMI, so it never exercises such a change.
 
 ```bash
-ACCT=$(aws sts get-caller-identity --query Account --output text --profile baas-admin)
-DEV="baas-${ACCT}-dev"
+DEV=wiktor-dev   # any name: 3-47 chars, lowercase letters, digits and hyphens, starting with a letter
 
-# 1. Render and attach the deployer policy for that prefix. The policy is prefix-exact, so the
-#    account's own one grants nothing here. Needs an identity above the deployer.
-#    Until `multiple-deployments` lets setup name another deployment, fill the template by hand:
-sed -e "s/\${ACCOUNT_ID}/$ACCT/g" -e "s/\${REGION}/eu-central-1/g" -e "s/\${PREFIX}/$DEV/g" \
-  infra/deployer-policy.json > /tmp/deployer-dev.json
-#    ...attach /tmp/deployer-dev.json as a CUSTOMER-MANAGED policy. It will not fit inline
-#    alongside the account's own: two rendered documents are ~8.5k characters against IAM's
-#    5120-character inline budget, which is shared across every inline policy on the principal.
+# 1. Ask setup for the policy. Under the account's deployer it prints the policy rendered for $DEV
+#    on stdout, names what is missing on stderr, and creates nothing.
+baas --deployment "$DEV" admin deployment setup --region us-east-1 > /tmp/deployer-dev.json
+#    ...attach /tmp/deployer-dev.json as a CUSTOMER-MANAGED policy, with an identity above the
+#    deployer. It will not fit inline alongside the account's own: two rendered documents are
+#    ~8.5k characters against IAM's 5120-character inline budget, shared across every inline policy
+#    on the principal.
 
-# 2. Deploy the core template directly. ResourceNamePrefix is an ordinary parameter. Outside
-#    eu-central-1 also override RunnerParentAmiId: its default is the eu-central-1 AMI of the pinned
-#    AL2023 release, which `baas admin deployment setup` resolves per region but a by-hand deploy does not.
-aws cloudformation deploy \
-  --template-file infra/cf-template-core.yaml \
-  --stack-name "$DEV" \
-  --parameter-overrides "ResourceNamePrefix=$DEV" \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --profile baas-admin
+# 2. Run setup again: it now deploys, and writes ~/.baas/deployments/$DEV.yaml.
+baas --deployment "$DEV" admin deployment setup --region us-east-1
+baas --deployment "$DEV" admin image build
 
-# 3. Point this machine at it. Everything downstream resolves from the configured prefix.
-baas config sync --deployment "$DEV"
-baas admin image build        # renders the real component and updates the stack
+# 3. Work against it through the worktree's own build. With two deployments configured, every
+#    command needs --deployment — the alias carries it, and the installed `baas` stays on yours.
+alias baas-dev="java -jar $PWD/baas-cli/target/baas-cli.jar --deployment $DEV"
+baas-dev run --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar --project dev \
+  --runner-jar benchmark-runner/target/benchmark-runner.jar jmh -- -f 1 -wi 1 -i 1
 
-#    ...work...
-
-# 4. Tear it down, and go back to the account's own deployment.
-baas admin deployment teardown --deployment "$DEV"
-baas config sync --deployment "baas-${ACCT}"
+# 4. Tear it down. Its file goes with it, and with one deployment left the flag is optional again.
+baas-dev admin deployment teardown
 ```
 
-Three things worth knowing before you use it:
+Three things worth knowing:
 
-- **The template's `RunnerImageComponentData` default is a placeholder**, registered at the default
-  `RunnerImageVersion` of `1.0.0`. Step 3's `baas admin image build` replaces it with the real
-  component at whatever `infra/runner-image.yaml` declares. This works only while those two
-  versions differ — if `runner-image.yaml` is ever set to `1.0.0`, the placeholder occupies that
-  version and Image Builder will refuse the real one, because components are immutable at a
-  version. Bump `imageVersion` before doing dev work at `1.0.0`. The contract's placeholder needs no
-  such care: its version is derived, and moves past the placeholder's on the first build.
-- **Teardown deletes everything**, bucket and results table included — nothing survives it, for a
-  dev deployment as for the account's own.
-- **It costs a second AMI snapshot** (~$0.20/month for 30 GB) for as long as it exists, and the
-  one-image rule only retires images the *same* deployment replaced — so deregister the dev AMI
-  and delete its snapshot when you tear the deployment down.
-
-If you would rather not manage the policy juggling, a **separate AWS account** gives the same
-isolation for free: account-derived naming distinguishes the two deployments with no prefix
-games, `baas admin deployment setup` works unmodified in both, and each account's deployer policy names only
-its own account.
+- **The name is the prefix, verbatim.** `wiktor-dev` makes the stack and bucket `wiktor-dev`, the table
+  `wiktor-dev-results` and the runner role `wiktor-dev-role-runner`. Bucket and IAM names are
+  global, so a name exists in one region of one account only; the region is a free choice.
+- **Runners carry `baas-deployment=<name>`**, so two deployments in one region never count each
+  other's runners — neither in `jobs list` nor in teardown's in-flight gate.
+- **Teardown deletes everything**, bucket, results table and runner image included — nothing survives
+  it, for a dev deployment as for the account's own. While it exists it costs one AMI snapshot
+  (~$0.20/month for 30 GB).
 
 ## Client configuration beyond credentials — `runner.sourceRepo`
 
-`~/.baas/config.yaml` carries one setting that is neither a credential nor a stack output:
+Each deployment's file carries one setting that is neither a credential nor a stack output:
 
 ```yaml
 runner:

@@ -46,6 +46,11 @@ rules:
       is large (CI history spans 10.0M-29.6M ops/s on one benchmark), so the task records the spread.
     - Include tasks to update CLAUDE.md when an invariant changes, and to delete a closed finding's
       entry from docs/review/open-findings.md (an ADR if the decision is worth keeping).
+    - A change touching infra/, IAM (either policy or a role in the template) or the runner image
+      includes a manual task to verify it on a second deployment — setup, admin image build, a run,
+      teardown (infra/README.md, A second deployment) — and record the result in verify.md. CI's e2e
+      runs the PR's CLI against the default deployment's stack, IAM and AMI, so it never exercises
+      such a change.
     - 'The last task is: run /opsx:verify and record the result in verify.md in the change
       directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…)
       that later notes can cite, and any deviation from design or tasks. verify.md is a convention,
