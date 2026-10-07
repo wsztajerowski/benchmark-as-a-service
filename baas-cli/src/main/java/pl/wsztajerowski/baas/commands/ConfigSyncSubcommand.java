@@ -79,7 +79,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         BaasConfig config = configService().loadOrEmpty();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
-        // The region is the deployment's, chosen once by `baas admin setup`, so it is found
+        // The region is the deployment's, chosen once by `baas admin deployment setup`, so it is found
         // rather than asked for: the bucket carries the prefix's name, names are global, and S3
         // says where it lives. A machine re-pointed at a rebuilt deployment is re-adopted by this
         // same command, and CI follows the deployment rather than whatever AWS_REGION it set.
@@ -101,13 +101,13 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             logger.error("""
                     No deployment named '{}': its bucket is in {}, but no stack of that name is.
                       A teardown retains the bucket. Create the deployment again: \
-                baas admin setup --region {}""",
+                baas admin deployment setup --region {}""",
                 name, region.get(), region.get());
             return 1;
         }
         if (!outputs.containsKey("ResultsTableName")) {
             logger.warn("Stack '{}' reports no ResultsTableName output — it may predate this "
-                + "version of the core template. `baas results` will fail until it is updated.", name);
+                + "version of the core template. `baas results query` will fail until it is updated.", name);
         }
 
         config.setPrefix(name);

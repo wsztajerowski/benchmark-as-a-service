@@ -22,12 +22,9 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | S14 | `RunnerRole` can overwrite the pinned runner JAR every later job executes | Med | `narrow-bucket-grants` |
 | S7 | `RunnerRole`'s bucket-wide `s3:DeleteObject`/`PutObject` (table half already fixed) | Med | `narrow-bucket-grants` |
 | S15 | `OperatorRole` — so every CI workflow — holds bucket-wide `s3:DeleteObject` no command uses | Low | `narrow-bucket-grants` |
-| P11 | `env diff` compares job-identity fields, so "No differences" can never print | Low | `jobs-command` |
-| U28 | No lookup of one job by id | Low | `jobs-command` |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | Low | `retire-mongodb` |
-| U2 | No CLI path from teardown residue to an empty account | Low | `export-before-teardown` |
-| U12 | A rolled-back first create leaves a retained table only `aws` can clear | Low | `export-before-teardown` |
+| U2 | Nothing exports a deployment's data before a teardown, which now deletes everything | Low | `export-before-teardown` |
 | DR1 | `run --detach` with today's shutdown hook would cancel and terminate the job it just launched | High if shipped naively | `detached-run` |
 | DR4 | The archived non-goal rejecting `--detach` cites a reason job items removed | Info | `detached-run` |
 | U21 | Live check: a deployment outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
@@ -66,7 +63,7 @@ whole bucket. Nothing under the operator role deletes an object (the only delete
 `deleteAllObjects`, under deployer credentials). CI federates into this role on `pull_request`, so
 any same-repository branch's workflow can wipe every job's artifacts, unrecoverably.
 
-**Decided (2026-10-04), one small change, one `baas admin setup` re-run per deployment:**
+**Decided (2026-10-04), one small change, one `baas admin deployment setup` re-run per deployment:**
 1. The runner's S3 grant: `PutObject` and `GetObject` on `jobs/*`, `GetObject` on `releases/*`
    (user-data's `aws s3 cp` of the runner), no `DeleteObject`. Pin it in `CoreTemplateTest`. What
    remains of S7 is overwriting another job's objects under `jobs/*`, which has no per-job IAM scope.
@@ -74,40 +71,6 @@ any same-repository branch's workflow can wipe every job's artifacts, unrecovera
    `RunnerJarResolver`, which also removes the head-then-put race between two first jobs of a new
    version. A bucket-policy enforcement on `releases/*` is left out as extra mechanism.
 3. `s3:DeleteObject` leaves both operator documents; `OperatorPolicyDriftTest` keeps them in step.
-
-### `jobs-command` — P11, U28
-
-**P11.** `environment.json` carries job-identity fields — `benchmarkType`, `project`, `branch`,
-`jobId`, `createdAt` — and `EnvironmentManifest.diff` compares every key. Any two jobs differ on
-`jobId` and `createdAt`, so `No differences. Both runs measured on the same environment.` can
-never print, and a cross-type diff always reports `benchmarkType`.
-
-**U28.** `baas jobs list` has no run-id filter and pages newest-first to `--limit`;
-`baas results --job-id` returns measurements only, so a failed job reads "No results found".
-An older job is reachable only by raising `--limit` until it appears. (CI no longer needs this:
-since U27 it reads `jobStatus` from `baas run`'s summary.)
-
-**Decided (2026-10-02, U28 added 2026-10-04):**
-- `baas env` / `baas env diff` are replaced by `baas jobs show <job>` and
-  `baas jobs diff [--job | --system | --all] <jobA> <jobB>`, both accepting a job id **or** a result
-  path through `JobReference`.
-- `show` prints the manifest in two sections; `diff` compares the selected one(s):
-  - **job** — `project`, `branch`, `benchmarkType`, `amiId`, `instanceType`, instance family
-    (derived from the type, e.g. `c5` from `c5.2xlarge`);
-  - **system** — `cpuModel`, `cpuArch`, `cpuCores`, `cpuThreadsPerCore`, `cpuMaxMhz`,
-    `memoryTotalKb`, `swapTotalKb`, `imageVersion`, `jvmVersion`, `jvmVendor` (added by
-    `custom-runner-image`), `perfVersion`, `asyncProfilerVersion`, `osVersion`, `kernelRelease`,
-    `perfEventParanoid`, `kptrRestrict`, `transparentHugepages`.
-- `schemaVersion` is its own section, checked on every `diff` whatever is selected; a mismatch is loud.
-- The manifest stops writing `jobId` and `createdAt` (the result path identifies the job and the
-  job id carries the instant), `region` and `awsCliVersion`; `schemaVersion` bumps. The spec scenario
-  requiring a crashed job's manifest to record its job id and instant changes accordingly.
-- **`show` is also the lookup by id:** above the manifest it prints the job item — stored and
-  resolved status (`vanished` when the instance is gone without an outcome), instance id and type,
-  `createdAt`, result path, `errorCode`, tags. A job with no manifest (`launch-failed`, cancelled
-  before boot, pre-prebaked-image) still shows its item and says the manifest is absent. A job from
-  before job items shows its manifest only. `--format json` prints both as one object.
-- Breaking CLI change: `feat(cli)!`, next major.
 
 ### `retire-mongodb` — C4, A13
 
@@ -129,15 +92,11 @@ so the production path is tested end to end. Then delete the Mongo adapter,
 local storage mode, so `--results-table` and `--s3-bucket` become required. Update CLAUDE.md: the
 *Accepted risks* MongoDB row, the Morphia and connection-string gotchas, *Adding a benchmark type*.
 
-### `export-before-teardown` — U2, U12
+### `export-before-teardown` — U2
 
-**U2.** From teardown's residue (the retained table, and the bucket without `--delete-bucket`) no
-`baas` command reaches an empty account, and the deployer cannot even list what is left
-(`ListStacks`, `ListAllMyBuckets`, `DescribeParameters`, `ListTables` are outside its policy). The
-image part is fixed: teardown retires it.
-
-**U12.** `ROLLBACK_COMPLETE` → teardown → setup is refused while the failed create's retained table
-exists, and only `aws dynamodb delete-table` clears it.
+**U2.** Since `jobs-command`, a teardown deletes the bucket and the results table with the stack
+(nothing is retained), so the only way to keep a deployment's history is to export it first — and no
+`baas` command does that yet. The image part was already fixed: teardown retires it.
 
 The design lives in
 [`openspec/changes/export-before-teardown/brainstorm.md`](../../openspec/changes/export-before-teardown/brainstorm.md)
@@ -170,7 +129,7 @@ Live, they need a throwaway deployment such as `baas-381492019823-dev` in `us-ea
 setup → `build-image` → run there, U40 a teardown with a pushed extension. **Blocked on an IAM grant**
 (2026-10-05): `baas-admin` is the prefix- and region-exact deployer and `lynx` holds no IAM, so no
 identity in the account may deploy elsewhere. Attach
-`baas admin deployer-policy --prefix baas-381492019823-dev --region us-east-1` as a customer-managed
+the deployer policy for `baas-381492019823-dev` in `us-east-1` (filled from `infra/deployer-policy.json` by hand, see infra/README *A second deployment*, until `multiple-deployments` lets setup render it) as a customer-managed
 policy, or use a second account. The steps are in `openspec/changes/QUEUE.md` (*Deferred checks*)
 and `infra/README.md` (*A second deployment* — override `RunnerParentAmiId` outside eu-central-1).
 
@@ -239,7 +198,7 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
   recreated with a new id. The SDK does not read that cache.
 - **U31.** `baas jobs list` shows a job as `vanished` for the few seconds between its reservation and
   `DescribeInstances` seeing its tagged instance, and `--in-flight` hides it then. Nothing is written.
-- **U33.** `baas admin teardown --stack-name <typo>` under credentials broader than the deployer
+- **U33.** `baas admin deployment teardown --deployment <typo>` under credentials broader than the deployer
   reports success: `DeleteStack` on a missing stack is a no-op and the notices still print. Under the
   prefix-exact deployer policy it is an `AccessDenied`.
 - **U36.** Teardown's in-flight gate lists every `baas-role=benchmark-runner` instance in the region,

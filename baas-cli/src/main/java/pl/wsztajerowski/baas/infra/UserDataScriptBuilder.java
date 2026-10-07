@@ -12,7 +12,7 @@ import java.util.stream.Stream;
 
 public class UserDataScriptBuilder {
 
-    /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
+    /** Bump when a field is added or renamed, so `baas jobs diff` can tell structure from content. */
     public static final int MANIFEST_SCHEMA_VERSION = 6;
 
     /**
@@ -112,7 +112,7 @@ public class UserDataScriptBuilder {
         fi
 
         # Nothing is installed here. Corretto, perf, the AWS CLI and async-profiler are baked
-        # into the AMI by `baas admin build-image` from infra/runner-image.yaml — a runner that
+        # into the AMI by `baas admin image build` from infra/runner-image.yaml — a runner that
         # installed its own toolchain would measure on a slightly different machine every time.
 
         mkdir -p /app
@@ -131,7 +131,7 @@ public class UserDataScriptBuilder {
         # Every value is captured into a variable first, so the manifest body below is nothing but
         # ${VAR} references. Inlining the command substitutions would put quotes, parentheses and
         # awk programs inside a JSON string inside a heredoc — three levels of quoting, and a
-        # mistake in any of them produces a file that only fails weeks later in `baas env diff`.
+        # mistake in any of them produces a file that only fails weeks later in `baas jobs diff`.
         json_escape() { printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g'; }
         lscpu_field() { lscpu | grep -m1 "^$1" | cut -d: -f2- | tr -d ' '; }
 
@@ -252,7 +252,7 @@ public class UserDataScriptBuilder {
         # machine-observed (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type),
         # so the caller tags should never actually collide with the six observed --tag lines
         # below.
-        # The six --tag lines below reach the item's tags map, so `baas results` can filter
+        # The six --tag lines below reach the item's tags map, so `baas results query` can filter
         # and group by the environment without fetching anything from S3. They are the values
         # OBSERVED above, not the ones the CLI passed down, so a result's tags cannot
         # disagree with its own environment.json. They are listed AFTER the caller-tags

@@ -87,7 +87,7 @@ jobs:
           role-session-name: GitHubActions
 
       - name: Sync configuration from the deployed core stack
-        run: $BAAS config sync --name "${{ vars.CORE_STACK_NAME }}"
+        run: $BAAS config sync --deployment "${{ vars.CORE_STACK_NAME }}"
 
       # --runner-jar is mandatory, not a convenience: a reactor build's version is
       # 0.0.0-semantically-released, which names no release, so `baas run` refuses to resolve a
@@ -127,7 +127,7 @@ jobs:
             echo "job_status=$(jq -r '.jobStatus // empty' summary.json)"
           } >> "$GITHUB_OUTPUT"
           # An unparseable summary must fail here, naming itself. Without this the empty id flows
-          # into `baas results --job-id ""`, which fails in DynamoDB as "The AttributeValue for
+          # into `baas results query --job-id ""`, which fails in DynamoDB as "The AttributeValue for
           # a key attribute cannot contain an empty string value. Key: gsi1pk" — an error that
           # says nothing about the actual cause, three steps away from it.
           if [ "$status" -eq 0 ] && [ -z "$job_id" ]; then
@@ -143,7 +143,7 @@ jobs:
       # it could never pass.
       - name: The job's measurements are retrievable by the id the job reported
         run: |
-          $BAAS results --job-id "${{ steps.run.outputs.job_id }}" --format json \
+          $BAAS results query --job-id "${{ steps.run.outputs.job_id }}" --format json \
             | tee measurements.json
           test "$(jq 'length' measurements.json)" -gt 0
 
@@ -157,25 +157,25 @@ jobs:
           test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
           test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
 
-      # Excluded from the project sweep, present under its own id and under --all-jobs: the halves
-      # of the exclusion contract, asserted against each other. The sweep groups by commit — a tag
-      # only this job carries — so best-per-group selection cannot be what hides it: if exclusion
-      # broke, this job would be its group's only row and would surface.
+      # Excluded from the project query, present under its own id and under --show-excluded: the
+      # halves of the exclusion contract, asserted against each other. The query lists every
+      # measurement with no limit, so neither grouping nor paging can be what hides it: if
+      # exclusion broke, this job's rows would surface.
       - name: The excluded job is absent from the project sweep
         run: |
-          $BAAS results --project "$PROJECT" --group-by commit --format json > sweep.json
+          $BAAS results query --project "$PROJECT" --limit 0 --format json > sweep.json
           test "$(jq --arg id "${{ steps.run.outputs.job_id }}" \
             '[.[] | select(.jobId == $id)] | length' sweep.json)" -eq 0
 
       - name: The excluded job is present when every job is asked for
         run: |
-          $BAAS results --project "$PROJECT" --all-jobs --format json > every-job.json
+          $BAAS results query --project "$PROJECT" --show-excluded --limit 0 --format json > every-job.json
           test "$(jq --arg id "${{ steps.run.outputs.job_id }}" \
             '[.[] | select(.jobId == $id)] | length' every-job.json)" -gt 0
 
       - name: The image-dependent artifacts reached the job's own prefix
         run: |
-          $BAAS download "${{ steps.run.outputs.job_id }}" -o ./artifacts
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./artifacts
           find ./artifacts -type f | sort
           test -s ./artifacts/environment.json
           test -s ./artifacts/jmh-result.json
@@ -204,14 +204,12 @@ jobs:
           path: ./artifacts
           if-no-files-found: ignore
 
-      # Downloaded by result path. Since run-status-in-dynamodb a failed job is also downloadable by
-      # its id, which resolves through the job item even when no measurement was stored; the path
-      # form stays because it needs no index lookup at all, and a failure step should depend on as
-      # little as possible.
+      # Downloaded by job id, which resolves through the job item even when no measurement was
+      # stored.
       - name: Surface the runner boot log on failure
-        if: failure() && steps.run.outputs.result_path != ''
+        if: failure() && steps.run.outputs.job_id != ''
         run: |
-          $BAAS download "${{ steps.run.outputs.result_path }}" -o ./failed || true
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./failed || true
           cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"
 
   # The JCStress path end to end: the runner's JCStress subcommand, its HTML report parsing, the
@@ -257,7 +255,7 @@ jobs:
           role-session-name: GitHubActions
 
       - name: Sync configuration from the deployed core stack
-        run: $BAAS config sync --name "${{ vars.CORE_STACK_NAME }}"
+        run: $BAAS config sync --deployment "${{ vars.CORE_STACK_NAME }}"
 
       # --mode is the runner's, forwarded to JCStress as -m: on the runner -m is the MongoDB
       # connection string. --runner-jar and exclude_from_results as in the job above.
@@ -297,7 +295,7 @@ jobs:
       # A JCStress job is one item, named for the job rather than for a class and method.
       - name: The job stored exactly one JCStress measurement carrying this CI job's tags
         run: |
-          $BAAS results --job-id "${{ steps.run.outputs.job_id }}" --format json \
+          $BAAS results query --job-id "${{ steps.run.outputs.job_id }}" --format json \
             | tee measurements.json
           test "$(jq 'length' measurements.json)" -eq 1
           test "$(jq -r '.[0].benchmarkType' measurements.json)" = "jcstress"
@@ -309,7 +307,7 @@ jobs:
 
       - name: The JCStress output and the environment manifest reached the job's prefix
         run: |
-          $BAAS download "${{ steps.run.outputs.job_id }}" -o ./artifacts
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./artifacts
           find ./artifacts -type f | sort
           test -s ./artifacts/environment.json
           test -s ./artifacts/jcstress-output.txt
@@ -323,7 +321,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Surface the runner boot log on failure
-        if: failure() && steps.run.outputs.result_path != ''
+        if: failure() && steps.run.outputs.job_id != ''
         run: |
-          $BAAS download "${{ steps.run.outputs.result_path }}" -o ./failed || true
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./failed || true
           cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"

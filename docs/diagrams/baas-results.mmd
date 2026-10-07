@@ -6,7 +6,7 @@ sequenceDiagram
     participant DDB as DynamoDB<br/><prefix>-results
     participant Out as stdout (Console)
 
-    User->>RC: baas results [--project p | --all-projects | --job-id id]<br/>[--benchmark-name re] [--tag k=v]… [--group-by tag] [--all-jobs]<br/>[--limit n] [--format table|json|csv] [--watch]
+    User->>RC: baas results query [--project p | --all-projects | --job-id id]<br/>[--benchmark-name re] [--tag k=v]… [--best-per tag] [--show-excluded]<br/>[--limit n] [--format table|json|csv] [--watch]
 
     rect rgb(255, 235, 235)
         Note over RC: Usage checks, before config or AWS -- exit 2
@@ -21,7 +21,7 @@ sequenceDiagram
     alt --job-id id
         RC->>DDB: Query jobId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the job item
     else --all-projects
-        RC->>DDB: Scan, begins_with(pk, RESULT#) (exclude_from_results filtered unless --all-jobs)
+        RC->>DDB: Scan, begins_with(pk, RESULT#) (exclude_from_results filtered unless --show-excluded)
     else project-scoped
         alt --project p
             Note over RC: p
@@ -41,7 +41,7 @@ sequenceDiagram
         RC->>DDB: Query pk = RESULT#<project>
     end
 
-    Note over RC: Unless --job-id: filter by name regex and tags (warn on a tag no row carries),<br/>then keep the best score per (project, benchmark, group-by tag) unless --all-jobs.<br/>Sort, then cut to --limit.
+    Note over RC: Filter by name regex, --tag and --exclude-tag (warn on a tag no row carries).<br/>With --best-per: keep the best per (project, benchmark, params, mode, tag) -- highest for thrpt,<br/>lowest for avgt/sample/ss. Sort (newest first by default), skip --offset, cut to --limit (20, 0 = all).
     alt --watch
         loop every 30 s until Ctrl+C (alternate screen)
             RC->>DDB: same query

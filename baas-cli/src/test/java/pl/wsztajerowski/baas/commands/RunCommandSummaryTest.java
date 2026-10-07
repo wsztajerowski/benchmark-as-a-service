@@ -79,7 +79,7 @@ class RunCommandSummaryTest {
     }
 
     /**
-     * The failure case is precisely when the id is needed — to {@code baas download} it and surface
+     * The failure case is precisely when the id is needed — to {@code baas jobs download} it and surface
      * {@code cloud-init-output.log}, the documented place to start when a job dies before producing
      * output. So the object is printed, and the command still exits non-zero.
      */

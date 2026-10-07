@@ -331,7 +331,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         List<String> projects = results.listVisibleProjects();
         if (projects.isEmpty()) {
             logger.error("No project holds results outside exclude_from_results. "
-                + "To see everything: baas results --all-projects --all-jobs");
+                + "To see everything: baas results query --all-projects --show-excluded");
             return Optional.empty();
         }
         if (!console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {
@@ -365,7 +365,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     }
 
     /**
-     * Result payloads go to the {@link Console}, never the logger: {@code baas results --format
+     * Result payloads go to the {@link Console}, never the logger: {@code baas results query --format
      * json | jq} has to see clean JSON, and SimpleLogger writes to stderr with a timestamp on
      * every line. Same reasoning covers {@link #printCsv} and {@link ResultsTable}. Never coloured.
      */

@@ -4,10 +4,10 @@ Parameters:
     # namespace lives inside this value rather than being composed at each use. Every resource here
     # is therefore `${ResourceNamePrefix}` or `${ResourceNamePrefix}-<type>-<name>`, one rule with
     # no exceptions, so knowing the prefix is enough to predict every name. The default is a
-    # placeholder that names nothing: `baas admin setup` always supplies the real value.
+    # placeholder that names nothing: `baas admin deployment setup` always supplies the real value.
     Description: >-
       Deployment name stem, e.g. baas-123456789012 or baas-123456789012-dev. Supplied by
-      `baas admin setup`; every resource name in this stack is derived from it.
+      `baas admin deployment setup`; every resource name in this stack is derived from it.
     Type: String
     Default: "baas-000000000000"
   UseExistingVpc:
@@ -27,8 +27,8 @@ Parameters:
     Description: Existing security group ID (used when UseExistingVpc=true).
     Type: String
     Default: ""
-  # The runner image's parameters, planned by RunnerImageParameters. `baas admin build-image`
-  # submits all of them; `baas admin setup` submits them on create and, on update, only those the
+  # The runner image's parameters, planned by RunnerImageParameters. `baas admin image build`
+  # submits all of them; `baas admin deployment setup` submits them on create and, on update, only those the
   # deployed stack lacks, carrying the rest forward — so a plain setup never reverts an image.
   # Their defaults are placeholders the CLI never lets stand: a placeholder registered at a
   # version would make Image Builder refuse the real document at that same version.
@@ -117,7 +117,7 @@ Parameters:
   GitHubRepo:
     Description: >-
       Comma-separated OIDC subject patterns allowed to assume the operator role, each already in
-      `repo:<org>/<name>:*` form. `baas admin setup` composes them from --github-org and each
+      `repo:<org>/<name>:*` form. `baas admin deployment setup` composes them from --github-org and each
       --github-repo, so the template needs no per-element rendering: CloudFormation cannot iterate
       a list, and every in-template trick for it relies on Fn::Sub re-scanning substituted text,
       which it does not do. Several patterns let one deployment serve several repositories
@@ -448,9 +448,9 @@ Resources:
   # ─── Runner image build (EC2 Image Builder) ──────────────────────────────────
   #
   # Deliberately NO AWS::ImageBuilder::Image here. That resource performs a build during
-  # stack operations, which would add ~15 minutes to every `baas admin setup` — including
+  # stack operations, which would add ~15 minutes to every `baas admin deployment setup` — including
   # setups that changed nothing about the image. Builds are triggered out of band by
-  # `baas admin build-image` via StartImagePipelineExecution; the stack holds only the
+  # `baas admin image build` via StartImagePipelineExecution; the stack holds only the
   # durable configuration.
 
   ImageBuildRole:
@@ -499,7 +499,7 @@ Resources:
       Description: Bakes the runner toolchain and kernel tunables declared in infra/runner-image.yaml.
       Platform: Linux
       # A Component is immutable at a given version, so changing Data without bumping
-      # RunnerImageVersion is rejected. `baas admin build-image` preflights exactly that.
+      # RunnerImageVersion is rejected. `baas admin image build` preflights exactly that.
       Version: !Ref RunnerImageVersion
       Data: !Ref RunnerImageComponentData
       Tags:
@@ -625,11 +625,11 @@ Resources:
         project: !Sub ${ResourceNamePrefix}
 
   # BaasCliOperatorRole — assumed (via sts:AssumeRole) by whoever runs
-  # `baas run`/`baas results`/`baas config` locally. Scoped exactly to this
+  # `baas run`/`baas results query`/`baas config` locally. Scoped exactly to this
   # stack's own resources (bucket, RunnerRole, the runner AMI pointer, results table),
   # which only CloudFormation can do precisely since it knows those ARNs at
   # deploy time.
-  # Trust is scoped to the account root — this keeps `baas admin setup`
+  # Trust is scoped to the account root — this keeps `baas admin deployment setup`
   # parameter-free, since the stack has no way to know which specific human
   # IAM identity should get operator access. Actual gating happens per-user:
   # grant sts:AssumeRole on this role's ARN only to the identities that should
@@ -733,7 +733,7 @@ Resources:
             Statement:
               # The runner boots from a purpose-built image now, so the public AL2023 lookup
               # path is gone and this pointer replaces it. Read-only: publishing it is
-              # `baas admin build-image`, which runs under the deployer.
+              # `baas admin image build`, which runs under the deployer.
               - Effect: Allow
                 Action: ssm:GetParameter
                 Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id"
@@ -771,7 +771,7 @@ Resources:
             Version: "2012-10-17"
             Statement:
               # A Query against a GSI authorises on the index ARN, not the table's — both
-              # are granted here or `baas results --job-id` fails at runtime with an
+              # are granted here or `baas results query --job-id` fails at runtime with an
               # opaque AccessDenied, long after the deploy looked successful.
               # Scan is here for enumeration, not for reach: Query already covers the table
               # and its indexes, so every row a Scan returns was reachable anyway. It is
@@ -814,7 +814,7 @@ Outputs:
     Value: !Ref RunnerInstanceProfile
   OperatorRoleArn:
     Value: !GetAtt OperatorRole.Arn
-  # `baas admin build-image` reads this and passes it verbatim to
+  # `baas admin image build` reads this and passes it verbatim to
   # StartImagePipelineExecution, which rejects anything that is not an ARN.
   RunnerImagePipelineArn:
     Value: !GetAtt RunnerImagePipeline.Arn
@@ -822,7 +822,7 @@ Outputs:
     Value: !Sub ${ResourceNamePrefix}-recipe-runner
   RunnerImageInfrastructureArn:
     Value: !GetAtt RunnerImageInfrastructure.Arn
-  # Written by `baas admin build-image`, not by the stack — the AMI ID is not known until a
+  # Written by `baas admin image build`, not by the stack — the AMI ID is not known until a
   # build completes. Published here so the CLI and infra/README.md name one path.
   RunnerAmiParameterName:
     Value: !Sub /${ResourceNamePrefix}/runner/ami-id

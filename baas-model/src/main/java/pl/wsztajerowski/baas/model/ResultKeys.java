@@ -55,7 +55,7 @@ public final class ResultKeys {
 
     /**
      * {@code k=v} pairs sorted by key, joined by {@code ,} — one canonical text per combination,
-     * shared by the sort key and by {@code baas results}' grouping. A value containing {@code ,}
+     * shared by the sort key and by {@code baas results query}' grouping. A value containing {@code ,}
      * or {@code =} could in principle alias another combination; the result would be a rejected
      * duplicate key, loud rather than wrong, so it is not escaped.
      */

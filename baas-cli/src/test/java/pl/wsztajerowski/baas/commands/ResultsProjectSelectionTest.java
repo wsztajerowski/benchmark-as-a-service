@@ -19,7 +19,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Which project {@code baas results} reads when none is named. Every case stops before a partition
+ * Which project {@code baas results query} reads when none is named. Every case stops before a partition
  * is queried, so a stand-in listing is the only AWS-shaped thing involved.
  */
 class ResultsProjectSelectionTest {

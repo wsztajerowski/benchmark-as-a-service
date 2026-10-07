@@ -4,24 +4,17 @@ stateDiagram-v2
     direction TB
     [*] --> Empty
     Empty --> Authorised: [outside] attach rendered deployer policy
-    Authorised --> Deployed: admin setup (any region, parent AMI resolved there)
-    Authorised --> RolledBack: admin setup, create fails
-    RolledBack --> Residue: admin teardown
-    Deployed --> Ready: admin build-image
-    Deployed --> Deployed: admin setup (update)
-    Ready --> Ready: admin build-image [--extension] (rebuild in place)<br/>admin setup (update, image carried forward)
-    Ready --> Ready: admin setup --region B — refused, names the bucket's region<br/>build-image from an older-base CLI — refused, upgrade the CLI
+    Authorised --> Deployed: admin deployment setup (any region, parent AMI resolved there)
+    Authorised --> RolledBack: admin deployment setup, create fails
+    RolledBack --> Empty: admin deployment teardown
+    Deployed --> Ready: admin image build
+    Deployed --> Deployed: admin deployment setup (update)
+    Ready --> Ready: admin image build [--extension] (rebuild in place)<br/>admin deployment setup (update, image carried forward)
+    Ready --> Ready: admin deployment setup --region B — refused, names the bucket's region<br/>image build from an older-base CLI — refused, upgrade the CLI
     Ready --> Dangling: [outside] AMI deregistered
-    Dangling --> Ready: admin build-image
+    Dangling --> Ready: admin image build
     Ready --> Busy: baas run (job item launching…running)
     Busy --> Ready: instance records outcome + self-terminates<br/>Ctrl+C hook · poll cap · jobs terminate · watchdog
-    Busy --> Busy: admin teardown refused (names job ids)
-    Deployed --> Residue: admin teardown [--delete-bucket]
-    Ready --> Residue: admin teardown [--delete-bucket]<br/>(saves the extension, retires the image)
-    Residue --> Residue: admin setup refused (bucket or table exists)
-    Residue --> Empty: [outside] delete table<br/>(+ bucket without --delete-bucket)
-
-    state Residue {
-        [*] --> kept
-        kept: results table (always)<br/>bucket (unless --delete-bucket)
-    }
+    Busy --> Busy: admin deployment teardown refused (names job ids)
+    Deployed --> Empty: admin deployment teardown (bucket and table deleted with the stack)
+    Ready --> Empty: admin deployment teardown — nothing survives<br/>(saves the extension, retires the image)

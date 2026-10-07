@@ -18,7 +18,7 @@ import java.util.Locale;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@code baas results --format json | jq} is the documented reason result payloads stay on stdout,
+ * {@code baas results query --format json | jq} is the documented reason result payloads stay on stdout,
  * so the payload has to be JSON a parser accepts — on any machine.
  */
 class ResultsFormatTest {
@@ -112,7 +112,7 @@ class ResultsFormatTest {
     /**
      * Truncating the identifier at 17 landed inside the old {@code <type>-<date>} prefix, so two
      * runs of the same type on the same day rendered identically — and the identifier is the value
-     * a user copies into {@code baas download}, so a truncated one is unusable.
+     * a user copies into {@code baas jobs download}, so a truncated one is unusable.
      */
     @Test
     void theJobIdentifierRendersWhole() {

@@ -5,8 +5,8 @@ sequenceDiagram
     participant S3 as AWS S3
     participant CF as AWS CloudFormation
 
-    Note over User,CF: baas config sync --name <prefix> -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>--name is required although derivable: a bare sync would adopt whatever<br/>deployment the active credentials imply.
-    User->>CS: baas [--config-path f] config sync --name baas-123456789012
+    Note over User,CF: baas config sync --deployment <prefix> -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>--name is required although derivable: a bare sync would adopt whatever<br/>deployment the active credentials imply.
+    User->>CS: baas [--config-path f] config sync --deployment baas-123456789012
     CS->>CFG: loadOrEmpty() -- a missing file is an empty config
     opt no aws.operatorProfile and no ambient credentials
         CS-->>User: warn: using the default credential chain
@@ -19,7 +19,7 @@ sequenceDiagram
     CS->>CF: DescribeStacks(<prefix>) in the bucket's region, operator credentials
     alt stack absent
         CF-->>CS: does not exist
-        CS-->>User: bucket retained by a teardown -- setup --region <it> -- exit 1, file untouched
+        CS-->>User: a bucket but no stack -- nothing to adopt -- exit 1, file untouched
     else stack present
         CF-->>CS: outputs
         opt no ResultsTableName output

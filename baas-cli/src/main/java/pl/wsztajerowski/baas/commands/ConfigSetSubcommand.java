@@ -46,14 +46,14 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     // Arity 1, not a bare flag: a flag could turn derivation on but never back off.
     @Option(names = "--git-resolve-project", arity = "1", paramLabel = "<true|false>",
         description = "Derive the project from git when --project is absent: baas run from the "
-            + "benchmark JAR's repository, baas results from the current directory's.")
+            + "benchmark JAR's repository, baas results query from the current directory's.")
     Boolean gitResolveProject;
 
-    // No --prefix. Adopting a deployment is `baas config sync --name`, which checks the stack
+    // No --prefix. Adopting a deployment is `baas config sync --deployment`, which checks the stack
     // exists first; this option wrote the same field unchecked, so a typo surfaced only as the
     // first real command's AWS error. It dated from when the prefix was a name you chose.
     //
-    // No --region, for the same reason. The region is the deployment's: `baas admin setup
+    // No --region, for the same reason. The region is the deployment's: `baas admin deployment setup
     // --region` chooses it and `config sync` finds it from the bucket. Set by hand, it aimed a
     // machine at a region with no deployment, and `run` then advised building an image there.
 

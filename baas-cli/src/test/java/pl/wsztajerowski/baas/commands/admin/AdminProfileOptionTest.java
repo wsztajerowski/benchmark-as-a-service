@@ -8,7 +8,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The deployer profile is set in one place: `admin setup` takes it and saves it to aws.profile, and
+ * The deployer profile is set in one place: `admin deployment setup` takes it and saves it to aws.profile, and
  * every other admin command reads it from the configuration (`config set --aws-profile` changes it).
  * `image build` and `image show` used to take a per-invocation override that teardown never had;
  * nothing depended on it.

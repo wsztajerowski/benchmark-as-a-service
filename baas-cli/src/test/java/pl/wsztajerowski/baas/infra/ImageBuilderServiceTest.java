@@ -189,7 +189,7 @@ class ImageBuilderServiceTest {
         service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent");
 
         assertThat(calls)
-            .as("without them `baas admin image` has no identity to report and results carry no version")
+            .as("without them `baas admin image show` has no identity to report and results carry no version")
             .contains("createTags:" + NEW_AMI);
     }
 
@@ -312,7 +312,7 @@ class ImageBuilderServiceTest {
      * {@code RunnerImageRenderer.renderComponent()} ends with one because its template is a Java
      * text block. An exact comparison therefore reported "content differs" for content that was
      * byte-identical apart from that newline — and it blocked every build on a fresh deployment,
-     * because `baas admin setup` registers the component before `build-image` ever runs. Found
+     * because `baas admin deployment setup` registers the component before `build-image` ever runs. Found
      * against a live account, not in this suite.
      */
     @Test

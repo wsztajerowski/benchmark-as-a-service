@@ -12,8 +12,8 @@ C4Context
     System_Ext(aws, "AWS platform", "IAM/STS, CloudFormation, EC2, Image Builder, S3, DynamoDB, SSM in one account and region.")
     System_Ext(upstream, "Package sources", "AL2023 dnf repos and the async-profiler release — reached only by the image build, never by a job.")
 
-    Rel(author, baas, "baas run / results / download / env diff / config")
-    Rel(admin, baas, "baas admin setup / build-image / image / teardown")
+    Rel(author, baas, "baas jobs (run, show, diff, download) / results query / config")
+    Rel(admin, baas, "baas admin deployment setup / build-image / image / teardown")
     Rel(iamAdmin, aws, "Attaches BaasCliDeployerPolicy; deploys the GitHub OIDC provider")
     Rel(gha, baas, "Runs the reactor-built CLI with --runner-jar")
     Rel(baas, ghReleases, "Fetches the version-pinned runner JAR once per version (laptop side, checksum-verified)")

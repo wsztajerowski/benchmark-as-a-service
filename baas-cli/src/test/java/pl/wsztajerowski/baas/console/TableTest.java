@@ -102,7 +102,7 @@ class TableTest {
         assertThat(plain.toString()).doesNotContain("impl=hash");
     }
 
-    /** Shown only under --all-jobs; faint, so it reads as set aside — and still aligned. */
+    /** Shown only under --show-excluded; faint, so it reads as set aside — and still aligned. */
     @Test
     void anExcludedRowIsFaintAndStillAligned() {
         var rows = List.of(row("p", Map.of("exclude_from_results", "true")), row("p", Map.of()));

@@ -146,7 +146,7 @@ public class TeardownCommand implements Callable<Integer> {
         return """
             Runner-image extension saved to %1$s
               The stack held its only copy. After a later setup, push it back with:
-                baas admin build-image --extension %1$s""".formatted(file);
+                baas admin image build --extension %1$s""".formatted(file);
     }
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
@@ -208,7 +208,7 @@ public class TeardownCommand implements Callable<Integer> {
         return """
             Runner image retired: the AMI %1$s named, its snapshots, the pointer itself and the
               Image Builder records of %2$s. A later setup of this deployment needs
-              `baas admin build-image` before `baas run` works.""".formatted(pointerPath(deployment), recipeName(deployment));
+              `baas admin image build` before `baas run` works.""".formatted(pointerPath(deployment), recipeName(deployment));
     }
 
     static String imageLeftoverNotice(String deployment, List<String> leftovers) {

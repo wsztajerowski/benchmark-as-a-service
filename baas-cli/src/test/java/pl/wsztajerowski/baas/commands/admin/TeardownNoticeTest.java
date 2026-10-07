@@ -38,7 +38,7 @@ class TeardownNoticeTest {
     void theImageNoticesSayWhatWasRetiredOrWhatIsLeft() {
         assertThat(TeardownCommand.imageRetiredNotice("baas-123456789012"))
             .contains("/baas-123456789012/runner/ami-id", "baas-123456789012-recipe-runner",
-                "baas admin build-image");
+                "baas admin image build");
         assertThat(TeardownCommand.imageLeftoverNotice("baas-123456789012",
                 java.util.List.of("Runner AMI ami-1 was not deregistered (x): aws ec2 deregister-image --image-id ami-1")))
             .contains("partly retired", "  - Runner AMI ami-1", "aws ec2 deregister-image --image-id ami-1");
@@ -95,7 +95,7 @@ class TeardownNoticeTest {
     @Test
     void theSavedNoticeSaysHowToPushItBack() {
         assertThat(TeardownCommand.extensionSavedNotice(Path.of("/h/.baas/runner-image-extension.p.yaml")))
-            .contains("baas admin build-image --extension /h/.baas/runner-image-extension.p.yaml");
+            .contains("baas admin image build --extension /h/.baas/runner-image-extension.p.yaml");
     }
 
     // ─── U32: confirmation ───────────────────────────────────────────────────────

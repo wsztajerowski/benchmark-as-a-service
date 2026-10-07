@@ -49,7 +49,7 @@ class ImageCommandsTest {
         aws.setOperatorProfile("baas-operator");
 
         assertThat(aws.getProfile())
-            .as("`baas admin build-image` builds its clients from this field")
+            .as("`baas admin image build` builds its clients from this field")
             .isEqualTo("baas-deployer");
         assertThat(aws.resolveOperatorProfile())
             .as("and never from this one, which cannot reach imagebuilder or the pointer")
@@ -101,12 +101,12 @@ class ImageCommandsTest {
     void anOlderCliIsToldToUpgradeNeverToBuild() {
         assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.4.0"))
             .contains("upgrade the CLI")
-            .doesNotContain("run `baas admin build-image`");
+            .doesNotContain("run `baas admin image build`");
     }
 
     @Test
     void aNewerCliIsToldToBuild() {
-        assertThat(ImageShowSubcommand.driftWarning("1.4.0", "1.3.0")).contains("run `baas admin build-image`");
+        assertThat(ImageShowSubcommand.driftWarning("1.4.0", "1.3.0")).contains("run `baas admin image build`");
         assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.3.0")).isNull();
         assertThat(ImageShowSubcommand.driftWarning("1.3.0", null)).isNull();
     }

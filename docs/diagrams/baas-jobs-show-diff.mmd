@@ -1,0 +1,75 @@
+sequenceDiagram
+    actor User as Operator or CI job
+    participant JS as JobsShowSubcommand
+    participant DL as JobsDownloadSubcommand
+    participant ED as JobsDiffSubcommand
+    participant DDB as DynamoDB<br/>jobId-index
+    participant EC2 as EC2
+    participant S3 as S3 bucket <prefix>
+    participant FS as Local directory
+
+    rect rgb(255, 250, 235)
+        Note over User,FS: baas jobs show <jobId> [--format json] -- the execution, no measurements
+        User->>JS: baas jobs show 20260820T174432812Z-a3f9c21b
+        alt not a job id
+            JS-->>User: "is not a job id", exit 2 -- no AWS call
+        end
+        JS->>DDB: the job item (gsi1sk = JOB)
+        alt no item
+            JS-->>User: "No job found", exit 1 -- S3 not read
+        end
+        opt stored status not terminal
+            JS->>EC2: the live instance tagged baas-job-id, if any (else: vanished)
+        end
+        JS->>S3: GetObject <path>/environment.json (absent: stated, not an error)
+        JS->>S3: ListObjectsV2(<path>/) -- summarised by folder
+        JS-->>User: Job · Environment (seven groups) · Artifacts on stdout<br/>hints on stderr, interactive only
+    end
+
+    rect rgb(240, 248, 255)
+        Note over User,FS: baas jobs download <jobId> [-o dir]
+        User->>DL: baas jobs download 20260820T174432812Z-a3f9c21b
+        alt not a job id (a result path is refused)
+            DL-->>User: "is not a job id", exit 2 -- no AWS call, nothing written
+        end
+        DL->>DDB: resultPathForJob(id) -- the job item first, so a failed job resolves too
+        alt no item
+            DL-->>User: "No job found", exit 1 -- nothing written
+        end
+        DDB-->>DL: stored resultPath (read, never reconstructed)
+        DL->>S3: ListObjectsV2(prefix/)
+        alt empty
+            DL-->>User: "No artifacts found", exit 1 -- nothing written
+        end
+        loop each key, input/ JARs included
+            alt key resolves outside the output directory (../ or a leading /)
+                Note over DL: skipped and logged, never written
+            else
+                DL->>S3: GetObject
+                DL->>FS: write under -o, default ./<last path segment>
+            end
+        end
+        opt any key skipped
+            DL-->>User: exit 1 -- the job's prefix holds keys BaaS never wrote
+        end
+    end
+
+    rect rgb(245, 255, 245)
+        Note over User,FS: baas jobs diff <jobA> <jobB> -- job ids only -- the environment, group by group
+        User->>ED: baas jobs diff <jobIdA> <jobIdB>
+        alt either is not a job id
+            ED-->>User: "is not a job id", exit 2 -- no AWS call
+        end
+        ED->>DDB: resultPathForJob(A), then B -- fail fast on the first unknown, S3 not read
+        ED->>S3: GetObject <A>/environment.json, <B>/environment.json
+        alt either missing
+            ED-->>User: error naming the job, exit 1
+        end
+        opt machine.amiId differs (same AMI = same packages: user-data installs nothing)
+            ED->>S3: GetObject <A>/packages.txt, <B>/packages.txt
+        end
+        opt schemaVersion differs
+            ED-->>User: warn (stderr)
+        end
+        ED-->>User: "No differences." or "Differs in: …", GROUP / FIELD / A / B,<br/>then changed / added / removed packages, on stdout
+    end

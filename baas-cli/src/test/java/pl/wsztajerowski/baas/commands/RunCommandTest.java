@@ -34,7 +34,7 @@ class RunCommandTest {
     /**
      * {@code --show-toplevel} returns the worktree directory, so a job launched from
      * {@code .claude/worktrees/ddb-phase3} was attributed to project {@code ddb-phase3} — a
-     * partition {@code baas results} would never look in.
+     * partition {@code baas results query} would never look in.
      */
     @Test
     void aLinkedWorktreeResolvesToItsRepository() {
@@ -109,7 +109,7 @@ class RunCommandTest {
 
         assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("baas config sync --name")
+            .hasMessageContaining("baas config sync --deployment")
             .hasMessageNotContaining("--no-database");
     }
 
@@ -182,7 +182,7 @@ class RunCommandTest {
     /**
      * Branch used to survive only as a path segment of the result path and was stored nowhere. The
      * unified prefix drops that segment, so what the path stopped carrying the tags must carry —
-     * tags being the entire query surface `baas results` has.
+     * tags being the entire query surface `baas results query` has.
      */
     @Test
     void tagsTheBranchNowThatThePathNoLongerCarriesIt() {
@@ -233,7 +233,7 @@ class RunCommandTest {
     // ─── source: the trigger tag (2.1, 2.2) ─────────────────────────────────────
     //
     // Derived rather than left to convention, so that absence is meaningful: a key present only
-    // when someone types it makes `--group-by source` unreliable in exactly the direction that
+    // when someone types it makes `--best-per source` unreliable in exactly the direction that
     // matters — verifying that CI and laptop runs are comparable.
 
     @Test

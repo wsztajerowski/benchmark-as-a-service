@@ -5,7 +5,7 @@ package pl.wsztajerowski.baas.infra;
  * {@code infra/runner-image.yaml}.
  *
  * <p>{@code imageVersion} and {@code parentAmiId} come from the AMI's own tags rather than the
- * declaration, so {@code baas admin image} reports what is actually deployed even when the
+ * declaration, so {@code baas admin image show} reports what is actually deployed even when the
  * working tree has moved on.
  */
 public record RunnerImage(

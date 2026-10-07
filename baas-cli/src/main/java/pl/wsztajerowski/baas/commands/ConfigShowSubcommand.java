@@ -50,7 +50,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("prefix:      ").append(config.getPrefix()).append('\n')
             .append("aws:\n")
             .append("  profile:                  ").append(config.getAws().getProfile())
-            .append("  (admin setup/teardown)\n")
+            .append("  (admin deployment setup/teardown)\n")
             // Unset here is not cosmetic — it means run/results/config fall through to the default
             // credential chain instead of assuming the operator role, so say what to do about it.
             .append("  operatorProfile:          ")
@@ -88,7 +88,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         try {
             return name.apply(config);
         } catch (IllegalStateException noDeployment) {
-            return "<no deployment> — run: baas config sync --name baas-<accountId>";
+            return "<no deployment> — run: baas config sync --deployment baas-<accountId>";
         }
     }
 }

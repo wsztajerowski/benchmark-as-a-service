@@ -69,7 +69,7 @@ public class CloudFormationService {
      * Updates an existing stack, changing only the named parameters and carrying every other one
      * forward with {@code UsePreviousValue}.
      *
-     * <p>{@code baas admin build-image} owns three parameters and knows nothing about the rest. A
+     * <p>{@code baas admin image build} owns three parameters and knows nothing about the rest. A
      * plain create-style call would send only what it knows, and CloudFormation
      * fills the remainder from template defaults — which for a stack deployed with
      * {@code --use-existing-vpc} means {@code UseExistingVpc} silently flips back to "false" and
@@ -77,7 +77,7 @@ public class CloudFormationService {
      */
     public void updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
-            "Stack '" + stackName + "' does not exist. Run `baas admin setup` first."));
+            "Stack '" + stackName + "' does not exist. Run `baas admin deployment setup` first."));
         // Setup sends every existing stack down this path, so this is where a failed first create
         // has to be recognised, before CloudFormation answers with its own less useful rejection.
         requireUpdatable(stack);
@@ -121,7 +121,7 @@ public class CloudFormationService {
         if (stack.stackStatus() == StackStatus.ROLLBACK_COMPLETE) {
             throw new IllegalStateException(
                 "Stack '" + stack.stackName() + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
-                "Delete it first with: baas admin teardown --stack-name " + stack.stackName() + " --yes");
+                "Delete it first with: baas admin deployment teardown --deployment " + stack.stackName() + " --yes");
         }
     }
 
@@ -193,7 +193,7 @@ public class CloudFormationService {
     }
 
     /**
-     * The parameters a deployed stack currently carries. {@code baas admin setup} compares the
+     * The parameters a deployed stack currently carries. {@code baas admin deployment setup} compares the
      * networking ones against what an invocation submits, so a change is refused before anything
      * reaches CloudFormation rather than discovered as a replaced subnet afterwards.
      */

@@ -6,14 +6,13 @@ The infrastructure is split into two stacks. Run commands from this directory.
 
 Deploys networking (VPC, subnet, IGW, S3 and DynamoDB gateway endpoints, security group), the S3
 working bucket, the DynamoDB results table, the EC2 runner IAM role, and the EC2 Image Builder
-resources that bake the runner AMI. This is the same stack that `baas admin setup` deploys on a
+resources that bake the runner AMI. This is the same stack that `baas admin deployment setup` deploys on a
 user's account.
 
 **The results table** (`baas-<prefix>-results`, output as `ResultsTableName`) is on-demand billed,
 keyed `pk`/`sk`, with one GSI `jobId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
-it is `DeletionPolicy: Retain` / `UpdateReplacePolicy: Retain` — benchmark history outlives any
-single stack — which means a teardown leaves it behind and the next `setup` for the same caller
-fails on the name. `baas admin setup` pre-checks for exactly that and says how to recover.
+it is `DeletionPolicy: Delete` / `UpdateReplacePolicy: Delete`: **nothing survives a teardown**, which
+empties the bucket and then deletes the stack. Export a deployment's data before tearing it down.
 
 Runners reach it through a **gateway** endpoint, associated with the runner subnet's route table.
 Gateway, not interface: gateway endpoints are free, interface endpoints carry an hourly charge, and
@@ -23,8 +22,8 @@ DynamoDB is ever added.
 **The Image Builder half** — `Component`, `ImageRecipe`, `InfrastructureConfiguration`,
 `DistributionConfiguration`, `ImagePipeline`, plus an `ImageBuildRole` + instance profile — holds
 only durable configuration. There is deliberately **no `AWS::ImageBuilder::Image`**: that resource
-performs a build during stack operations, so every `baas admin setup` would take ~15 minutes even
-when nothing about the image changed. Builds are triggered out of band by `baas admin build-image`
+performs a build during stack operations, so every `baas admin deployment setup` would take ~15 minutes even
+when nothing about the image changed. Builds are triggered out of band by `baas admin image build`
 via `StartImagePipelineExecution`.
 
 `ImageBuildRole` carries `AmazonSSMManagedInstanceCore` and `EC2InstanceProfileForImageBuilder`
@@ -39,16 +38,16 @@ new image, fails the build when Java ≥ the runner's version, the AWS CLI, asyn
 matching the kernel, `perf_event_paranoid ≤ 1` or `kptr_restrict = 0` is missing. Image tests are
 enabled on the pipeline for that reason; a failed contract leaves the pointer on the previous image.
 
-Eight stack parameters describe the image (`RunnerImageParameters.ALL`). `baas admin build-image`
-plans and submits all of them. `baas admin setup` submits all of them on create — letting the
+Eight stack parameters describe the image (`RunnerImageParameters.ALL`). `baas admin image build`
+plans and submits all of them. `baas admin deployment setup` submits all of them on create — letting the
 template's placeholder defaults stand would register a no-op component at a version, and Image
 Builder would then reject the real one at that same version — and on update only those the stack
 lacks, carrying the rest forward, so a plain setup never reverts an image or drops an extension.
 
 Deploying this template **by hand** with `aws cloudformation deploy` leaves those parameters at
-their defaults, which registers the placeholder components. Use `baas admin setup` unless you are
+their defaults, which registers the placeholder components. Use `baas admin deployment setup` unless you are
 deliberately deploying without an image and intend to pass the parameters yourself; the next
-`baas admin build-image` replaces the placeholders.
+`baas admin image build` replaces the placeholders.
 
 If this is the first Image Builder pipeline in the account, the deploying identity needs
 `iam:CreateServiceLinkedRole` for `imagebuilder.amazonaws.com` — the service provisions
@@ -59,7 +58,7 @@ If this is the first Image Builder pipeline in the account, the deploying identi
 aws cloudformation deploy \
   --profile YOUR_AWS_PROFILE \
   --template-file cf-template-core.yaml \
-  --stack-name baas-core \
+  --deployment baas-core \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX
 ```
@@ -69,7 +68,7 @@ Retrieve the outputs needed by the CI stack:
 ```bash
 aws cloudformation describe-stacks \
   --profile YOUR_AWS_PROFILE \
-  --stack-name baas-core \
+  --deployment baas-core \
   --query 'Stacks[0].Outputs'
 ```
 
@@ -81,13 +80,13 @@ native library — without a checkout. The extension is a raw
 run after the base and before the contract, stored in the stack exactly as written.
 
 ```bash
-baas admin image --extension > ext.yaml       # pull: the deployed extension, or a commented starter
+baas admin image show --extension > ext.yaml       # pull: the deployed extension, or a commented starter
 $EDITOR ext.yaml
-baas admin build-image --extension ext.yaml   # push, then bake (~15 minutes)
-baas admin image                              # label, extension hash, size, step names
+baas admin image build --extension ext.yaml   # push, then bake (~15 minutes)
+baas admin image show                              # label, extension hash, size, step names
 ```
 
-`baas admin setup` also writes the starter to `~/.baas/runner-image-extension.yaml` the first time,
+`baas admin deployment setup` also writes the starter to `~/.baas/runner-image-extension.yaml` the first time,
 never overwriting it.
 
 - **Keep the first line.** `# baas-extension-base: <hash|none>` names the extension the file was
@@ -111,7 +110,7 @@ never overwriting it.
 
 Deploys the OIDC identity provider and nothing else. It takes no parameter from the core stack,
 and produces none the core stack consumes — so **deploy order is provider first**, then
-`baas admin setup` with the provider's ARN. `WorkflowRole` used to live here and is gone: GitHub
+`baas admin deployment setup` with the provider's ARN. `WorkflowRole` used to live here and is gone: GitHub
 Actions federates directly into `BaasCliOperatorRole`, which the core stack owns.
 
 The provider is **account-global** — one per issuer URL per account. Check before deploying:
@@ -130,7 +129,7 @@ roles and never to `oidc-provider/*`, so the deployer gets `AccessDenied` even o
 aws cloudformation deploy \
   --profile YOUR_ADMIN_AWS_PROFILE \
   --template-file cf-template-ci.yaml \
-  --stack-name baas-ci \
+  --deployment baas-ci \
   --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX
 ```
 
@@ -139,23 +138,23 @@ No `--capabilities` is needed — the stack declares no IAM role.
 ### Federating a core stack into the provider
 
 ```bash
-baas admin setup \
+baas admin deployment setup \
   --oidc-provider-arn arn:aws:iam::YOUR_AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com \
   --github-org YOUR_GITHUB_ORG \
   --github-repo YOUR_GITHUB_REPO
 ```
 
 All three are required together: a partial set deploys a trust condition that is always false, so
-the stack would report success while CI has no access — `baas admin setup` rejects that outright.
+the stack would report success while CI has no access — `baas admin deployment setup` rejects that outright.
 `--github-repo` is repeatable (and accepts a comma-separated list), so one deployment can serve
 several repositories.
 
-A later `baas admin setup` that names none of them **carries the deployed values forward** rather
+A later `baas admin deployment setup` that names none of them **carries the deployed values forward** rather
 than resubmitting the template defaults, so a setup run for an unrelated reason cannot silently
 revoke CI's access. Removing the trust is therefore its own explicit gesture:
 
 ```bash
-baas admin setup --revoke-github-oidc
+baas admin deployment setup --revoke-github-oidc
 ```
 
 The account-root principal on the trust policy survives either way, so neither federating nor
@@ -178,7 +177,7 @@ hold the deployer policy permanently; don't skip assuming the operator role.
 
 ### `BaasCliDeployerPolicy` — elevated, admin-only, per caller
 
-Required by `baas admin setup`, `baas admin build-image` and `baas admin teardown`. Attach this
+Required by `baas admin deployment setup`, `baas admin image build` and `baas admin deployment teardown`. Attach this
 only to identities that provision, image or tear down the core stack — it should not be held as a
 standing policy for routine benchmark jobs.
 
@@ -230,12 +229,10 @@ Two grants look wrong and are not:
   statement so the stack-scoped `CloudFormation` grant stays scoped to one stack.
 
 ```bash
-# The user renders their own policy. The region is baked into it, so name the one you will pass
-# to `baas admin setup --region` (default: eu-central-1, or AWS_REGION when set)...
-baas admin deployer-policy --region eu-central-1 > policy.json
-
-# ...or an administrator renders it for them, for that account, without the user running anything
-baas admin deployer-policy --for-account 123456789012 --region eu-central-1 > policy.json
+# Setup renders the policy for the deployment it is about to create and, when the identity lacks
+# it, prints it on standard output and stops having created nothing. The region is baked into it,
+# so pass the one the deployment will live in.
+baas admin deployment setup --region eu-central-1 > policy.json
 
 # First time
 aws iam create-policy --policy-name BaasCliDeployerPolicy-alice \
@@ -252,7 +249,7 @@ aws iam create-policy-version --set-as-default \
 Give each identity its own policy name; a single shared `BaasCliDeployerPolicy` would have to be
 re-rendered every time a different person ran setup.
 
-If a permission is missing, `baas admin setup` fails and prints the rendered policy rather than
+If a permission is missing, `baas admin deployment setup` fails and prints the rendered policy rather than
 surfacing a bare `AccessDenied`. Treat that as a convenience, not a control: it is bypassable by
 calling IAM directly, and nothing stops a deployer from granting itself more. That is deliberate —
 this is an internal tool for development environments where the deployer is a trusted developer.
@@ -265,7 +262,7 @@ repo, so a stack change that needs a new permission fails at deploy time with a 
 
 ### `BaasCliOperatorRole` — standing, narrow, created *by* the core stack, assumed per-session
 
-Required by `baas run`, `baas results`, and `baas config`. Unlike the deployer policy, this
+Required by `baas run`, `baas results query`, and `baas config`. Unlike the deployer policy, this
 one has no bootstrap problem — by the time the core stack is being deployed, the deployer
 already holds deployer privileges, so it's safe (and more precise) for the stack to create
 this identity itself, as the `OperatorRole` resource (`AWS::IAM::Role`) in
@@ -277,7 +274,7 @@ all: a command that reads results has no business putting them.
 It's a **role**, not a policy attached directly to a user: whoever runs `baas run` assumes
 it via `sts:AssumeRole` for a time-boxed session (1–12h) rather than holding permanent
 standing access on their own IAM user. Its trust policy allows the AWS account root, so
-`baas admin setup` needs no extra parameter for "who's the operator" — actual gating happens
+`baas admin deployment setup` needs no extra parameter for "who's the operator" — actual gating happens
 per-user, by granting `sts:AssumeRole` on this specific role ARN only to the identities that
 should be able to assume it:
 
@@ -302,7 +299,7 @@ region = eu-central-1
 ```
 
 Finally, point the CLI at that profile — **this step is required**. Without it,
-`baas run`/`baas results`/`baas config` fall through to the default AWS credential chain
+`baas run`/`baas results query`/`baas config` fall through to the default AWS credential chain
 rather than assuming the operator role:
 
 ```bash
@@ -313,8 +310,8 @@ baas config set --operator-profile baas-operator
 
 ```yaml
 aws:
-  profile: baas-deployer          # baas admin setup / baas admin teardown
-  operatorProfile: baas-operator  # baas run / baas results / baas config
+  profile: baas-deployer          # baas admin deployment setup / baas admin deployment teardown
+  operatorProfile: baas-operator  # baas run / baas results query / baas config
 ```
 
 `aws.operatorProfile` deliberately does **not** fall back to `aws.profile`. `baas admin
@@ -322,26 +319,26 @@ setup` writes the deployer profile into `aws.profile`, and silently reusing it w
 every benchmark job `iam:CreateRole` and `cloudformation:*` — the exact standing privilege
 the operator role exists to avoid.
 
-If you are setting up on a machine that never ran `baas admin setup` — the usual case when
+If you are setting up on a machine that never ran `baas admin deployment setup` — the usual case when
 the deployer and the operator are different people — pull the stack's values instead of
 copying `config.yaml` by hand:
 
 ```bash
-baas config sync --name baas-123456789012
+baas config sync --deployment baas-123456789012
 ```
 
 `--name` is required even though the prefix *is* derivable from the account, because a bare sync
 on a machine with no local state would adopt whichever deployment the active credentials imply.
 In CI — a wrong federated role, or a leftover `AWS_PROFILE` — that binds the machine to another
 account's deployment and fails much later, after something has been provisioned. `baas admin
-setup` prints the name; `baas config sync --name` adopts it. Use `--name baas-<accountId>-dev` to
+setup` prints the name; `baas config sync --deployment` adopts it. Use `--name baas-<accountId>-dev` to
 point a machine at the development deployment.
 
 Sync also finds the deployment's region — from its bucket, whose name is global — and stores it,
-so a machine never needs a region typed. The region is chosen once, by `baas admin setup --region`;
+so a machine never needs a region typed. The region is chosen once, by `baas admin deployment setup --region`;
 there is no `config set --region`.
 
-Every `baas admin setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
+Every `baas admin deployment setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
 ARN. [`operator-policy.json`](./operator-policy.json) is a static reference copy of the same
 permission statements — useful for review, or as `put-role-policy` content if you need to
 build an equivalent role manually before any core stack has been deployed. It carries
@@ -359,7 +356,7 @@ resources get their own.
 
 ## A second deployment, for developing BaaS itself
 
-`baas admin setup` derives its name from the caller's AWS account and takes **no option to name a
+`baas admin deployment setup` derives its name from the caller's AWS account and takes **no option to name a
 different one**: there is exactly one deployment per account, and the CLI cannot be told
 otherwise. That is deliberate. A user of BaaS should never have to ask which deployment they are
 on, and a development convenience has no business in the released command surface.
@@ -374,14 +371,16 @@ DEV="baas-${ACCT}-dev"
 
 # 1. Render and attach the deployer policy for that prefix. The policy is prefix-exact, so the
 #    account's own one grants nothing here. Needs an identity above the deployer.
-baas admin deployer-policy --prefix "$DEV" > /tmp/deployer-dev.json
+#    Until `multiple-deployments` lets setup name another deployment, fill the template by hand:
+sed -e "s/\${ACCOUNT_ID}/$ACCT/g" -e "s/\${REGION}/eu-central-1/g" -e "s/\${PREFIX}/$DEV/g" \
+  infra/deployer-policy.json > /tmp/deployer-dev.json
 #    ...attach /tmp/deployer-dev.json as a CUSTOMER-MANAGED policy. It will not fit inline
 #    alongside the account's own: two rendered documents are ~8.5k characters against IAM's
 #    5120-character inline budget, which is shared across every inline policy on the principal.
 
 # 2. Deploy the core template directly. ResourceNamePrefix is an ordinary parameter. Outside
 #    eu-central-1 also override RunnerParentAmiId: its default is the eu-central-1 AMI of the pinned
-#    AL2023 release, which `baas admin setup` resolves per region but a by-hand deploy does not.
+#    AL2023 release, which `baas admin deployment setup` resolves per region but a by-hand deploy does not.
 aws cloudformation deploy \
   --template-file infra/cf-template-core.yaml \
   --stack-name "$DEV" \
@@ -390,36 +389,34 @@ aws cloudformation deploy \
   --profile baas-admin
 
 # 3. Point this machine at it. Everything downstream resolves from the configured prefix.
-baas config sync --name "$DEV"
-baas admin build-image        # renders the real component and updates the stack
+baas config sync --deployment "$DEV"
+baas admin image build        # renders the real component and updates the stack
 
 #    ...work...
 
 # 4. Tear it down, and go back to the account's own deployment.
-baas admin teardown --stack-name "$DEV" --delete-bucket
-baas config sync --name "baas-${ACCT}"
+baas admin deployment teardown --deployment "$DEV"
+baas config sync --deployment "baas-${ACCT}"
 ```
 
 Three things worth knowing before you use it:
 
 - **The template's `RunnerImageComponentData` default is a placeholder**, registered at the default
-  `RunnerImageVersion` of `1.0.0`. Step 3's `baas admin build-image` replaces it with the real
+  `RunnerImageVersion` of `1.0.0`. Step 3's `baas admin image build` replaces it with the real
   component at whatever `infra/runner-image.yaml` declares. This works only while those two
   versions differ — if `runner-image.yaml` is ever set to `1.0.0`, the placeholder occupies that
   version and Image Builder will refuse the real one, because components are immutable at a
   version. Bump `imageVersion` before doing dev work at `1.0.0`. The contract's placeholder needs no
   such care: its version is derived, and moves past the placeholder's on the first build.
-- **Teardown retains the bucket and the results table** unless you pass `--delete-bucket`, and
-  there is no flag for the table. A dev deployment left half-removed will block the next deploy
-  of the same prefix with a CloudFormation error that never mentions which resource; delete
-  `$DEV` and `$DEV-results` by hand.
+- **Teardown deletes everything**, bucket and results table included — nothing survives it, for a
+  dev deployment as for the account's own.
 - **It costs a second AMI snapshot** (~$0.20/month for 30 GB) for as long as it exists, and the
   one-image rule only retires images the *same* deployment replaced — so deregister the dev AMI
   and delete its snapshot when you tear the deployment down.
 
 If you would rather not manage the policy juggling, a **separate AWS account** gives the same
 isolation for free: account-derived naming distinguishes the two deployments with no prefix
-games, `baas admin setup` works unmodified in both, and each account's deployer policy names only
+games, `baas admin deployment setup` works unmodified in both, and each account's deployer policy names only
 its own account.
 
 ## Client configuration beyond credentials — `runner.sourceRepo`

@@ -10,7 +10,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * An S3 key is an arbitrary string, and anything holding {@code s3:PutObject} on the bucket — the
  * runner role included, so any code in a benchmark JAR — can write one under a job's prefix. None of
- * them may decide where {@code baas download} writes on the operator's machine (finding S13).
+ * them may decide where {@code baas jobs download} writes on the operator's machine (finding S13).
  */
 class DownloadDestinationTest {
 

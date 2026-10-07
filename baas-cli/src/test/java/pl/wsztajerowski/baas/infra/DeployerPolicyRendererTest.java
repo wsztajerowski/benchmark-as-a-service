@@ -32,7 +32,7 @@ class DeployerPolicyRendererTest {
 
     /**
      * The deployer held PutParameter/DeleteParameter on the mongo connection string so
-     * {@code baas admin setup --mongo-uri} could write it. Both the option and the parameter are
+     * {@code baas admin deployment setup --mongo-uri} could write it. Both the option and the parameter are
      * gone; a grant on a parameter nothing writes is standing reach for no reason.
      */
     @Test
@@ -55,7 +55,7 @@ class DeployerPolicyRendererTest {
     }
 
     /**
-     * The policy must name exactly what {@code baas admin setup} asks AWS for. They drifted once:
+     * The policy must name exactly what {@code baas admin deployment setup} asks AWS for. They drifted once:
      * setup's retained-resource pre-check composed {@code "baas-" + prefix} a second time and
      * probed {@code baas-baas-<account>-results}, which the policy did not grant and no unit test
      * covered, so it surfaced only as an AccessDenied against a live account.

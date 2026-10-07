@@ -532,7 +532,7 @@ class UserDataScriptBuilderTest {
 
     /**
      * The manifest is assembled by shell interpolation, so a stray quote or a missing comma
-     * produces a file that only fails when someone runs `baas env diff` weeks later. Substituting
+     * produces a file that only fails when someone runs `baas jobs diff` weeks later. Substituting
      * representative values and parsing the result catches that here.
      */
     @Test

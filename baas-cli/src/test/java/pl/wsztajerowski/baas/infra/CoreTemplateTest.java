@@ -227,7 +227,7 @@ class CoreTemplateTest {
 
         assertThat(resources.values())
             .as("AWS::ImageBuilder::Image builds during stack operations — it would add ~15 minutes "
-                + "to every `baas admin setup`, including ones that changed nothing about the image")
+                + "to every `baas admin deployment setup`, including ones that changed nothing about the image")
             .noneSatisfy(resource ->
                 assertThat(((Map<String, Object>) resource).get("Type"))
                     .isEqualTo("AWS::ImageBuilder::Image"));
@@ -284,7 +284,7 @@ class CoreTemplateTest {
 
         var outputs = (Map<String, Object>) template.get("Outputs");
         assertThat((Map<String, Object>) outputs.get("RunnerImagePipelineArn"))
-            .as("baas admin build-image passes this value verbatim to StartImagePipelineExecution")
+            .as("baas admin image build passes this value verbatim to StartImagePipelineExecution")
             .containsEntry("Value", "RunnerImagePipeline.Arn");
     }
 
@@ -341,7 +341,7 @@ class CoreTemplateTest {
             ((Map<String, Object>) distributions.getFirst().get("AmiDistributionConfiguration")).get("AmiTags");
 
         assertThat(amiTags)
-            .as("baas admin image and every job read the image's identity from this tag; with an "
+            .as("baas admin image show and every job read the image's identity from this tag; with an "
                 + "extension it must name the extension too, or the image passes for a stock one")
             .containsEntry("baas-image-version", "RunnerImageLabel");
     }
@@ -598,7 +598,7 @@ class CoreTemplateTest {
     }
 
     /**
-     * One {@code StringLike} value per repository, composed by {@code baas admin setup} from
+     * One {@code StringLike} value per repository, composed by {@code baas admin deployment setup} from
      * {@code --github-org} and each {@code --github-repo}. The template refs the list directly:
      * CloudFormation cannot iterate one, and every in-template trick for it leans on {@code
      * Fn::Sub} re-scanning substituted text, which it does not do.

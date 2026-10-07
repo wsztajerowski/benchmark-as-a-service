@@ -62,7 +62,7 @@ public class ResultsQueryService implements AutoCloseable {
     }
 
     /**
-     * One project's sweep. {@code includeExcluded} is {@code --all-jobs}. When it drops the filter
+     * One project's sweep. {@code includeExcluded} is {@code --show-excluded}. When it drops the filter
      * it drops the filter's names and values too: DynamoDB rejects a request carrying an expression
      * name or value no expression uses (see {@link #queryByJobId}).
      */
@@ -107,7 +107,7 @@ public class ResultsQueryService implements AutoCloseable {
     /**
      * Projects holding at least one measurement not tagged for exclusion, sorted — what the project
      * picker offers. A project whose every row is excluded (a fixture project CI writes to) would
-     * open onto an empty table, so it is left out; {@code --project <name> --all-jobs} still reaches it.
+     * open onto an empty table, so it is left out; {@code --project <name> --show-excluded} still reaches it.
      *
      * <p>Projects only the two attributes the decision needs. That trims the response, not the bill:
      * a {@code Scan} is charged for the items it reads, whatever it returns.
@@ -156,7 +156,7 @@ public class ResultsQueryService implements AutoCloseable {
      * <p>Deliberately carries no exclusion filter. Exclusion is a property of a project sweep;
      * naming one job by its id is a request for <em>that job</em>, not a query over the project's
      * history. Without this a job tagged {@code exclude_from_results=true} is invisible to every
-     * assertion surface except {@code baas download} — and {@link
+     * assertion surface except {@code baas jobs download} — and {@link
      * pl.wsztajerowski.baas.commands.RunCommand}'s own post-job summary, which calls this method,
      * prints empty after a <em>successful</em> excluded job.
      *

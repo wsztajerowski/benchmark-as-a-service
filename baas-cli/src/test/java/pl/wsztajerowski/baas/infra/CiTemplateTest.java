@@ -66,14 +66,14 @@ class CiTemplateTest {
 
     /**
      * The CI template and the IAM policy JSONs are test fixtures — only the core template is
-     * a runtime resource that {@code baas admin setup} reads out of the shipped JAR. Copying
+     * a runtime resource that {@code baas admin deployment setup} reads out of the shipped JAR. Copying
      * them into {@code src/main/resources} would leak the CI stack's definition into every
      * distributed artifact.
      */
     @Test
     void onlyTheCoreTemplateIsOnTheRuntimeClasspath() {
         assertThat(getClass().getResourceAsStream("/templates/cf-template-core.yaml"))
-            .as("baas admin setup reads this out of the JAR at runtime")
+            .as("baas admin deployment setup reads this out of the JAR at runtime")
             .isNotNull();
         assertThat(getClass().getResourceAsStream("/templates/cf-template-ci.yaml"))
             .as("the CI template is a fixture under /infra, never shipped under /templates")

@@ -12,7 +12,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Checks, before {@code baas admin setup} spends any time, that the caller can actually do the
+ * Checks, before {@code baas admin deployment setup} spends any time, that the caller can actually do the
  * job — and when it cannot, prints the exact policy to attach.
  *
  * <p>This is an affordance, not a control: anyone holding the deployer policy can call IAM
@@ -95,7 +95,7 @@ public class DeployerPreflight {
         actionToResource.put("s3:CreateBucket", "arn:aws:s3:::" + prefix);
         // The runner AMI pointer, not the Mongo connection string this used to probe: since the
         // cutover, setup writes no Mongo parameter and the table name travels in user-data. The
-        // AMI pointer is the one SSM write the deployer still performs (from `admin build-image`),
+        // AMI pointer is the one SSM write the deployer still performs (from `admin image build`),
         // so probing it here still catches a stale attached policy before the long operation.
         actionToResource.put("ssm:PutParameter",
             "arn:aws:ssm:%s:%s:parameter/%s/runner/ami-id".formatted(region, accountId, prefix));
