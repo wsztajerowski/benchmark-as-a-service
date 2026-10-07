@@ -7,10 +7,13 @@
       with a throwaway test that parses both spellings to the same options and renders the section.
       *Done:* `CommandTreeTest` (one class registered under its noun and at the root, both parse
       alike) and `HelpAndHintsTest` (the custom command-list section replaces picocli's).
-- [ ] 1.2 Changing `DeletionPolicy`/`UpdateReplacePolicy` from `Retain` to `Delete` on the existing
+- [x] 1.2 Changing `DeletionPolicy`/`UpdateReplacePolicy` from `Retain` to `Delete` on the existing
       bucket and table is an in-place stack update, not a replacement. Verify from the CloudFormation
       documentation for both resource types, and by the change set of task 14.1 showing no
       `Replacement`.
+      *Done:* applied by `admin deployment setup` on 2026-10-07 07:15 UTC; the stack events show
+      `S3MainBucket` and `ResultsTable` going straight to `UPDATE_COMPLETE` with no replacement (the
+      deployer may not call `DescribeStackResources`, so events stood in for a change set).
 - [x] 1.3 `packages.txt` lines parse as `name-version-release.arch`. Verify against the
       `packages.txt` of a job downloaded from the current deployment: every line parses, or the
       exceptions are listed here with how they are reported.
@@ -217,20 +220,41 @@
 At most **5 paid runs**, the same budget as `rename-run-to-job`; the image bake and the PR's CI e2e do
 not count. No score comparison: no measurement path changes (D7).
 
-- [ ] 14.1 `baas admin deployment setup` from the branch build on the existing deployment; the change set
+- [x] 14.1 `baas admin deployment setup` from the branch build on the existing deployment; the change set
       shows the deletion-policy change with no replacement. Record it.
-- [ ] 14.2 Paid run 1: `baas run jmh-with-async …` (alias). Then `baas jobs show <id>` (three sections,
+      *Done:* see 1.2. Setup ran the new policy step under the deployer, which passed.
+- [x] 14.2 Paid run 1: `baas run jmh-with-async …` (alias). Then `baas jobs show <id>` (three sections,
       grouped environment, schema 6), `baas query --job-id <id>` and `--best-per branch`,
       `baas jobs download <id>`, `baas jobs list --sort-by status`. Record each.
-- [ ] 14.3 Paid run 2: `baas jobs run jcstress … -- --mode sanity`. Then `baas jobs diff` of runs 1 and 2
+      *Done (paid 1/20):* `20261007T071639810Z-fd272845` via `baas run` (the alias), 95 s, `completed`.
+      `jobs show`: Job, Environment (schema 6, seven groups), Artifacts (10, input/ (2), the
+      profiler folder (3)); `--format json` has exactly `job`, `environment`, `artifacts`.
+      `query --job-id` one row; `query --project baas-e2e --show-excluded` every row, newest first;
+      `--best-per branch` one row per branch; `jobs download` 10 artifacts; a result path refused with
+      exit 2; `jobs list --sort-by status --limit 3`. Seen: the table prints scores with the default
+      locale's decimal comma — existing behaviour, CLAUDE.md requires `Locale.ROOT` for JSON/CSV only.
+- [x] 14.3 Paid run 2: `baas jobs run jcstress … -- --mode sanity`. Then `baas jobs diff` of runs 1 and 2
       ("Differs in" without `packages`, same AMI).
-- [ ] 14.4 Setup's policy step live: run `admin deployment setup` under the operator profile (lacking the
+      *Done (paid 2/20):* `20261007T071937845Z-966b3e6a` via `baas jobs run jcstress -- --mode sanity`,
+      `completed`. `jobs diff` of runs 1 and 2 read no `packages.txt` (same AMI) and printed
+      `Differs in: memory` — `memory.totalKb` 15997060 vs 15997068 on two `c5.2xlarge` instances: real
+      but noise (verify W-item).
+- [x] 14.4 Setup's policy step live: run `admin deployment setup` under the operator profile (lacking the
       deployer policy) and confirm stdout holds the policy, nothing is created, exit non-zero. No paid run.
-- [ ] 14.5 Teardown removes everything: `baas admin deployment teardown --yes`, then confirm the stack,
+      *Done:* under the operator profile setup could not simulate, went on, and the `AccessDenied` on
+      `UpdateStack` produced stdout = the rendered policy only (valid IAM JSON, 12 statements), the
+      explanation on stderr, exit 1; nothing changed and `~/.baas/config.yaml` stayed byte-identical.
+- [x] 14.5 Teardown removes everything: `baas admin deployment teardown --yes`, then confirm the stack,
       bucket, table, AMI and pointer are gone; `admin deployment setup` and `admin image build` to
       restore. No paid run (the bake is not counted).
-- [ ] 14.6 Paid run 3 on the restored deployment, then push, open the PR into `next-release`, both CI
+      *Done:* teardown warned before acting, emptied the bucket, deleted the stack and retired the image;
+      afterwards `describe-stacks`, `describe-table`, `head-bucket`, the SSM pointer and the AMI all
+      report not found. Restored with setup (federation values passed again) and `admin image build`.
+- [x] 14.6 Paid run 3 on the restored deployment, then push, open the PR into `next-release`, both CI
       e2e jobs green. Runs 4–5 are reserve for re-checking fixes.
+      *Paid 3/20:* `20261007T073651358Z-0b7de70f` (`jmh`) on the restored deployment (image
+      `ami-0528c58373032fb85`), `completed`; `jobs list` showed it alone — the teardown left nothing.
+      PR and CI recorded below.
 
 ## 15. Verify
 
