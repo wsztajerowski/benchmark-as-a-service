@@ -1,33 +1,59 @@
 package pl.wsztajerowski.baas.commands;
 
-import java.util.Map;
-import java.nio.file.Path;
-import java.nio.file.Files;
-import pl.wsztajerowski.baas.config.ConfigService;
-import pl.wsztajerowski.baas.BaasApp;
-import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
+import pl.wsztajerowski.baas.BaasApp;
+import pl.wsztajerowski.baas.TestDeployments;
+import pl.wsztajerowski.baas.config.BaasConfig;
+import pl.wsztajerowski.baas.config.ConfigService;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class ConfigSyncSubcommandTest {
 
+    @TempDir
+    Path dir;
+
     /**
-     * Required although the prefix is derivable. A bare sync on a machine with no local state
-     * would adopt whatever deployment the active credentials imply — in CI, that is a wrong role
-     * or a leftover AWS_PROFILE binding the machine to another account's deployment, discovered
-     * only after something has been provisioned.
+     * Required with nothing configured, although the prefix is derivable. A bare sync on a machine
+     * with no local state would adopt whatever deployment the active credentials imply — in CI, a
+     * wrong role or a leftover AWS_PROFILE binding the machine to another account's deployment,
+     * discovered only after something has been provisioned.
      */
     @Test
-    void theDeploymentNameIsRequired() {
-        var err = new java.io.StringWriter();
-        int exit = new CommandLine(new pl.wsztajerowski.baas.BaasApp())
-            .setErr(new java.io.PrintWriter(err, true))
-            .execute("config", "sync");
+    void withNothingConfiguredTheNameIsRequired() {
+        int exit = sync(deployment("eu-central-1", Map.of("ResultsTableName", "t")));
 
-        assertThat(exit).isNotZero();
+        assertThat(exit).isEqualTo(2);
+        assertThat(dir.resolve("deployments")).doesNotExist();
+    }
+
+    @Test
+    void theOnlyDeploymentIsReSyncedWithoutAName() throws Exception {
+        TestDeployments.writeRaw(dir, "baas-123456789012-dev",
+            "prefix: \"baas-123456789012-dev\"\naws:\n  region: \"eu-west-1\"\n");
+
+        int exit = sync(deployment("us-east-1", Map.of("ResultsTableName", "t")));
+
+        assertThat(exit).isZero();
+        assertThat(load("baas-123456789012-dev").getAws().getRegion()).isEqualTo("us-east-1");
+        assertThat(service().deployments()).containsExactly("baas-123456789012-dev");
+    }
+
+    @Test
+    void withTwoConfiguredABareSyncIsAmbiguous() throws Exception {
+        TestDeployments.write(dir, TestDeployments.DEFAULT);
+        TestDeployments.write(dir, "wiktor-dev");
+
+        assertThat(sync(deployment("eu-central-1", Map.of("ResultsTableName", "t")))).isEqualTo(2);
     }
 
     @Test
@@ -41,54 +67,47 @@ class ConfigSyncSubcommandTest {
 
     @Test
     void theNameIsTheGlobalDeploymentOption() {
-        var parsed = new CommandLine(new pl.wsztajerowski.baas.BaasApp())
+        var parsed = new CommandLine(new BaasApp(dir))
             .parseArgs("config", "sync", "--deployment", "baas-123456789012-dev");
 
         assertThat(parsed.subcommand().subcommand().commandSpec().userObject())
             .isInstanceOf(ConfigSyncSubcommand.class);
-        assertThat(pl.wsztajerowski.baas.BaasApp.deployment(parsed.subcommand().subcommand().commandSpec()))
+        assertThat(BaasApp.deployment(parsed.subcommand().subcommand().commandSpec()))
             .contains("baas-123456789012-dev");
     }
 
     /**
-     * A second deployment's configuration is created by sync, in the named file only. The stack
-     * lookup is stood in for: the test has no stack, and the file handling is what is under test.
+     * A second deployment is adopted beside the first, in its own file. The stack lookup is stood
+     * in for: the test has no stack, and the file handling is what is under test.
      */
     @Test
-    void syncWritesTheNamedFileAndLeavesTheDefaultAlone(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("dev.yaml");
-        String defaultBefore = Files.exists(ConfigService.DEFAULT_PATH)
-            ? Files.readString(ConfigService.DEFAULT_PATH) : null;
+    void adoptingASecondDeploymentLeavesTheFirstAlone() throws Exception {
+        Path main = TestDeployments.write(dir, TestDeployments.DEFAULT);
+        String mainBefore = Files.readString(main);
 
-        int exit = new CommandLine(new BaasApp(), deployment("eu-central-1", Map.of("ResultsTableName", "t")))
-            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-123456789012-dev");
+        int exit = sync(deployment("eu-central-1", Map.of("ResultsTableName", "t")),
+            "--deployment", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
-        assertThat(ConfigService.at(file).load().getPrefix()).isEqualTo("baas-123456789012-dev");
-        assertThat(Files.exists(ConfigService.DEFAULT_PATH)
-            ? Files.readString(ConfigService.DEFAULT_PATH) : null).isEqualTo(defaultBefore);
+        assertThat(load("baas-123456789012-dev").getPrefix()).isEqualTo("baas-123456789012-dev");
+        assertThat(Files.readString(main)).isEqualTo(mainBefore);
+        assertThat(service().deployments()).containsExactly("baas-123456789012", "baas-123456789012-dev");
     }
 
     @Test
-    void aMissingStackWritesNothing(@TempDir Path dir) {
-        Path file = dir.resolve("dev.yaml");
+    void aMissingStackWritesNothing() {
+        int exit = sync(deployment("eu-central-1", Map.of()), "--deployment", "baas-nope");
 
-        int exit = new CommandLine(new BaasApp(), deployment("eu-central-1", Map.of()))
-            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-nope");
-
-        assertThat(exit).as("a bucket a teardown retained is not a deployment").isNotZero();
-        assertThat(file).doesNotExist();
+        assertThat(exit).as("a bucket with no stack is not a deployment").isNotZero();
+        assertThat(service().fileOf("baas-nope")).doesNotExist();
     }
 
     @Test
-    void noBucketMeansNoDeploymentAndWritesNothing(@TempDir Path dir) {
-        Path file = dir.resolve("dev.yaml");
-
-        int exit = new CommandLine(new BaasApp(), deployment(null, Map.of("ResultsTableName", "t")))
-            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-nope");
+    void noBucketMeansNoDeploymentAndWritesNothing() {
+        int exit = sync(deployment(null, Map.of("ResultsTableName", "t")), "--deployment", "baas-nope");
 
         assertThat(exit).isNotZero();
-        assertThat(file).doesNotExist();
+        assertThat(service().fileOf("baas-nope")).doesNotExist();
     }
 
     /**
@@ -96,15 +115,34 @@ class ConfigSyncSubcommandTest {
      * deployment's region is a fact about it, so a machine or a CI job aimed elsewhere follows it.
      */
     @Test
-    void syncStoresTheRegionTheDeploymentLivesIn(@TempDir Path dir) throws Exception {
-        Path file = dir.resolve("c.yaml");
-        Files.writeString(file, "aws:\n  region: \"eu-west-1\"\n");
+    void syncStoresTheRegionTheDeploymentLivesIn() throws Exception {
+        TestDeployments.writeRaw(dir, "baas-123456789012-dev",
+            "prefix: \"baas-123456789012-dev\"\naws:\n  region: \"eu-west-1\"\n");
 
-        int exit = new CommandLine(new BaasApp(), deployment("us-east-1", Map.of("ResultsTableName", "t")))
-            .execute("--config-path", file.toString(), "config", "sync", "--deployment", "baas-123456789012-dev");
+        int exit = sync(deployment("us-east-1", Map.of("ResultsTableName", "t")),
+            "--deployment", "baas-123456789012-dev");
 
         assertThat(exit).isZero();
-        assertThat(ConfigService.at(file).load().getAws().getRegion()).isEqualTo("us-east-1");
+        assertThat(load("baas-123456789012-dev").getAws().getRegion()).isEqualTo("us-east-1");
+    }
+
+    private int sync(CommandLine.IFactory factory, String... options) {
+        String[] args = new String[options.length + 2];
+        System.arraycopy(options, 0, args, 0, options.length);
+        args[options.length] = "config";
+        args[options.length + 1] = "sync";
+        return new CommandLine(new BaasApp(dir), factory)
+            .setOut(new PrintWriter(new StringWriter()))
+            .setErr(new PrintWriter(new StringWriter()))
+            .execute(args);
+    }
+
+    private ConfigService service() {
+        return new ConfigService(dir, Optional.empty());
+    }
+
+    private BaasConfig load(String deployment) {
+        return new ConfigService(dir, Optional.of(deployment)).load();
     }
 
     /** A bucket in {@code bucketRegion} (none when null) and a stack there with {@code outputs}. */
@@ -117,12 +155,12 @@ class ConfigSyncSubcommandTest {
                 if (cls == ConfigSyncSubcommand.class) {
                     return (K) new ConfigSyncSubcommand() {
                         @Override
-                        java.util.Optional<String> bucketRegion(pl.wsztajerowski.baas.config.BaasConfig config) {
-                            return java.util.Optional.ofNullable(bucketRegion);
+                        Optional<String> bucketRegion(BaasConfig config) {
+                            return Optional.ofNullable(bucketRegion);
                         }
 
                         @Override
-                        Map<String, String> stackOutputs(pl.wsztajerowski.baas.config.BaasConfig config, String region) {
+                        Map<String, String> stackOutputs(BaasConfig config, String region) {
                             return region.equals(bucketRegion) ? outputs : Map.of();
                         }
                     };

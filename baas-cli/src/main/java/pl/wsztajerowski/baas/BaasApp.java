@@ -68,20 +68,31 @@ public class BaasApp implements Runnable {
     @Spec CommandSpec spec;
 
     /**
-     * Inherited, so it parses on either side of any subcommand — and picocli writes every copy back
-     * to this one field, which is why commands read it from the root rather than declaring their own.
-     * It replaced the per-command {@code --results-table}/{@code --bucket} overrides: addressing
-     * another deployment means naming its configuration, not one of its resources.
-     */
-    /**
      * Every pointer to a concrete deployment is this option — it replaced {@code teardown
-     * --deployment} and {@code config sync --deployment}. Never positional. While a machine holds one
-     * deployment's configuration it may only name that one, so a typo cannot aim a command at a
-     * different deployment's resources; naming several is the multiple-deployments change's.
+     * --stack-name}, {@code config sync --name} and {@code --config-path}. Never positional, and
+     * inherited, so it parses on either side of any subcommand; picocli writes every copy back to
+     * this one field, which is why commands read it from the root. Absent, a command uses the only
+     * configured deployment, and with two or more it must be given — see {@link ConfigService}.
      */
     @Option(names = "--deployment", scope = ScopeType.INHERIT, paramLabel = "<name>",
-        description = "Deployment to act on (default: the one this machine is configured for).")
+        description = "Deployment to act on (default: the only one configured on this machine).")
     String deployment;
+
+    /**
+     * Where the deployments' files live: {@code ~/.baas}. Not an option — nobody outside the tests
+     * relocates it, and an environment variable or flag for it would be one more invisible input to
+     * which deployment a command hits. Tests pass their own through the constructor.
+     */
+    private final Path configRoot;
+
+    public BaasApp() {
+        this(ConfigService.defaultRoot());
+    }
+
+    /** For tests: the command tree reads and writes deployments under {@code configRoot}. */
+    public BaasApp(Path configRoot) {
+        this.configRoot = configRoot;
+    }
 
     /** The {@code --deployment} the command line named, if any. */
     public static java.util.Optional<String> deployment(CommandSpec spec) {
@@ -92,20 +103,17 @@ public class BaasApp implements Runnable {
         return java.util.Optional.empty();
     }
 
-    @Option(names = "--config-path", scope = ScopeType.INHERIT, paramLabel = "<file>",
-        description = "Configuration file to use instead of ~/.baas/config.yaml.")
-    Path configPath;
-
     /**
-     * The configuration a command should use. Resolved at call time, never in a field initialiser:
-     * fields are initialised while picocli builds the command tree, before {@code --config-path} is
-     * parsed. A command constructed outside a {@code BaasApp} tree (a unit test) gets the default.
+     * The deployments a command works with, bound to the {@code --deployment} it was given. Resolved
+     * at call time, never in a field initialiser: fields are initialised while picocli builds the
+     * command tree, before {@code --deployment} is parsed. A command constructed outside a
+     * {@code BaasApp} tree (a unit test) gets the default root and no name.
      */
     public static ConfigService configService(CommandSpec spec) {
         if (spec != null && spec.root().userObject() instanceof BaasApp app) {
-            return ConfigService.at(app.configPath);
+            return new ConfigService(app.configRoot, deployment(spec));
         }
-        return new ConfigService();
+        return new ConfigService(ConfigService.defaultRoot(), java.util.Optional.empty());
     }
 
     /**
@@ -167,43 +175,7 @@ public class BaasApp implements Runnable {
         if (loggingMixin.verbose) {
             System.setProperty(LoggingMixin.LEVEL_PROPERTY, "debug");
         }
-        String refusal = deploymentRefusal(parseResult);
-        if (refusal != null) {
-            LoggerFactory.getLogger(BaasApp.class).error("{}", refusal);
-            return 2;
-        }
         return new CommandLine.RunLast().execute(parseResult); // default execution strategy
-    }
-
-    /**
-     * Why {@code --deployment} cannot be honoured, or {@code null}. Checked once, here, before any
-     * command runs, so no command can forget it. Two commands check it themselves: {@code config
-     * sync}, whose job is to adopt the named deployment, and {@code admin deployment setup}, which
-     * compares it with the name it derives from the account.
-     */
-    String deploymentRefusal(ParseResult parseResult) {
-        if (deployment == null || deployment.isBlank()) {
-            return null;
-        }
-        ParseResult leaf = parseResult;
-        while (leaf.hasSubcommand()) {
-            leaf = leaf.subcommand();
-        }
-        Object command = leaf.commandSpec().userObject();
-        if (command instanceof pl.wsztajerowski.baas.commands.ConfigSyncSubcommand
-            || command instanceof pl.wsztajerowski.baas.commands.admin.SetupCommand) {
-            return null;
-        }
-        String configured = ConfigService.at(configPath).loadOrEmpty().getPrefix();
-        if (configured == null || configured.isBlank()) {
-            return "No deployment is configured on this machine, so --deployment " + deployment.strip()
-                + " cannot be reached. Adopt it with: baas config sync --deployment " + deployment.strip();
-        }
-        if (!configured.equals(deployment.strip())) {
-            return "--deployment " + deployment.strip() + " is not the deployment this machine is "
-                + "configured for (" + configured + "). Nothing was done.";
-        }
-        return null;
     }
 
     /**

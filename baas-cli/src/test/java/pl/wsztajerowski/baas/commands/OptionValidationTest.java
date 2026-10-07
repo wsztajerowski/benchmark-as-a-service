@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
+import pl.wsztajerowski.baas.TestDeployments;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -28,20 +29,15 @@ class OptionValidationTest {
     record Captured(String out, String err, int exitCode) {}
 
     private Captured baas(String... args) throws Exception {
-        Path config = dir.resolve("config.yaml");
-        if (!Files.exists(config)) {
-            Files.writeString(config, "prefix: \"baas-123456789012\"\naws:\n  region: \"eu-central-1\"\n");
+        if (!Files.exists(dir.resolve("deployments"))) {
+            TestDeployments.write(dir, TestDeployments.DEFAULT);
         }
         var out = new StringWriter();
         var err = new ByteArrayOutputStream();
         PrintStream originalErr = System.err;
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-            String[] withConfig = new String[args.length + 2];
-            withConfig[0] = "--config-path";
-            withConfig[1] = config.toString();
-            System.arraycopy(args, 0, withConfig, 2, args.length);
-            int code = new CommandLine(new BaasApp()).setOut(new PrintWriter(out)).execute(withConfig);
+            int code = new CommandLine(new BaasApp(dir)).setOut(new PrintWriter(out)).execute(args);
             return new Captured(out.toString(), err.toString(StandardCharsets.UTF_8), code);
         } finally {
             System.setErr(originalErr);
@@ -96,7 +92,8 @@ class OptionValidationTest {
     void aZeroOrNegativeTimeoutIsRefusedByConfigSet() throws Exception {
         assertThat(baas("config", "set", "--timeout", "0").exitCode()).isEqualTo(2);
         assertThat(baas("config", "set", "--timeout", "-5").exitCode()).isEqualTo(2);
-        assertThat(Files.readString(dir.resolve("config.yaml"))).doesNotContain("benchmarkTimeoutSeconds");
+        assertThat(Files.readString(dir.resolve("deployments").resolve(TestDeployments.DEFAULT + ".yaml")))
+            .doesNotContain("benchmarkTimeoutSeconds");
     }
 
     /** U35: an unknown type is a usage error, like an unknown --format. */

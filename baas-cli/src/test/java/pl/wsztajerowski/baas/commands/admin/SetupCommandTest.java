@@ -171,6 +171,17 @@ class SetupCommandTest {
         assertThat(SetupCommand.computePrefix("123456789012")).isEqualTo("baas-123456789012");
     }
 
+    /** With nothing configured the name is derived; a named or the only deployment is used verbatim. */
+    @Test
+    void setupDerivesTheNameOnlyWhenNoneIsGiven() {
+        var none = new pl.wsztajerowski.baas.config.BaasConfig();
+        var named = new pl.wsztajerowski.baas.config.BaasConfig();
+        named.setPrefix("wiktor-dev");
+
+        assertThat(SetupCommand.deploymentName(none, "123456789012")).isEqualTo("baas-123456789012");
+        assertThat(SetupCommand.deploymentName(named, "123456789012")).isEqualTo("wiktor-dev");
+    }
+
     /**
      * The point of the change: the identity holding the credentials must not reach the name. An
      * IAM user, an SSO session and a role-chained session on one account all address the same
@@ -196,15 +207,12 @@ class SetupCommandTest {
     }
 
     /**
-     * There is exactly one deployment per account and the CLI cannot be told otherwise. A second
-     * deployment — the one a BaaS developer wants for scratch work — is created by deploying the
-     * core template by hand with a different {@code ResourceNamePrefix}, and adopted with
-     * {@code baas config sync --deployment}. See infra/README.md. Keeping that out of the CLI is what
-     * stops "which deployment am I on?" becoming a question a user of BaaS ever has to ask.
+     * A deployment is named only by the global {@code --deployment}. Setup has no option of its own
+     * for it, so no second spelling can disagree with the one every other command reads.
      */
     @ParameterizedTest
     @ValueSource(strings = {"--mode", "--prefix", "--name"})
-    void theDeploymentCannotBeSelectedOnTheCommandLine(String rejected) {
+    void setupHasNoNamingOptionOfItsOwn(String rejected) {
         CommandLine cmd = new CommandLine(new SetupCommand());
 
         assertThatThrownBy(() -> cmd.parseArgs(rejected, "dev"))

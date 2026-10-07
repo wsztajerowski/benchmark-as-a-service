@@ -28,15 +28,15 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     /**
-     * The global {@code --deployment}, required here, although the prefix <em>is</em> derivable from the caller's account.
+     * The deployment being adopted: the global {@code --deployment}, or the only one configured.
+     * Never derived from the caller's account, although it could be.
      *
      * <p>A bare {@code baas config sync} on a machine with no local state would adopt whatever
      * deployment the currently active credentials imply. In CI that is the worst place for an
      * implicit choice: a workflow federating into an unexpected role, or a leftover
      * {@code AWS_PROFILE}, would bind the machine to another account's deployment and fail later,
-     * after provisioning, somewhere unrelated. Requiring the name keeps the deployment a declared
-     * input. It is also needed anyway to reach the dev deployment, so defaulting it would only
-     * shortcut one of the two cases.
+     * after provisioning, somewhere unrelated. So with nothing configured the name is required;
+     * with exactly one configured, a bare sync re-syncs that one.
      */
     String name;
 
@@ -69,14 +69,14 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        var named = BaasApp.deployment(spec);
-        if (named.isEmpty()) {
-            logger.error("Name the deployment to adopt: baas config sync --deployment <name> "
-                + "(e.g. baas-123456789012, as `baas admin deployment setup` printed it).");
+        BaasConfig config;
+        try {
+            config = configService().loadForSync();
+        } catch (IllegalStateException e) {
+            logger.error(e.getMessage());
             return 2;
         }
-        name = named.get();
-        BaasConfig config = configService().loadOrEmpty();
+        name = config.requirePrefix();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 
         // The region is the deployment's, chosen once by `baas admin deployment setup`, so it is found
@@ -119,7 +119,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
               Config: {}
               Bucket: {}
               Table:  {}""",
-            name, region.get(), configService().configFilePath(), config.bucket(), config.resultsTable());
+            name, region.get(), configService().fileOf(name), config.bucket(), config.resultsTable());
         return 0;
     }
 }

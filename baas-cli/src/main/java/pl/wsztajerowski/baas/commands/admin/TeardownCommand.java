@@ -55,10 +55,29 @@ public class TeardownCommand implements Callable<Integer> {
     public Integer call() {
         BaasConfig config = configService().load();
 
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
-
-        // The configured deployment; a --deployment naming another one was refused before this ran.
+        // The named deployment, or the only one configured: load() refused anything ambiguous, so
+        // with two deployments configured a teardown always names its target.
         String resolvedStack = resolveDeployment(config);
+
+        int exit = removeDeployment(config, resolvedStack);
+        if (exit != 0) {
+            return exit;
+        }
+
+        // Last: the deployment no longer exists, so a file naming it would only be one more
+        // deployment every later command has to disambiguate from. The last one included.
+        configService().delete(resolvedStack);
+        logger.info("Removed this machine's configuration for {}: {}", resolvedStack,
+            configService().fileOf(resolvedStack));
+        return 0;
+    }
+
+    /**
+     * Everything teardown does in AWS — both gates, the extension's rescue, the bucket, the stack and
+     * the image — returning the command's exit code. Overridden by tests, which have no AWS.
+     */
+    int removeDeployment(BaasConfig config, String resolvedStack) {
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
 
         // Gate 1: no active jobs
         try (var ec2 = factory.ec2()) {
@@ -82,8 +101,7 @@ public class TeardownCommand implements Callable<Integer> {
         try (var cf = factory.cloudFormation()) {
             String extension = new CloudFormationService(cf).getStackParameters(resolvedStack)
                 .getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
-            savedExtension = saveExtension(extension,
-                configService().configFilePath().toAbsolutePath().getParent(), resolvedStack);
+            savedExtension = saveExtension(extension, configService().root(), resolvedStack);
         } catch (IOException | RuntimeException e) {
             logger.error("Could not save the runner-image extension of {} ({}). Nothing was deleted.\n"
                 + "  Save it by hand with `baas admin image show --extension > <file>`, then re-run teardown.",
@@ -188,7 +206,7 @@ public class TeardownCommand implements Callable<Integer> {
         return console;
     }
 
-    /** This machine's configured deployment — the only one {@code --deployment} may name. */
+    /** The deployment being torn down: the one {@code --deployment} named, or the only one configured. */
     String resolveDeployment(BaasConfig config) {
         return config.requirePrefix();
     }

@@ -30,7 +30,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = configService().load();
-        String dump = render(config, configService().configFilePath());
+        String dump = render(config, configService().fileOf(config.requirePrefix()));
 
         // Every value above is local. `config show` makes no AWS call at all now that the masked
         // Mongo connection string — the one field that had to be read from SSM — is gone, so it
