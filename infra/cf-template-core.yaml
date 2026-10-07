@@ -284,10 +284,11 @@ Resources:
 
   S3MainBucket:
     Type: AWS::S3::Bucket
-    # Benchmark history outlives any single stack. `baas admin teardown` deletes the
-    # bucket only when explicitly asked (--delete-bucket), which empties it first.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # Nothing survives a teardown: a deployment's data leaves with it unless exported first.
+    # CloudFormation refuses to delete a non-empty bucket, so `baas admin deployment teardown`
+    # empties it before deleting the stack.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       BucketName: !Sub ${ResourceNamePrefix}
       VersioningConfiguration:
@@ -336,9 +337,9 @@ Resources:
 
   ResultsTable:
     Type: AWS::DynamoDB::Table
-    # Benchmark history outlives any single stack, same as S3MainBucket above.
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    # Deleted with the stack, like S3MainBucket above.
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Delete
     Properties:
       TableName: !Sub ${ResourceNamePrefix}-results
       BillingMode: PAY_PER_REQUEST

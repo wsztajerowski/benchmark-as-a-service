@@ -303,20 +303,11 @@ class SetupCommandTest {
 
         assertThat(message)
             .contains("lives in eu-central-1, not us-east-1")
-            .contains("baas admin setup --region eu-central-1")
+            .contains("baas admin deployment setup --region eu-central-1")
             .doesNotContain("rb")
             .doesNotContain("--force");
     }
 
-    @Test
-    void aBucketInThisRegionIsARetainedLeftoverWorthCopyingOut() {
-        String message = SetupCommand.bucketBlocksSetup("baas-123456789012", "baas-123456789012",
-            "eu-central-1", "eu-central-1");
-
-        assertThat(message)
-            .contains("previous teardown retained it")
-            .contains("aws s3 sync s3://baas-123456789012 ./backup");
-    }
 
     // ─── U34: networking ids belong to --use-existing-vpc ────────────────────────
 

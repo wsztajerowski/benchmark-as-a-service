@@ -413,25 +413,19 @@ class CoreTemplateTest {
         assertThat(outputs).containsKey("RunnerAmiParameterName");
     }
 
+    /** Nothing survives a teardown: a deployment's data leaves with it unless exported first. */
     @Test
-    void workingBucketSurvivesStackDeletion() {
-        var bucket = InfraFixtures.resource(template, "S3MainBucket");
-
-        assertThat(bucket)
-            .as("teardown promises the bucket is retained — that must be declared, not a side effect of a failing delete")
-            .containsEntry("DeletionPolicy", "Retain")
-            .containsEntry("UpdateReplacePolicy", "Retain");
+    void theWorkingBucketIsDeletedWithTheStack() {
+        assertThat(InfraFixtures.resource(template, "S3MainBucket"))
+            .containsEntry("DeletionPolicy", "Delete")
+            .containsEntry("UpdateReplacePolicy", "Delete");
     }
 
     @Test
-    void theResultsTableIsRetainedOnBothDeleteAndReplace() {
-        var table = InfraFixtures.resource(template, "ResultsTable");
-
-        assertThat(table)
-            .as("benchmark history outlives the stack, same as the bucket — losing it to a stray "
-                + "teardown or a replacement update is not recoverable")
-            .containsEntry("DeletionPolicy", "Retain")
-            .containsEntry("UpdateReplacePolicy", "Retain");
+    void theResultsTableIsDeletedWithTheStack() {
+        assertThat(InfraFixtures.resource(template, "ResultsTable"))
+            .containsEntry("DeletionPolicy", "Delete")
+            .containsEntry("UpdateReplacePolicy", "Delete");
     }
 
     @Test

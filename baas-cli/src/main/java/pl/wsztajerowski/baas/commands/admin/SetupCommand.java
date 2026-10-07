@@ -20,7 +20,6 @@ import pl.wsztajerowski.baas.infra.ParentImageResolver;
 import pl.wsztajerowski.baas.infra.RunnerImageExtension;
 import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
-import pl.wsztajerowski.baas.infra.ResultsTableService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 
 import java.io.IOException;
@@ -220,36 +219,23 @@ public class SetupCommand implements Callable<Integer> {
         // networkingParameters().
         params.putAll(networkingParameters());
 
-        // The bucket and the results table are both declared DeletionPolicy: Retain, so deleting
-        // the stack leaves them behind — and the prefix is derived from the account, so the next
-        // setup asks for those exact names again and CloudFormation refuses with an opaque
-        // "Validation failed with 1 error(s)" that never mentions which resource. Say what
-        // actually happened instead. Both are checked, because fixing only the bucket then fails
-        // again on the table with the same unhelpful message.
-        try (var cf = factory.cloudFormation(); var s3 = factory.s3(); var ddb = factory.dynamoDb()) {
+        // Bucket names are global and derived from the account, so on a create an existing bucket
+        // of this name means the deployment already exists — in another region. CloudFormation's
+        // own error would never say so.
+        try (var cf = factory.cloudFormation(); var s3 = factory.s3()) {
             // Derived once, by BaasConfig, like every other consumer. Composing "baas-" here a
             // second time is how this asked for `baas-baas-<account>-results` — the namespace
             // lives inside the prefix value now.
             String bucketName = config.bucket();
-            String tableName = config.resultsTable();
             boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedPrefix);
 
             Optional<String> bucketRegion = stackMissing
                 ? new S3UploadService(s3).bucketRegion(bucketName) : Optional.empty();
-            if (bucketRegion.isPresent()) {
+            // Only a bucket in another region blocks here: it means the deployment lives there.
+            // Nothing is retained by a teardown any more, so a same-region leftover is not expected.
+            if (bucketRegion.isPresent() && !bucketRegion.get().equals(config.getAws().resolveRegion())) {
                 logger.error(bucketBlocksSetup(bucketName, resolvedPrefix, bucketRegion.get(),
                     config.getAws().resolveRegion()));
-                return 1;
-            }
-
-            if (stackMissing && new ResultsTableService(ddb).tableExists(tableName)) {
-                logger.error("""
-                        Results table {} already exists, but stack {} does not.
-                          A previous teardown retained it, for the same reason the bucket is
-                          retained: benchmark history outlives any single stack.
-                          Keep the old results:  aws dynamodb scan --table-name {} > backup.json
-                          Then remove it:        aws dynamodb delete-table --table-name {}""",
-                    tableName, resolvedPrefix, tableName, tableName);
                 return 1;
             }
         }
@@ -316,23 +302,14 @@ public class SetupCommand implements Callable<Integer> {
      * any region. In another region it is the account's deployment — this setup was simply aimed
      * at the wrong region — and the advice once given here, {@code aws s3 rb --force}, would have
      * deleted that deployment's results. Only a bucket in this region is a retained leftover
-     * worth copying out and removing; if the other region holds a leftover too, a setup aimed there
-     * says so in turn.
+     * Called only for a bucket in another region.
      */
     static String bucketBlocksSetup(String bucket, String deployment, String bucketRegion, String region) {
-        if (!bucketRegion.equals(region)) {
-            return """
-                Deployment %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket
-                  names are global, so an account holds one deployment.
-                  Address it there:  baas admin setup --region %2$s
-                Nothing was deployed.""".formatted(deployment, bucketRegion, region, bucket);
-        }
         return """
-            Bucket %1$s already exists, but stack %2$s does not.
-              A previous teardown retained it — the stack cannot recreate a bucket
-              that is already there, and the name is fixed by this AWS account.
-              Keep the old results:  aws s3 sync s3://%1$s ./backup
-              Then remove it:        aws s3 rb s3://%1$s --force""".formatted(bucket, deployment);
+            Deployment %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket
+              names are global, so an account holds one deployment.
+              Address it there:  baas admin deployment setup --region %2$s
+            Nothing was deployed.""".formatted(deployment, bucketRegion, region, bucket);
     }
 
     static final String EXTENSION_STARTER_FILE = "runner-image-extension.yaml";
