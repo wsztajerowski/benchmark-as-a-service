@@ -75,7 +75,7 @@ whose failure modes depend on the baked runner image — kernel tunables, the pi
 `exclude_from_results=true`, because they measure fixture code and carry no analytical meaning.
 
 #### Scenario: Self-test measurements never reach a comparison
-- **WHEN** the self-test completes and `baas results` is queried for the project
+- **WHEN** the self-test completes and `baas results query` is queried for the project
 - **THEN** the self-test's measurements are absent from the returned rows
 
 #### Scenario: Image-dependent behaviour is covered
@@ -137,7 +137,7 @@ SHALL NOT enable `git.resolveProject`.
 #### Scenario: The stored job carries the workflow's values
 - **WHEN** the self-test's job completes
 - **THEN** its measurements carry the `project`, `branch` and `commit` the CI job passed, and the CI job
-  asserts them from the JSON `tags` object returned by `baas results --job-id`
+  asserts them from the JSON `tags` object returned by `baas results query --job-id`
 
 #### Scenario: CI does not depend on git derivation
 - **WHEN** the self-test runs with a fresh configuration written by `baas config sync`
