@@ -39,8 +39,7 @@ class JobsShowCommandTest {
     private record Run(int exit, String out) {}
 
     private Run show(JobItem job, String live, String manifest, List<String> keys, String... extra) throws Exception {
-        Path config = dir.resolve("c.yaml");
-        Files.writeString(config, "prefix: baas-123456789012\naws:\n  region: eu-central-1\n");
+        pl.wsztajerowski.baas.TestDeployments.write(dir, pl.wsztajerowski.baas.TestDeployments.DEFAULT);
         var out = new StringWriter();
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
         CommandLine.IFactory factory = new CommandLine.IFactory() {
@@ -66,9 +65,9 @@ class JobsShowCommandTest {
                 return (K) command;
             }
         };
-        List<String> line = new ArrayList<>(List.of("--config-path", config.toString(), "jobs", "show", ID));
+        List<String> line = new ArrayList<>(List.of("jobs", "show", ID));
         line.addAll(List.of(extra));
-        int exit = new CommandLine(new BaasApp(), factory).setErr(new PrintWriter(new StringWriter(), true))
+        int exit = new CommandLine(new BaasApp(dir), factory).setErr(new PrintWriter(new StringWriter(), true))
             .execute(line.toArray(String[]::new));
         return new Run(exit, out.toString());
     }

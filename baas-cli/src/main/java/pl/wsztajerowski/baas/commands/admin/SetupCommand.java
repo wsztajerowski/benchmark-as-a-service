@@ -117,7 +117,15 @@ public class SetupCommand implements Callable<Integer> {
             }
         }
 
-        BaasConfig config = configService().loadOrEmpty();
+        // The named deployment, existing or new; else the only one configured; else, with none, an
+        // empty configuration whose name is derived from the account below.
+        BaasConfig config;
+        try {
+            config = configService().loadForSetup();
+        } catch (IllegalStateException e) {
+            logger.error(e.getMessage());
+            return 2;
+        }
         if (region != null) config.getAws().setRegion(region);
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
 
@@ -136,17 +144,15 @@ public class SetupCommand implements Callable<Integer> {
             accountId = identity.account();
         }
         logger.debug("Caller ARN: {}", callerArn);
-        String resolvedPrefix = computePrefix(accountId);
-        if (named.isPresent() && !named.get().equals(resolvedPrefix)) {
-            // Naming a deployment other than the account's own is the multiple-deployments change's.
-            logger.error("--deployment {} is not this account's deployment ({}). Nothing was done.",
-                named.get(), resolvedPrefix);
-            return 2;
-        }
-
+        boolean derived = config.getPrefix() == null || config.getPrefix().isBlank();
+        String resolvedPrefix = deploymentName(config, accountId);
         config.setPrefix(resolvedPrefix);
 
-        logger.info("Using deployment: {} (derived from account {})", resolvedPrefix, accountId);
+        if (derived) {
+            logger.info("Using deployment: {} (derived from account {})", resolvedPrefix, accountId);
+        } else {
+            logger.info("Using deployment: {} (account {})", resolvedPrefix, accountId);
+        }
 
         // Before the preflight: a deployer's grants name one region, so in another region the
         // preflight would print a policy for it and invite granting a second deployment that
@@ -278,9 +284,9 @@ public class SetupCommand implements Callable<Integer> {
         }
 
         configService().save(config);
-        logger.info("Configuration written to {}", configService().configFilePath());
-        writeExtensionStarter(configService().configFilePath()
-            .toAbsolutePath().getParent().resolve(EXTENSION_STARTER_FILE));
+        logger.info("Configuration written to {}", configService().fileOf(resolvedPrefix));
+        // Beside deployments/, never in it: everything in deployments/ is read as a deployment.
+        writeExtensionStarter(configService().root().resolve(EXTENSION_STARTER_FILE));
 
         logger.info("{}", nextSteps(created, operatorRoleArn, resolvedPrefix));
 
@@ -297,7 +303,7 @@ public class SetupCommand implements Callable<Integer> {
     static String bucketBlocksSetup(String bucket, String deployment, String bucketRegion, String region) {
         return """
             Deployment %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket
-              names are global, so an account holds one deployment.
+              names are global, so a deployment's name exists in one region only.
               Address it there:  baas admin deployment setup --region %2$s
             Nothing was deployed.""".formatted(deployment, bucketRegion, region, bucket);
     }
@@ -538,7 +544,17 @@ public class SetupCommand implements Callable<Integer> {
     }
 
     /**
-     * The deployment's name stem: {@code baas-<accountId>}. There is no option to name another.
+     * The deployment setup acts on: the one the configuration already names — from
+     * {@code --deployment}, or the only one configured — else the account's default.
+     */
+    static String deploymentName(BaasConfig config, String accountId) {
+        String configured = config.getPrefix();
+        return configured == null || configured.isBlank() ? computePrefix(accountId) : configured;
+    }
+
+    /**
+     * The default deployment's name stem: {@code baas-<accountId>}, used when {@code --deployment} is
+     * absent and no deployment is configured. A named deployment's prefix is its name, verbatim.
      *
      * <p>The whole name, including the {@code baas-} namespace, lives in this one value, so every
      * resource is {@code <prefix>} or {@code <prefix>-<suffix>} and a reader who knows the prefix

@@ -39,9 +39,9 @@ class DownloadArgumentTest {
     @Test
     void aPathIsRefusedBeforeAnythingIsRead() {
         var err = new java.io.StringWriter();
-        int exit = new picocli.CommandLine(new pl.wsztajerowski.baas.BaasApp())
+        int exit = new picocli.CommandLine(new pl.wsztajerowski.baas.BaasApp(java.nio.file.Path.of("/nonexistent")))
             .setErr(new java.io.PrintWriter(err, true))
-            .execute("--config-path", "/nonexistent/config.yaml", "jobs", "download", "main/jmh/20260819_090000");
+            .execute("jobs", "download", "main/jmh/20260819_090000");
 
         assertThat(exit).isEqualTo(2);
     }
@@ -49,7 +49,7 @@ class DownloadArgumentTest {
     // ─── Reading another deployment's results ─────────────────────────────────
 
     /**
-     * The per-command table and bucket overrides gave way to the inherited --config-path, which
+     * The per-command table and bucket overrides gave way to the inherited --deployment, which
      * names a whole deployment. No command — read or write — declares either any more, so none can
      * be aimed at one deployment's table while its configuration names another.
      */

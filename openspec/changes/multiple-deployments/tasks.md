@@ -28,13 +28,13 @@
 
 ## 4. Per-deployment configuration
 
-- [ ] 4.1 Make `ConfigService` root-based (`<root>/deployments/<name>.yaml`) with the root injected through the constructor, and give `BaasApp` a package-private seam to inject it. Verify with a unit test reading and writing under a temp root.
-- [ ] 4.2 Implement the selection rule: `--deployment` names the file, otherwise exactly one is implied, two or more is an error listing the names, and none is an error except for setup. It replaces `BaasApp.deploymentRefusal`. Verify with unit tests for each case, including that `BAAS_DEPLOYMENT` is ignored.
-- [ ] 4.3 Implement the flat-file migration (move and overwrite, then delete `config.yaml`; a file without `prefix` is left alone). Verify with unit tests for first-run migration, overwriting an existing target, and the no-prefix file.
-- [ ] 4.4 Remove `--config-path` and move the nine test classes that use it onto the injected root. Verify `grep -rn -- '--config-path' baas-cli/src` is empty and the suite is green.
-- [ ] 4.5 `admin deployment setup`: use `--deployment` verbatim, the only file when one exists, or `baas-<accountId>` when none; write that deployment's file. Verify with tests for all three paths.
-- [ ] 4.6 `config sync`: require `--deployment` when no deployment is configured, re-sync the only one, and refuse an ambiguous call. Verify with tests for each case.
-- [ ] 4.7 Teardown: delete the deployment's file after a completed teardown. Verify with a test that it is gone, and that the other deployment's file is untouched.
+- [x] 4.1 Make `ConfigService` root-based (`<root>/deployments/<name>.yaml`) with the root injected through the constructor, and give `BaasApp` a package-private seam to inject it. Verify with a unit test reading and writing under a temp root.
+- [x] 4.2 Implement the selection rule: `--deployment` names the file, otherwise exactly one is implied, two or more is an error listing the names, and none is an error except for setup. It replaces `BaasApp.deploymentRefusal`. Verify with unit tests for each case, including that `BAAS_DEPLOYMENT` is ignored.
+- [x] 4.3 Implement the flat-file migration (move and overwrite, then delete `config.yaml`; a file without `prefix` is left alone). Verify with unit tests for first-run migration, overwriting an existing target, and the no-prefix file.
+- [x] 4.4 Remove `--config-path` and move the nine test classes that use it onto the injected root. Verify `grep -rn -- '--config-path' baas-cli/src` is empty and the suite is green.
+- [x] 4.5 `admin deployment setup`: use `--deployment` verbatim, the only file when one exists, or `baas-<accountId>` when none; write that deployment's file. Verify with tests for all three paths.
+- [x] 4.6 `config sync`: require `--deployment` when no deployment is configured, re-sync the only one, and refuse an ambiguous call. Verify with tests for each case.
+- [x] 4.7 Teardown: delete the deployment's file after a completed teardown. Verify with a test that it is gone, and that the other deployment's file is untouched.
 - [ ] 4.8 Rename `aws.profile` → `aws.deployerProfile` in `BaasConfig`, in the migration, and on read of a deployment file still carrying it. Verify with unit tests for the migrated flat file and a deployment file carrying the old key.
 - [ ] 4.9 Rename `--aws-profile` → `--deployer-profile` on `admin deployment setup` and `config set`, and label both profiles in `config show`. Verify with tests that the old option is an unknown-option error and the new one stores `aws.deployerProfile`.
 - [ ] 4.10 Add `baas config list` (table and `--format json` through `Console`, `Locale.ROOT`, no AWS client constructed, never a top-level alias), and add the `→ choose one: baas config list` hint to the ambiguity error. Verify with tests for zero, one and two deployments, the JSON shape, and that no SDK client is built.

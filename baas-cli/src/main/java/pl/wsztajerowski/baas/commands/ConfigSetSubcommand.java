@@ -75,7 +75,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
                 BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS, watchdogMargin);
             return 2;
         }
-        BaasConfig config = configService().loadOrEmpty();
+        BaasConfig config = configService().load();
 
         if (awsProfile != null) config.getAws().setProfile(awsProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
@@ -85,7 +85,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         if (gitResolveProject != null) config.getGit().setResolveProject(gitResolveProject);
 
         configService().save(config);
-        logger.info("Configuration saved to {}", configService().configFilePath());
+        logger.info("Configuration saved to {}", configService().fileOf(config.requirePrefix()));
         return 0;
     }
 }

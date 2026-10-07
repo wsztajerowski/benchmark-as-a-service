@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.commands;
 
 import java.nio.file.Path;
-import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.BaasApp;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
@@ -151,10 +150,9 @@ class ResultsProjectSelectionTest {
      */
     @Test
     void underWatchTheProjectIsChosenBeforeTheAlternateScreen(@TempDir Path dir) {
-        Path config = dir.resolve("c.yaml");
         var stored = new BaasConfig();
         stored.setPrefix("baas-123456789012");
-        ConfigService.at(config).save(stored);
+        pl.wsztajerowski.baas.TestDeployments.save(dir, stored);
 
         var screen = new StringWriter();
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
@@ -187,9 +185,9 @@ class ResultsProjectSelectionTest {
             }
         };
 
-        new CommandLine(new BaasApp(), factory)
+        new CommandLine(new BaasApp(dir), factory)
             .setErr(new PrintWriter(new StringWriter()))
-            .execute("--config-path", config.toString(), "query", "--watch");
+            .execute("query", "--watch");
 
         String out = screen.toString();
         assertThat(out).contains("Choose a project").contains("\u001b[?1049h");

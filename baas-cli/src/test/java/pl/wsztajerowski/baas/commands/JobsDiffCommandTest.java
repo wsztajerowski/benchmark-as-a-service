@@ -64,8 +64,7 @@ class JobsDiffCommandTest {
     @Test
     void anUnknownJobIdFailsWithoutTheMisleadingManifestMessage(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
         throws Exception {
-        var file = dir.resolve("config.yaml");
-        java.nio.file.Files.writeString(file, "prefix: baas-123456789012\naws:\n  region: eu-central-1\n");
+        pl.wsztajerowski.baas.TestDeployments.write(dir, pl.wsztajerowski.baas.TestDeployments.DEFAULT);
         var lookedUp = new java.util.ArrayList<String>();
         var diff = new JobsDiffSubcommand() {
             @Override
@@ -85,7 +84,7 @@ class JobsDiffCommandTest {
             }
         };
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        var cli = new CommandLine(new BaasApp(), new CommandLine.IFactory() {
+        var cli = new CommandLine(new BaasApp(dir), new CommandLine.IFactory() {
             @Override
             @SuppressWarnings("unchecked")
             public <K> K create(Class<K> type) throws Exception {
@@ -93,7 +92,7 @@ class JobsDiffCommandTest {
             }
         });
 
-        int exit = cli.execute("--config-path", file.toString(), "jobs", "diff",
+        int exit = cli.execute("jobs", "diff",
             "20261002T000000000Z-00000000", "20261002T080250645Z-264f5dfb");
 
         assertThat(exit).isEqualTo(1);

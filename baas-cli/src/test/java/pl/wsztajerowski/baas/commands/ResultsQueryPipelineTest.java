@@ -5,7 +5,6 @@ import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.config.BaasConfig;
-import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
@@ -42,10 +41,9 @@ class ResultsQueryPipelineTest {
     private record Run(int exit, String out, String err) {}
 
     private Run query(String... args) {
-        Path config = dir.resolve("c.yaml");
         var stored = new BaasConfig();
         stored.setPrefix("baas-123456789012");
-        ConfigService.at(config).save(stored);
+        pl.wsztajerowski.baas.TestDeployments.save(dir, stored);
 
         var out = new StringWriter();
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
@@ -76,10 +74,10 @@ class ResultsQueryPipelineTest {
             }
         };
         var err = new StringWriter();
-        List<String> line = new ArrayList<>(List.of("--config-path", config.toString(), "query", "--project", "p",
+        List<String> line = new ArrayList<>(List.of("query", "--project", "p",
             "--format", "json"));
         line.addAll(List.of(args));
-        int exit = new CommandLine(new BaasApp(), factory).setErr(new PrintWriter(err, true))
+        int exit = new CommandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
             .execute(line.toArray(String[]::new));
         return new Run(exit, out.toString(), err.toString());
     }

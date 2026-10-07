@@ -63,8 +63,7 @@ class RunnerImageExtensionCommandsTest {
      */
     @Test
     void anOversizedExtensionIsRefusedBeforeAnythingIsSubmitted() throws Exception {
-        Path config = dir.resolve("config.yaml");
-        Files.writeString(config, """
+        pl.wsztajerowski.baas.TestDeployments.writeRaw(dir, "baas-123456789012", """
             prefix: "baas-123456789012"
             aws:
               profile: "no-such-profile-baas-test"
@@ -78,8 +77,8 @@ class RunnerImageExtensionCommandsTest {
         int exit;
         try {
             System.setErr(new PrintStream(stderr, true, StandardCharsets.UTF_8));
-            exit = new CommandLine(new BaasApp()).execute(
-                "--config-path", config.toString(), "admin", "image", "build", "--extension", big.toString());
+            exit = new CommandLine(new BaasApp(dir)).execute(
+                "admin", "image", "build", "--extension", big.toString());
         } finally {
             System.setErr(original);
         }

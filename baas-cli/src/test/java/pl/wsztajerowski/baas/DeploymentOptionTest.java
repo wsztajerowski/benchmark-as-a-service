@@ -4,88 +4,117 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * `--deployment` is the one pointer to a concrete deployment. While a machine is configured for a
- * single deployment it may only name that one, and the check runs before any command does.
+ * {@code --deployment} is the one pointer to a concrete deployment. Absent, the only configured
+ * deployment is used; with two or more a command must name one. Every refusal below happens while
+ * reading the machine's own files, before any AWS call — the test machine's home has no credentials,
+ * so a message about deployments, not about AWS, proves the order.
  */
 class DeploymentOptionTest {
 
-    private static Path config(Path dir, String prefix) throws Exception {
-        Path file = dir.resolve("config.yaml");
-        Files.writeString(file, "prefix: " + prefix + "\naws:\n  region: eu-central-1\n");
-        return file;
-    }
+    @TempDir
+    Path dir;
 
-    private static String refusal(String... args) {
-        var app = new BaasApp();
-        var parsed = new CommandLine(app).parseArgs(args);
-        return app.deploymentRefusal(parsed);
-    }
+    record Captured(int exitCode, String err) {}
 
-    @Test
-    void theConfiguredDeploymentIsAccepted(@TempDir Path dir) throws Exception {
-        Path file = config(dir, "baas-123456789012");
-
-        assertThat(refusal("--config-path", file.toString(), "--deployment", "baas-123456789012",
-            "jobs", "list")).isNull();
-    }
-
-    @Test
-    void anotherDeploymentIsRefusedNamingBoth(@TempDir Path dir) throws Exception {
-        Path file = config(dir, "baas-123456789012");
-
-        assertThat(refusal("--config-path", file.toString(), "jobs", "list", "--deployment", "other"))
-            .contains("other", "baas-123456789012");
+    private Captured baas(String... args) {
+        // Both streams: a logged refusal reaches System.err, and an exception picocli handles itself
+        // (no BaasApp.main exception handler here) reaches the command line's error writer.
+        var err = new ByteArrayOutputStream();
+        var picocliErr = new StringWriter();
+        PrintStream original = System.err;
+        try {
+            System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
+            int code = new CommandLine(new BaasApp(dir))
+                .setOut(new PrintWriter(new StringWriter()))
+                .setErr(new PrintWriter(picocliErr, true))
+                .execute(args);
+            return new Captured(code, err.toString(StandardCharsets.UTF_8) + picocliErr);
+        } finally {
+            System.setErr(original);
+        }
     }
 
     @Test
-    void aRefusalRunsNoCommandAndExitsTwo(@TempDir Path dir) throws Exception {
-        Path file = config(dir, "baas-123456789012");
-        var err = new StringWriter();
+    void twoDeploymentsRequireTheFlagAndListBothWithTheHint() throws Exception {
+        TestDeployments.write(dir, TestDeployments.DEFAULT);
+        TestDeployments.write(dir, "wiktor-dev");
 
-        int exit = new CommandLine(new BaasApp())
-            .setExecutionStrategy(parseResult -> {
-                var app = (BaasApp) parseResult.commandSpec().userObject();
-                String refusal = app.deploymentRefusal(parseResult);
-                return refusal == null ? new CommandLine.RunLast().execute(parseResult) : 2;
-            })
-            .setErr(new PrintWriter(err, true))
-            .execute("--config-path", file.toString(), "--deployment", "other", "admin", "deployment", "teardown", "--yes");
+        var run = baas("jobs", "list");
 
-        assertThat(exit).isEqualTo(2);
+        assertThat(run.exitCode()).isNotZero();
+        assertThat(run.err())
+            .contains("2 deployments are configured (baas-123456789012, wiktor-dev)")
+            .contains("→ choose one: baas config list");
     }
 
     @Test
-    void withNothingConfiguredItPointsAtSync(@TempDir Path dir) {
-        Path missing = dir.resolve("absent.yaml");
+    void teardownIsNeverAmbiguous() throws Exception {
+        TestDeployments.write(dir, TestDeployments.DEFAULT);
+        TestDeployments.write(dir, "wiktor-dev");
 
-        assertThat(refusal("--config-path", missing.toString(), "--deployment", "x", "jobs", "list"))
-            .contains("baas config sync --deployment x");
+        var run = baas("admin", "deployment", "teardown", "--yes");
+
+        assertThat(run.exitCode()).isNotZero();
+        assertThat(run.err()).contains("2 deployments are configured");
+        assertThat(dir.resolve("deployments").resolve("wiktor-dev.yaml")).exists();
+        assertThat(dir.resolve("deployments").resolve("baas-123456789012.yaml")).exists();
     }
 
     @Test
-    void syncAndSetupCheckTheNameThemselves(@TempDir Path dir) throws Exception {
-        Path file = config(dir, "baas-123456789012");
+    void aDifferentDeploymentIsRefusedNamingTheConfiguredOnes() throws Exception {
+        TestDeployments.write(dir, TestDeployments.DEFAULT);
 
-        assertThat(refusal("--config-path", file.toString(), "--deployment", "other", "config", "sync")).isNull();
-        assertThat(refusal("--config-path", file.toString(), "--deployment", "other",
-            "admin", "deployment", "setup")).isNull();
+        var run = baas("--deployment", "other", "results", "query");
+
+        assertThat(run.exitCode()).isNotZero();
+        assertThat(run.err()).contains("No deployment 'other'", "configured: baas-123456789012");
     }
 
     @Test
-    void theRemovedPointersAreUnknown() {
-        var err = new StringWriter();
-        var root = new CommandLine(new BaasApp()).setErr(new PrintWriter(err, true));
+    void theOptionParsesOnEitherSideOfTheSubcommand() throws Exception {
+        TestDeployments.write(dir, TestDeployments.DEFAULT);
 
-        assertThat(root.execute("admin", "deployment", "teardown", "--stack-name", "x")).isNotZero();
-        assertThat(new CommandLine(new BaasApp()).setErr(new PrintWriter(err, true))
-            .execute("config", "sync", "--name", "x")).isNotZero();
+        assertThat(baas("jobs", "list", "--deployment", "other").err()).contains("No deployment 'other'");
+        assertThat(baas("--deployment", "other", "jobs", "list").err()).contains("No deployment 'other'");
+    }
+
+    @Test
+    void withNothingConfiguredACommandSaysSo() {
+        var run = baas("jobs", "list");
+
+        assertThat(run.exitCode()).isNotZero();
+        assertThat(run.err()).contains("No deployment is configured", "baas admin deployment setup");
+    }
+
+    /**
+     * {@code BAAS_DEPLOYMENT} is not read. The JVM cannot set an environment variable, so this holds
+     * the code to the rule rather than proving the variable is ignored at run time.
+     */
+    @Test
+    void noEnvironmentVariableIsConsulted() throws Exception {
+        String sources = java.nio.file.Files.readString(Path.of(
+            "src/main/java/pl/wsztajerowski/baas/config/ConfigService.java"))
+            + java.nio.file.Files.readString(Path.of("src/main/java/pl/wsztajerowski/baas/BaasApp.java"));
+
+        assertThat(sources).doesNotContain("getenv").doesNotContain("BAAS_DEPLOYMENT");
+    }
+
+    @Test
+    void theRemovedPointersAreUnknown() throws Exception {
+        TestDeployments.write(dir, TestDeployments.DEFAULT);
+
+        assertThat(baas("admin", "deployment", "teardown", "--stack-name", "x").exitCode()).isEqualTo(2);
+        assertThat(baas("config", "sync", "--name", "x").exitCode()).isEqualTo(2);
+        assertThat(baas("--config-path", "f.yaml", "results", "query").exitCode()).isEqualTo(2);
     }
 }
