@@ -27,8 +27,6 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | U2 | Nothing exports a deployment's data before a teardown, which now deletes everything | Low | `export-before-teardown` |
 | DR1 | `run --detach` with today's shutdown hook would cancel and terminate the job it just launched | High if shipped naively | `detached-run` |
 | DR4 | The archived non-goal rejecting `--detach` cites a reason job items removed | Info | `detached-run` |
-| U21 | Live check: a deployment outside `eu-central-1` (fixed in code) | — | deferred, blocked on IAM |
-| U40 | Live check: teardown saving a non-empty extension (fixed in code) | — | deferred, blocked on IAM |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | High → reduced | open |
 | A4 | A store failure after the upload loses the measurement row | Med → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | Low | open |
@@ -118,19 +116,6 @@ layer.
 **DR4.** The archived `run-status-in-dynamodb` design lists `--detach`/`attach` as a non-goal,
 "rejected in the usage analysis §5", whose reason (it would need discovery by tag) the job items
 removed. The `detached-run` ADR supersedes it explicitly.
-
-## Deferred live checks
-
-### U21, U40 — a deployment outside the account's own prefix and region
-
-Both are fixed in code and unit-tested ([ADR 0004](../adr/0004-runner-image-only-moves-forward.md)).
-Live, they need a second deployment in `us-east-1`: U21 is the setup → `admin image build` → run
-there, U40 a teardown with a pushed extension. `multiple-deployments` makes that a CLI procedure
-(`infra/README.md`, *A second deployment*) and performs both checks in its live run (its tasks 7.x).
-**Still blocked on an IAM grant** (2026-10-05): `baas-admin` is the prefix- and region-exact
-deployer and `lynx` holds no IAM, so no identity in the account may deploy elsewhere. A first
-`baas --deployment <name> admin deployment setup --region us-east-1` prints the policy that
-deployment needs; an identity above the deployer attaches it as customer-managed.
 
 ## Open, not scheduled
 

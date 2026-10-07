@@ -1,6 +1,7 @@
 # ADR 0006 — An account may hold more than one deployment, each named explicitly
 
-- **Status:** Accepted — implemented in `multiple-deployments`; live verification pending (its tasks 7.x)
+- **Status:** Accepted — implemented in `multiple-deployments`, verified live 2026-10-07; the same-region check is deferred
+  (`openspec/changes/QUEUE.md`)
 - **Date accepted:** 2026-10-07
 - **Supersedes:** the "exactly one deployment per account, and the CLI cannot be told otherwise" rule
   (finding A10's fix, `443291f`)

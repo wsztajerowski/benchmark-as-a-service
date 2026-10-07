@@ -1,11 +1,11 @@
 # ADR 0004 — The runner image only moves forward, and its extension is never lost
 
-- **Status:** Accepted — implemented (PR #77, 2026-10-05); U39 verified live, U40's non-empty path
-  pending a second installation
+- **Status:** Accepted — implemented (PR #77, 2026-10-05); U39 verified live; U21 and U40's non-empty
+  path verified live on a second deployment (`multiple-deployments`, 2026-10-07)
 - **Date accepted:** 2026-10-04
 - **Builds on:** `openspec/changes/archive/2026-10-04-custom-runner-image/` (bundled base +
   installation extension + BaaS contract, the parent resolved per region — not repeated here)
-- **Closes findings:** U20, U21 (code; live check deferred), U37, U39, U40
+- **Closes findings:** U20, U21, U37, U39, U40
 
 ## Context
 
@@ -45,5 +45,5 @@ this split:
 - The by-hand second-installation procedure must override `RunnerParentAmiId` outside
   `eu-central-1`: the template's default is the eu-central-1 AMI, which `setup` resolves per region
   but a direct `aws cloudformation deploy` does not (`infra/README.md`).
-- Live verification of U21 and of U40 with a non-empty extension needs an installation outside the
-  account's own prefix and region; see `docs/review/open-findings.md`.
+- U21 and U40 with a non-empty extension were verified live on `wiktor-dev` in `us-east-1`
+  (`openspec/changes/multiple-deployments/verify.md`).
