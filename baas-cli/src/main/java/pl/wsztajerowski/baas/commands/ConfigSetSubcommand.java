@@ -25,8 +25,9 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Option(names = "--aws-profile", description = "AWS CLI profile name.")
-    String awsProfile;
+    @Option(names = "--deployer-profile",
+        description = "AWS CLI profile for `baas admin` commands (deployer credentials).")
+    String deployerProfile;
 
     @Option(names = "--operator-profile",
         description = "AWS CLI profile that assumes BaasCliOperatorRole — used by run/results/config.")
@@ -77,7 +78,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         }
         BaasConfig config = configService().load();
 
-        if (awsProfile != null) config.getAws().setProfile(awsProfile);
+        if (deployerProfile != null) config.getAws().setDeployerProfile(deployerProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
         if (instanceType != null) config.getEc2().setDefaultInstanceType(instanceType);
         if (benchmarkTimeout != null) config.getEc2().setBenchmarkTimeoutSeconds(benchmarkTimeout);

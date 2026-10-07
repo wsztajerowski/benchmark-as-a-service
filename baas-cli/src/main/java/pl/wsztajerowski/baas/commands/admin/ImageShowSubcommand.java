@@ -50,7 +50,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
         String prefix = config.requirePrefix();
 
         // Deployer credentials, consistent with every other `baas admin` subcommand.
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getDeployerProfile());
         String parameterName = config.amiParameterPath();
         var console = Console.of(spec.commandLine().getOut());
 

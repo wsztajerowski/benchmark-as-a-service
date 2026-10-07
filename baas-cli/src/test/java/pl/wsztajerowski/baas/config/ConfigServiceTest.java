@@ -151,6 +151,38 @@ class ConfigServiceTest {
     }
 
     @Test
+    void theDeployerKeyIsRenamedInTheMove() throws Exception {
+        Files.writeString(root.resolve("config.yaml"), """
+            prefix: "baas-123456789012"
+            aws:
+              profile: "baas-admin"
+              operatorProfile: "baas-operator"
+            """);
+
+        BaasConfig config = unnamed().load();
+        String written = Files.readString(root.resolve("deployments").resolve("baas-123456789012.yaml"));
+
+        assertThat(config.getAws().getDeployerProfile()).isEqualTo("baas-admin");
+        assertThat(written).contains("deployerProfile: \"baas-admin\"", "operatorProfile: \"baas-operator\"")
+            .doesNotContain("  profile:");
+    }
+
+    /** A deployment file a reactor build wrote before the rename is read, and saved renamed. */
+    @Test
+    void aDeploymentFileStillCarryingTheOldKeyIsRenamedOnSave() throws Exception {
+        Path file = root.resolve("deployments").resolve("wiktor-dev.yaml");
+        Files.createDirectories(file.getParent());
+        Files.writeString(file, "prefix: \"wiktor-dev\"\naws:\n  profile: \"baas-admin\"\n");
+
+        BaasConfig config = unnamed().load();
+        assertThat(config.getAws().getDeployerProfile()).isEqualTo("baas-admin");
+        assertThat(ConfigService.read(file).unknownKeys()).as("the old key is an alias, not unknown").isEmpty();
+
+        unnamed().save(config);
+        assertThat(Files.readString(file)).contains("deployerProfile: \"baas-admin\"").doesNotContain("  profile:");
+    }
+
+    @Test
     void aFlatFileWithoutAPrefixIsLeftAloneAndIgnored() throws Exception {
         Path flat = root.resolve("config.yaml");
         Files.writeString(flat, "ec2:\n  defaultInstanceType: \"c5.large\"\n");

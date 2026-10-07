@@ -48,6 +48,15 @@ class ConfigSetCommandTest {
     }
 
     @Test
+    void theDeployerProfileIsStoredUnderItsOwnName(@TempDir Path dir) throws Exception {
+        Path file = TestDeployments.write(dir, TestDeployments.DEFAULT);
+
+        assertThat(execute(dir, "config", "set", "--deployer-profile", "baas-admin")).isZero();
+
+        assertThat(Files.readString(file)).contains("deployerProfile: \"baas-admin\"");
+    }
+
+    @Test
     void gitDerivationCanBeTurnedBackOff(@TempDir Path dir) throws Exception {
         TestDeployments.write(dir, TestDeployments.DEFAULT);
         execute(dir, "config", "set", "--git-resolve-project", "true");

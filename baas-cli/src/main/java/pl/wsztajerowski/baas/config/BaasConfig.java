@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.config;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -86,13 +87,19 @@ public class BaasConfig {
     public static class AwsConfig {
         public static final String DEFAULT_REGION = "eu-central-1";
 
-        private String profile;
+        private String deployerProfile;
         private String operatorProfile;
         /** Only what the file says; null when it says nothing. See {@link #resolveRegion()}. */
         private String region;
 
-        public String getProfile() { return profile; }
-        public void setProfile(String profile) { this.profile = profile; }
+        /**
+         * Credential profile for {@code baas admin} — the deployer's, written by {@code admin
+         * deployment setup --deployer-profile}. Read under its old key {@code aws.profile} too, which
+         * files from before the rename carry; the next save writes the new key only.
+         */
+        public String getDeployerProfile() { return deployerProfile; }
+        @JsonAlias("profile")
+        public void setDeployerProfile(String deployerProfile) { this.deployerProfile = deployerProfile; }
 
         public String getOperatorProfile() { return operatorProfile; }
         public void setOperatorProfile(String operatorProfile) { this.operatorProfile = operatorProfile; }
@@ -100,7 +107,7 @@ public class BaasConfig {
         /**
          * Credential profile for day-to-day commands (run/results/config show), which are
          * meant to run under BaasCliOperatorRole. Deliberately does NOT fall back to
-         * {@link #profile} — that field holds the deployer profile written by
+         * {@link #deployerProfile} — that field holds the deployer profile written by
          * `baas admin deployment setup`, and silently reusing it would hand every benchmark job
          * iam:CreateRole and cloudformation:*. A null return means "default credential
          * chain", so AWS_PROFILE still works.

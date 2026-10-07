@@ -77,7 +77,7 @@ public class TeardownCommand implements Callable<Integer> {
      * the image — returning the command's exit code. Overridden by tests, which have no AWS.
      */
     int removeDeployment(BaasConfig config, String resolvedStack) {
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getProfile());
+        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().getDeployerProfile());
 
         // Gate 1: no active jobs
         try (var ec2 = factory.ec2()) {

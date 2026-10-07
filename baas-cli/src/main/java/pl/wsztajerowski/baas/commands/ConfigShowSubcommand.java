@@ -49,8 +49,8 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("Config file: ").append(configFile).append('\n')
             .append("prefix:      ").append(config.getPrefix()).append('\n')
             .append("aws:\n")
-            .append("  profile:                  ").append(config.getAws().getProfile())
-            .append("  (admin deployment setup/teardown)\n")
+            .append("  deployerProfile:          ").append(config.getAws().getDeployerProfile())
+            .append("  (baas admin)\n")
             // Unset here is not cosmetic — it means run/results/config fall through to the default
             // credential chain instead of assuming the operator role, so say what to do about it.
             .append("  operatorProfile:          ")

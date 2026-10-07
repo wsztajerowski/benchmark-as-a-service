@@ -197,7 +197,7 @@ class RunCommandTest {
 
     /**
      * On a laptop with no operator profile the warning is the whole point: `run`/`results` are
-     * meant to run under BaasCliOperatorRole, and falling through to `aws.profile` would silently
+     * meant to run under BaasCliOperatorRole, and falling through to `aws.deployerProfile` would silently
      * use deployer credentials.
      */
     @Test

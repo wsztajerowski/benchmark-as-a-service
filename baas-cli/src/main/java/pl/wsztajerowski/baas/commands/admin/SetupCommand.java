@@ -47,8 +47,9 @@ public class SetupCommand implements Callable<Integer> {
     @Option(names = "--region", description = "AWS region (default: eu-central-1).")
     String region;
 
-    @Option(names = "--aws-profile", description = "AWS CLI profile.")
-    String awsProfile;
+    @Option(names = "--deployer-profile",
+        description = "AWS CLI profile with the deployer policy; stored for every `baas admin` command.")
+    String deployerProfile;
 
     @Option(names = "--use-existing-vpc", description = "Skip VPC/networking creation and use provided IDs.")
     boolean useExistingVpc;
@@ -127,14 +128,14 @@ public class SetupCommand implements Callable<Integer> {
             return 2;
         }
         if (region != null) config.getAws().setRegion(region);
-        if (awsProfile != null) config.getAws().setProfile(awsProfile);
+        if (deployerProfile != null) config.getAws().setDeployerProfile(deployerProfile);
 
         // Recorded in the file: the deployment lives in one region, and the machine that
         // created it should keep addressing that region whatever the environment later says.
         String resolvedRegion = config.getAws().resolveRegion();
         config.getAws().setRegion(resolvedRegion);
 
-        var factory = new AwsClientFactory(resolvedRegion, config.getAws().getProfile());
+        var factory = new AwsClientFactory(resolvedRegion, config.getAws().getDeployerProfile());
 
         String callerArn;
         String accountId;
