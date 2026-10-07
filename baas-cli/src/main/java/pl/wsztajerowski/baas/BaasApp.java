@@ -75,7 +75,7 @@ public class BaasApp implements Runnable {
      */
     /**
      * Every pointer to a concrete deployment is this option — it replaced {@code teardown
-     * --stack-name} and {@code config sync --name}. Never positional. While a machine holds one
+     * --deployment} and {@code config sync --deployment}. Never positional. While a machine holds one
      * deployment's configuration it may only name that one, so a typo cannot aim a command at a
      * different deployment's resources; naming several is the multiple-deployments change's.
      */

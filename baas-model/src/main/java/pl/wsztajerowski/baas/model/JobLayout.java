@@ -49,7 +49,7 @@ public final class JobLayout {
 
     /**
      * Why the instance request failed, for a job that never launched: there is no instance and so
-     * no boot log, and this is what {@code baas download <jobId>} then has to show.
+     * no boot log, and this is what {@code baas jobs download <jobId>} then has to show.
      */
     public static String launchErrorKey(String project, String jobId) {
         return jobPrefix(project, jobId) + "/" + LAUNCH_ERROR_NAME;

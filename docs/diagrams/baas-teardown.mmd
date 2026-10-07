@@ -7,9 +7,9 @@ sequenceDiagram
     participant SSM as AWS SSM
     participant IB as EC2 Image Builder
 
-    Note over User,IB: baas admin teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Deletes the CORE stack, then retires the runner image build-image created outside it.<br/>The CI stack and the results table are untouched.
-    User->>TD: baas admin teardown [--stack-name] [--yes] [--delete-bucket]
-    Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = --stack-name, else the configured prefix (the stack IS the prefix)
+    Note over User,IB: baas admin deployment teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Nothing survives it: empties the bucket, deletes the CORE stack (bucket and results table with it),<br/>then retires the runner image `admin image build` created outside it. The CI stack is untouched.
+    User->>TD: baas admin deployment teardown [--deployment] [--yes]
+    Note over TD: ConfigService.load() from ~/.baas/config.yaml<br/>stack = the configured prefix (the stack IS the prefix) -- a different --deployment was refused already
 
     rect rgb(255, 235, 235)
         Note over TD,EC2: Gate 1 -- never tear down under a live job
@@ -20,14 +20,15 @@ sequenceDiagram
         end
     end
 
+    TD-->>User: warn: the stack, the bucket and the results table, every job and<br/>measurement in them, and the image will be deleted -- none of it recoverable
     opt --yes not set
         Note over TD,User: Gate 2 -- explicit confirmation
         alt no terminal to ask on
             TD-->>User: refuse, pass --yes -- exit 1, nothing deleted (U32)
         end
-        TD->>User: prompt: type the stack name to confirm deletion
+        TD->>User: prompt: type the deployment name to confirm deletion
         User-->>TD: typed input
-        alt input does not match the stack name exactly
+        alt input does not match the deployment name exactly
             TD-->>User: "Aborted. Nothing was deleted." exit 1
         end
     end
@@ -38,16 +39,10 @@ sequenceDiagram
         Note over TD: written with its marker to runner-image-extension.<prefix>.yaml<br/>beside the config file -- the stack holds its only copy (U40).<br/>Cannot read or write it -> exit 1, nothing deleted
     end
 
-    alt --delete-bucket set
-        TD->>S3: listObjectsV2Paginator(bucket)
-        S3-->>TD: object keys (paginated)
-        TD->>S3: deleteObject(key) for each object
-        TD->>S3: deleteBucket(bucket)
-        alt deletion fails
-            Note over TD: warn and CONTINUE -- leaving the stack behind is worse<br/>than leaving the bucket behind, and the bucket is recoverable by hand
-        end
-    else default (bucket retained)
-        Note over TD,S3: the bucket survives -- DeletionPolicy Retain means CloudFormation<br/>will not remove it either
+    Note over TD,S3: CloudFormation will not delete a non-empty bucket, so it is emptied first
+    TD->>S3: list every object version and delete marker, delete them in batches
+    alt emptying fails
+        TD-->>User: error naming the bucket -- exit 1, the stack is NOT deleted
     end
 
     TD->>CF: deleteStack(stackName)
@@ -56,10 +51,10 @@ sequenceDiagram
     loop poll DescribeStacks
         CF-->>TD: status = DELETE_IN_PROGRESS
     end
-    CF-->>TD: status = DELETE_COMPLETE
+    CF-->>TD: status = DELETE_COMPLETE -- the bucket and the results table are gone with it
 
     rect rgb(235, 245, 255)
-        Note over TD,IB: Retire the runner image -- always, AFTER the stack (a failed stack deletion keeps an image to run on).<br/>prefix = the deployment torn down (--stack-name), not this machine's. No step fails the teardown.
+        Note over TD,IB: Retire the runner image -- always, AFTER the stack (a failed stack deletion keeps an image to run on).<br/>prefix = the deployment torn down (--deployment), not this machine's. No step fails the teardown.
         TD->>SSM: getParameter(/<prefix>/runner/ami-id)
         opt pointer present and its AMI still exists
             TD->>EC2: describeImages -- collect snapshot ids
@@ -69,14 +64,10 @@ sequenceDiagram
         TD->>IB: listImages(owner Self, name <prefix>-recipe-runner) + listImageBuildVersions
         TD->>IB: deleteImage(each build version)
         alt everything removed
-            TD-->>User: "Runner image retired ... needs baas admin build-image before baas run"
+            TD-->>User: "Runner image retired ... needs baas admin image build before baas run"
         else something failed
             TD-->>User: warn: each leftover, with the aws command that removes it (exit stays 0)
         end
     end
 
-    opt bucket was retained
-        TD-->>User: warn: a later `baas admin setup` for this deployment will FAIL while<br/>the bucket exists -- its name derives from the ACCOUNT, so this hits whoever<br/>runs it next, not just you. Delete it by hand or re-run with --delete-bucket.
-    end
-    Note over TD: name BOTH retained resources -- a setup that trips over one<br/>and then the other is two rounds of the same opaque error
-    TD-->>User: "S3 bucket retained" (unless --delete-bucket),<br/>"DynamoDB results table retained -- there is no flag to delete it --<br/>benchmark history outlives the stack" and exit 0
+    TD-->>User: exit 0 -- nothing of the deployment is left in the account

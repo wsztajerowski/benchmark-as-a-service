@@ -22,7 +22,7 @@ sequenceDiagram
     SSM-->>RC: amiId, or ParameterNotFound
     RC->>EC2: ec2.describeImages(amiId)
     EC2-->>RC: image + tags (baas-image-version), or InvalidAMIID.NotFound
-    Note over RC: no image -> exit 1 naming `baas admin build-image`.<br/>Checked before any upload, so a missing image costs two API<br/>calls rather than a wasted upload. There is no fallback to<br/>AL2023 + yum.
+    Note over RC: no image -> exit 1 naming `baas admin image build`.<br/>Checked before any upload, so a missing image costs two API<br/>calls rather than a wasted upload. There is no fallback to<br/>AL2023 + yum.
     Note over RC: ONE clock read: jobInstant = Instant.now().<br/>jobId = JobId.generate(jobInstant) -- 20260820T174432812Z-a3f9c21b<br/>resultPath = JobLayout.jobPrefix(project, jobId)<br/>= jobs/<project>/<jobId>.<br/>The same instant travels on as --created-at, so the prefix<br/>name and the stored createdAt cannot disagree.
     RC->>CF: describeStacks(prefix) -- SubnetId, SecurityGroupId, BEFORE any upload<br/>(a missing deployment fails here, having uploaded nothing)
     RC->>S3: s3.putObject(bucket, jobs/<project>/<jobId>/input/benchmark.jar)
@@ -47,7 +47,7 @@ sequenceDiagram
     alt RunInstances fails
         RC->>DDB: UpdateItem status launch-failed + AWS error code (best effort)
         RC->>S3: putObject(jobs/<project>/<jobId>/launch-error.txt) (best effort)
-        RC-->>User: the launch error, exit 1 -- `baas download <jobId>` fetches launch-error.txt
+        RC-->>User: the launch error, exit 1 -- `baas jobs download <jobId>` fetches launch-error.txt
     end
     EC2-->>RC: instanceId
     RC->>DDB: UpdateItem status launched + instanceId -- only while still launching (best effort)
@@ -67,8 +67,8 @@ sequenceDiagram
     RC->>DDB: Query on jobId-index (gsi1pk = jobId), filter attribute_exists(kind)
     Note over DDB: NO exclusion filter on this path -- naming one job by its id is a<br/>request for THAT job. The project sweep still drops<br/>exclude_from_results=true rows server-side.
     DDB-->>RC: one item per measurement
-    RC-->>User: print BENCHMARK | JOB_ID | TYPE | MODE | SCORE | ERROR | UNIT and exit 0<br/>naming the jobId, which is what `baas download <jobId>` takes
+    RC-->>User: print BENCHMARK | JOB_ID | TYPE | MODE | SCORE | ERROR | UNIT and exit 0<br/>naming the jobId, which is what `baas jobs download <jobId>` takes
     opt --format json
         RC-->>User: one object on STDOUT (diagnostics stay on the logger/stderr):<br/>{jobId, project, resultPath, status, exitCode, instanceId}
     end
-    Note over RC,User: The summary prints on the FAILURE path too, with status "failed",<br/>while the command still exits non-zero -- a failed job is precisely<br/>when CI needs the id, to baas download it and surface<br/>cloud-init-output.log. A job that died before being named reports<br/>null fields rather than no output at all.
+    Note over RC,User: The summary prints on the FAILURE path too, with status "failed",<br/>while the command still exits non-zero -- a failed job is precisely<br/>when CI needs the id, to baas jobs download it and surface<br/>cloud-init-output.log. A job that died before being named reports<br/>null fields rather than no output at all.

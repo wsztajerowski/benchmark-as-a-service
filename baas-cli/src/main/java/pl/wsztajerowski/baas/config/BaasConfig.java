@@ -21,7 +21,7 @@ public class BaasConfig {
 
     /**
      * The deployment this machine addresses: {@code baas-<accountId>}, plus {@code -dev} for the
-     * development deployment. Written by {@code baas admin setup} and {@code baas config sync
+     * development deployment. Written by {@code baas admin deployment setup} and {@code baas config sync
      * --name}. No default — a machine that has adopted no deployment must say so rather than
      * silently address one.
      */
@@ -56,8 +56,8 @@ public class BaasConfig {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalStateException("""
                 No deployment is configured on this machine.
-                  Adopt one:  baas config sync --name baas-<accountId>
-                  Create one: baas admin setup""");
+                  Adopt one:  baas config sync --deployment baas-<accountId>
+                  Create one: baas admin deployment setup""");
         }
         return prefix;
     }
@@ -97,7 +97,7 @@ public class BaasConfig {
          * Credential profile for day-to-day commands (run/results/config show), which are
          * meant to run under BaasCliOperatorRole. Deliberately does NOT fall back to
          * {@link #profile} — that field holds the deployer profile written by
-         * `baas admin setup`, and silently reusing it would hand every benchmark job
+         * `baas admin deployment setup`, and silently reusing it would hand every benchmark job
          * iam:CreateRole and cloudformation:*. A null return means "default credential
          * chain", so AWS_PROFILE still works.
          */
@@ -109,9 +109,9 @@ public class BaasConfig {
         /**
          * The region every command uses: the file's {@code aws.region}, else {@code AWS_REGION},
          * else {@value #DEFAULT_REGION}. The file's value is the deployment's own region —
-         * {@code admin setup} writes the one it deployed to, {@code config sync} the one it found
+         * {@code admin deployment setup} writes the one it deployed to, {@code config sync} the one it found
          * the deployment's bucket in — so it wins. The environment and the default matter only
-         * before any deployment is adopted: where {@code admin setup} and
+         * before any deployment is adopted: where {@code admin deployment setup} and
          * {@code admin deployment setup} deploy or render its policy, and where {@code config sync} starts
          * looking (any region finds the bucket).
          *
@@ -161,7 +161,7 @@ public class BaasConfig {
 
     /**
      * Off by default: git is consulted only when the operator opts in, and then only for the
-     * project name — {@code baas run} from the benchmark JAR's repository, {@code baas results}
+     * project name — {@code baas run} from the benchmark JAR's repository, {@code baas results query}
      * from the working directory's. {@code branch} and {@code commit} are never derived.
      */
     public static class GitConfig {

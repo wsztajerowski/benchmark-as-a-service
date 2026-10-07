@@ -215,30 +215,9 @@ public class SetupCommand implements Callable<Integer> {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("ResourceNamePrefix", resolvedPrefix);
         // Networking is sent only when this invocation names it. Sending it unconditionally is
-        // what let a plain `baas admin setup` rebuild a shared deployment's networking; see
+        // what let a plain `baas admin deployment setup` rebuild a shared deployment's networking; see
         // networkingParameters().
         params.putAll(networkingParameters());
-
-        // Bucket names are global and derived from the account, so on a create an existing bucket
-        // of this name means the deployment already exists — in another region. CloudFormation's
-        // own error would never say so.
-        try (var cf = factory.cloudFormation(); var s3 = factory.s3()) {
-            // Derived once, by BaasConfig, like every other consumer. Composing "baas-" here a
-            // second time is how this asked for `baas-baas-<account>-results` — the namespace
-            // lives inside the prefix value now.
-            String bucketName = config.bucket();
-            boolean stackMissing = !new CloudFormationService(cf).stackExists(resolvedPrefix);
-
-            Optional<String> bucketRegion = stackMissing
-                ? new S3UploadService(s3).bucketRegion(bucketName) : Optional.empty();
-            // Only a bucket in another region blocks here: it means the deployment lives there.
-            // Nothing is retained by a teardown any more, so a same-region leftover is not expected.
-            if (bucketRegion.isPresent() && !bucketRegion.get().equals(config.getAws().resolveRegion())) {
-                logger.error(bucketBlocksSetup(bucketName, resolvedPrefix, bucketRegion.get(),
-                    config.getAws().resolveRegion()));
-                return 1;
-            }
-        }
 
         boolean created;
         try (var cf = factory.cloudFormation()) {
@@ -255,7 +234,7 @@ public class SetupCommand implements Callable<Integer> {
                 // a setup run for an unrelated reason cannot silently revoke CI's access. Same
                 // mechanism, and the same failure, as the `UseExistingVpc` case its Javadoc names.
                 params.putAll(federationParameters());
-                // The image is `baas admin build-image`'s to change: everything it deployed —
+                // The image is `baas admin image build`'s to change: everything it deployed —
                 // base, parent, extension — is carried forward, so a plain setup never reverts an
                 // image or drops an extension. Only parameters the stack lacks are sent, which is
                 // how a deployment from before a parameter existed gets a real value for it.
@@ -268,7 +247,7 @@ public class SetupCommand implements Callable<Integer> {
                 // invocation named, or empty when it named none. Carry-forward governs updates
                 // only.
                 params.putAll(federationParametersForCreate());
-                // The same plan `baas admin build-image` submits. Letting the template's
+                // The same plan `baas admin image build` submits. Letting the template's
                 // placeholder defaults stand would register a no-op component at a version, and
                 // Image Builder would then refuse the real one at that same version —
                 // immutability, hit from a direction nobody would think to look.
@@ -349,10 +328,10 @@ public class SetupCommand implements Callable<Integer> {
             Files.writeString(file, RunnerImageExtension.withMarker(""));
             logger.info("""
                 Runner-image extension starter written to {}
-                  Edit it, then: baas admin build-image --extension {}""", file, file);
+                  Edit it, then: baas admin image build --extension {}""", file, file);
         } catch (IOException e) {
             // A convenience, not part of the deployment: the pull prints the same document.
-            logger.warn("Could not write {}: {}. `baas admin image --extension` prints the same starter.",
+            logger.warn("Could not write {}: {}. `baas admin image show --extension` prints the same starter.",
                 file, e.getMessage());
         }
     }
@@ -379,7 +358,7 @@ public class SetupCommand implements Callable<Integer> {
                    baas config set --operator-profile <profile-name>
                  Until you do, `baas run` uses the default credential chain, not this role.
             Next: build the runner image.
-                  baas admin build-image
+                  baas admin image build
                 Takes ~15 minutes and publishes an AMI to /%s/runner/ami-id.
                 `baas run` fails until it exists — there is no boot-time install path."""
             .formatted(operatorRoleArn.isEmpty() ? "(no OperatorRoleArn output)" : operatorRoleArn, prefix);
@@ -414,7 +393,7 @@ public class SetupCommand implements Callable<Integer> {
      * <p>A create cannot use {@code UsePreviousValue} — CloudFormation rejects it for a parameter
      * with no previous value — so it has to send explicit values for all three. This used to send
      * them unconditionally <em>empty</em>, which discarded the options the caller had just typed:
-     * {@code baas admin setup --github-org … --oidc-provider-arn …} against a fresh stack reported
+     * {@code baas admin deployment setup --github-org … --oidc-provider-arn …} against a fresh stack reported
      * success and deployed an operator role with no federated principal, so CI could not assume
      * it. The bug was invisible for as long as every federated deployment happened to have been
      * federated by an update rather than a create.

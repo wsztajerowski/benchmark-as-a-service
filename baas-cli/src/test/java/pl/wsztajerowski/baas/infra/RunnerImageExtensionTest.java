@@ -135,7 +135,7 @@ class RunnerImageExtensionTest {
     void aPullOfNothingPrintsTheStarterMarkedNone() {
         assertThat(RunnerImageExtension.withMarker(""))
             .startsWith("# baas-extension-base: none\n")
-            .contains("baas admin build-image --extension")
+            .contains("baas admin image build --extension")
             .contains("Never put a credential here");
     }
 
@@ -170,7 +170,7 @@ class RunnerImageExtensionTest {
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining(deployedHash)
             .hasMessageContaining("was pulled from 3f9a1c2e")
-            .hasMessageContaining("baas admin image --extension");
+            .hasMessageContaining("baas admin image show --extension");
     }
 
     @Test

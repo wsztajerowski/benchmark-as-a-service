@@ -49,7 +49,7 @@ class CloudFormationServiceTest {
     }
 
     /**
-     * `baas admin setup` sends every existing stack through updateStackParameters, so a first create
+     * `baas admin deployment setup` sends every existing stack through updateStackParameters, so a first create
      * that rolled back has to be recognised there, before anything is submitted.
      */
     @Test
@@ -60,7 +60,7 @@ class CloudFormationServiceTest {
             .updateStackParameters("baas-123456789012", "{}", Map.of("RunnerImageVersion", "1.0.0")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("ROLLBACK_COMPLETE")
-            .hasMessageContaining("baas admin teardown --stack-name baas-123456789012");
+            .hasMessageContaining("baas admin deployment teardown --deployment baas-123456789012");
         assertThat(cf.updateSubmitted).isFalse();
     }
 }

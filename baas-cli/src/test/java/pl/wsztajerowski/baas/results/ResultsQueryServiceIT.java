@@ -140,7 +140,7 @@ class ResultsQueryServiceIT {
      * Exclusion is a property of a project sweep, not of every query: naming a job by its id is a
      * request for that job. Without this the project's own CI self-test — which tags itself
      * excluded because it measures fixture code — is invisible to every assertion surface but
-     * {@code baas download}.
+     * {@code baas jobs download}.
      */
     @Test
     void anExplicitJobLookupReturnsAnExcludedJob() {
@@ -190,7 +190,7 @@ class ResultsQueryServiceIT {
 
     /**
      * The other half of the new contract: the sweep and the filters layered on it still drop an
-     * excluded job. `baas results --tag` filters client-side over queryProject, so the row must
+     * excluded job. `baas results query --tag` filters client-side over queryProject, so the row must
      * already be gone by the time the tag filter runs.
      */
     @Test
@@ -207,7 +207,7 @@ class ResultsQueryServiceIT {
             .isEqualTo("com.example.Bench.kept");
     }
 
-    /** {@code --all-jobs}: the sweep keeps excluded rows, and the request still validates. */
+    /** {@code --show-excluded}: the sweep keeps excluded rows, and the request still validates. */
     @Test
     void aSweepIncludingExcludedRowsReturnsThem() {
         put(measurement("lynx-journal", "req-1", "kept", Map.of()));
@@ -287,7 +287,7 @@ class ResultsQueryServiceIT {
 
         assertThat(service.scanAllProjects(false)).hasSize(1);
         assertThat(service.scanAllProjects(true))
-            .as("--all-jobs widens exclusion, never the item kind")
+            .as("--show-excluded widens exclusion, never the item kind")
             .hasSize(1);
     }
 

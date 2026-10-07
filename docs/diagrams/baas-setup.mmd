@@ -7,11 +7,10 @@ sequenceDiagram
     participant S3 as AWS S3
     participant CFSvc as CloudFormationService
     participant CF as AWS CloudFormation
-    participant DDB as AWS DynamoDB
     participant FS as Local Filesystem
 
-    Note over User,FS: baas admin setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas admin setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    Note over User,FS: baas admin deployment setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
+    User->>picocli: baas admin deployment setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
     picocli->>SC: parse and bind options into fields
     Note over SC: validate federation and networking options before anything is loaded --<br/>a partial federation set, or --vpc-id/--subnet-id/--sg-id without<br/>--use-existing-vpc (or the flag without all three) -> exit 2 (U34)
     SC->>FS: ConfigService.load()
@@ -28,22 +27,10 @@ sequenceDiagram
     Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second deployment
     SC->>IAM: SimulatePrincipalPolicy(critical actions) -- opportunistic preflight
     alt denied
-        SC-->>User: name the denied actions + print the rendered deployer policy, exit 1
+        SC-->>User: stderr names the denied actions, STDOUT holds the rendered deployer<br/>policy (setup > policy.json hands it over) -- exit 1, nothing created
     end
     SC->>FS: load /templates/cf-template-core.yaml from the classpath
     FS-->>SC: template body
-
-    rect rgb(255, 244, 230)
-        Note over SC,DDB: Collision pre-check. The bucket AND the results table are both<br/>DeletionPolicy Retain, so a previous teardown can leave either behind,<br/>and CloudFormation would then fail with an opaque error naming neither.<br/>Both are checked: fixing only the bucket then fails again on the table.
-        SC->>CF: describeStacks(stackName) -- stackExists?
-        SC->>S3: headBucket(bucketName) -- bucketRegion? (this region, by now)
-        SC->>DDB: describeTable(tableName) -- tableExists?
-        alt stack absent BUT bucket present
-            SC-->>User: explain the retained bucket, print recovery commands, exit 1
-        else stack absent BUT table present
-            SC-->>User: explain the retained table, print recovery commands, exit 1
-        end
-    end
 
     SC->>CF: describeStacks(stackName) -- exists?
     alt stack exists (update)
@@ -51,7 +38,7 @@ sequenceDiagram
         Note over SC: image parameters: only those the deployed stack lacks.<br/>Base, parent and extension are carried forward, so a plain<br/>setup never reverts an image or drops an extension
         SC->>CFSvc: updateStackParameters(stack, template, changed params)
         alt status ROLLBACK_COMPLETE
-            CFSvc-->>User: refuse -- delete it first with<br/>baas admin teardown --stack-name X --yes
+            CFSvc-->>User: refuse -- delete it first with<br/>baas admin deployment teardown --deployment X --yes
         else updatable
             CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
             alt nothing changed
@@ -73,7 +60,7 @@ sequenceDiagram
     Note over SC,FS: nothing derivable or resolvable is stored
 
     alt created
-        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>Next: baas admin build-image (~15 min)
+        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>Next: baas admin image build (~15 min)
     else updated
         SC-->>User: "Deployment <prefix> is deployed. Operator role: <arn>"
     end

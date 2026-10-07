@@ -13,7 +13,7 @@ import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 /**
- * The {@code baas results} table, also printed by {@code baas run} after a job. Command payload,
+ * The {@code baas results query} table, also printed by {@code baas run} after a job. Command payload,
  * so it goes to the {@link Console} rather than the logger — see {@code ResultsQuerySubcommand#printJson}.
  */
 public final class ResultsTable {
@@ -63,7 +63,7 @@ public final class ResultsTable {
             String shortName = r.benchmarkName().contains(".")
                 ? r.benchmarkName().substring(r.benchmarkName().lastIndexOf('.') + 1)
                 : r.benchmarkName();
-            // An excluded row is shown only under --all-jobs, and faint so it reads as set aside.
+            // An excluded row is shown only under --show-excluded, and faint so it reads as set aside.
             UnaryOperator<String> rowStyle = r.excluded() ? console::faint : UnaryOperator.identity();
             var cells = new ArrayList<Cell>();
             if (withProject) {

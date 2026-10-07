@@ -86,7 +86,7 @@ class BaasConfigYamlTest {
         assertThat(config.getPrefix()).isNull();
         assertThatThrownBy(config::resultsTable)
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("baas config sync --name");
+            .hasMessageContaining("baas config sync --deployment");
     }
 
     @Test

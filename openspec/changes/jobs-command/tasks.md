@@ -168,27 +168,49 @@
 
 ## 12. Grep gate
 
-- [ ] 12.1 No live code, script, workflow or doc calls a removed spelling:
+- [x] 12.1 No live code, script, workflow or doc calls a removed spelling:
       `git grep -nP 'baas (download|env|results( |$)(?!query))|admin (setup|teardown|build-image|deployer-policy)|--stack-name|sync --name|--all-jobs|--group-by|--for-account|--delete-bucket'`
       outside archived changes and ADRs returns nothing, or each remaining hit is listed here with why.
+      *Done 2026-10-07* (ERE, since this git lacks PCRE; `baas results query` filtered out after).
+      Remaining hits, each kept on purpose: `CommandTreeTest`, `DeploymentOptionTest`,
+      `OptionValidationTest`, `TeardownNoticeTest` pin the removed spellings as unknown;
+      `infra/README.md`'s two `--stack-name` are the AWS CLI's own flag; `infra/runner-image.yaml`'s
+      comments name `build-image`/`env diff` but any edit there changes the base component and needs an
+      `imageVersion` bump, so they wait for the next base bump; `openspec/specs/` changes at archive.
+      The mechanical pass once rewrote an `aws cloudformation … --stack-name` too — caught and restored.
 
 ## 13. CI, docs, findings
 
-- [ ] 13.1 `e2e-cloud-test.yml`: `results query`, `--show-excluded`, `jobs download`. Verify with
+- [x] 13.1 `e2e-cloud-test.yml`: `results query`, `--show-excluded`, `jobs download`. Verify with
       `actionlint` or a YAML load and the 12.1 grep.
-- [ ] 13.2 CLAUDE.md: the command names everywhere; the retention invariants rewritten ("nothing
+      *Done:* `results query` (`--limit 0` for the sweep, `--show-excluded`), `jobs download` by id
+      (also on the failure path, which used the result path), `config sync --deployment`. Validated
+      with a YAML load (Ruby; no actionlint or PyYAML on this machine).
+- [x] 13.2 CLAUDE.md: the command names everywhere; the retention invariants rewritten ("nothing
       survives a teardown"); the setup/teardown pre-check paragraphs; the S3 layout table's
       `environment.json` row (groups, schema 6); the policy paragraphs (setup prints it). Verify with
       the 12.1 grep over CLAUDE.md and a read of each touched section.
-- [ ] 13.3 README.md and infra/README.md (attach steps around setup's output; command names). Verify
+      *Done:* mechanical command renames plus the rewritten retention, policy, `environment.json`,
+      `--best-per` and command-tree paragraphs; a new paragraph records the alias rule.
+- [x] 13.3 README.md and infra/README.md (attach steps around setup's output; command names). Verify
       with the 12.1 grep.
-- [ ] 13.4 `docs/diagrams/*.mmd`: command names; `baas-download-env-diff.mmd` becomes
+      *Done:* README (setup prints the policy, `query` table, `jobs diff` example, teardown) and
+      infra/README (no Retain, setup renders the policy, the by-hand dev deployment fills the template
+      with `sed` until `multiple-deployments`).
+- [x] 13.4 `docs/diagrams/*.mmd`: command names; `baas-jobs-show-diff.mmd` becomes
       `baas-jobs-show-diff.mmd`; teardown and setup sequences. Render every edited file with `mmdc` and
       look at each PNG.
-- [ ] 13.5 `docs/review/open-findings.md`: delete P11 and U28 (closed); delete U12 (no retained table);
+      *Done:* 13 diagrams edited, `baas-download-env-diff.mmd` → `baas-jobs-show-diff.mmd` (now with
+      `jobs show`). All render; four first failed on `;` in sequence text and a stray `end`, fixed.
+      Looked at: jobs-show-diff, teardown, setup, lifecycle, states-deployment, states-workflow; the
+      rest were label edits checked by render.
+- [x] 13.5 `docs/review/open-findings.md`: delete P11 and U28 (closed); delete U12 (no retained table);
       reduce U2 to exporting before teardown; record the best-per-group defect as fixed by this change
       in the closing note. `QUEUE.md`: `jobs-command` done, `multiple-deployments` next. Verify by
       reading both files.
+      *Done:* P11, U28 and U12 deleted; U2 reduced to exporting before a teardown; QUEUE has
+      `jobs-command` then `multiple-deployments`. The best-per-group defect was never filed — it is
+      recorded in `verify.md` as found and fixed here.
 
 ## 14. Deployment and verification (manual — no automated test covers the `baas run` path)
 

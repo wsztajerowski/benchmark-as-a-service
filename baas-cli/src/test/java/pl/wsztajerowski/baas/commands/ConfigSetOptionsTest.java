@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ConfigSetOptionsTest {
 
     /**
-     * Adopting a deployment goes through `config sync --name`, which checks the stack exists.
+     * Adopting a deployment goes through `config sync --deployment`, which checks the stack exists.
      * `config set --prefix` wrote the same field unchecked.
      */
     @Test

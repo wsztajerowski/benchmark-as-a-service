@@ -32,8 +32,8 @@ import java.util.concurrent.Callable;
     footer = {
         "",
         "Takes ~15 minutes. Without --extension the deployed extension is kept as it is.",
-        "To change it:  baas admin image --extension > ext.yaml, edit, then",
-        "               baas admin build-image --extension ext.yaml",
+        "To change it:  baas admin image show --extension > ext.yaml, edit, then",
+        "               baas admin image build --extension ext.yaml",
         "A file pulled before someone else pushed is refused rather than allowed to discard",
         "their extension."
     }
@@ -115,7 +115,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
 
             var cloudFormation = new CloudFormationService(cf);
             if (!cloudFormation.stackExists(prefix)) {
-                logger.error("Stack {} does not exist. Run `baas admin setup` first.", prefix);
+                logger.error("Stack {} does not exist. Run `baas admin deployment setup` first.", prefix);
                 return 1;
             }
             Map<String, String> deployed = cloudFormation.getStackParameters(prefix);
@@ -160,7 +160,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
 
             String pipelineArn = cloudFormation.getStackOutputs(prefix).get("RunnerImagePipelineArn");
             if (pipelineArn == null || pipelineArn.isEmpty()) {
-                logger.error("Stack {} has no RunnerImagePipelineArn output. Run `baas admin setup` first.",
+                logger.error("Stack {} has no RunnerImagePipelineArn output. Run `baas admin deployment setup` first.",
                     prefix);
                 return 1;
             }

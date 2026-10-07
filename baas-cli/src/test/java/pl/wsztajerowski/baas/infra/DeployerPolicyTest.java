@@ -24,10 +24,10 @@ class DeployerPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-        // baas admin build-image publishes the runner AMI pointer. The mongo SecureString
+        // baas admin image build publishes the runner AMI pointer. The mongo SecureString
         // this used to cover is gone; the action survives for a different resource.
         "ssm:PutParameter",
-        // baas admin teardown --delete-bucket empties the bucket, then CloudFormation removes it
+        // baas admin deployment teardown empties the bucket, then CloudFormation removes it
         "s3:ListBucket",
         "s3:ListBucketVersions",
         "s3:DeleteObject",
@@ -145,7 +145,7 @@ class DeployerPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-        // `baas admin build-image` registers the recipe, then runs the pipeline
+        // `baas admin image build` registers the recipe, then runs the pipeline
         "imagebuilder:CreateComponent",
         "imagebuilder:CreateImageRecipe",
         "imagebuilder:CreateInfrastructureConfiguration",

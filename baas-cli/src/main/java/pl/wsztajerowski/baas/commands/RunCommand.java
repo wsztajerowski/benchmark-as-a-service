@@ -70,7 +70,7 @@ import java.util.regex.Pattern;
         "  baas config set --git-resolve-project true",
         "",
         "Measurements and the job's status go to the DynamoDB results table; see",
-        "them with baas results and baas jobs list. S3 receives process output,",
+        "them with baas results query and baas jobs list. S3 receives process output,",
         "logs, profiler artifacts and the verbatim result JSON. An unresolvable",
         "table fails before anything is launched."
     },
@@ -178,9 +178,9 @@ public class RunCommand implements Callable<Integer> {
         }
         if (!missing.isEmpty()) {
             throw new IllegalStateException(
-                "Stack %s did not report %s. Run `baas admin setup`, or point this machine at a "
+                "Stack %s did not report %s. Run `baas admin deployment setup`, or point this machine at a "
                     .formatted(config.stackName(), String.join(", ", missing))
-                    + "existing deployment with `baas config sync --name <prefix>`.");
+                    + "existing deployment with `baas config sync --deployment <prefix>`.");
         }
         return outputs;
     }
@@ -359,7 +359,7 @@ public class RunCommand implements Callable<Integer> {
             if (resolved.isEmpty()) {
                 logger.error("""
                         No runner image is published for this account ({}).
-                          Build one:  baas admin build-image
+                          Build one:  baas admin image build
                         Nothing was launched — the runner boots from a purpose-built AMI and \
                         there is no boot-time install path.""",
                     config.getAws().resolveRegion());
@@ -448,7 +448,7 @@ public class RunCommand implements Callable<Integer> {
             logger.error("""
                 Could not record run {} in the results table, so nothing was launched: {}
                 If the operator role lacks dynamodb:UpdateItem, the deployment predates run \
-                tracking — update it with `baas admin setup`.""", jobId, e.getMessage());
+                tracking — update it with `baas admin deployment setup`.""", jobId, e.getMessage());
             return 1;
         }
         session = current;
@@ -475,7 +475,7 @@ public class RunCommand implements Callable<Integer> {
         // 8. Launch. It carries only the fixed tags (see Ec2ProvisioningService#instanceTags):
         //    every caller --tag, and the observed imageVersion/instanceType, reach the stored
         //    result through the runner's own --tag options in user-data, which is the only place
-        //    `baas results` reads. See
+        //    `baas results query` reads. See
         //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
         logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
         String instanceId;
@@ -506,7 +506,7 @@ public class RunCommand implements Callable<Integer> {
 
     /**
      * A launch that failed leaves no instance and so no boot log. What there is to keep is in the
-     * exception and in the request, so both go to the job's prefix, where {@code baas download}
+     * exception and in the request, so both go to the job's prefix, where {@code baas jobs download}
      * finds them, and the error code goes on the job item, where {@code baas jobs list} shows it.
      * Both are best effort: the launch error is reported whether or not they land, since a launch
      * often fails for the same reason they would — the network or the credentials.
@@ -539,7 +539,7 @@ public class RunCommand implements Callable<Integer> {
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).putText(config.bucket(),
                 JobLayout.launchErrorKey(job.project(), job.jobId()), report);
-            logger.info("Launch error recorded: baas download {}", job.jobId());
+            logger.info("Launch error recorded: baas jobs download {}", job.jobId());
         } catch (RuntimeException e) {
             logger.warn("Could not upload {} ({})", JobLayout.LAUNCH_ERROR_NAME, e.getMessage());
         }
@@ -583,7 +583,7 @@ public class RunCommand implements Callable<Integer> {
             logger.error("Job {} was cancelled.", jobId);
         } else if (JobSession.Outcome.STATUS_LOST.equals(status)) {
             logger.error("Instance {} terminated without recording its final status, but the job "
-                + "stored measurements: baas results --job-id {}\nRunner log: {}",
+                + "stored measurements: baas results query --job-id {}\nRunner log: {}",
                 instanceId, jobId, logPath);
         } else {
             logger.error("Instance {} terminated without recording a final status — the runner "
@@ -645,7 +645,7 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * Reads the same path {@code baas results} does, so the post-job summary can never disagree
+     * Reads the same path {@code baas results query} does, so the post-job summary can never disagree
      * with what a later query reports.
      *
      * <p>A benchmark that has already run and terminated must not be reported as failed over a
@@ -661,7 +661,7 @@ public class RunCommand implements Callable<Integer> {
         }
     }
 
-    /** Shared with {@code baas results}, which must resolve the same partition. */
+    /** Shared with {@code baas results query}, which must resolve the same partition. */
     static String projectFromToplevel(String toplevel) {
         return GitProject.fromToplevel(toplevel);
     }
@@ -812,7 +812,7 @@ public class RunCommand implements Callable<Integer> {
      * value misleads nobody about the measurement environment — which is the only thing
      * {@link #RESERVED_TAG_KEYS} exists to protect. Deriving it rather than leaving it to a
      * convention tag is what makes absence meaningful: a key only present when someone types it
-     * would make {@code --group-by source} unreliable in exactly the direction that matters.
+     * would make {@code --best-per source} unreliable in exactly the direction that matters.
      *
      * <p>{@code CI} is the cross-vendor convention and GitHub Actions sets both it and
      * {@code GITHUB_ACTIONS}; {@code CI=false} is honoured because some environments set it that
@@ -835,18 +835,18 @@ public class RunCommand implements Callable<Integer> {
      *
      * <p>The rows are not folded into the summary object. They are a separate concern with a
      * separate command — the object carries the job id precisely so
-     * {@code baas results --job-id} can fetch them.
+     * {@code baas results query --job-id} can fetch them.
      *
      * @param printTable passed as a function so this is testable without an AWS client
      */
     void reportJobResults(List<ResultRow> rows, String jobId, Consumer<List<ResultRow>> printTable) {
         if (jsonSummary()) {
-            logger.info("Job {} stored {} measurement(s) — baas results --job-id {}",
+            logger.info("Job {} stored {} measurement(s) — baas results query --job-id {}",
                 jobId, rows.size(), jobId);
             return;
         }
-        // Named, not just shown: this is the value `baas download <jobId>` takes.
-        logger.info("Results for job {} (baas download {}):", jobId, jobId);
+        // Named, not just shown: this is the value `baas jobs download <jobId>` takes.
+        logger.info("Results for job {} (baas jobs download {}):", jobId, jobId);
         printTable.accept(rows);
     }
 
@@ -861,7 +861,7 @@ public class RunCommand implements Callable<Integer> {
      * rest — or {@code vanished}/{@code status-lost}, or {@code null} before a job was recorded.
      *
      * <p>Printed on both outcomes. A failed job is precisely when a continuous-integration job
-     * needs the id: to {@code baas download} it and surface {@code cloud-init-output.log}, the
+     * needs the id: to {@code baas jobs download} it and surface {@code cloud-init-output.log}, the
      * documented place to start when a job dies before producing output. The command's exit code
      * is unchanged by this — it still exits non-zero when the job failed.
      *

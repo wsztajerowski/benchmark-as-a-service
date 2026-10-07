@@ -86,7 +86,7 @@ public record ResultRow(
         return tags.get(key);
     }
 
-    /** Tagged {@code exclude_from_results=true}: hidden from sweeps, shown faint under {@code --all-jobs}. */
+    /** Tagged {@code exclude_from_results=true}: hidden from sweeps, shown faint under {@code --show-excluded}. */
     public boolean excluded() {
         return ResultsQueryService.EXCLUDED_VALUE.equals(tags.get(ResultsQueryService.EXCLUDE_FROM_RESULTS));
     }

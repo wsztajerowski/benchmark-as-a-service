@@ -118,7 +118,7 @@ class RunnerImageExtensionCommandsTest {
         assertThat(Files.readString(file)).isEqualTo(edited);
     }
 
-    // ─── `baas admin image` ──────────────────────────────────────────────────────
+    // ─── `baas admin image show` ──────────────────────────────────────────────────────
 
     @Test
     void theReportNamesTheExtensionItsSizeAndItsSteps() {

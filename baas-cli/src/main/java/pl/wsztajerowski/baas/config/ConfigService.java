@@ -68,7 +68,7 @@ public class ConfigService {
         return loadOrEmpty();
     }
 
-    /** For commands that create configuration: {@code config sync}, {@code config set}, {@code admin setup}. */
+    /** For commands that create configuration: {@code config sync}, {@code config set}, {@code admin deployment setup}. */
     public BaasConfig loadOrEmpty() {
         if (!Files.exists(path)) {
             return new BaasConfig();

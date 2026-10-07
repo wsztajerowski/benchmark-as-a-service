@@ -170,7 +170,7 @@ public class ImageBuilderService {
             // stripTrailing, not equals: Image Builder drops the trailing newline when it stores a
             // component document, and renderComponent() ends with one because its template is a
             // Java text block. Comparing exactly reported "content differs" for content that was
-            // identical, and blocked every build on a fresh deployment — `baas admin setup`
+            // identical, and blocked every build on a fresh deployment — `baas admin deployment setup`
             // registers the component, so `build-image` always finds a stored copy to compare
             // against. Only trailing whitespace is forgiven; a real edit still fails.
             if (!registered.stripTrailing().equals(renderedComponent.stripTrailing())) {
@@ -223,7 +223,7 @@ public class ImageBuilderService {
 
     /**
      * The AMI's tags are set by the stack's DistributionConfiguration, so this is a backstop for an
-     * image built before those tags existed. Without them {@code baas admin image} has no identity
+     * image built before those tags existed. Without them {@code baas admin image show} has no identity
      * to report and {@code baas run} has no {@code imageVersion} to tag results with.
      */
     void ensureIdentityTags(String amiId, String imageVersion, String parentAmiId) {

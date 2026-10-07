@@ -21,7 +21,7 @@ public record StoredMeasurement(
     /**
      * JMH's resolved {@code @Param} values, empty for a benchmark without any. Part of what a
      * measurement <em>is</em>, not a tag: a sweep's variants share class, method, mode and job, and
-     * only these tell them apart — in the sort key and in {@code baas results}' grouping alike.
+     * only these tell them apart — in the sort key and in {@code baas results query}' grouping alike.
      */
     Map<String, String> params,
     Double score,

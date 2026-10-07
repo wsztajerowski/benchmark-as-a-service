@@ -61,7 +61,7 @@ public class RunnerImageRenderer {
     /**
      * The base component document. Its bytes are the base's identity as far as Image Builder is
      * concerned: a component version is immutable, so re-registering the same version with a
-     * different document is rejected, which is what {@code baas admin build-image} preflights.
+     * different document is rejected, which is what {@code baas admin image build} preflights.
      *
      * <p>It deliberately carries nothing that depends on the extension — not even the image label —
      * so an extension edit never changes the base and never demands a hand-bumped version.

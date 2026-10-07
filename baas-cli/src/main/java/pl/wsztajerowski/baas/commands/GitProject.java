@@ -5,7 +5,7 @@ import java.nio.file.Path;
 /**
  * The project name, derived once for every command that needs it.
  *
- * <p>{@code baas run} writes to the partition this names and {@code baas results} reads from it, so
+ * <p>{@code baas run} writes to the partition this names and {@code baas results query} reads from it, so
  * the two deriving it even slightly differently would send reads at a partition nothing was ever
  * written to — and that presents as "no results", not as an error.
  */
@@ -27,7 +27,7 @@ final class GitProject {
      * {@code --git-common-dir} resolves to the main repository's {@code .git} in a linked worktree
      * and is a no-op for an ordinary clone. {@code --show-toplevel} returns the worktree directory,
      * which attributed a job launched from {@code .claude/worktrees/ddb-phase3} to project
-     * {@code ddb-phase3} — a partition {@code baas results} would never look in.
+     * {@code ddb-phase3} — a partition {@code baas results query} would never look in.
      */
     static String fromCommonDir(String commonDir) {
         if (commonDir == null || commonDir.isBlank()) return null;

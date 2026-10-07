@@ -11,9 +11,9 @@ sequenceDiagram
 
     rect rgb(240, 240, 255)
         Note over IA,AWS: 0. One-time IAM
-        Adm->>CLI: baas admin deployer-policy [--region] [--for-account]
-        CLI->>AWS: sts:GetCallerIdentity (skipped with --for-account)
-        CLI-->>Adm: rendered policy JSON on stdout
+        Adm->>CLI: baas admin deployment setup [--region]
+        CLI->>AWS: sts:GetCallerIdentity, SimulatePrincipalPolicy
+        CLI-->>Adm: rights missing -- the rendered policy JSON on stdout, exit 1, nothing created
         Adm->>IA: hand over the JSON
         IA->>AWS: [attach as customer-managed policy]
         opt CI federation wanted
@@ -23,22 +23,22 @@ sequenceDiagram
 
     rect rgb(240, 255, 240)
         Note over IA,AWS: 1. Install
-        Adm->>CLI: baas admin setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
-        CLI->>AWS: preflight (SimulatePrincipalPolicy), retained bucket/table check
+        Adm->>CLI: baas admin deployment setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
+        CLI->>AWS: bucket-region check, then the policy step (SimulatePrincipalPolicy)
         CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
         CLI->>CFG: write prefix, aws.profile, aws.region
         CLI-->>Adm: OperatorRole ARN + "Nobody can assume it yet" + next: build-image
-        Adm->>CLI: baas admin build-image
+        Adm->>CLI: baas admin image build
         CLI->>AWS: preflight version, UpdateStack (image params), StartImagePipelineExecution
         CLI->>AWS: wait (~15 min), tag AMI, PutParameter /<prefix>/runner/ami-id, retire previous AMI
-        Adm->>CLI: baas admin image
+        Adm->>CLI: baas admin image show
         CLI-->>Adm: version, AMI, parent, built-at, pointer
     end
 
     rect rgb(255, 250, 235)
         Note over IA,AWS: 2. Onboard an operator machine
         Op->>AWS: [grant sts:AssumeRole on <prefix>-role-operator -- add role_arn profile to ~/.aws/config]
-        Op->>CLI: baas config sync --name baas-<accountId>
+        Op->>CLI: baas config sync --deployment baas-<accountId>
         CLI->>AWS: DescribeStacks (proves it exists)
         CLI->>CFG: write prefix
         Op->>CLI: baas config set --operator-profile p [--region] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--git-resolve-project]
@@ -50,17 +50,16 @@ sequenceDiagram
         Op->>CLI: baas run --benchmark-jar b.jar --project p [--tag k=v]… jmh -- Bench -f 1
         CLI->>AWS: upload, reserve the job item, RunInstances, poll the job item
         CLI-->>Op: job id + result table
-        Op->>CLI: baas results [--project p | --all-projects | --job-id id]
-        Op->>CLI: baas download <jobId>
-        Op->>CLI: baas env diff <jobIdA> <jobIdB>
+        Op->>CLI: baas results query [--project p | --all-projects | --job-id id]
+        Op->>CLI: baas jobs download <jobId>
+        Op->>CLI: baas jobs diff <jobIdA> <jobIdB>
     end
 
     rect rgb(245, 245, 245)
         Note over IA,AWS: 4. Retire
-        Adm->>CLI: baas admin teardown [--delete-bucket] [--yes]
-        CLI->>AWS: refuse if a runner is pending/running -- DeleteStack, wait -- then retire the image<br/>(pointer, AMI, snapshot, Image Builder records)
-        CLI-->>Adm: warns: table retained (bucket too, without --delete-bucket)
-        Note over Adm,AWS: Left behind: the results table (always) and the bucket (without --delete-bucket).<br/>Both are deleted by a future teardown, behind a second confirmation, once baas admin export exists
-        Adm->>AWS: [aws dynamodb delete-table, to remove the table today]
-        Note over CFG: config.yaml still names the prefix: results keeps reading the retained table,<br/>download and env diff fail once the bucket is gone, run stops at the image lookup:<br/>no runner image is published, and nothing was uploaded
+        Adm->>CLI: baas admin deployment teardown [--yes]
+        CLI-->>Adm: warns: the bucket, the results table and the image go, none recoverable
+        CLI->>AWS: refuse if a runner is pending/running -- empty the bucket -- DeleteStack, wait<br/>(bucket and table go with it) -- then retire the image (pointer, AMI, snapshot, Image Builder records)
+        Note over Adm,AWS: Nothing is left behind. Data leaves before a teardown through a future baas admin export.
+        Note over CFG: config.yaml still names the prefix, but every command against it now fails:<br/>the stack, the bucket and the table are gone
     end

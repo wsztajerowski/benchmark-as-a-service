@@ -11,15 +11,15 @@ C4Container
 
     System_Boundary(install, "Deployment <prefix> = baas-<accountId>, one per account") {
         Container(stack, "Core stack", "CloudFormation", "Networking, bucket, table, RunnerRole, OperatorRole, Image Builder pipeline")
-        ContainerDb(bucket, "Job bucket <prefix>", "S3, Retain, versioning suspended", "jobs/<project>/<jobId>/…, releases/<v>/benchmark-runner.jar, image-builds/")
-        ContainerDb(table, "Results table <prefix>-results", "DynamoDB on-demand, Retain", "One item per measurement, one job item per job (pk JOB); GSI jobId-index")
+        ContainerDb(bucket, "Job bucket <prefix>", "S3, deleted with the deployment, versioning suspended", "jobs/<project>/<jobId>/…, releases/<v>/benchmark-runner.jar, image-builds/")
+        ContainerDb(table, "Results table <prefix>-results", "DynamoDB on-demand, deleted with the deployment", "One item per measurement, one job item per job (pk JOB); GSI jobId-index")
         ContainerDb(pointer, "AMI pointer", "SSM parameter /<prefix>/runner/ami-id", "Written by build-image only; NOT a stack resource")
         Container(pipeline, "Runner image pipeline", "EC2 Image Builder", "Bakes JDK, perf, async-profiler, kernel tunables into one AMI")
         Container(runner, "Runner instance", "EC2 from the baked AMI; user-data + benchmark-runner.jar", "Writes environment.json, records its status on the job item, runs the benchmark under timeout, uploads, self-terminates")
     }
 
-    Rel(author, cli, "run / results / download / env diff")
-    Rel(admin, cli, "admin setup / build-image / image / teardown")
+    Rel(author, cli, "jobs / results query / config")
+    Rel(admin, cli, "admin deployment setup / teardown, admin image build / show")
     Rel(cli, config, "Reads; setup, config set and config sync write")
     Rel(cli, stack, "Deploys / updates / deletes (deployer); DescribeStacks for outputs (operator)")
     Rel(cli, pipeline, "build-image: StartImagePipelineExecution, waits")

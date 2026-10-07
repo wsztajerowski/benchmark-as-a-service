@@ -34,7 +34,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
 
     @Option(names = "--extension",
         description = "Print the deployment's runner-image extension, ready to edit and push with "
-            + "`baas admin build-image --extension`. Prints the starter when there is none.")
+            + "`baas admin image build --extension`. Prints the starter when there is none.")
     boolean printExtension;
 
     @Spec CommandSpec spec;
@@ -58,7 +58,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
             if (!cloudFormation.stackExists(prefix)) {
-                logger.error("Stack {} does not exist. Run `baas admin setup` first.", prefix);
+                logger.error("Stack {} does not exist. Run `baas admin deployment setup` first.", prefix);
                 return 1;
             }
             extension = cloudFormation.getStackParameters(prefix)
@@ -79,7 +79,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
                 // built. Exit 0 still — the command answered the question it was asked.
                 logger.warn("""
                     No runner image has been built for this account.
-                      Build one:  baas admin build-image
+                      Build one:  baas admin image build
                     Until then `baas run` will fail before launching anything.""");
                 return 0;
             }
@@ -142,7 +142,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
         }
         if (RunnerImageParameters.compareVersions(bundledBase, deployedBase) > 0) {
             return "This CLI bundles runner-image base " + bundledBase + ", but the published image is built on "
-                + deployedBase + " — run `baas admin build-image` to publish it.";
+                + deployedBase + " — run `baas admin image build` to publish it.";
         }
         return "This CLI bundles runner-image base " + bundledBase + ", older than the published image's "
             + deployedBase + " — upgrade the CLI (~/.local/share/baas/install.sh --update); build-image refuses an older base.";

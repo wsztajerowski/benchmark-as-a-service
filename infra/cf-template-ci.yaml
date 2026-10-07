@@ -47,5 +47,5 @@ Resources:
 Outputs:
   GithubOidcProviderArn:
     Description: >-
-      Pass to `baas admin setup --oidc-provider-arn` to federate a core stack into this provider.
+      Pass to `baas admin deployment setup --oidc-provider-arn` to federate a core stack into this provider.
     Value: !Ref GithubOidc

@@ -35,7 +35,7 @@ public final class RunnerImageExtension {
     public static final int LIMIT_BYTES = RunnerImageRenderer.CFN_PARAMETER_LIMIT_BYTES;
 
     /**
-     * What {@code baas admin setup} writes and a pull of a deployment with no extension prints.
+     * What {@code baas admin deployment setup} writes and a pull of a deployment with no extension prints.
      * Comments only, so pushing it unchanged deploys no extension.
      */
     static final String STARTER = """
@@ -54,8 +54,8 @@ public final class RunnerImageExtension {
         # Keep the first line. It names the extension this file was based on, and a push from a
         # copy that has since been replaced by someone else is refused.
         #
-        # Push:  baas admin build-image --extension <this file>
-        # Pull:  baas admin image --extension > <this file>
+        # Push:  baas admin image build --extension <this file>
+        # Pull:  baas admin image show --extension > <this file>
         #
         # name: runner-extension
         # schemaVersion: 1.0
@@ -148,7 +148,7 @@ public final class RunnerImageExtension {
      * <p>Non-ASCII is refused because the stack is the record, and it does not read back as written:
      * {@code DescribeStacks} returns each non-ASCII character as {@code ?}, although the component
      * itself receives it intact. Found live: an em dash in a comment made every reader — the pull,
-     * the stale-push guard, the change detection and {@code baas admin image} — hash different bytes
+     * the stale-push guard, the change detection and {@code baas admin image show} — hash different bytes
      * from the ones the image was baked and labelled with.
      */
     public static void requireStorable(String content) {
@@ -194,7 +194,7 @@ public final class RunnerImageExtension {
                   Someone may have pushed since you pulled; pushing would discard their extension,
                   and the stack keeps no earlier copy. Pull the deployed one, re-apply your edit,
                   and push again:
-                    baas admin image --extension > <file>"""
+                    baas admin image show --extension > <file>"""
                 .formatted(deployed, file.baseMarker()
                     .map(marker -> "was pulled from " + marker)
                     .orElse("carries no '" + MARKER_PREFIX + "' line")));

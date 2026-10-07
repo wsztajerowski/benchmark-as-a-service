@@ -37,7 +37,7 @@ class SetupCommandTest {
 
     /**
      * Deleting WorkflowRole moves the federated trust onto BaasCliOperatorRole, which the core
-     * stack owns — so setting and revoking it is something `baas admin setup` has to be able to
+     * stack owns — so setting and revoking it is something `baas admin deployment setup` has to be able to
      * express. This reverses the requirement the three options used to be rejected under.
      */
     @Test
@@ -84,7 +84,7 @@ class SetupCommandTest {
      * The create path cannot use {@code UsePreviousValue} — CloudFormation rejects it for a
      * parameter with no previous value — so it must send explicit values. It used to send all
      * three <em>empty</em> unconditionally, which silently discarded the federation options the
-     * invocation named: `baas admin setup --github-org ... --oidc-provider-arn ...` reported
+     * invocation named: `baas admin deployment setup --github-org ... --oidc-provider-arn ...` reported
      * success against a fresh stack and deployed a role CI could not assume. Found by pointing CI
      * at a freshly created deployment.
      */
@@ -199,7 +199,7 @@ class SetupCommandTest {
      * There is exactly one deployment per account and the CLI cannot be told otherwise. A second
      * deployment — the one a BaaS developer wants for scratch work — is created by deploying the
      * core template by hand with a different {@code ResourceNamePrefix}, and adopted with
-     * {@code baas config sync --name}. See infra/README.md. Keeping that out of the CLI is what
+     * {@code baas config sync --deployment}. See infra/README.md. Keeping that out of the CLI is what
      * stops "which deployment am I on?" becoming a question a user of BaaS ever has to ask.
      */
     @ParameterizedTest
@@ -232,7 +232,7 @@ class SetupCommandTest {
 
     /**
      * The failure this closes: {@code SetupCommand} used to send these four unconditionally, so a
-     * teammate's plain {@code baas admin setup} against a shared deployment set up with
+     * teammate's plain {@code baas admin deployment setup} against a shared deployment set up with
      * {@code --use-existing-vpc} submitted {@code UseExistingVpc=false} and rebuilt the networking
      * underneath everyone.
      */
@@ -290,7 +290,7 @@ class SetupCommandTest {
             .doesNotContain("created", "Nobody can assume", "build-image");
         assertThat(SetupCommand.nextSteps(true, arn, "baas-123456789012"))
             .contains("BaasCliOperatorRole created: " + arn, "Nobody can assume it yet",
-                "baas admin build-image", "/baas-123456789012/runner/ami-id");
+                "baas admin image build", "/baas-123456789012/runner/ami-id");
     }
 
     // ─── an existing bucket blocking a create (U23) ──────────────────────────────
