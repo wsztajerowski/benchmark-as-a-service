@@ -151,7 +151,7 @@ public class RunCommand implements Callable<Integer> {
     /**
      * `run`/`results`/`config show` are meant to run under BaasCliOperatorRole. When no
      * operator profile is configured they fall through to the default credential chain
-     * rather than reusing `aws.profile`, which holds deployer credentials.
+     * rather than reusing `aws.deployerProfile`, which holds deployer credentials.
      */
     public static Optional<String> operatorCredentialsWarning(BaasConfig config) {
         return operatorCredentialsWarning(config, System.getenv());

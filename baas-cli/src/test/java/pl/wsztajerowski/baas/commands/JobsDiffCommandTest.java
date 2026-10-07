@@ -38,7 +38,7 @@ class JobsDiffCommandTest {
     @Test
     void diffResolvesOperatorCredentials() {
         var config = new BaasConfig();
-        config.getAws().setProfile("baas-deployer");
+        config.getAws().setDeployerProfile("baas-deployer");
         config.getAws().setOperatorProfile("baas-operator");
 
         assertThat(config.getAws().resolveOperatorProfile())

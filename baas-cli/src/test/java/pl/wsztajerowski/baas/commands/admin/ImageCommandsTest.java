@@ -38,17 +38,17 @@ class ImageCommandsTest {
     }
 
     /**
-     * Both commands read {@code aws.profile} directly rather than
+     * Both commands read {@code aws.deployerProfile} directly rather than
      * {@link BaasConfig.AwsConfig#resolveOperatorProfile()}, which is the accessor the day-to-day
      * commands use. The two fields must not be confusable.
      */
     @Test
     void deployerProfileIsTheOneTheseCommandsRead() {
         var aws = new BaasConfig.AwsConfig();
-        aws.setProfile("baas-deployer");
+        aws.setDeployerProfile("baas-deployer");
         aws.setOperatorProfile("baas-operator");
 
-        assertThat(aws.getProfile())
+        assertThat(aws.getDeployerProfile())
             .as("`baas admin image build` builds its clients from this field")
             .isEqualTo("baas-deployer");
         assertThat(aws.resolveOperatorProfile())

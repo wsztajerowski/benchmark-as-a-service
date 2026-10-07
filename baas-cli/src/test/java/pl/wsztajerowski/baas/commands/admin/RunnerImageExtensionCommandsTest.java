@@ -66,7 +66,7 @@ class RunnerImageExtensionCommandsTest {
         pl.wsztajerowski.baas.TestDeployments.writeRaw(dir, "baas-123456789012", """
             prefix: "baas-123456789012"
             aws:
-              profile: "no-such-profile-baas-test"
+              deployerProfile: "no-such-profile-baas-test"
               region: "eu-central-1"
             """);
         Path big = dir.resolve("big.yaml");

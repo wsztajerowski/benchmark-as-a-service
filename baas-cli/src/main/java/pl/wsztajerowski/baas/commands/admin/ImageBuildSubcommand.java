@@ -106,7 +106,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         // Deployer credentials, like every other `baas admin` subcommand: building an image needs
         // imagebuilder:*, ssm:PutParameter and a widened iam:PassRole, none of which an operator
         // holds. See RunCommand for the other half of that split.
-        var factory = new AwsClientFactory(region, config.getAws().getProfile());
+        var factory = new AwsClientFactory(region, config.getAws().getDeployerProfile());
 
         String componentName = DeploymentNames.of(prefix).runnerComponent();
         try (var imageBuilderClient = factory.imageBuilder();
