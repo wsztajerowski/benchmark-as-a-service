@@ -254,7 +254,7 @@ assert_contains "$out" "newer than"
 run_case "uninstall removes the command"
 rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
 sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
-CONFIG="$SANDBOX/dot-baas/config.yaml"
+CONFIG="$SANDBOX/dot-baas/deployments/sentinel.yaml"
 mkdir -p "$(dirname "$CONFIG")"; printf 'prefix: sentinel\n' > "$CONFIG"
 sh "$INSTALLER" --uninstall >/dev/null 2>&1
 if [ -e "$BAAS_BIN/baas" ]; then fail "shim survived"
