@@ -37,7 +37,7 @@
 - [x] 4.7 Teardown: delete the deployment's file after a completed teardown. Verify with a test that it is gone, and that the other deployment's file is untouched.
 - [x] 4.8 Rename `aws.profile` → `aws.deployerProfile` in `BaasConfig`, in the migration, and on read of a deployment file still carrying it. Verify with unit tests for the migrated flat file and a deployment file carrying the old key.
 - [x] 4.9 Rename `--aws-profile` → `--deployer-profile` on `admin deployment setup` and `config set`, and label both profiles in `config show`. Verify with tests that the old option is an unknown-option error and the new one stores `aws.deployerProfile`.
-- [ ] 4.10 Add `baas config list` (table and `--format json` through `Console`, `Locale.ROOT`, no AWS client constructed, never a top-level alias), and add the `→ choose one: baas config list` hint to the ambiguity error. Verify with tests for zero, one and two deployments, the JSON shape, and that no SDK client is built.
+- [x] 4.10 Add `baas config list` (table and `--format json` through `Console`, `Locale.ROOT`, no AWS client constructed, never a top-level alias), and add the `→ choose one: baas config list` hint to the ambiguity error. Verify with tests for zero, one and two deployments, the JSON shape, and that no SDK client is built.
 - [ ] 4.11 Update `install-test.yml`'s sentinel check to the `deployments/` layout. Verify by running `scripts/tests/install-test.sh` locally.
 
 ## 5. Runner tag and scoped lookups (U36)
