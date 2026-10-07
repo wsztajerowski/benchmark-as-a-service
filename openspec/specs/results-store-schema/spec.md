@@ -9,16 +9,17 @@ TBD - created by archiving change dynamodb-results-store. Update Purpose after a
 The core stack SHALL create a DynamoDB table named `baas-<prefix>-results` with a partition key `pk` and
 a sort key `sk`, both of type String, using on-demand billing. It SHALL declare exactly one global
 secondary index, partitioned on `jobId`, and SHALL declare no TTL attribute. It SHALL carry
-`DeletionPolicy: Retain` and `UpdateReplacePolicy: Retain`.
+`DeletionPolicy: Delete` and `UpdateReplacePolicy: Delete`: a deployment's history leaves with its teardown
+unless exported first.
 
 #### Scenario: Table is created with the expected key schema
 - **WHEN** the core stack is deployed
 - **THEN** the table exists with String `pk` as partition key, String `sk` as sort key, on-demand
   billing, and exactly one global secondary index
 
-#### Scenario: Benchmark history survives teardown
-- **WHEN** `baas admin teardown --yes` deletes the core stack
-- **THEN** the stack reaches `DELETE_COMPLETE` and the results table still exists with its items intact
+#### Scenario: Benchmark history leaves with the teardown
+- **WHEN** `baas admin deployment teardown --yes` deletes the core stack
+- **THEN** the stack reaches `DELETE_COMPLETE` and the results table no longer exists
 
 ### Requirement: One item per measurement
 The store SHALL write exactly one item per measurement. A JMH benchmark method result SHALL be one item;
@@ -134,7 +135,7 @@ warning rather than silently returning nothing.
 - **THEN** its stored measurement carries neither key, and no stored value stands in for them
 
 #### Scenario: Unknown tag key warns
-- **WHEN** `baas results --project p --tag jvm=21` is queried and no measurement uses the key `jvm`
+- **WHEN** `baas results query --project p --tag jvm=21` is queried and no measurement uses the key `jvm`
 - **THEN** the command reports that `jvm` is not a known tag key and lists the known keys
 
 #### Scenario: Custom tags are stored and queryable
