@@ -360,5 +360,5 @@ SHALL run under operator credentials and write its payload to standard output.
 - **THEN** the command exits non-zero naming that job
 
 #### Scenario: Diff uses operator credentials
-- **WHEN** `config.yaml` sets both `aws.profile` and `aws.operatorProfile` and `baas jobs diff` runs
+- **WHEN** the configuration sets both `aws.deployerProfile` and `aws.operatorProfile` and `baas jobs diff` runs
 - **THEN** AWS clients are built from `aws.operatorProfile`

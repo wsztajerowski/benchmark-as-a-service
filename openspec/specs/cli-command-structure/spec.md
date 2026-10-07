@@ -31,7 +31,7 @@ extension changed, trigger the image build, poll to completion, write the result
 `/<prefix>/runner/ami-id`, retire the AMI it replaced, and report the new AMI ID and label. It SHALL
 accept `--extension <file>` to replace the deployment's extension, subject to the size limit and the
 stale-push guard; without it, the deployed extension SHALL be carried forward unchanged. It SHALL run
-under deployer credentials (`aws.profile`), consistent with every other `baas admin` subcommand.
+under deployer credentials (`aws.deployerProfile`), consistent with every other `baas admin` subcommand.
 
 #### Scenario: Successful build reports the AMI
 - **WHEN** `baas admin image build` completes
@@ -43,9 +43,9 @@ under deployer credentials (`aws.profile`), consistent with every other `baas ad
   and the previous AMI untouched
 
 #### Scenario: Build uses deployer credentials
-- **WHEN** `config.yaml` sets both `aws.profile` and `aws.operatorProfile` and `baas admin image build`
+- **WHEN** the configuration sets both `aws.deployerProfile` and `aws.operatorProfile` and `baas admin image build`
   runs
-- **THEN** AWS clients are built from `aws.profile`
+- **THEN** AWS clients are built from `aws.deployerProfile`
 
 #### Scenario: Pushing an extension
 - **WHEN** `baas admin image build --extension ext.yaml` runs with a file whose marker matches the
@@ -118,8 +118,9 @@ and run under operator credentials. `baas env` SHALL NOT exist.
 ### Requirement: User tags are passed through to the runner
 `baas run` SHALL forward every `--tag key=value` option into the user-data script as a runner argument.
 It SHALL NOT apply any caller tag to the EC2 instance: the instance carries only `project=baas`,
-`baas-role=benchmark-runner` and `baas-job-id=<jobId>`. A caller tag on the instance could collide with
-a fixed key, which EC2 rejects for the whole launch, and would be subject to EC2's tag limits.
+`baas-role=benchmark-runner`, `baas-job-id=<jobId>` and `baas-deployment=<prefix>`. A caller tag on the
+instance could collide with a fixed key, which EC2 rejects for the whole launch, and would be subject to
+EC2's tag limits.
 
 #### Scenario: User tags appear in rendered user-data
 - **WHEN** `baas run --tag branch=main --tag experiment=gc jmh -- MyBenchmark` renders user-data
@@ -127,8 +128,12 @@ a fixed key, which EC2 rejects for the whole launch, and would be subject to EC2
 
 #### Scenario: No caller tag reaches the instance
 - **WHEN** `baas run --tag project=foo --tag branch=main jmh -- MyBenchmark` launches its instance
-- **THEN** the instance's tags are exactly `project=baas`, `baas-role` and `baas-job-id`, and the launch
-  does not fail on a duplicate key
+- **THEN** the instance's tags are exactly `project=baas`, `baas-role`, `baas-job-id` and
+  `baas-deployment`, and the launch does not fail on a duplicate key
+
+#### Scenario: The instance names its deployment
+- **WHEN** `baas --deployment wiktor-dev run jmh -- MyBenchmark` launches its instance
+- **THEN** the instance carries `baas-deployment=wiktor-dev`
 
 #### Scenario: Environment tags are still forwarded
 - **WHEN** user-data is rendered
@@ -223,12 +228,13 @@ output holds the object alone.
   specifies, and no JSON object is written
 
 ### Requirement: Resource names the CLI needs are derived or resolved, not cached
-`~/.baas/config.yaml` SHALL store only what cannot be obtained from the deployment itself: the
-credential settings, the region, the deployment prefix, and the operator's own preferences. Names
-the composition rule determines — the working bucket, the results table and the runner instance
-profile — SHALL be derived from the prefix at use time. Identifiers AWS assigns, specifically the
-runner subnet and security group, SHALL be resolved from the deployment's stack outputs at use
-time rather than cached, so that a replaced resource cannot leave a stale identifier behind.
+A deployment's configuration file SHALL store only what cannot be obtained from the deployment
+itself: the credential settings, the region, the deployment prefix, and the operator's own
+preferences. Names the composition rule determines — the working bucket, the results table and the
+runner instance profile — SHALL be derived from the prefix at use time. Identifiers AWS assigns,
+specifically the runner subnet and security group, SHALL be resolved from the deployment's stack
+outputs at use time rather than cached, so that a replaced resource cannot leave a stale identifier
+behind.
 
 #### Scenario: A replaced security group does not strand the configuration
 - **WHEN** the runner security group is replaced by a stack update and its identifier changes, and `baas run` is invoked afterwards with no intervening configuration command
@@ -237,39 +243,6 @@ time rather than cached, so that a replaced resource cannot leave a stale identi
 #### Scenario: Config carries no derivable names
 - **WHEN** `baas config show` reports the configuration after `baas config sync`
 - **THEN** no stored field holds the bucket name, the results table name or the runner instance profile name
-
-### Requirement: Every command accepts an alternative configuration file
-Every `baas` command SHALL accept `--config-path <file>`, naming the configuration file the invocation
-reads and writes in place of `~/.baas/config.yaml`. The option SHALL be accepted before or after the
-subcommand name. When `--config-path` names a file that does not exist, a command that only reads
-configuration SHALL fail naming the path, and `baas config sync`, `baas config set` and `baas admin deployment setup`
-SHALL create it. Without the option, behaviour on a missing `~/.baas/config.yaml` is unchanged. No command
-SHALL accept a per-invocation override of the results table or the working bucket: addressing another
-deployment means naming that deployment's configuration file.
-
-#### Scenario: Reading a retired deployment's history
-- **WHEN** `baas results query --config-path ~/.baas/retired.yaml --project lynx-journal` runs, and that file
-  names a retired deployment's prefix
-- **THEN** that deployment's measurements are reported, and `~/.baas/config.yaml` is neither read nor
-  changed
-
-#### Scenario: A second configuration is created by sync
-- **WHEN** `baas config sync --deployment baas-123456789012-dev --config-path ~/.baas/dev.yaml` runs and the
-  file does not exist
-- **THEN** `~/.baas/dev.yaml` is written with that prefix, and `~/.baas/config.yaml` is unchanged
-
-#### Scenario: A mistyped path fails rather than reading nothing
-- **WHEN** `baas results query --config-path ~/.baas/nope.yaml` runs and the file does not exist
-- **THEN** the command exits non-zero naming `~/.baas/nope.yaml`, and issues no AWS call
-
-#### Scenario: The option is inherited on either side of the subcommand
-- **WHEN** `baas --config-path f.yaml results` and `baas results query --config-path f.yaml` are each invoked
-- **THEN** both read `f.yaml`
-
-#### Scenario: Table and bucket overrides are gone
-- **WHEN** `baas results query --results-table t`, `baas jobs download --results-table t` or
-  `baas jobs download --bucket b` is invoked
-- **THEN** picocli reports an unknown option error
 
 ### Requirement: Git is consulted only when the operator enables it
 The configuration SHALL carry a `git.resolveProject` preference, `false` by default and set with
@@ -445,10 +418,16 @@ standard output. There SHALL be no option to disable them.
 
 ### Requirement: A deployment is named only by `--deployment`
 Every command SHALL accept a global, inherited `--deployment <name>` option, and every pointer to a
-concrete deployment SHALL be that option: `teardown --stack-name` and `config sync --name` SHALL NOT
-exist. The option SHALL never be positional. While a machine holds a single deployment's
-configuration, `--deployment` SHALL be accepted only when it names that deployment, and a different
-name SHALL fail naming both.
+concrete deployment SHALL be that option: `teardown --stack-name`, `config sync --name` and
+`--config-path` SHALL NOT exist. The option SHALL never be positional. When the option is absent, a
+command SHALL use the only configured deployment if exactly one is configured, and SHALL fail listing
+the configured names, with the hint `→ choose one: baas config list`, if two or more are. When none is
+configured, every command SHALL fail reporting that no deployment is configured, except
+`baas admin deployment setup`, which derives the name. A name that is not configured SHALL fail
+naming the configured deployments, except in `baas admin deployment setup` and `baas config sync`,
+which create its configuration. No environment variable and no stored setting SHALL select a
+deployment. No command SHALL accept a per-invocation override of the results table or the working
+bucket.
 
 #### Scenario: Teardown is aimed by the global option
 - **WHEN** `baas --deployment baas-123456789012 admin deployment teardown` is invoked on a machine
@@ -456,11 +435,31 @@ name SHALL fail naming both.
 - **THEN** that deployment is the one torn down
 
 #### Scenario: A different deployment is refused
-- **WHEN** `--deployment other` is given on a machine configured for `baas-123456789012`
-- **THEN** the command exits non-zero naming both deployments, and calls no AWS API
+- **WHEN** `baas --deployment other results query` is given on a machine configured only for `baas-123456789012`
+- **THEN** the command exits non-zero naming `other` and the configured `baas-123456789012`, and calls no AWS API
 
 #### Scenario: Removed pointers are rejected
-- **WHEN** `baas admin deployment teardown --stack-name x` or `baas config sync --name x` is invoked
+- **WHEN** `baas admin deployment teardown --stack-name x`, `baas config sync --name x` or `baas --config-path f.yaml results query` is invoked
+- **THEN** picocli reports an unknown option error
+
+#### Scenario: One deployment needs no flag
+- **WHEN** `baas results query` runs with only `baas-123456789012` configured
+- **THEN** it reads `baas-123456789012`'s results
+
+#### Scenario: Two deployments require the flag
+- **WHEN** `baas run jmh -- MyBenchmark` runs with `baas-123456789012` and `wiktor-dev` configured and no `--deployment`
+- **THEN** the command exits non-zero listing both names and the hint `→ choose one: baas config list`, issues no AWS call and launches nothing
+
+#### Scenario: Teardown is never ambiguous
+- **WHEN** `baas admin deployment teardown --yes` runs with two deployments configured and no `--deployment`
+- **THEN** the command exits non-zero listing both names and deletes nothing
+
+#### Scenario: An environment variable selects nothing
+- **WHEN** `BAAS_DEPLOYMENT=wiktor-dev baas results query` runs with two deployments configured
+- **THEN** the command fails listing both names, as if the variable were unset
+
+#### Scenario: Table and bucket overrides are gone
+- **WHEN** `baas results query --results-table t`, `baas jobs download --results-table t` or `baas jobs download --bucket b` is invoked
 - **THEN** picocli reports an unknown option error
 
 ### Requirement: Filter options mean the same on every command
@@ -494,3 +493,76 @@ standard error as how many of how many rows were reported.
 #### Scenario: Another order is chosen explicitly
 - **WHEN** `baas results query --project p --sort-by benchmark --asc` is run
 - **THEN** rows are ordered by benchmark name, ascending
+
+### Requirement: Each deployment has its own configuration file
+The CLI SHALL keep one configuration file per deployment, `~/.baas/deployments/<name>.yaml`, where
+`<name>` is the deployment's prefix. No file SHALL record a default deployment, and no command SHALL
+switch one. `baas admin deployment setup` and `baas config sync` SHALL write the file of the
+deployment they act on, and `baas admin deployment teardown` SHALL delete the file of the deployment
+it tears down once the teardown has completed, whether or not other deployments remain.
+
+#### Scenario: Setup writes the deployment's own file
+- **WHEN** `baas --deployment wiktor-dev admin deployment setup` completes
+- **THEN** `~/.baas/deployments/wiktor-dev.yaml` holds that deployment's prefix and region, and no other file changes
+
+#### Scenario: Teardown removes the file
+- **WHEN** `baas --deployment wiktor-dev admin deployment teardown --yes` completes
+- **THEN** `~/.baas/deployments/wiktor-dev.yaml` no longer exists
+
+#### Scenario: Tearing down the last deployment
+- **WHEN** the only configured deployment is torn down
+- **THEN** no deployment is configured, and the next command other than setup reports "No deployment is configured"
+
+### Requirement: An existing flat configuration is migrated once
+When `~/.baas/config.yaml` holds a `prefix`, the CLI SHALL move its content to
+`~/.baas/deployments/<prefix>.yaml`, renaming the key `aws.profile` to `aws.deployerProfile`, and
+remove `~/.baas/config.yaml` before resolving the deployment. No deployment file SHALL carry
+`aws.profile` afterwards; a deployment file that still carries one SHALL have it renamed the same way
+when read. When the target file already exists, the flat file's content SHALL replace it, since the
+flat file can only have been written later by an older CLI. A `~/.baas/config.yaml` with no `prefix`
+SHALL be left untouched and ignored.
+
+#### Scenario: First run after upgrading
+- **WHEN** a command runs and `~/.baas/config.yaml` holds `prefix: baas-123456789012` and no deployment file exists
+- **THEN** `~/.baas/deployments/baas-123456789012.yaml` holds the same settings, `~/.baas/config.yaml` is gone, and the command addresses that deployment
+
+#### Scenario: The deployer key is renamed in the move
+- **WHEN** the flat file holds `aws.profile: baas-admin` and `aws.operatorProfile: baas-operator`
+- **THEN** the deployment file holds `aws.deployerProfile: baas-admin` and `aws.operatorProfile: baas-operator`, and no `aws.profile`
+
+#### Scenario: An older CLI afterwards fails loudly
+- **WHEN** a CLI from before this change runs after the migration
+- **THEN** it finds no `~/.baas/config.yaml` and reports that no deployment is configured, rather than addressing any deployment
+
+### Requirement: `baas config list` lists the configured deployments
+`baas config list` SHALL print one row per file in `~/.baas/deployments/`, with the columns
+DEPLOYMENT, REGION, OPERATOR PROFILE and DEPLOYER PROFILE, read from the files alone. It SHALL make no
+AWS call and SHALL NOT require any deployment to be selected, so it works with any number of
+configured deployments. `--format json` SHALL print the same rows as a JSON array. With no deployment
+configured it SHALL print that none is configured and exit 0. `list` SHALL NOT be aliased at the top
+level.
+
+#### Scenario: Two deployments listed without credentials
+- **WHEN** `baas config list` runs with `baas-123456789012` and `wiktor-dev` configured and no AWS credentials available
+- **THEN** it prints both rows with their region and profiles, and exits 0
+
+#### Scenario: Machine-readable listing
+- **WHEN** `baas config list --format json` runs
+- **THEN** stdout is a JSON array with one object per deployment and nothing else
+
+#### Scenario: No deployment configured
+- **WHEN** `baas config list` runs with no deployment configured
+- **THEN** it reports that no deployment is configured and exits 0
+
+### Requirement: The deployer profile option is named for the deployer
+`baas config set` SHALL accept `--deployer-profile <name>`, stored as `aws.deployerProfile`, beside
+`--operator-profile`. It SHALL NOT accept `--aws-profile`. `baas config show` SHALL label the two
+profiles as the deployer profile and the operator profile.
+
+#### Scenario: Setting the deployer profile
+- **WHEN** `baas config set --deployer-profile baas-admin` runs
+- **THEN** the selected deployment's file holds `aws.deployerProfile: baas-admin`
+
+#### Scenario: The old option is gone
+- **WHEN** `baas config set --aws-profile baas-admin` runs
+- **THEN** picocli reports an unknown option error and nothing is written
