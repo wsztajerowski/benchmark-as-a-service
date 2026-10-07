@@ -203,6 +203,19 @@ None.
 
 ## Resolved Questions
 
+- *Does SSM reject a parameter hierarchy starting with `aws` or `ssm`?* The `PutParameter` API
+  reference says: "A parameter name can't be prefixed with "aws" or "ssm" (case-insensitive)", with
+  `ParameterPatternMismatchException` ("The parameter name isn't valid") as the error. It does not say
+  whether `/aws-dev/…` counts, and a live probe was not run. The only deployer credentials on hand are
+  the default deployment's prefix-exact policy, so IAM would refuse the call before SSM validated the
+  name. The answer would not change the design anyway: refusing names that start `aws` or `ssm` fails
+  safe whichever way SSM decides, and costs only a handful of names (task 1.3).
+- *Is `-role-image-build` the longest role suffix, and is IAM's 64 the tightest limit?* Yes (task 1.4).
+  The template composes three roles (`-role-runner`, `-role-operator`, `-role-image-build`), so N = 47.
+  The other composed names are under looser limits: instance profiles, inline policy names and
+  Image Builder names are each 128 or more, the AMI name 128 (its longest form is
+  `-ami-runner-<date>`), and the S3 bucket, which is the bare prefix, 63. The template names no
+  security group, log group or other resource.
 - *Where does a named deployment's deployer policy come from?* From setup itself. `jobs-command`
   removed `baas admin deployer-policy` (and `--prefix`, `--for-account`) on 2026-10-07: setup renders
   the policy for the deployment's name, simulates, and on missing rights prints it and creates nothing.

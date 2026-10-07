@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -196,12 +197,12 @@ public class TeardownCommand implements Callable<Integer> {
      * The deployment's AMI pointer, from the deployment being torn down.
      */
     static String pointerPath(String deployment) {
-        return "/" + deployment + "/runner/ami-id";
+        return DeploymentNames.of(deployment).amiPointer();
     }
 
     /** The deployment's Image Builder recipe, whose image records teardown deletes. */
     static String recipeName(String deployment) {
-        return deployment + "-recipe-runner";
+        return DeploymentNames.of(deployment).runnerRecipe();
     }
 
     static String imageRetiredNotice(String deployment) {

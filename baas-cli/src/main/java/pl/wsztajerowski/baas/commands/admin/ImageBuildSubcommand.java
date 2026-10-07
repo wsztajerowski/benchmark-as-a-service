@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -107,7 +108,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         // holds. See RunCommand for the other half of that split.
         var factory = new AwsClientFactory(region, config.getAws().getProfile());
 
-        String componentName = prefix + "-component-runner";
+        String componentName = DeploymentNames.of(prefix).runnerComponent();
         try (var imageBuilderClient = factory.imageBuilder();
              var ec2 = factory.ec2();
              var ssm = factory.ssm();
@@ -165,7 +166,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
                 return 1;
             }
 
-            String parameterName = "/" + prefix + "/runner/ami-id";
+            String parameterName = DeploymentNames.of(prefix).amiPointer();
             String amiId = service.publish(pipelineArn, parameterName, plan.label(), parentAmiId);
 
             logger.info("""
