@@ -35,11 +35,15 @@ class DownloadArgumentTest {
         assertThat(JobReference.looksLikeJobId("")).isFalse();
     }
 
+    /** A result path is refused before the configuration is read: no AWS call, nothing written. */
     @Test
-    void aLiteralPathNeedsNoResultsTable() {
-        assertThat(JobReference.looksLikeJobId("main/jmh/20260819_090000"))
-            .as("the literal-path branch never reaches the table lookup")
-            .isFalse();
+    void aPathIsRefusedBeforeAnythingIsRead() {
+        var err = new java.io.StringWriter();
+        int exit = new picocli.CommandLine(new pl.wsztajerowski.baas.BaasApp())
+            .setErr(new java.io.PrintWriter(err, true))
+            .execute("--config-path", "/nonexistent/config.yaml", "jobs", "download", "main/jmh/20260819_090000");
+
+        assertThat(exit).isEqualTo(2);
     }
 
     // ─── Reading another deployment's results ─────────────────────────────────

@@ -89,21 +89,30 @@
 
 ## 7. `jobs download` (D8)
 
-- [ ] 7.1 Move `DownloadCommand` under `jobs`; `JobReference` accepts a job id only; a path fails
+- [x] 7.1 Move `DownloadCommand` under `jobs`; `JobReference` accepts a job id only; a path fails
       stating that a job id is required. Verify with `DownloadArgumentTest`, `JobReferenceTest` and
       `S3DownloadIT`.
+      *Done:* `JobReference` is id-only (`notAJobId` before any AWS call); `DownloadArgumentTest`
+      (a path exits 2 before the config is read), `JobReferenceTest`. `S3DownloadIT` runs at the full build.
 
 ## 8. Manifest and `jobs diff` (D6, D7)
 
-- [ ] 8.1 `UserDataScriptBuilder`: nested heredoc in seven groups, the seven fields dropped,
+- [x] 8.1 `UserDataScriptBuilder`: nested heredoc in seven groups, the seven fields dropped,
       `MANIFEST_SCHEMA_VERSION` 6; values still captured into variables first; tags from the same
       variables. Verify with `UserDataScriptBuilderTest` — `bash -n`, the rendered JSON parses with
       exactly the eight members, `aLargeRunStaysWellUnderTheUserDataLimit` — and the
       tags-agree-with-manifest test.
-- [ ] 8.2 `EnvironmentManifest` reads the nested form; `jobs diff` prints `Differs in:` then fields by
+      *Done:* `UserDataScriptBuilderTest` — the rendered manifest parses with exactly the eight
+      members and each group's fields; `theManifestCarriesNoJobIdentity`; schema 6; `cpuArch` tag and
+      `cpu.arch` from one variable. `PROJECT_NAME`, `BRANCH_NAME`, `AWS_CLI_VERSION` removed.
+- [x] 8.2 `EnvironmentManifest` reads the nested form; `jobs diff` prints `Differs in:` then fields by
       group, the same-environment message, the schema-mismatch warning, and the AMI-gated packages
       section (changed/added/removed). Verify with `EnvironmentManifestTest`, a packages-diff unit test
       on two fixture lists, and `ConsoleOutputTest` for the plain table.
+      *Done:* `EnvironmentManifestTest` (nested parse, groups in order, flat manifests still diff,
+      schemaVersion never a difference), `PackagesDiffTest` (arch-less key, installonly versions),
+      `ConsoleOutputTest` (Differs in, grouped table, packages section, identical message),
+      `JobsDiffCommandTest` (fail fast on the first unknown id).
 
 ## 9. Setup renders the policy (D11)
 

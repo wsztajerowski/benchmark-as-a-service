@@ -39,14 +39,10 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Parameters(index = "0", paramLabel = "<jobId|resultPath>",
-        description = "The job identifier `baas run` printed and `baas results` shows "
-            + "(e.g. 20260820T174432812Z-a3f9c21b), or a literal S3 result path "
-            + "(e.g. main/jmh/20260819_090000) for a job stored before the unified layout.")
+    @Parameters(index = "0", paramLabel = "<jobId>",
+        description = "The job identifier `baas run` printed and `baas jobs list` shows "
+            + "(e.g. 20260820T174432812Z-a3f9c21b).")
     String resultPath;
-
-    // No --results-table or --bucket: another deployment is reached by naming its configuration
-    // with the inherited --config-path, which addresses the whole deployment at once.
 
     @Option(names = {"-o", "--output-dir"},
         description = "Local directory to write into. Default: ./<last path segment>.")
@@ -60,6 +56,11 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        String notAJobId = JobReference.notAJobId(resultPath);
+        if (notAJobId != null) {
+            logger.error("{} Nothing was downloaded.", notAJobId);
+            return 2;
+        }
         BaasConfig config = configService().load();
         RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
 

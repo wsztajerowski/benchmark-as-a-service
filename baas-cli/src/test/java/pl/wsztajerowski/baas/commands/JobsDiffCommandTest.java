@@ -51,15 +51,13 @@ class JobsDiffCommandTest {
     }
 
     @Test
-    void helpExplainsWhereResultPathsComeFrom() {
+    void helpNamesJobIdsAndTheGroupsCompared() {
         String usage = new CommandLine(new BaasApp())
             .getSubcommands().get("jobs").getSubcommands().get("diff")
             .getUsageMessage(CommandLine.Help.Ansi.OFF);
 
-        assertThat(usage).contains("jobs/<project>/<jobId>", "job id");
-        assertThat(usage)
-            .as("a job stored before the unified layout keeps its original path, and still resolves")
-            .contains("<branch>/<type>/<timestamp>");
+        assertThat(usage).contains("baas jobs list", "machine, cpu, memory, os, jvm, tools")
+            .doesNotContain("result path");
     }
 
     /** U4: a job id is accepted, and an unknown one fails naming itself — before S3 is read. */
@@ -96,7 +94,7 @@ class JobsDiffCommandTest {
         });
 
         int exit = cli.execute("--config-path", file.toString(), "jobs", "diff",
-            "20261002T000000000Z-00000000", "jobs/p/20261002T080250645Z-264f5dfb");
+            "20261002T000000000Z-00000000", "20261002T080250645Z-264f5dfb");
 
         assertThat(exit).isEqualTo(1);
         assertThat(lookedUp).containsExactly("20261002T000000000Z-00000000");

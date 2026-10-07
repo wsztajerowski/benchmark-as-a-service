@@ -23,30 +23,28 @@ class JobReferenceTest {
             .isEqualTo("jobs/baas-lifecycle-test/20261002T080250645Z-264f5dfb");
     }
 
-    /** Both path shapes pass through untouched, and never reach the table. */
+    /** A path is not a job id any more: refused with a message, before any lookup. */
     @Test
-    void aPathIsUsedAsGivenWithoutALookup() {
-        assertThat(JobReference.resolve("jobs/p/20261002T080250645Z-264f5dfb", this::lookup))
-            .isEqualTo("jobs/p/20261002T080250645Z-264f5dfb");
-        assertThat(JobReference.resolve("main/jmh/20260819_090000", this::lookup))
-            .isEqualTo("main/jmh/20260819_090000");
+    void aPathIsRefusedWithoutALookup() {
+        assertThat(JobReference.notAJobId("jobs/p/20261002T080250645Z-264f5dfb"))
+            .contains("is not a job id", "20260820T174432812Z-a3f9c21b");
+        assertThat(JobReference.notAJobId("main/jmh/20260819_090000")).isNotNull();
+        assertThat(JobReference.notAJobId("20261002T080250645Z-264f5dfb")).isNull();
         assertThat(lookedUp).isEmpty();
     }
 
     @Test
-    void aTrailingSlashIsTolerated() {
-        assertThat(JobReference.resolve("jobs/p/20261002T080250645Z-264f5dfb/", this::lookup))
+    void aStoredTrailingSlashIsDropped() {
+        assertThat(JobReference.resolve("20261002T080250645Z-264f5dfb",
+            id -> "jobs/p/20261002T080250645Z-264f5dfb/"))
             .isEqualTo("jobs/p/20261002T080250645Z-264f5dfb");
     }
 
-    /**
-     * Only a job from before job items that stored no measurement has no index entry; every later
-     * run resolves through its job item, so the message points at the job list first.
-     */
     @Test
     void anUnknownJobIdResolvesToNothingAndTheMessageNamesTheWayOut() {
         assertThat(JobReference.resolve("20261002T000000000Z-00000000", this::lookup)).isNull();
         assertThat(JobReference.noSuchJob("20261002T000000000Z-00000000"))
-            .contains("20261002T000000000Z-00000000", "baas jobs list", "jobs/<project>/<jobId>");
+            .contains("20261002T000000000Z-00000000", "baas jobs list")
+            .doesNotContain("result path");
     }
 }
