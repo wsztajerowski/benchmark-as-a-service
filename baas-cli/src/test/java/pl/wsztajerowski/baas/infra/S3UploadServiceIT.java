@@ -71,9 +71,8 @@ class S3UploadServiceIT {
     }
 
     /**
-     * CloudFormation refuses to delete a non-empty bucket, so teardown empties it first.
-     * If teardown does not remove it explicitly, a retained bucket blocks the next
-     * `baas admin setup` — the bucket name is a deterministic hash of the caller ARN.
+     * CloudFormation refuses to delete a non-empty bucket, so teardown empties it first —
+     * every version and delete marker — and the stack deletion then removes the bucket.
      */
     @Test
     void removesTheBucketItselfNotJustItsContents() {

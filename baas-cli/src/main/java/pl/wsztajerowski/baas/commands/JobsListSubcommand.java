@@ -12,6 +12,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -142,7 +143,10 @@ public class JobsListSubcommand implements Callable<Integer> {
             });
             return 0;
         }
-        print(fetch(config, factory, logger::info), Instant.now());
+        List<JobListing.Row> rows = fetch(config, factory, logger::info);
+        print(rows, Instant.now());
+        rows.stream().filter(JobListing.Row::inFlight).findFirst().ifPresent(row ->
+            Hints.show(console(), logger, "stop one", "baas jobs terminate " + row.job().jobId()));
         return 0;
     }
 
