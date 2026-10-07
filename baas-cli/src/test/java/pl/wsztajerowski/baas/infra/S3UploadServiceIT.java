@@ -71,7 +71,7 @@ class S3UploadServiceIT {
     }
 
     /**
-     * The stack declares DeletionPolicy: Retain, so CloudFormation never removes the bucket.
+     * CloudFormation refuses to delete a non-empty bucket, so teardown empties it first.
      * If teardown does not remove it explicitly, a retained bucket blocks the next
      * `baas admin setup` — the bucket name is a deterministic hash of the caller ARN.
      */

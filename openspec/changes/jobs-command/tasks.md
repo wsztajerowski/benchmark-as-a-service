@@ -135,12 +135,19 @@
 
 ## 10. Teardown removes everything (D12)
 
-- [ ] 10.1 `cf-template-core.yaml`: `DeletionPolicy`/`UpdateReplacePolicy: Delete` on the bucket and the
+- [x] 10.1 `cf-template-core.yaml`: `DeletionPolicy`/`UpdateReplacePolicy: Delete` on the bucket and the
       table; the lifecycle rules unchanged. Verify with `CoreTemplateTest` (new pins; the no-expiry pin
       kept; `theRunnerSecurityGroupDescriptionIsNeverEdited` still green).
-- [ ] 10.2 Teardown always empties the bucket, deletes the stack, retires the image, reports nothing
+      *Done:* `CoreTemplateTest` pins `Delete` on both (`theWorkingBucketIsDeletedWithTheStack`,
+      `theResultsTableIsDeletedWithTheStack`); the no-expiry and `GroupDescription` pins unchanged, green.
+- [x] 10.2 Teardown always empties the bucket, deletes the stack, retires the image, reports nothing
       retained, and warns before the prompt that everything will be deleted; `--delete-bucket` and
       setup's retained-resource pre-checks removed. Verify with `TeardownNoticeTest`, `SetupCommandTest`.
+      *Done:* teardown warns before the prompt (`everythingGoesNotice`), always empties the bucket and
+      stops before the stack if it cannot, then deletes the stack and retires the image; `--delete-bucket`,
+      the retention report and setup's retained-table check and same-region bucket message removed
+      (`ResultsTableService` deleted as unused). The other-region bucket check (U23) stays.
+      `TeardownNoticeTest`, `SetupCommandTest`.
 
 ## 11. Help and hints (D9)
 

@@ -45,8 +45,6 @@ public class TeardownCommand implements Callable<Integer> {
     @Option(names = "--yes", description = "Skip interactive confirmation.")
     boolean yes;
 
-    @Option(names = "--delete-bucket", description = "Empty and delete the S3 results bucket (default: retain).")
-    boolean deleteBucket;
 
     private ConfigService configService() {
         return BaasApp.configService(spec);
@@ -70,7 +68,8 @@ public class TeardownCommand implements Callable<Integer> {
             }
         }
 
-        // Gate 2: explicit confirmation
+        // Gate 2: explicit confirmation, after saying what goes: nothing survives a teardown.
+        logger.warn("{}", everythingGoesNotice(resolvedStack));
         if (!confirmed(resolvedStack)) {
             return 1;
         }
@@ -86,31 +85,22 @@ public class TeardownCommand implements Callable<Integer> {
                 configService().configFilePath().toAbsolutePath().getParent(), resolvedStack);
         } catch (IOException | RuntimeException e) {
             logger.error("Could not save the runner-image extension of {} ({}). Nothing was deleted.\n"
-                + "  Save it by hand with `baas admin image --extension > <file>`, then re-run teardown.",
+                + "  Save it by hand with `baas admin image show --extension > <file>`, then re-run teardown.",
                 resolvedStack, e.getMessage());
             return 1;
         }
 
-        // Empty + delete S3 bucket if requested. The stack declares DeletionPolicy: Retain,
-        // so CloudFormation will not remove the bucket — teardown has to do it here.
+        // CloudFormation refuses to delete a non-empty bucket, so it is emptied first. A bucket that
+        // cannot be emptied stops the teardown here, with the stack still whole, rather than
+        // leaving a stack stuck in DELETE_FAILED.
         String bucket = resolvedStack;
-        String resultsTable = resolvedStack + "-results";
-
-        boolean bucketDeleted = false;
-        if (deleteBucket) {
-            logger.info("Emptying S3 bucket: {}", bucket);
-            try (var s3 = factory.s3()) {
-                var s3Service = new S3UploadService(s3);
-                s3Service.deleteAllObjects(bucket);
-                s3Service.deleteBucket(bucket);
-                bucketDeleted = true;
-                logger.info("Deleted S3 bucket: {}", bucket);
-            } catch (RuntimeException e) {
-                // Don't abort the teardown — leaving the stack behind is worse than
-                // leaving the bucket behind, and the bucket is recoverable by hand.
-                logger.warn("Could not delete bucket {}: {}\n"
-                    + "  Continuing with stack deletion; remove the bucket manually.", bucket, e.getMessage());
-            }
+        logger.info("Emptying S3 bucket: {}", bucket);
+        try (var s3 = factory.s3()) {
+            new S3UploadService(s3).deleteAllObjects(bucket);
+        } catch (RuntimeException e) {
+            logger.error("Could not empty bucket {} ({}). The stack was not deleted; re-run teardown.",
+                bucket, e.getMessage());
+            return 1;
         }
 
         // Delete stack
@@ -132,18 +122,6 @@ public class TeardownCommand implements Callable<Integer> {
             logger.warn("{}", imageLeftoverNotice(resolvedStack, imageLeftovers));
         }
 
-        // Both retained resources are named, because a setup that trips over one and then the
-        // other is two rounds of the same opaque CloudFormation error.
-        if (!bucketDeleted) {
-            logger.warn("""
-                    S3 results bucket retained: {}
-                      The name is derived from this AWS account, so any later `baas admin setup`
-                      for the same deployment asks for this same bucket and fails while it
-                      exists — whoever runs it, not just you. Keep the results by copying them
-                      out, then delete it manually or re-run teardown with --delete-bucket.""",
-                bucket);
-        }
-        logger.warn("{}", retainedTableNotice(resultsTable, configService().configFilePath()));
         savedExtension.ifPresent(file -> logger.warn("{}", extensionSavedNotice(file)));
         return 0;
     }
@@ -193,7 +171,7 @@ public class TeardownCommand implements Callable<Integer> {
         }
         // Stays on stdout: the prompt has to sit on the cursor's line, and every logger line
         // comes with a timestamp prefix and a newline. The Console flushes it.
-        console().print("Type the stack name to confirm deletion [" + stack + "]: ");
+        console().print("Type the deployment name to confirm deletion [" + stack + "]: ");
         String answer = answerReader.get();
         if (answer == null || !stack.equals(answer.strip())) {
             logger.info("Aborted. Nothing was deleted.");
@@ -239,21 +217,12 @@ public class TeardownCommand implements Callable<Integer> {
                 .map(line -> "  - " + line).collect(Collectors.joining("\n"));
     }
 
-    /**
-     * Teardown leaves the configuration file alone, so it still names the deployment and a plain
-     * {@code baas results} keeps reading the retained table. Elsewhere, the same file reaches it
-     * through {@code --config-path} — the only way to address another deployment now that the
-     * per-command {@code --results-table} override is gone.
-     */
-    static String retainedTableNotice(String resultsTable, Path configFile) {
+    /** Said before the prompt, so nobody confirms a teardown believing their history is kept. */
+    static String everythingGoesNotice(String deployment) {
         return """
-            DynamoDB results table retained: %1$s
-              Benchmark history outlives the stack, so teardown never deletes it and there is
-              no flag to. The name is derived from this AWS account, so a later
-              `baas admin setup` for the same deployment will fail while it exists.
-              Read it any time with:  baas results --all-projects
-              %2$s still names it; keep a copy to read it elsewhere with --config-path.
-              Remove it with:         aws dynamodb delete-table --table-name %1$s""".formatted(resultsTable, configFile);
+            Tearing down %1$s deletes everything it holds: the stack, the bucket %1$s and the
+              results table %1$s-results, with every job and measurement in them, and the runner
+              image. None of it can be recovered.""".formatted(deployment);
     }
 
     /**

@@ -8,18 +8,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class TeardownNoticeTest {
 
-    /** The hint must name a way to read the table that still exists after the override was removed. */
+    /** Said before the prompt: nothing survives a teardown, and the notice names what goes. */
     @Test
-    void theRetainedTableHintNamesNoRemovedOption() {
-        String notice = TeardownCommand.retainedTableNotice(
-            "baas-123456789012-results", Path.of("/home/me/.baas/config.yaml"));
+    void theNoticeSaysEverythingIsDeletedForGood() {
+        assertThat(TeardownCommand.everythingGoesNotice("baas-123456789012"))
+            .contains("bucket baas-123456789012", "results table baas-123456789012-results",
+                "every job and measurement", "None of it can be recovered")
+            .doesNotContain("retained");
+    }
 
-        assertThat(notice)
-            .doesNotContain("--results-table")
-            .contains("baas results --all-projects")
-            .contains("/home/me/.baas/config.yaml")
-            .contains("--config-path")
-            .contains("aws dynamodb delete-table --table-name baas-123456789012-results");
+    @Test
+    void thereIsNoOptionToKeepTheBucket() {
+        assertThat(new picocli.CommandLine(new TeardownCommand()).getCommandSpec().optionsMap())
+            .doesNotContainKey("--delete-bucket");
     }
 
     /** The image retired is the configured deployment's — the only one teardown can reach. */
