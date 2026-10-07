@@ -121,11 +121,17 @@
 
 ## 9. Setup renders the policy (D11)
 
-- [ ] 9.1 `admin deployment setup` renders the policy first and, on missing rights, prints it to
+- [x] 9.1 `admin deployment setup` renders the policy first and, on missing rights, prints it to
       stdout, names the missing actions on stderr, creates nothing, exits non-zero; `DeployerPolicyCommand`
       and `--for-account` removed. Verify with `SetupCommandTest` (stubbed simulator: denied → policy
       on stdout and no CloudFormation call; allowed → proceeds; not checkable → proceeds) and
       `DeployerPolicyTest` unchanged.
+      *Done:* `SetupCommand.refusalForMissingRights` (policy on stdout as the only payload, missing
+      actions on stderr, exit 1; `null` when nothing was denied or the simulator was unavailable) with
+      two `SetupCommandTest` cases; `DeployerPolicyCommand` and its test deleted; `DeployerPolicyTest` and
+      `DeployerPolicyRendererTest` unchanged and green. Deviation: the bucket-region lookup stays before
+      the policy step (U23's reason); the spec delta now says so. The stubbed-simulator command test
+      was replaced by the method test — `call()` builds its AWS clients inline.
 
 ## 10. Teardown removes everything (D12)
 

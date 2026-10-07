@@ -150,11 +150,18 @@ public class SetupCommand implements Callable<Integer> {
             }
         }
 
-        try {
-            preflight(factory, callerArn, accountId, resolvedRegion, resolvedPrefix);
-        } catch (IllegalStateException e) {
-            logger.error(e.getMessage());
-            return 1;
+        // The deployer policy is a step of setup, not a command of its own: rendered for this
+        // deployment and checked against the caller's rights before anything is created. When
+        // rights fall short, the policy is the payload (stdout, so `setup > policy.json` hands it
+        // over) and what is missing is the diagnostic (stderr).
+        String policy = new DeployerPolicyRenderer().render(accountId, resolvedRegion, resolvedPrefix);
+        List<String> denied;
+        try (var iam = factory.iam()) {
+            denied = new DeployerPreflight(iam).simulateCriticalActions(callerArn, accountId, resolvedRegion, resolvedPrefix);
+        }
+        Integer refused = refusalForMissingRights(denied, policy, accountId, resolvedRegion, resolvedPrefix);
+        if (refused != null) {
+            return refused;
         }
 
         try {
@@ -171,37 +178,35 @@ public class SetupCommand implements Callable<Integer> {
                 throw e;
             }
             // The SDK names the action but never what to do about it. The rendered policy is the
-            // answer, and it is caller-specific — there is no generic version to link to.
-            logger.error("""
-                {}
-
-                This identity is missing a permission `baas admin setup` needs. Attach the policy
-                below (rendered for account {}, region {}, prefix {}):
-
-                {}""",
-                e.getMessage(), accountId, resolvedRegion, resolvedPrefix,
-                new DeployerPolicyRenderer().render(accountId, resolvedRegion, resolvedPrefix));
+            // answer, and it is deployment-specific — there is no generic version to link to.
+            logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs. "
+                + "Attach the policy printed on standard output (rendered for account {}, region {}, "
+                + "deployment {}), then re-run.", e.getMessage(), accountId, resolvedRegion, resolvedPrefix);
+            printPolicy(policy);
             return 1;
         }
     }
 
-    private void preflight(AwsClientFactory factory, String callerArn, String accountId,
-                           String resolvedRegion, String resolvedPrefix) {
-        var renderer = new DeployerPolicyRenderer();
-        try (var iam = factory.iam()) {
-            var denied = new DeployerPreflight(iam)
-                .simulateCriticalActions(callerArn, accountId, resolvedRegion, resolvedPrefix);
-            if (!denied.isEmpty()) {
-                throw new IllegalStateException("""
-                    This identity cannot %s.
-
-                    Attach the policy below (rendered for account %s, region %s, prefix %s):
-
-                    %s"""
-                    .formatted(String.join(", ", denied), accountId, resolvedRegion, resolvedPrefix,
-                        renderer.render(accountId, resolvedRegion, resolvedPrefix)));
-            }
+    /**
+     * Exit code 1, the missing actions on stderr and the policy on stdout, when the simulator
+     * denied anything; {@code null} to carry on — also when the caller may not simulate at all,
+     * since the preflight is a convenience, not a control.
+     */
+    Integer refusalForMissingRights(List<String> denied, String policy, String accountId, String region,
+                                    String deployment) {
+        if (denied.isEmpty()) {
+            return null;
         }
+        logger.error("This identity cannot {}. Attach the policy printed on standard output (rendered for "
+            + "account {}, region {}, deployment {}), then re-run. Nothing was created.",
+            String.join(", ", denied), accountId, region, deployment);
+        printPolicy(policy);
+        return 1;
+    }
+
+    /** IAM JSON is payload: never styled, never prefixed, so it can be redirected into a file. */
+    private void printPolicy(String policy) {
+        pl.wsztajerowski.baas.console.Console.of(spec.commandLine().getOut()).println(policy);
     }
 
     /** The stack is named by the prefix: the stack is the deployment. */
