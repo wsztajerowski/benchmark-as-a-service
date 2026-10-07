@@ -1,12 +1,13 @@
-%% One operator machine's configuration (~/.baas/config.yaml or --config-path).
-%% prefix is account-derived and region is found from the bucket, so neither is ever typed.
+%% One deployment's configuration on one operator machine (~/.baas/deployments/<name>.yaml).
+%% The name is given once (or derived by setup on a machine with none) and the region is found from the bucket.
 stateDiagram-v2
     direction TB
     [*] --> NoConfig
-    NoConfig --> Adopted: config sync --deployment P<br/>(stores prefix + region)<br/>or admin deployment setup
+    NoConfig --> Adopted: --deployment P config sync<br/>(writes deployments/P.yaml: prefix + region)<br/>or admin deployment setup
     Adopted --> Operator: config set --operator-profile<br/>(or ambient creds)
     Operator --> Operator: config set (preferences)
+    Operator --> [*]: admin deployment teardown here<br/>(deletes deployments/P.yaml)
     Operator --> Orphaned: [elsewhere] admin deployment teardown
     Orphaned --> Operator: [elsewhere] setup, same region<br/>(no re-sync needed)
-    Orphaned --> Adopted: [elsewhere] setup in another region,<br/>then config sync --deployment P
+    Orphaned --> Adopted: [elsewhere] setup in another region,<br/>then --deployment P config sync
     Orphaned: Orphaned<br/>the deployment and its data are gone<br/>every command fails until a setup

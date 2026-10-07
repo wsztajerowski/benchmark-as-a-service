@@ -2,7 +2,7 @@ C4Deployment
     title BaaS — Deployment
 
     Deployment_Node(laptop, "Developer laptop", "macOS / Linux, JDK 25") {
-        Container(cliL, "baas CLI", "installed by scripts/install.sh", "~/.baas/config.yaml; deployer + operator profiles in ~/.aws/config")
+        Container(cliL, "baas CLI", "installed by scripts/install.sh", "~/.baas/deployments/*.yaml; deployer + operator profiles in ~/.aws/config")
     }
 
     Deployment_Node(ghHosted, "GitHub-hosted runner", "ubuntu-latest") {
@@ -14,7 +14,7 @@ C4Deployment
         Container(oidc, "GitHub OIDC provider", "cf-template-ci.yaml, by hand", "One per issuer per account")
     }
 
-    Deployment_Node(region, "AWS region (default eu-central-1)", "one deployment: baas-<accountId>") {
+    Deployment_Node(region, "AWS region (default eu-central-1)", "a deployment: baas-<accountId>, or one named by --deployment") {
         Container(cfStack, "Core stack <prefix>", "CloudFormation", "")
         ContainerDb(s3, "Bucket <prefix>", "S3", "deleted with the deployment")
         ContainerDb(ddb, "Table <prefix>-results", "DynamoDB", "deleted with the deployment")

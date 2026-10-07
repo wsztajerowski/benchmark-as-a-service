@@ -4,7 +4,7 @@ sequenceDiagram
     actor Adm as Deployment admin<br/>(deployer creds)
     actor Op as Benchmark author<br/>(operator creds)
     participant CLI as baas CLI
-    participant CFG as ~/.baas/config.yaml
+    participant CFG as ~/.baas/deployments/<name>.yaml
     participant AWS as AWS account
 
     Note over IA,AWS: The whole life of one deployment, from an empty account to an empty account.<br/>Commands in brackets are not baas commands — the CLI cannot do them.
@@ -23,10 +23,10 @@ sequenceDiagram
 
     rect rgb(240, 255, 240)
         Note over IA,AWS: 1. Install
-        Adm->>CLI: baas admin deployment setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
+        Adm->>CLI: baas admin deployment setup [--region] [--deployer-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
         CLI->>AWS: bucket-region check, then the policy step (SimulatePrincipalPolicy)
         CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
-        CLI->>CFG: write prefix, aws.profile, aws.region
+        CLI->>CFG: write prefix, aws.deployerProfile, aws.region
         CLI-->>Adm: OperatorRole ARN + "Nobody can assume it yet" + next: build-image
         Adm->>CLI: baas admin image build
         CLI->>AWS: preflight version, UpdateStack (image params), StartImagePipelineExecution
@@ -38,7 +38,7 @@ sequenceDiagram
     rect rgb(255, 250, 235)
         Note over IA,AWS: 2. Onboard an operator machine
         Op->>AWS: [grant sts:AssumeRole on <prefix>-role-operator -- add role_arn profile to ~/.aws/config]
-        Op->>CLI: baas config sync --deployment baas-<accountId>
+        Op->>CLI: baas --deployment baas-<accountId> config sync
         CLI->>AWS: DescribeStacks (proves it exists)
         CLI->>CFG: write prefix
         Op->>CLI: baas config set --operator-profile p [--region] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--git-resolve-project]
@@ -61,5 +61,5 @@ sequenceDiagram
         CLI-->>Adm: warns: the bucket, the results table and the image go, none recoverable
         CLI->>AWS: refuse if a runner is pending/running -- empty the bucket -- DeleteStack, wait<br/>(bucket and table go with it) -- then retire the image (pointer, AMI, snapshot, Image Builder records)
         Note over Adm,AWS: Nothing is left behind. Data leaves before a teardown through a future baas admin export.
-        Note over CFG: config.yaml still names the prefix, but every command against it now fails:<br/>the stack, the bucket and the table are gone
+        Note over CFG: the deployment's file is deleted with it -- nothing names the deployment any more
     end

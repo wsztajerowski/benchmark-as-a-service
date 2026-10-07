@@ -8,7 +8,8 @@ procedure (`infra/README.md`, *A second deployment*). It deploys the core templa
 skips everything `SetupCommand` does: per-region parent-AMI resolution, rendered image parameters,
 the retained-resource pre-checks and the networking guard. It is also reached by swapping
 `~/.baas/config.yaml` back and forth. A second deployment in the same region also blocks the first one's
-teardown (U36). This is also the deployment the U21/U40 live checks have been waiting for.
+teardown (U36), and a mistyped `teardown --deployment` reported success against a missing stack
+under broad credentials (U33). This is also the deployment the U21/U40 live checks have been waiting for.
 
 Built on `jobs-command` (archived 2026-10-07), which introduced the `--deployment` global option,
 `baas admin deployment setup | teardown` and the deployer policy rendered by setup. This change makes

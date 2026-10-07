@@ -1,13 +1,17 @@
 sequenceDiagram
     actor User as Operator or CI job
     participant CS as ConfigSyncSubcommand
-    participant CFG as config file<br/>(~/.baas/config.yaml or --config-path)
+    participant CFG as deployment files<br/>(~/.baas/deployments/*.yaml)
     participant S3 as AWS S3
     participant CF as AWS CloudFormation
 
-    Note over User,CF: baas config sync --deployment <prefix> -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>--name is required although derivable: a bare sync would adopt whatever<br/>deployment the active credentials imply.
-    User->>CS: baas [--config-path f] config sync --deployment baas-123456789012
-    CS->>CFG: loadOrEmpty() -- a missing file is an empty config
+    Note over User,CF: baas --deployment <prefix> config sync -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>Never derived: with nothing configured the name is required, or a bare sync would adopt<br/>whatever deployment the active credentials imply. With exactly one configured, a bare sync re-syncs it.
+    User->>CS: baas --deployment baas-123456789012 config sync
+    CS->>CFG: loadForSync() -- migrates a flat config.yaml first
+    alt no --deployment, and none or 2+ configured
+        CS-->>User: name the deployment (the configured ones listed) -- exit 2, nothing written
+    end
+    Note over CS: the named deployment's file, or a new one -- or the only configured one
     opt no aws.operatorProfile and no ambient credentials
         CS-->>User: warn: using the default credential chain
     end
@@ -26,6 +30,6 @@ sequenceDiagram
             CS-->>User: warn: stack predates the results table
         end
         Note over CS: Outputs are read to prove existence only -- nothing is copied.<br/>Bucket, table, profile, pointer are derived from the prefix --<br/>subnet + security group are resolved per job.
-        CS->>CFG: set prefix AND aws.region (the deployment's), save
+        CS->>CFG: save deployments/<prefix>.yaml -- prefix AND aws.region (the deployment's)
         CS-->>User: Adopted <prefix> in <region> -- bucket, table -- exit 0
     end
