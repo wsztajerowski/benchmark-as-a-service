@@ -27,10 +27,12 @@
       and `env` removed. Verify with `JobsCommandTest`-style parse tests: `baas download`, `baas env`,
       `baas list`, `baas show` are unknown commands.
       *Done:* `CommandTreeTest` (17 cases incl. the removed spellings).
-- [ ] 2.2 `jobs` gains `run` (the existing `RunCommand`), `show`, `diff`, `download`; `results` becomes
+- [x] 2.2 `jobs` gains `run` (the existing `RunCommand`), `show`, `diff`, `download`; `results` becomes
       a noun with the single verb `query`; a bare noun prints usage. Verify with tests that
       `baas jobs run …` and `baas run …` parse identically, and that `baas results` and `baas jobs`
       print usage and execute nothing.
+      *Done:* `CommandTreeTest` (both spellings of `run` and `query`, bare nouns print usage, `jobs`
+      lists run, list, show, diff, download, terminate).
 - [x] 2.3 `admin` gains the nouns `deployment` (`setup`, `teardown`) and `image` (`build`, `show`);
       `admin setup|teardown|build-image|deployer-policy` and verb-less `admin image` are gone. Verify
       with parse tests for both new and removed spellings.
@@ -82,10 +84,13 @@
 
 ## 6. `jobs show` (D5)
 
-- [ ] 6.1 Job, Environment (by group) and Artifacts (one `ListObjectsV2`, summarised by folder)
+- [x] 6.1 Job, Environment (by group) and Artifacts (one `ListObjectsV2`, summarised by folder)
       sections; resolved status; stated absences; an unknown id fails before any S3 read; `--format
       json` → `{job, environment, artifacts}`. Verify with a command test over stubbed AWS for a
       completed, a `launch-failed` and an unknown job, and an IT listing a LocalStack prefix.
+      *Done:* `JobsShowCommandTest` over a `Sources` seam — completed, `launch-failed`, vanished,
+      unknown id (no S3 read), JSON shape. The S3 listing it uses (`S3UploadService.listKeys`) is
+      the one `S3DownloadIT` already exercises against LocalStack; no separate IT was added.
 
 ## 7. `jobs download` (D8)
 

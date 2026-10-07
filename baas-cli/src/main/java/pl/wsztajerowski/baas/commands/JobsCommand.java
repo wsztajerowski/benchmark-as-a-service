@@ -18,6 +18,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
     subcommands = {
         RunCommand.class,
         JobsListSubcommand.class,
+        JobsShowSubcommand.class,
         JobsDiffSubcommand.class,
         JobsDownloadSubcommand.class,
         JobsTerminateSubcommand.class

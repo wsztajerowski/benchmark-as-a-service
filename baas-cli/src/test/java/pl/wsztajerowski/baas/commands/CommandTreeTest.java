@@ -33,7 +33,7 @@ class CommandTreeTest {
     void eachNounOffersItsVerbs() {
         var root = root();
         assertThat(root.getSubcommands().get("jobs").getSubcommands().keySet())
-            .contains("run", "list", "diff", "download", "terminate");
+            .contains("run", "list", "show", "diff", "download", "terminate");
         assertThat(root.getSubcommands().get("results").getSubcommands().keySet())
             .containsExactlyInAnyOrder("query");
         var admin = root.getSubcommands().get("admin").getSubcommands();
