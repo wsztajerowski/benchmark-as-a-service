@@ -8,7 +8,7 @@ the real `~/.baas` checksummed before and after (unchanged).
 
 | Dimension | Status |
 |---|---|
-| Completeness | 32/35 tasks. 7.4 deferred by the user to its own branch; 7.5 pending (teardown of `wiktor-dev`); 8.1 is this file |
+| Completeness | 34/35 tasks. 7.4 deferred by the user to its own branch |
 | Correctness | 19/19 requirements implemented; every scenario has a unit test or a live observation, except the gaps below |
 | Coherence | Design followed; no decision contradicted by the code |
 
@@ -67,6 +67,10 @@ Paths are under `baas-cli/src/main/java/pl/wsztajerowski/baas/` and the matching
 - **7.1–7.3 ran with `--deployment wiktor-dev` typed** on each command rather than through the
   `baas-dev` alias; the alias only prepends the same flag.
 - **7.4 is deferred** to a separate branch by the user (see W2).
+- **Left by hand after 7.5**: the customer-managed `wiktor-dev` deployer policy on `baas-admin`, and
+  the `baas-operator-wiktor-dev` profile in `~/.aws/config`, whose role no longer exists. Neither grants
+  anything over a deleted deployment. The policy is region-exact (`us-east-1`), so 7.4 in `eu-central-1`
+  needs a new one either way; detaching this one is the user's call.
 - Editorial, after archive: the core-stack-provisioning scenario *The values are read back from the
   stack, not from configuration* still says `~/.baas/config.yaml` (noted in task 1.2).
 
@@ -80,9 +84,10 @@ Paths are under `baas-cli/src/main/java/pl/wsztajerowski/baas/` and the matching
 | 7.2 job | `20261007T085701862Z-3d8ced78` completed in ~1 min on `i-0d29c374cf2edbde3`, tagged `baas-deployment=wiktor-dev`; `environment.json` written; the row is found on `wiktor-dev` and not on `baas-381492019823` |
 | 7.3 selection | the bare query refuses listing both with the hint; `config list` shows both rows; the default's `jobs list` omits the live dev runner |
 | 7.4 | deferred (W2) |
-| 7.5 | pending |
+| 7.5 extension | `admin image build --extension` (ASCII, 344 bytes) → label `1.3.0+ext.f6620f0d`, `ami-02e77d399863b9e36`; `ami-03e9ecfdd0ed215fb` retired after the repoint |
+| 7.5 teardown | saved the extension to `~/.baas/runner-image-extension.wiktor-dev.yaml` (marker `f6620f0d`, body identical to the pushed file; the default's `runner-image-extension.yaml` untouched); emptied and deleted the bucket, deleted the stack (~8.5 min), retired AMI and pointer, removed `deployments/wiktor-dev.yaml`; no stack, parameter, AMI or bucket remains. Bare `jobs list` and `config list` address `baas-381492019823` alone. U21 and U40 closed |
 
 ## Assessment
 
-No implementation gaps. The open items are tasks: 7.5 (tear down `wiktor-dev`, plus the U21/U40
-checks) must run before archive; 7.4 is deferred by decision. W1 is worth a one-line fix before archive.
+No implementation gaps, and no critical issue. 7.4 is deferred by decision (W2). W1 is worth a one-line
+fix before archive.
