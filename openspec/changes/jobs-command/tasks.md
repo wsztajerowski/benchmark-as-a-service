@@ -258,6 +258,8 @@ not count. No score comparison: no measurement path changes (D7).
 
 ## 15. Verify
 
-- [ ] 15.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
+- [x] 15.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
       requirement → code → test → gap table, open warnings under stable IDs (W1, W2…) and any deviation
       from the design or tasks.
+      *Done 2026-10-07:* `verify.md` — no critical issue; W1–W9; the best-per-group defect recorded as
+      found and fixed.
