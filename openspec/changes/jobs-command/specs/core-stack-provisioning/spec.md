@@ -461,7 +461,9 @@ objects under the job prefix, since a job's uploaded input is the only record of
 - **THEN** none of them expires current objects under the job prefix
 
 ### Requirement: Setup renders the deployer policy and stops when the caller lacks it
-Before calling any CloudFormation, S3, DynamoDB or EC2 API, `baas admin deployment setup` SHALL render
+Before calling any CloudFormation, DynamoDB or EC2 API — after only the bucket-region lookup, which
+must come first so that a deployment living in another region is named rather than met with a policy
+for a second one — `baas admin deployment setup` SHALL render
 the deployer policy for the deployment it is about to create or update — the account from
 `sts:GetCallerIdentity`, the region from `--region` or its default, the name from `--deployment` or the
 account-derived default — and, where the caller may call `iam:SimulatePrincipalPolicy`, check the

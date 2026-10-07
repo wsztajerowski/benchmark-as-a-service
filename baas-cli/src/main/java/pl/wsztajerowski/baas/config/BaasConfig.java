@@ -112,7 +112,7 @@ public class BaasConfig {
          * {@code admin setup} writes the one it deployed to, {@code config sync} the one it found
          * the deployment's bucket in — so it wins. The environment and the default matter only
          * before any deployment is adopted: where {@code admin setup} and
-         * {@code admin deployer-policy} deploy or render, and where {@code config sync} starts
+         * {@code admin deployment setup} deploy or render its policy, and where {@code config sync} starts
          * looking (any region finds the bucket).
          *
          * <p>Resolved, never stored: {@link #getRegion()} stays the file's own value, so saving a

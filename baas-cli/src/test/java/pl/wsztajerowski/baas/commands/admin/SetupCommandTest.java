@@ -335,4 +335,24 @@ class SetupCommandTest {
             ::validateNetworkingOptions).doesNotThrowAnyException();
         assertThatCode(parsed()::validateNetworkingOptions).doesNotThrowAnyException();
     }
+
+    // ─── The deployer policy is a step of setup ──────────────────────────────────
+
+    @Test
+    void missingRightsPrintThePolicyAsTheOnlyPayloadAndExitOne() {
+        var out = new java.io.StringWriter();
+        var command = new SetupCommand();
+        new CommandLine(command).setOut(new java.io.PrintWriter(out, true));
+
+        Integer exit = command.refusalForMissingRights(java.util.List.of("cloudformation:CreateStack"),
+            "{\"Version\":\"2012-10-17\"}", "123456789012", "eu-central-1", "baas-123456789012");
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(out.toString().strip()).isEqualTo("{\"Version\":\"2012-10-17\"}");
+    }
+
+    @Test
+    void sufficientOrUncheckableRightsCarryOn() {
+        assertThat(new SetupCommand().refusalForMissingRights(java.util.List.of(), "{}", "1", "r", "d")).isNull();
+    }
 }
