@@ -4,7 +4,7 @@ stateDiagram-v2
     direction TB
     [*] --> NoConfig
     NoConfig --> Adopted: --deployment P config sync<br/>(writes deployments/P.yaml: prefix + region)<br/>or admin deployment setup
-    Adopted --> Operator: config set --operator-profile<br/>(or ambient creds)
+    Adopted --> Operator: config set --operator-aws-profile<br/>(or ambient creds)
     Operator --> Operator: config set (preferences)
     Operator --> [*]: admin deployment teardown here<br/>(deletes deployments/P.yaml)
     Operator --> Orphaned: [elsewhere] admin deployment teardown

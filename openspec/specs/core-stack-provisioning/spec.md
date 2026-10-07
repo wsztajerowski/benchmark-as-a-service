@@ -44,7 +44,7 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** the request succeeds (the policy's resource ARN matches the bucket's actual name)
 
 ### Requirement: baas admin deployment setup is self-sufficient
-`baas admin deployment setup` SHALL accept `--region` and `--deployer-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, render the deployer policy for that deployment and check the caller's rights against it, deploy or update the core stack, and write the result to that deployment's configuration file. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`.
+`baas admin deployment setup` SHALL accept `--region` and `--deployer-aws-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, render the deployer policy for that deployment and check the caller's rights against it, deploy or update the core stack, and write the result to that deployment's configuration file. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`.
 
 #### Scenario: First run with no prior config
 - **WHEN** `baas admin deployment setup` runs and no deployment is configured
@@ -56,7 +56,7 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 
 #### Scenario: The deployer profile option is renamed
 - **WHEN** `baas admin deployment setup --aws-profile baas-admin` is invoked
-- **THEN** picocli reports an unknown option error, and `--deployer-profile baas-admin` is accepted and stored as `aws.deployerProfile`
+- **THEN** picocli reports an unknown option error, and `--deployer-aws-profile baas-admin` is accepted and stored as `aws.deployerProfile`
 
 ### Requirement: Teardown safety gates
 `baas admin deployment teardown` SHALL abort if any EC2 instance tagged `baas-role=benchmark-runner` and
@@ -178,7 +178,7 @@ A deployment's configuration file SHALL carry `aws.operatorProfile`. `baas run`,
 
 #### Scenario: Deployer profile is never silently reused
 - **WHEN** the configuration has `aws.deployerProfile: baas-deployer` and no `aws.operatorProfile`, and `baas run jmh` is invoked
-- **THEN** the AWS client is built without an explicit profile, and a warning naming `baas config set --operator-profile` is printed
+- **THEN** the AWS client is built without an explicit profile, and a warning naming `baas config set --operator-aws-profile` is printed
 
 #### Scenario: Operator profile is honoured
 - **WHEN** the configuration has `aws.operatorProfile: baas-operator` and `baas run jmh` is invoked

@@ -94,7 +94,7 @@ public class BaasConfig {
 
         /**
          * Credential profile for {@code baas admin} — the deployer's, written by {@code admin
-         * deployment setup --deployer-profile}. Read under its old key {@code aws.profile} too, which
+         * deployment setup --deployer-aws-profile}. Read under its old key {@code aws.profile} too, which
          * files from before the rename carry; the next save writes the new key only.
          */
         public String getDeployerProfile() { return deployerProfile; }

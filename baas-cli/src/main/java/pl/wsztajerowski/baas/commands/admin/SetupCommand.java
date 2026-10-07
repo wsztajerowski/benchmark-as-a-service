@@ -47,7 +47,7 @@ public class SetupCommand implements Callable<Integer> {
     @Option(names = "--region", description = "AWS region (default: eu-central-1).")
     String region;
 
-    @Option(names = "--deployer-profile",
+    @Option(names = "--deployer-aws-profile",
         description = "AWS CLI profile with the deployer policy; stored for every `baas admin` command.")
     String deployerProfile;
 
@@ -373,7 +373,7 @@ public class SetupCommand implements Callable<Integer> {
               1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,
                  and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.
               2. Point the CLI at that profile:
-                   baas config set --operator-profile <profile-name>
+                   baas config set --operator-aws-profile <profile-name>
                  Until you do, `baas run` uses the default credential chain, not this role.
             Next: build the runner image.
                   baas admin image build

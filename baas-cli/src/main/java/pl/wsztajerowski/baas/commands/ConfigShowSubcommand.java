@@ -56,7 +56,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("  operatorProfile:          ")
             .append(config.getAws().getOperatorProfile() != null
                 ? config.getAws().getOperatorProfile() + "  (run/results/config)"
-                : "<not set> — run: baas config set --operator-profile <name>").append('\n')
+                : "<not set> — run: baas config set --operator-aws-profile <name>").append('\n')
             .append("  region:                   ").append(config.getAws().resolveRegion())
             .append(config.getAws().getRegion() != null ? "" : "  (not in the file: AWS_REGION, else the default)")
             .append('\n')

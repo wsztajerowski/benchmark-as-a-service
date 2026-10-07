@@ -51,7 +51,7 @@ class ConfigSetCommandTest {
     void theDeployerProfileIsStoredUnderItsOwnName(@TempDir Path dir) throws Exception {
         Path file = TestDeployments.write(dir, TestDeployments.DEFAULT);
 
-        assertThat(execute(dir, "config", "set", "--deployer-profile", "baas-admin")).isZero();
+        assertThat(execute(dir, "config", "set", "--deployer-aws-profile", "baas-admin")).isZero();
 
         assertThat(Files.readString(file)).contains("deployerProfile: \"baas-admin\"");
     }

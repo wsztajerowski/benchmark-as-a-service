@@ -10,12 +10,12 @@ sequenceDiagram
     participant FS as Local Filesystem
 
     Note over User,FS: baas admin deployment setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
     picocli->>SC: parse and bind options into fields
     Note over SC: validate federation and networking options before anything is loaded --<br/>a partial federation set, or --vpc-id/--subnet-id/--sg-id without<br/>--use-existing-vpc (or the flag without all three) -> exit 2 (U34)
     SC->>FS: ConfigService.load()
     FS-->>SC: loadForSetup() -- deployments/D.yaml (or a new one named D), else the only one,<br/>else empty: the name is derived below. Two or more and no D: refused. D validated first, before any AWS call
-    Note over SC: apply --region / --deployer-profile over config defaults
+    Note over SC: apply --region / --deployer-aws-profile over config defaults
     SC->>STS: sts.getCallerIdentity()
     STS-->>SC: account id
     Note over SC: prefix = D, the only configured one, else "baas-" + accountId<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results" (DeploymentNames)<br/>Nothing about the CALLER reaches the name -- a second<br/>deployment exists only because its name was typed.
@@ -60,7 +60,7 @@ sequenceDiagram
     Note over SC,FS: nothing derivable or resolvable is stored
 
     alt created
-        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>Next: baas admin image build (~15 min)
+        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-aws-profile NAME<br/>Next: baas admin image build (~15 min)
     else updated
         SC-->>User: "Deployment <prefix> is deployed. Operator role: <arn>"
     end

@@ -23,7 +23,7 @@ sequenceDiagram
 
     rect rgb(240, 255, 240)
         Note over IA,AWS: 1. Install
-        Adm->>CLI: baas admin deployment setup [--region] [--deployer-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
+        Adm->>CLI: baas admin deployment setup [--region] [--deployer-aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
         CLI->>AWS: bucket-region check, then the policy step (SimulatePrincipalPolicy)
         CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
         CLI->>CFG: write prefix, aws.deployerProfile, aws.region
@@ -41,7 +41,7 @@ sequenceDiagram
         Op->>CLI: baas --deployment baas-<accountId> config sync
         CLI->>AWS: DescribeStacks (proves it exists)
         CLI->>CFG: write prefix
-        Op->>CLI: baas config set --operator-profile p [--region] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--git-resolve-project]
+        Op->>CLI: baas config set --operator-aws-profile p [--region] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--git-resolve-project]
         CLI->>CFG: write
     end
 

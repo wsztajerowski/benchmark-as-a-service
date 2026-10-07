@@ -203,7 +203,7 @@ class RunCommandTest {
     @Test
     void warnsOnALaptopWithNoOperatorProfileAndNoAmbientCredentials() {
         assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(), Map.of()))
-            .get().asString().contains("--operator-profile");
+            .get().asString().contains("--operator-aws-profile");
     }
 
     /**

@@ -191,7 +191,7 @@ public class RunCommand implements Callable<Integer> {
      * one.
      *
      * <p>Silent when credentials already arrive from the environment. The warning's own advice —
-     * {@code baas config set --operator-profile} — is not merely redundant there but wrong: in
+     * {@code baas config set --operator-aws-profile} — is not merely redundant there but wrong: in
      * continuous integration the credentials come from an OIDC federation the job performed, and
      * there is no profile to name. Falling through to the default credential chain is what the
      * method's own contract calls correct in that case, so warning about it trained the reader to
@@ -203,7 +203,7 @@ public class RunCommand implements Callable<Integer> {
         }
         return Optional.of(
             "No aws.operatorProfile configured — using the default AWS credential chain. "
-                + "Set one with: baas config set --operator-profile <profile-name>");
+                + "Set one with: baas config set --operator-aws-profile <profile-name>");
     }
 
     /**

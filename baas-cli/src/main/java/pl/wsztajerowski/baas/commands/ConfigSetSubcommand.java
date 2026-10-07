@@ -25,11 +25,11 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Option(names = "--deployer-profile",
+    @Option(names = "--deployer-aws-profile",
         description = "AWS CLI profile for `baas admin` commands (deployer credentials).")
     String deployerProfile;
 
-    @Option(names = "--operator-profile",
+    @Option(names = "--operator-aws-profile",
         description = "AWS CLI profile that assumes BaasCliOperatorRole — used by run/results/config.")
     String operatorProfile;
 

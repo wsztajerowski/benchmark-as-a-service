@@ -44,7 +44,7 @@ import java.nio.file.Path;
         "  baas admin deployment setup            # deploy; prints the IAM policy",
         "                                         # your identity lacks, if any",
         "  baas admin image build                 # bake the runner AMI (~15 min)",
-        "  baas config set --operator-profile <p> # day-to-day credentials",
+        "  baas config set --operator-aws-profile <p> # day-to-day credentials",
         "  baas run --benchmark-jar target/b.jar --project my-bench \\",
         "    jmh -- MyBenchmark -f 1              # note the -- separator"
     }

@@ -53,7 +53,7 @@ class OperatorProfileTest {
 
         assertThat(RunCommand.operatorCredentialsWarning(config))
             .hasValueSatisfying(warning ->
-                assertThat(warning).contains("baas config set --operator-profile"));
+                assertThat(warning).contains("baas config set --operator-aws-profile"));
     }
 
     @Test

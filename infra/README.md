@@ -303,7 +303,7 @@ Finally, point the CLI at that profile — **this step is required**. Without it
 rather than assuming the operator role:
 
 ```bash
-baas config set --operator-profile baas-operator
+baas config set --operator-aws-profile baas-operator
 ```
 
 Each deployment's file, `~/.baas/deployments/<name>.yaml`, keeps the two identities separate:
@@ -315,7 +315,7 @@ aws:
 ```
 
 `aws.operatorProfile` deliberately does **not** fall back to `aws.deployerProfile`. `baas admin
-deployment setup --deployer-profile` writes the deployer profile there, and silently reusing it
+deployment setup --deployer-aws-profile` writes the deployer profile there, and silently reusing it
 would give every benchmark job `iam:CreateRole` and `cloudformation:*` — the exact standing
 privilege the operator role exists to avoid. (The key was `aws.profile`, and the option
 `--aws-profile`, before `multiple-deployments`; an old file is read and rewritten with the new key.)

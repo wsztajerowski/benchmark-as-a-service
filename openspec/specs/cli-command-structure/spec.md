@@ -555,12 +555,12 @@ level.
 - **THEN** it reports that no deployment is configured and exits 0
 
 ### Requirement: The deployer profile option is named for the deployer
-`baas config set` SHALL accept `--deployer-profile <name>`, stored as `aws.deployerProfile`, beside
-`--operator-profile`. It SHALL NOT accept `--aws-profile`. `baas config show` SHALL label the two
+`baas config set` SHALL accept `--deployer-aws-profile <name>`, stored as `aws.deployerProfile`, beside
+`--operator-aws-profile`. It SHALL NOT accept `--aws-profile`. `baas config show` SHALL label the two
 profiles as the deployer profile and the operator profile.
 
 #### Scenario: Setting the deployer profile
-- **WHEN** `baas config set --deployer-profile baas-admin` runs
+- **WHEN** `baas config set --deployer-aws-profile baas-admin` runs
 - **THEN** the selected deployment's file holds `aws.deployerProfile: baas-admin`
 
 #### Scenario: The old option is gone
