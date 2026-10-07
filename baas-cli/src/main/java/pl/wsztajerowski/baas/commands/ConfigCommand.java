@@ -11,6 +11,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
     mixinStandardHelpOptions = true,
     description = "Manage BaaS CLI configuration.",
     subcommands = {
+        ConfigListSubcommand.class,
         ConfigSetSubcommand.class,
         ConfigShowSubcommand.class,
         ConfigSyncSubcommand.class
@@ -24,6 +25,6 @@ public class ConfigCommand implements Runnable {
 
     @Override
     public void run() {
-        logger.info("Use 'baas config set', 'baas config show', or 'baas config sync'.");
+        logger.info("Use 'baas config list', 'baas config set', 'baas config show', or 'baas config sync'.");
     }
 }
