@@ -42,12 +42,11 @@ Paths are under `baas-cli/src/main/java/pl/wsztajerowski/baas/` and the matching
 
 ## Warnings
 
-- **W1 — the ambiguity refusal is followed by a misleading stack-trace hint.** `baas results query` with
-  two deployments configured prints the refusal and `→ choose one: baas config list`, then
-  `(run with -v for the full stack trace)`, though the refusal is a user error with nothing to trace.
-  The same applies to the unknown-name and none-configured refusals. Fix: have
-  `BaasApp.reportFailure` omit the hint for the configuration-selection exceptions, the way picocli
-  usage errors already are. Cosmetic; it does not affect selection.
+- **W1 — fixed.** The ambiguity, unknown-name and none-configured refusals were followed by
+  `(run with -v for the full stack trace)`, though each is a usage error with nothing to trace. They now
+  throw `config/DeploymentSelectionException`, and `BaasApp.reportFailure` omits the hint for it; any
+  other failure keeps it. Pinned by `DeploymentOptionTest.onlyARealFailurePointsAtTheStackTrace`;
+  checked live with `--deployment nope jobs list`. Suite: 739 run, 0 failed.
 - **W2 — scoping is proven by unit tests and a cross-region run, not in one region.** The filter is
   pinned by `Ec2ProvisioningServiceTest`, and both callers pass the resolved deployment. Live, 7.3
   separated two deployments in different regions, which their tables and regions alone would do. The
@@ -89,5 +88,4 @@ Paths are under `baas-cli/src/main/java/pl/wsztajerowski/baas/` and the matching
 
 ## Assessment
 
-No implementation gaps, and no critical issue. 7.4 is deferred by decision (W2). W1 is worth a one-line
-fix before archive.
+No implementation gaps, and no critical issue. 7.4 is deferred by decision (W2). W1 is fixed.
