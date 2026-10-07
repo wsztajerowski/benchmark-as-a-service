@@ -46,4 +46,4 @@ this split:
   `eu-central-1`: the template's default is the eu-central-1 AMI, which `setup` resolves per region
   but a direct `aws cloudformation deploy` does not (`infra/README.md`).
 - U21 and U40 with a non-empty extension were verified live on `wiktor-dev` in `us-east-1`
-  (`openspec/changes/multiple-deployments/verify.md`).
+  (`openspec/changes/archive/2026-10-07-multiple-deployments/verify.md`).
