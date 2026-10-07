@@ -13,6 +13,7 @@ import java.util.stream.Collectors;
 public class Ec2ProvisioningService implements JobSession.Instances {
 
     static final String JOB_ID_TAG = "baas-job-id";
+    static final String DEPLOYMENT_TAG = "baas-deployment";
 
     private static final Logger logger = LoggerFactory.getLogger(Ec2ProvisioningService.class);
 
@@ -24,24 +25,26 @@ public class Ec2ProvisioningService implements JobSession.Instances {
 
     /**
      * The instance carries the fixed tags and nothing else: {@code baas-role} (RunnerRole's
-     * terminate condition and teardown's live-runner gate), {@code baas-job-id} (finding a job's
-     * instance) and {@code project=baas}. Caller {@code --tag}s belong to the stored result and reach
+     * terminate condition), {@code baas-job-id} (finding a job's instance), {@code baas-deployment}
+     * (scoping every live-runner query to its deployment, so two deployments in one region never
+     * count each other's runners) and {@code project=baas}. Caller {@code --tag}s belong to the stored result and reach
      * it through the runner. Copying them here too sent a {@code --tag project=…} as a second
      * {@code project} key, which EC2 rejects outright, and exposed every result tag to EC2's own
      * limits (256-character values, a reserved {@code aws:} prefix, 50 tags) — failures that land
      * after the JAR upload. There is deliberately no parameter for extra tags.
      */
-    static List<Tag> instanceTags(String jobId) {
+    static List<Tag> instanceTags(String jobId, String deployment) {
         return List.of(
             Tag.builder().key("project").value("baas").build(),
             Tag.builder().key("baas-role").value("benchmark-runner").build(),
-            Tag.builder().key(JOB_ID_TAG).value(jobId).build());
+            Tag.builder().key(JOB_ID_TAG).value(jobId).build(),
+            Tag.builder().key(DEPLOYMENT_TAG).value(deployment).build());
     }
 
     public String runInstance(String amiId, String instanceType, String subnetId,
                               String securityGroupId, String instanceProfileName,
-                              String userData, String jobId) {
-        List<Tag> tags = instanceTags(jobId);
+                              String userData, String jobId, String deployment) {
+        List<Tag> tags = instanceTags(jobId, deployment);
         logger.debug("Launching {} from {} in subnet {} (sg {}, instance profile {}) with tags {}",
             instanceType, amiId, subnetId, securityGroupId, instanceProfileName,
             tags.stream().collect(Collectors.toMap(Tag::key, Tag::value)));
@@ -126,9 +129,10 @@ public class Ec2ProvisioningService implements JobSession.Instances {
      * {@code baas jobs list} resolve every job's liveness with this one call however many jobs
      * vanished before.
      */
-    public List<LiveRunner> listRunningBenchmarkInstances() {
+    public List<LiveRunner> listRunningBenchmarkInstances(String deployment) {
         return ec2.describeInstancesPaginator(r -> r.filters(
                 Filter.builder().name("tag:baas-role").values("benchmark-runner").build(),
+                Filter.builder().name("tag:" + DEPLOYMENT_TAG).values(deployment).build(),
                 Filter.builder().name("instance-state-name").values("pending", "running").build()))
             .reservations().stream()
             .flatMap(res -> res.instances().stream())

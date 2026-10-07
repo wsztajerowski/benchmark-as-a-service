@@ -485,7 +485,7 @@ public class RunCommand implements Callable<Integer> {
                 runnerImage.amiId(), resolvedInstanceType,
                 networking.get("SubnetId"), networking.get("SecurityGroupId"),
                 config.runnerInstanceProfile(),
-                userData, jobId);
+                userData, jobId, config.stackName());
         } catch (RuntimeException e) {
             recordLaunchFailure(factory, config, current, e, runnerImage.amiId(),
                 resolvedInstanceType, networking.get("SubnetId"));

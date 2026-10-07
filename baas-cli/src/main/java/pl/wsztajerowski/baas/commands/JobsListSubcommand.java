@@ -161,7 +161,7 @@ public class JobsListSubcommand implements Callable<Integer> {
         // is running, not by how many jobs vanished before.
         Map<String, String> live = new HashMap<>();
         try (var ec2 = factory.ec2()) {
-            for (var runner : new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances()) {
+            for (var runner : new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances(config.stackName())) {
                 if (runner.jobId() != null) {
                     live.put(runner.jobId(), runner.instanceId());
                 }
