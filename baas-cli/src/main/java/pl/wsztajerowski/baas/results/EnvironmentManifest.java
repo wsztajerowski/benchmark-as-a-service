@@ -5,24 +5,27 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.TreeSet;
+import java.util.Set;
 
 /**
- * One job's {@code <result-path>/environment.json} — the observation, as opposed to the
- * declaration in {@code infra/runner-image.yaml}.
- *
- * <p>Held as a flat {@code Map} rather than a record with named fields on purpose: a manifest
- * written by a newer runner carries fields this CLI has never heard of, and those are exactly the
- * ones worth reporting when two jobs disagree. A record would silently drop them.
+ * A job's {@code environment.json}: since schemaVersion 6 the measurement environment in seven
+ * groups, and nothing about the job's identity. Fields are held as {@code group.field}; a flat
+ * manifest from an older schema parses too, its fields under no group, so a comparison across a
+ * schema change still shows what it can.
  */
-public record EnvironmentManifest(String resultPath, Map<String, String> fields) {
+public record EnvironmentManifest(String jobId, Map<String, String> fields) {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String SCHEMA_VERSION = "schemaVersion";
 
-    public static EnvironmentManifest parse(String resultPath, String json) {
+    /** The groups, in the order the manifest writes and every view prints them. */
+    public static final List<String> GROUPS = List.of("machine", "cpu", "memory", "os", "jvm", "tools", "tunables");
+
+    public static EnvironmentManifest parse(String jobId, String json) {
         Map<String, Object> raw;
         try {
             @SuppressWarnings("unchecked")
@@ -30,43 +33,73 @@ public record EnvironmentManifest(String resultPath, Map<String, String> fields)
             raw = parsed;
         } catch (IOException e) {
             throw new UncheckedIOException(
-                new IOException("environment.json for " + resultPath + " is not valid JSON", e));
+                new IOException("environment.json of job " + jobId + " is not valid JSON", e));
         }
 
         Map<String, String> fields = new LinkedHashMap<>();
-        raw.forEach((key, value) -> fields.put(key, value == null ? "" : String.valueOf(value)));
-        return new EnvironmentManifest(resultPath, fields);
+        raw.forEach((key, value) -> {
+            if (value instanceof Map<?, ?> group) {
+                group.forEach((field, fieldValue) ->
+                    fields.put(key + "." + field, fieldValue == null ? "" : String.valueOf(fieldValue)));
+            } else {
+                fields.put(key, value == null ? "" : String.valueOf(value));
+            }
+        });
+        return new EnvironmentManifest(jobId, fields);
     }
 
     /**
-     * Absent, or present and unrecognised, is not an error: the diff still works field by field,
-     * and the caller decides whether to say the two manifests were written to different rules.
+     * Absent, or present and unrecognised, is not an error: the diff still works, and the caller
+     * decides whether to say the two manifests were written to different rules.
      */
     public Optional<String> schemaVersion() {
         return Optional.ofNullable(fields.get(SCHEMA_VERSION));
     }
 
-    /**
-     * Fields that differ between two manifests, keyed by field name. A field present in only one
-     * manifest is reported with an empty string for the side that lacks it — that is a difference
-     * in the environment record, and hiding it would defeat the point.
-     */
-    public static Map<String, Difference> diff(EnvironmentManifest a, EnvironmentManifest b) {
-        Map<String, Difference> differences = new LinkedHashMap<>();
-        for (String key : new TreeSet<>(union(a, b))) {
-            String left = a.fields().getOrDefault(key, "");
-            String right = b.fields().getOrDefault(key, "");
-            if (!left.equals(right)) {
-                differences.put(key, new Difference(left, right));
-            }
-        }
-        return differences;
+    public Optional<String> amiId() {
+        return Optional.ofNullable(fields.get("machine.amiId")).filter(value -> !value.isBlank());
     }
 
-    private static TreeSet<String> union(EnvironmentManifest a, EnvironmentManifest b) {
-        var keys = new TreeSet<>(a.fields().keySet());
+    /** One group's fields, by their name within the group, in the order the manifest holds them. */
+    public Map<String, String> group(String group) {
+        Map<String, String> fieldsOfGroup = new LinkedHashMap<>();
+        fields.forEach((key, value) -> {
+            if (key.startsWith(group + ".")) {
+                fieldsOfGroup.put(key.substring(group.length() + 1), value);
+            }
+        });
+        return fieldsOfGroup;
+    }
+
+    /**
+     * The differing fields of two manifests, by group then field, groups in {@link #GROUPS} order
+     * and any field outside a group (an older schema's) last, under {@code ""}. {@code schemaVersion}
+     * is never a difference — the caller warns about it. A field present in only one manifest is
+     * reported with an empty string for the side that lacks it: hiding it would defeat the point.
+     */
+    public static Map<String, Map<String, Difference>> diff(EnvironmentManifest a, EnvironmentManifest b) {
+        Set<String> keys = new LinkedHashSet<>(a.fields().keySet());
         keys.addAll(b.fields().keySet());
-        return keys;
+        keys.remove(SCHEMA_VERSION);
+
+        Map<String, Map<String, Difference>> byGroup = new LinkedHashMap<>();
+        for (String group : GROUPS) {
+            byGroup.put(group, new LinkedHashMap<>());
+        }
+        byGroup.put("", new LinkedHashMap<>());
+        for (String key : keys) {
+            String left = a.fields().getOrDefault(key, "");
+            String right = b.fields().getOrDefault(key, "");
+            if (left.equals(right)) {
+                continue;
+            }
+            int dot = key.indexOf('.');
+            String group = dot > 0 && GROUPS.contains(key.substring(0, dot)) ? key.substring(0, dot) : "";
+            String field = group.isEmpty() ? key : key.substring(dot + 1);
+            byGroup.get(group).put(field, new Difference(left, right));
+        }
+        byGroup.values().removeIf(Map::isEmpty);
+        return byGroup;
     }
 
     public record Difference(String left, String right) {

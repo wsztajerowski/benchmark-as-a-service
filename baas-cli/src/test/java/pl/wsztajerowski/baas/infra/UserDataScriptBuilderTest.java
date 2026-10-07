@@ -518,7 +518,7 @@ class UserDataScriptBuilderTest {
             .as("instance type and CPU model are properties of the job, not of the image, and "
                 + "they move a score further than a JDK patch level does")
             .contains("\"instanceType\": \"${INSTANCE_TYPE}\"")
-            .contains("\"cpuModel\": \"${CPU_MODEL}\"");
+            .contains("\"model\": \"${CPU_MODEL}\"");
     }
 
     @Test
@@ -557,10 +557,16 @@ class UserDataScriptBuilderTest {
         assertThatCode(() -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> parsed = new ObjectMapper().readValue(resolved, Map.class);
-            assertThat(parsed)
-                .containsKeys("schemaVersion", "imageVersion", "amiId", "instanceType",
-                    "cpuModel", "kernelRelease", "jvmVersion", "jvmVendor", "jvmVendorVersion", "jvmName",
-                    "perfEventParanoid");
+            assertThat(parsed).as("the environment only, in seven groups, and no job identity")
+                .containsOnlyKeys("schemaVersion", "machine", "cpu", "memory", "os", "jvm", "tools", "tunables");
+            assertThat((Map<String, Object>) parsed.get("machine")).containsOnlyKeys("imageVersion", "amiId", "instanceType");
+            assertThat((Map<String, Object>) parsed.get("cpu")).containsOnlyKeys("model", "arch", "cores", "threadsPerCore", "maxMhz");
+            assertThat((Map<String, Object>) parsed.get("memory")).containsOnlyKeys("totalKb", "swapTotalKb");
+            assertThat((Map<String, Object>) parsed.get("os")).containsOnlyKeys("version", "kernelRelease");
+            assertThat((Map<String, Object>) parsed.get("jvm")).containsOnlyKeys("version", "vendor", "vendorVersion", "name");
+            assertThat((Map<String, Object>) parsed.get("tools")).containsOnlyKeys("perf", "asyncProfiler");
+            assertThat((Map<String, Object>) parsed.get("tunables"))
+                .containsOnlyKeys("perfEventParanoid", "kptrRestrict", "transparentHugepages");
         }).doesNotThrowAnyException();
     }
 
@@ -642,14 +648,16 @@ class UserDataScriptBuilderTest {
 
         assertThat(script)
             .as("a tag with no manifest counterpart breaks the observed-values invariant")
-            .contains("\"cpuArch\": \"${CPU_ARCH}\"");
+            .contains("\"arch\": \"${CPU_ARCH}\"")
+            .contains("--tag \"cpuArch=${CPU_ARCH}\"");
     }
 
     @Test
     void manifestSchemaVersionIsBumpedForTheNewField() {
         assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION)
-            .as("4 added jvmVendor, jvmVendorVersion and jvmName; 5 renamed requestId to jobId")
-            .isEqualTo(5);
+            .as("4 added jvmVendor, jvmVendorVersion and jvmName; 5 renamed requestId to jobId; "
+                + "6 grouped the environment and dropped the job's identity, region and AWS CLI version")
+            .isEqualTo(6);
     }
 
     // ─── JVM vendor ──────────────────────────────────────────────────────────────
@@ -661,9 +669,9 @@ class UserDataScriptBuilderTest {
     @Test
     void theManifestRecordsWhoBuiltTheJvm() {
         assertThat(script())
-            .contains("\"jvmVendor\": \"${JVM_VENDOR}\"")
-            .contains("\"jvmVendorVersion\": \"${JVM_VENDOR_VERSION}\"")
-            .contains("\"jvmName\": \"${JVM_NAME}\"")
+            .contains("\"vendor\": \"${JVM_VENDOR}\"")
+            .contains("\"vendorVersion\": \"${JVM_VENDOR_VERSION}\"")
+            .contains("\"name\": \"${JVM_NAME}\"")
             .as("a vendor string can contain a double quote or backslash")
             .contains("JVM_VENDOR=$(json_escape \"$JVM_VENDOR_RAW\")");
     }
@@ -902,19 +910,18 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * environment.json is written before the benchmark, so it is what a job that died early
-     * leaves behind — and it is what buys back the self-description the opaque job id gave up.
+     * The job's identity lives on its job item and tags; the manifest is the environment only, so
+     * `jobs diff` can compare every field without an exclusion list.
      */
     @Test
-    void theManifestIdentifiesAJobThatStoredNothing() {
+    void theManifestCarriesNoJobIdentity() {
         String script = script(Map.of("project", "lynx-journal", "branch", "main"));
+        String manifest = script.substring(script.indexOf("cat > /app/environment.json"),
+            script.indexOf("\nMANIFEST\n", script.indexOf("cat > /app/environment.json")));
 
-        assertThat(script).contains("\"project\": \"${PROJECT}\"")
-            .contains("\"branch\": \"${BRANCH}\"")
-            .contains("\"jobId\": \"${JOB_ID}\"")
-            .contains("\"createdAt\": \"${CREATED_AT}\"");
-        assertThat(script).contains("PROJECT=$(json_escape")
-            .contains("BRANCH=$(json_escape");
+        assertThat(manifest).doesNotContain("\"project\"", "\"branch\"", "\"jobId\"", "\"createdAt\"",
+            "\"benchmarkType\"", "\"region\"", "\"awsCliVersion\"");
+        assertThat(script).doesNotContain("PROJECT_NAME", "BRANCH_NAME", "AWS_CLI_VERSION");
     }
 
     @Test

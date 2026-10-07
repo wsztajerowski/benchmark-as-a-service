@@ -13,7 +13,7 @@ import java.util.stream.Stream;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas env diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 5;
+    public static final int MANIFEST_SCHEMA_VERSION = 6;
 
     /**
      * EC2 refuses user-data over 16 KB raw, and the launch then fails outright. The comments below
@@ -170,7 +170,6 @@ public class UserDataScriptBuilder {
         # script's error handling is deliberately explicit (no set -e).
         PERF_VERSION=$(perf --version 2>/dev/null | head -1)
         PERF_VERSION=$(json_escape "${PERF_VERSION:-absent}")
-        AWS_CLI_VERSION=$(json_escape "$(aws --version 2>&1 | head -1)")
         # Cleared first: when asprof is missing nothing below assigns it, and the default would
         # otherwise take any ASYNC_PROFILER_VERSION already in the environment.
         ASYNC_PROFILER_VERSION=
@@ -182,40 +181,45 @@ public class UserDataScriptBuilder {
         # The job's own identity. The job id is opaque by design, so what it stopped carrying the
         # manifest has to carry — and the manifest is written before the benchmark, so this is what
         # a job that dies early leaves behind. A project or branch name can contain " or \\.
-        PROJECT=$(json_escape "${PROJECT_NAME}")
-        BRANCH=$(json_escape "${BRANCH_NAME}")
 
         cat > /app/environment.json <<MANIFEST
         {
           "schemaVersion": ${MANIFEST_SCHEMA_VERSION},
-          "imageVersion": "${IMAGE_VERSION_ACTUAL}",
-          "amiId": "${AMI_ID}",
-          "instanceType": "${INSTANCE_TYPE}",
-          "region": "${AWS_REGION}",
-          "cpuModel": "${CPU_MODEL}",
-          "cpuArch": "${CPU_ARCH}",
-          "cpuCores": "${CPU_CORES}",
-          "cpuThreadsPerCore": "${CPU_THREADS_PER_CORE}",
-          "cpuMaxMhz": "${CPU_MAX_MHZ}",
-          "memoryTotalKb": "${MEMORY_TOTAL_KB}",
-          "swapTotalKb": "${SWAP_TOTAL_KB}",
-          "osVersion": "${OS_VERSION}",
-          "kernelRelease": "${KERNEL_RELEASE}",
-          "jvmVersion": "${JVM_VERSION}",
-          "jvmVendor": "${JVM_VENDOR}",
-          "jvmVendorVersion": "${JVM_VENDOR_VERSION}",
-          "jvmName": "${JVM_NAME}",
-          "perfVersion": "${PERF_VERSION}",
-          "awsCliVersion": "${AWS_CLI_VERSION}",
-          "asyncProfilerVersion": "${ASYNC_PROFILER_VERSION}",
-          "perfEventParanoid": "${PERF_EVENT_PARANOID}",
-          "kptrRestrict": "${KPTR_RESTRICT}",
-          "transparentHugepages": "${TRANSPARENT_HUGEPAGES}",
-          "benchmarkType": "${BENCHMARK_TYPE}",
-          "project": "${PROJECT}",
-          "branch": "${BRANCH}",
-          "jobId": "${JOB_ID}",
-          "createdAt": "${CREATED_AT}"
+          "machine": {
+            "imageVersion": "${IMAGE_VERSION_ACTUAL}",
+            "amiId": "${AMI_ID}",
+            "instanceType": "${INSTANCE_TYPE}"
+          },
+          "cpu": {
+            "model": "${CPU_MODEL}",
+            "arch": "${CPU_ARCH}",
+            "cores": "${CPU_CORES}",
+            "threadsPerCore": "${CPU_THREADS_PER_CORE}",
+            "maxMhz": "${CPU_MAX_MHZ}"
+          },
+          "memory": {
+            "totalKb": "${MEMORY_TOTAL_KB}",
+            "swapTotalKb": "${SWAP_TOTAL_KB}"
+          },
+          "os": {
+            "version": "${OS_VERSION}",
+            "kernelRelease": "${KERNEL_RELEASE}"
+          },
+          "jvm": {
+            "version": "${JVM_VERSION}",
+            "vendor": "${JVM_VENDOR}",
+            "vendorVersion": "${JVM_VENDOR_VERSION}",
+            "name": "${JVM_NAME}"
+          },
+          "tools": {
+            "perf": "${PERF_VERSION}",
+            "asyncProfiler": "${ASYNC_PROFILER_VERSION}"
+          },
+          "tunables": {
+            "perfEventParanoid": "${PERF_EVENT_PARANOID}",
+            "kptrRestrict": "${KPTR_RESTRICT}",
+            "transparentHugepages": "${TRANSPARENT_HUGEPAGES}"
+          }
         }
         MANIFEST
 
@@ -309,10 +313,6 @@ public class UserDataScriptBuilder {
             // consulted.
             export("CREATED_AT", createdAt) +
             export("BENCHMARK_JAR_S3_KEY", benchmarkJarS3Key) +
-            // Only the manifest reads these two; the runner receives them as --tag instead, since
-            // the item's top-level tags map is the query surface baas results has.
-            export("PROJECT_NAME", project(runnerTags)) +
-            export("BRANCH_NAME", branch(runnerTags)) +
             export("BENCHMARK_TIMEOUT", benchmarkTimeoutSeconds) +
             export("WALL_CLOCK_HARD_KILL", wallClockHardKillSeconds) +
             export("MANIFEST_SCHEMA_VERSION", MANIFEST_SCHEMA_VERSION) +
@@ -355,14 +355,6 @@ public class UserDataScriptBuilder {
                 Map.entry(":failedPrefix", JobStatus.FAILED_PREFIX))
             .map(e -> "\"" + e.getKey() + "\":{\"S\":\"" + e.getValue() + "\"}")
             .collect(java.util.stream.Collectors.joining(","));
-    }
-
-    private static String project(Map<String, String> runnerTags) {
-        return runnerTags.get(TagKeys.PROJECT);
-    }
-
-    private static String branch(Map<String, String> runnerTags) {
-        return runnerTags.get(TagKeys.BRANCH);
     }
 
     /**

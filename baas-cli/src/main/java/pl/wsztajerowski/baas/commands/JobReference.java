@@ -4,9 +4,10 @@ import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
 /**
- * A job named on the command line: either its job id, or a literal S3 result path. Shared by
- * {@code baas download} and {@code baas env diff}, so the two accept the same arguments and
- * resolve them the same way.
+ * A job named on the command line: its job id, and nothing else. Shared by {@code jobs show},
+ * {@code jobs diff} and {@code jobs download}, so they accept the same argument and resolve it the
+ * same way. A literal result path used to be accepted too, for jobs stored before job items or the
+ * unified layout; none exist since the deployment was rebuilt, so the second shape went.
  */
 final class JobReference {
 
@@ -15,25 +16,26 @@ final class JobReference {
     private JobReference() {
     }
 
-    /**
-     * A path is never a job identifier and a job identifier never contains a slash, so the two
-     * argument shapes cannot be confused. The path branch is what keeps every job stored before
-     * the unified layout retrievable: those keep their original path, and nothing reconstructs it.
-     */
     static boolean looksLikeJobId(String argument) {
         return argument != null && JOB_ID.matcher(argument).matches();
     }
 
+    /** Why the argument is not a job id, or {@code null} when it is one. Checked before any AWS call. */
+    static String notAJobId(String argument) {
+        if (looksLikeJobId(argument)) {
+            return null;
+        }
+        return "'" + argument + "' is not a job id. Pass the id `baas run` printed and `baas jobs list` "
+            + "shows, e.g. 20260820T174432812Z-a3f9c21b.";
+    }
+
     /**
-     * The job's result path, without a trailing slash, or {@code null} when a job id names no
-     * stored job. A job id is looked up with {@code byJobId} (the stored {@code resultPath},
-     * through {@code jobId-index}), which is called only for a job id. Every job since job
-     * items exist resolves through its job item, failed and never-launched ones included; an
-     * older job resolves through its measurements, so only an older job that stored none needs
-     * its result path.
+     * The job's result path, without a trailing slash, or {@code null} when the id names no stored
+     * job. Looked up with {@code byJobId} — the stored {@code resultPath}, through
+     * {@code jobId-index} — never reconstructed.
      */
-    static String resolve(String argument, UnaryOperator<String> byJobId) {
-        String path = looksLikeJobId(argument) ? byJobId.apply(argument) : argument;
+    static String resolve(String jobId, UnaryOperator<String> byJobId) {
+        String path = byJobId.apply(jobId);
         if (path == null) {
             return null;
         }
@@ -42,8 +44,6 @@ final class JobReference {
 
     /** What to say when a job id resolves to nothing. */
     static String noSuchJob(String jobId) {
-        return "No job found with id '" + jobId + "'. Check the id with `baas jobs list`. A job "
-            + "recorded before job items existed that stored no measurement has no index entry; "
-            + "pass its result path (jobs/<project>/<jobId>) instead.";
+        return "No job found with id '" + jobId + "'. Check the id with `baas jobs list`.";
     }
 }

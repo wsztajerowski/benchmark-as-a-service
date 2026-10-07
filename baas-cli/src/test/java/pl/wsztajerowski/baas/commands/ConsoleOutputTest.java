@@ -5,6 +5,7 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.results.EnvironmentManifest.Difference;
+import pl.wsztajerowski.baas.results.PackagesDiff;
 import pl.wsztajerowski.baas.results.ResultRow;
 
 import java.io.ByteArrayOutputStream;
@@ -85,27 +86,35 @@ class ConsoleOutputTest {
         assertThat(out.toString()).doesNotContain(ESC);
     }
 
-    // --- env diff --------------------------------------------------------------------------
+    // --- jobs diff -------------------------------------------------------------------------
 
-    private static String diff(boolean colour) {
+    private static String diff(boolean colour, PackagesDiff packages) {
         var command = new JobsDiffSubcommand();
-        command.resultPathA = "jobs/p/20260724T120000000Z-a3f9c21b";
-        command.resultPathB = "jobs/p/20260811T093000000Z-b7e4d0f2";
-        Map<String, Difference> differences = new LinkedHashMap<>();
-        differences.put("jdk", new Difference("25.0.3", "25.0.4"));
-        differences.put("perf", new Difference("", "6.1"));
+        command.jobA = "20260724T120000000Z-a3f9c21b";
+        command.jobB = "20260811T093000000Z-b7e4d0f2";
+        Map<String, Map<String, Difference>> differences = new LinkedHashMap<>();
+        Map<String, Difference> jvm = new LinkedHashMap<>();
+        jvm.put("version", new Difference("25.0.3", "25.0.4"));
+        differences.put("jvm", jvm);
+        differences.put("tools", Map.of("perf", new Difference("", "6.1")));
         var out = new StringWriter();
-        command.printDiff(Console.withFlags(new PrintWriter(out), colour, colour), differences);
+        command.printDiff(Console.withFlags(new PrintWriter(out), colour, colour), differences, packages);
         return out.toString();
     }
 
+    private static String diff(boolean colour) {
+        return diff(colour, null);
+    }
+
     @Test
-    void thePlainDiffIsByteIdenticalToTheOldPrintf() {
-        String fmt = "%-24s %-34s %-34s%n";
-        String expected = String.format(fmt, "FIELD", "…bs/p/20260724T120000000Z-a3f9c21b", "…bs/p/20260811T093000000Z-b7e4d0f2")
-            + "-".repeat(94) + System.lineSeparator()
-            + String.format(fmt, "jdk", "25.0.3", "25.0.4")
-            + String.format(fmt, "perf", "(absent)", "6.1");
+    void thePlainDiffNamesTheGroupsThenListsTheFields() {
+        String fmt = "%-10s %-18s %-30s %-30s%n";
+        String expected = "Differs in: jvm, tools" + System.lineSeparator()
+            + System.lineSeparator()
+            + String.format(fmt, "GROUP", "FIELD", "20260724T120000000Z-a3f9c21b", "20260811T093000000Z-b7e4d0f2")
+            + "-".repeat(91) + System.lineSeparator()
+            + String.format(fmt, "jvm", "version", "25.0.3", "25.0.4")
+            + String.format(fmt, "tools", "perf", "(absent)", "6.1");
 
         assertThat(diff(false)).isEqualTo(expected);
     }
@@ -116,6 +125,28 @@ class ConsoleOutputTest {
 
         assertThat(coloured).contains(ESC + "[31m25.0.3").contains(ESC + "[32m25.0.4");
         assertThat(coloured.replaceAll(ESC + "\\[[0-9;]*m", "")).isEqualTo(diff(false));
+    }
+
+    @Test
+    void identicalEnvironmentsSaySo() {
+        var command = new JobsDiffSubcommand();
+        var out = new StringWriter();
+        command.printDiff(Console.plain(new PrintWriter(out, true)), Map.of(), null);
+
+        assertThat(out.toString()).startsWith("No differences. Both jobs measured on the same environment.");
+    }
+
+    @Test
+    void packagesAreAGroupWhenTheAmisDiffer() {
+        var packages = PackagesDiff.of("openssl-libs-3.0.8-1.amzn2023.0.14.x86_64\n",
+            "openssl-libs-3.0.8-1.amzn2023.0.16.x86_64\nzstd-libs-1.5.5-1.amzn2023.0.2.x86_64\n");
+
+        String out = diff(false, packages);
+
+        assertThat(out).startsWith("Differs in: jvm, tools, packages")
+            .contains("Packages (AMIs differ): 1 changed · 1 added · 0 removed")
+            .contains("changed  openssl-libs  3.0.8-1.amzn2023.0.14 → 3.0.8-1.amzn2023.0.16")
+            .contains("added    zstd-libs 1.5.5-1.amzn2023.0.2");
     }
 
     // --- --watch ---------------------------------------------------------------------------
