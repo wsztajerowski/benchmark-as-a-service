@@ -54,11 +54,13 @@ class Ec2ProvisioningServiceTest {
         var ec2 = new CapturingEc2();
 
         new Ec2ProvisioningService(ec2).runInstance("ami-1", "c5.2xlarge", "subnet-1", "sg-1",
-            "baas-123456789012-profile-runner", "#!/bin/bash", "20261002T080250645Z-264f5dfb");
+            "baas-123456789012-profile-runner", "#!/bin/bash", "20261002T080250645Z-264f5dfb", "wiktor-dev");
 
         var tags = ec2.request.tagSpecifications().getFirst().tags();
         assertThat(tags).extracting(Tag::key)
-            .containsExactlyInAnyOrder("project", "baas-role", "baas-job-id");
+            .containsExactlyInAnyOrder("project", "baas-role", "baas-job-id", "baas-deployment");
+        assertThat(tags).filteredOn(tag -> tag.key().equals("baas-deployment"))
+            .extracting(Tag::value).containsExactly("wiktor-dev");
         assertThat(tags).extracting(Tag::key).doesNotHaveDuplicates();
         assertThat(tags).filteredOn(tag -> tag.key().equals("baas-job-id"))
             .extracting(Tag::value).containsExactly("20261002T080250645Z-264f5dfb");
@@ -66,17 +68,20 @@ class Ec2ProvisioningServiceTest {
 
     /**
      * W2: teardown's live-runner gate. A runner launched seconds earlier is still `pending`, and
-     * deleting the stack then pulls its role, subnet and image out from under it.
+     * deleting the stack then pulls its role, subnet and image out from under it. Scoped to the
+     * deployment (U36): another deployment's runner in the same region neither blocks a teardown
+     * nor appears in `jobs list`.
      */
     @Test
     void theTeardownGateCountsBootingRunnersAsLive() {
         var ec2 = new CapturingEc2();
 
-        new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances();
+        new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances("wiktor-dev");
 
         assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
             .containsExactlyInAnyOrder(
                 org.assertj.core.groups.Tuple.tuple("tag:baas-role", java.util.List.of("benchmark-runner")),
+                org.assertj.core.groups.Tuple.tuple("tag:baas-deployment", java.util.List.of("wiktor-dev")),
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
     }
 
@@ -89,7 +94,7 @@ class Ec2ProvisioningServiceTest {
                 .tags(Tag.builder().key("baas-job-id").value("20261003T000000000Z-a3f9c21b").build()).build(),
             Instance.builder().instanceId("i-2").state(s -> s.name("pending")).build())).build();
 
-        assertThat(new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances()).containsExactly(
+        assertThat(new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances("baas-123456789012")).containsExactly(
             new Ec2ProvisioningService.LiveRunner("i-1", "running", "20261003T000000000Z-a3f9c21b"),
             new Ec2ProvisioningService.LiveRunner("i-2", "pending", null));
     }
@@ -113,7 +118,7 @@ class Ec2ProvisioningServiceTest {
         var ec2 = new CapturingEc2();
 
         new Ec2ProvisioningService(ec2).runInstance("ami-1", "z99.future-large", "subnet-1", "sg-1",
-            "profile", "#!/bin/bash", "run-1");
+            "profile", "#!/bin/bash", "run-1", "baas-123456789012");
 
         assertThat(ec2.request.instanceTypeAsString()).isEqualTo("z99.future-large");
     }

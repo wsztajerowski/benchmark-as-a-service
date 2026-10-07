@@ -42,9 +42,9 @@
 
 ## 5. Runner tag and scoped lookups (U36)
 
-- [ ] 5.1 Add `baas-deployment=<prefix>` to `Ec2ProvisioningService.instanceTags`. Verify with the instance-tags unit test asserting exactly four fixed tags.
-- [ ] 5.2 Filter `listRunningBenchmarkInstances` on `tag:baas-deployment`. Verify with a unit test on the request's filters, and that `findLive(jobId)` is unchanged.
-- [ ] 5.3 Confirm `RunnerRole`'s `ec2:TerminateInstances` condition and `operator-policy.json` need no change for the new tag (`ec2:CreateTags` on `RunInstances` covers it). Verify with `CoreTemplateTest` green and a live launch in 7.2.
+- [x] 5.1 Add `baas-deployment=<prefix>` to `Ec2ProvisioningService.instanceTags`. Verify with the instance-tags unit test asserting exactly four fixed tags.
+- [x] 5.2 Filter `listRunningBenchmarkInstances` on `tag:baas-deployment`. Verify with a unit test on the request's filters, and that `findLive(jobId)` is unchanged.
+- [ ] 5.3 Confirm `RunnerRole`'s `ec2:TerminateInstances` condition and `operator-policy.json` need no change for the new tag (`ec2:CreateTags` on `RunInstances` covers it). Verify with `CoreTemplateTest` green and a live launch in 7.2. Static half done 2026-10-07: neither the operator policy (`Ec2CreateTagsOnRun`, conditioned only on `ec2:CreateAction: RunInstances`; `RunInstances` on `instance/*` conditioned on region and instance type) nor either `TerminateInstances` statement constrains tag keys, so no IAM change is needed. The live launch is still pending.
 
 ## 6. Documentation and project rules
 

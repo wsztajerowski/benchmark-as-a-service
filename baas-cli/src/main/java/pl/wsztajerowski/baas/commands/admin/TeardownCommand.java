@@ -81,7 +81,7 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Gate 1: no active jobs
         try (var ec2 = factory.ec2()) {
-            var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances();
+            var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances(resolvedStack);
             if (!running.isEmpty()) {
                 logger.error(inFlightRefusal(running));
                 return 1;
