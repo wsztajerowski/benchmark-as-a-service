@@ -42,31 +42,6 @@ SHALL be left untouched and ignored.
 - **WHEN** a CLI from before this change runs after the migration
 - **THEN** it finds no `~/.baas/config.yaml` and reports that no deployment is configured, rather than addressing any deployment
 
-### Requirement: A deployment is selected by name, or implied when it is the only one
-Every command that addresses a deployment SHALL use the one named by the global `--deployment <name>`
-option. When the option is absent, it SHALL use the only configured deployment if exactly one is
-configured, and SHALL fail listing the configured names if two or more are, with the hint
-`→ choose one: baas config list`. When none is configured,
-every command SHALL fail reporting that no deployment is configured, except
-`baas admin deployment setup`, which derives the name. No environment variable and no stored setting
-SHALL select a deployment.
-
-#### Scenario: One deployment needs no flag
-- **WHEN** `baas results query` runs with only `baas-123456789012` configured
-- **THEN** it reads `baas-123456789012`'s results
-
-#### Scenario: Two deployments require the flag
-- **WHEN** `baas run jmh -- MyBenchmark` runs with `baas-123456789012` and `wiktor-dev` configured and no `--deployment`
-- **THEN** the command exits non-zero listing both names and the hint `→ choose one: baas config list`, issues no AWS call and launches nothing
-
-#### Scenario: Teardown is never ambiguous
-- **WHEN** `baas admin deployment teardown --yes` runs with two deployments configured and no `--deployment`
-- **THEN** the command exits non-zero listing both names and deletes nothing
-
-#### Scenario: An environment variable selects nothing
-- **WHEN** `BAAS_DEPLOYMENT=wiktor-dev baas results query` runs with two deployments configured
-- **THEN** the command fails listing both names, as if the variable were unset
-
 ### Requirement: `baas config list` lists the configured deployments
 `baas config list` SHALL print one row per file in `~/.baas/deployments/`, with the columns
 DEPLOYMENT, REGION, OPERATOR PROFILE and DEPLOYER PROFILE, read from the files alone. It SHALL make no
@@ -101,6 +76,81 @@ profiles as the deployer profile and the operator profile.
 - **THEN** picocli reports an unknown option error and nothing is written
 
 ## MODIFIED Requirements
+
+### Requirement: A deployment is named only by `--deployment`
+Every command SHALL accept a global, inherited `--deployment <name>` option, and every pointer to a
+concrete deployment SHALL be that option: `teardown --stack-name`, `config sync --name` and
+`--config-path` SHALL NOT exist. The option SHALL never be positional. When the option is absent, a
+command SHALL use the only configured deployment if exactly one is configured, and SHALL fail listing
+the configured names, with the hint `→ choose one: baas config list`, if two or more are. When none is
+configured, every command SHALL fail reporting that no deployment is configured, except
+`baas admin deployment setup`, which derives the name. A name that is not configured SHALL fail
+naming the configured deployments, except in `baas admin deployment setup` and `baas config sync`,
+which create its configuration. No environment variable and no stored setting SHALL select a
+deployment. No command SHALL accept a per-invocation override of the results table or the working
+bucket.
+
+#### Scenario: Teardown is aimed by the global option
+- **WHEN** `baas --deployment baas-123456789012 admin deployment teardown` is invoked on a machine
+  configured for that deployment
+- **THEN** that deployment is the one torn down
+
+#### Scenario: A different deployment is refused
+- **WHEN** `baas --deployment other results query` is given on a machine configured only for `baas-123456789012`
+- **THEN** the command exits non-zero naming `other` and the configured `baas-123456789012`, and calls no AWS API
+
+#### Scenario: Removed pointers are rejected
+- **WHEN** `baas admin deployment teardown --stack-name x`, `baas config sync --name x` or `baas --config-path f.yaml results query` is invoked
+- **THEN** picocli reports an unknown option error
+
+#### Scenario: One deployment needs no flag
+- **WHEN** `baas results query` runs with only `baas-123456789012` configured
+- **THEN** it reads `baas-123456789012`'s results
+
+#### Scenario: Two deployments require the flag
+- **WHEN** `baas run jmh -- MyBenchmark` runs with `baas-123456789012` and `wiktor-dev` configured and no `--deployment`
+- **THEN** the command exits non-zero listing both names and the hint `→ choose one: baas config list`, issues no AWS call and launches nothing
+
+#### Scenario: Teardown is never ambiguous
+- **WHEN** `baas admin deployment teardown --yes` runs with two deployments configured and no `--deployment`
+- **THEN** the command exits non-zero listing both names and deletes nothing
+
+#### Scenario: An environment variable selects nothing
+- **WHEN** `BAAS_DEPLOYMENT=wiktor-dev baas results query` runs with two deployments configured
+- **THEN** the command fails listing both names, as if the variable were unset
+
+#### Scenario: Table and bucket overrides are gone
+- **WHEN** `baas results query --results-table t`, `baas jobs download --results-table t` or `baas jobs download --bucket b` is invoked
+- **THEN** picocli reports an unknown option error
+
+### Requirement: `baas admin image build` builds the runner image
+`baas admin image build` SHALL render the base from the `infra/runner-image.yaml` bundled with the CLI,
+resolve the base's parent release in the stack's region, update the stack when the base or the
+extension changed, trigger the image build, poll to completion, write the resulting AMI ID to
+`/<prefix>/runner/ami-id`, retire the AMI it replaced, and report the new AMI ID and label. It SHALL
+accept `--extension <file>` to replace the deployment's extension, subject to the size limit and the
+stale-push guard; without it, the deployed extension SHALL be carried forward unchanged. It SHALL run
+under deployer credentials (`aws.deployerProfile`), consistent with every other `baas admin` subcommand.
+
+#### Scenario: Successful build reports the AMI
+- **WHEN** `baas admin image build` completes
+- **THEN** it prints the new AMI ID and the image label, and exits 0
+
+#### Scenario: Build failure is surfaced
+- **WHEN** the image build fails
+- **THEN** the command exits non-zero, reports the Image Builder failure reason, and leaves the pointer
+  and the previous AMI untouched
+
+#### Scenario: Build uses deployer credentials
+- **WHEN** the configuration sets both `aws.deployerProfile` and `aws.operatorProfile` and `baas admin image build`
+  runs
+- **THEN** AWS clients are built from `aws.deployerProfile`
+
+#### Scenario: Pushing an extension
+- **WHEN** `baas admin image build --extension ext.yaml` runs with a file whose marker matches the
+  deployed extension
+- **THEN** the stack holds the file's content as the extension and the new image's label carries its
+  hash
 
 ### Requirement: User tags are passed through to the runner
 `baas run` SHALL forward every `--tag key=value` option into the user-data script as a runner argument.
@@ -151,4 +201,4 @@ behind.
 teardown (`jobs-command`).
 **Migration**: `--config-path ~/.baas/dev.yaml` becomes `--deployment <its prefix>`. The flat
 `~/.baas/config.yaml` is migrated automatically. Tests receive the configuration root through code.
-The table and bucket overrides stay gone: no command accepts `--results-table` or `--bucket`.
+The ban on table and bucket overrides moves to *A deployment is named only by `--deployment`*.

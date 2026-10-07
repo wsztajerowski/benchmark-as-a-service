@@ -10,9 +10,9 @@ the retained-resource pre-checks and the networking guard. It is also reached by
 `~/.baas/config.yaml` back and forth. A second deployment in the same region also blocks the first one's
 teardown (U36). This is also the deployment the U21/U40 live checks have been waiting for.
 
-Comes after `jobs-command`, which introduces the `--deployment` global option and
-`baas admin deployment setup | teardown`. This change makes more than one deployment a supported
-state.
+Built on `jobs-command` (archived 2026-10-07), which introduced the `--deployment` global option,
+`baas admin deployment setup | teardown` and the deployer policy rendered by setup. This change makes
+more than one deployment a supported state.
 
 ## What Changes
 
@@ -59,11 +59,13 @@ None.
   Names are validated, and the composition rule no longer assumes the `baas-` namespace. Sync's naming
   rule is restated for several deployments. Teardown's in-flight gate is scoped to its deployment.
   Setup's options (`--deployer-profile`, no `--prefix`) and the credential-resolution rule use
-  `aws.deployerProfile`.
+  `aws.deployerProfile`. Setup's policy step renders for the resolved name, after name validation.
 - `cli-command-structure`: the alternative-configuration-file requirement is replaced by per-deployment
-  files and the selection rule. `baas config list` is added, and `config set` takes
+  files, and `jobs-command`'s *A deployment is named only by `--deployment`* gains the selection rule.
+  `baas admin image build` runs under `aws.deployerProfile`. `baas config list` is added, and `config set` takes
   `--deployer-profile`. The instance's fixed tags gain `baas-deployment`.
 - `job-tracking`: runner lookups are scoped to the deployment.
+- `runner-image-provisioning`: `baas jobs diff`'s credential scenario names `aws.deployerProfile`.
 
 ## Impact
 
