@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -226,7 +227,7 @@ public class RunCommand implements Callable<Integer> {
      * Resolution happens before the JAR upload so a missing image costs nothing.
      */
     public static Optional<RunnerImage> resolveRunnerImage(ImageBuilderService images, String prefix) {
-        return images.currentImage("/" + prefix + "/runner/ami-id");
+        return images.currentImage(DeploymentNames.of(prefix).amiPointer());
     }
 
     /**

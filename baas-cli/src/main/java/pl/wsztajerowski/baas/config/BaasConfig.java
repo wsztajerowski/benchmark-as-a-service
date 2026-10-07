@@ -62,21 +62,25 @@ public class BaasConfig {
         return prefix;
     }
 
+    /** Every name composed from this deployment's prefix. */
+    @JsonIgnore
+    public DeploymentNames names() { return DeploymentNames.of(requirePrefix()); }
+
     /** The core stack's name. Identical to the prefix — the stack is the deployment. */
     @JsonIgnore
-    public String stackName() { return requirePrefix(); }
+    public String stackName() { return names().stack(); }
 
     @JsonIgnore
-    public String bucket() { return requirePrefix(); }
+    public String bucket() { return names().bucket(); }
 
     @JsonIgnore
-    public String resultsTable() { return requirePrefix() + "-results"; }
+    public String resultsTable() { return names().resultsTable(); }
 
     @JsonIgnore
-    public String runnerInstanceProfile() { return requirePrefix() + "-profile-runner"; }
+    public String runnerInstanceProfile() { return names().runnerInstanceProfile(); }
 
     @JsonIgnore
-    public String amiParameterPath() { return "/" + requirePrefix() + "/runner/ami-id"; }
+    public String amiParameterPath() { return names().amiPointer(); }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AwsConfig {
