@@ -27,8 +27,8 @@ class DeploymentOptionTest {
     record Captured(int exitCode, String err) {}
 
     private Captured baas(String... args) {
-        // Both streams: a logged refusal reaches System.err, and an exception picocli handles itself
-        // (no BaasApp.main exception handler here) reaches the command line's error writer.
+        // Both streams: a failure goes through BaasApp.main's handler, which logs to System.err, and a
+        // usage error picocli handles itself reaches the command line's error writer.
         var err = new ByteArrayOutputStream();
         var picocliErr = new StringWriter();
         PrintStream original = System.err;
@@ -37,6 +37,7 @@ class DeploymentOptionTest {
             int code = new CommandLine(new BaasApp(dir))
                 .setOut(new PrintWriter(new StringWriter()))
                 .setErr(new PrintWriter(picocliErr, true))
+                .setExecutionExceptionHandler(BaasApp::reportFailure)
                 .execute(args);
             return new Captured(code, err.toString(StandardCharsets.UTF_8) + picocliErr);
         } finally {
@@ -54,7 +55,27 @@ class DeploymentOptionTest {
         assertThat(run.exitCode()).isNotZero();
         assertThat(run.err())
             .contains("2 deployments are configured (baas-123456789012, wiktor-dev)")
-            .contains("→ choose one: baas config list");
+            .contains("→ choose one: baas config list")
+            .doesNotContain("full stack trace");
+    }
+
+    /** W1: a selection refusal says what to type; only a real failure points at {@code -v}. */
+    @Test
+    void onlyARealFailurePointsAtTheStackTrace() {
+        var refusal = baas("jobs", "list");
+        assertThat(refusal.err()).contains("No deployment is configured").doesNotContain("full stack trace");
+
+        var err = new ByteArrayOutputStream();
+        PrintStream original = System.err;
+        try {
+            System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
+            BaasApp.reportFailure(new RuntimeException("Stack wiktor-dev is in UPDATE_ROLLBACK_FAILED"),
+                new CommandLine(new BaasApp(dir)), null);
+        } finally {
+            System.setErr(original);
+        }
+        assertThat(err.toString(StandardCharsets.UTF_8))
+            .contains("UPDATE_ROLLBACK_FAILED", "(run with -v for the full stack trace)");
     }
 
     @Test

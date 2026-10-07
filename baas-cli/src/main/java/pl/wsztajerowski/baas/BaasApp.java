@@ -17,6 +17,7 @@ import pl.wsztajerowski.baas.commands.RunCommand;
 import pl.wsztajerowski.baas.commands.JobsCommand;
 import pl.wsztajerowski.baas.commands.admin.AdminCommand;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.config.DeploymentSelectionException;
 
 import java.nio.file.Path;
 
@@ -187,15 +188,18 @@ public class BaasApp implements Runnable {
      * is initialised before {@code main} runs {@link LoggingMixin#applyEarlyVerbosity}, and
      * SimpleLogger pins a logger's level at construction, so a static one would never see
      * {@code -v} and the trace would be unreachable.
+     *
+     * <p>A {@link DeploymentSelectionException} gets no {@code -v} hint: its message already says what
+     * to type, and its trace would show only where the files were read.
      */
-    private static int reportFailure(Exception ex, CommandLine commandLine,
-                                     CommandLine.ParseResult parseResult) {
+    static int reportFailure(Exception ex, CommandLine commandLine,
+                             CommandLine.ParseResult parseResult) {
         Logger logger = LoggerFactory.getLogger(BaasApp.class);
         String message = ex.getMessage() != null ? ex.getMessage() : ex.toString();
         logger.error("{}", message);
         if (logger.isDebugEnabled()) {
             logger.debug("Stack trace:", ex);
-        } else {
+        } else if (!(ex instanceof DeploymentSelectionException)) {
             logger.info("(run with -v for the full stack trace)");
         }
         return commandLine.getCommandSpec().exitCodeOnExecutionException();

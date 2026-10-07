@@ -115,14 +115,14 @@ public class ConfigService {
         if (named.isPresent()) {
             String name = named.get();
             if (!configured.contains(name)) {
-                throw new IllegalStateException(unknown(name, configured));
+                throw new DeploymentSelectionException(unknown(name, configured));
             }
             return readLogged(fileOf(name));
         }
         return switch (configured.size()) {
-            case 0 -> throw new IllegalStateException(noneConfigured());
+            case 0 -> throw new DeploymentSelectionException(noneConfigured());
             case 1 -> readLogged(fileOf(configured.getFirst()));
-            default -> throw new IllegalStateException(ambiguous(configured));
+            default -> throw new DeploymentSelectionException(ambiguous(configured));
         };
     }
 
@@ -138,7 +138,7 @@ public class ConfigService {
         return switch (configured.size()) {
             case 0 -> new BaasConfig();
             case 1 -> readLogged(fileOf(configured.getFirst()));
-            default -> throw new IllegalStateException(ambiguous(configured));
+            default -> throw new DeploymentSelectionException(ambiguous(configured));
         };
     }
 
@@ -153,11 +153,11 @@ public class ConfigService {
             return existingOrNew(named.get(), configured);
         }
         return switch (configured.size()) {
-            case 0 -> throw new IllegalStateException("""
+            case 0 -> throw new DeploymentSelectionException("""
                 No deployment is configured on this machine, so config sync must be told which to adopt:
                   baas --deployment <name> config sync""");
             case 1 -> readLogged(fileOf(configured.getFirst()));
-            default -> throw new IllegalStateException(ambiguous(configured));
+            default -> throw new DeploymentSelectionException(ambiguous(configured));
         };
     }
 
