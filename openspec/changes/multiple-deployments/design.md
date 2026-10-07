@@ -14,15 +14,17 @@ shared decisions in commit `f567ae7` and later ones. Where things stand:
   (`Ec2ProvisioningService.instanceTags`). `listRunningBenchmarkInstances` filters on `baas-role`
   alone, so a same-region second deployment blocks the first one's teardown (U36).
 - Names composed from the prefix are rebuilt by hand in four classes (C5).
-- **Depends on `jobs-command`**, which provides the `--deployment` global option,
-  `baas admin deployment setup | teardown`, removes `--stack-name` / `sync --name`, and makes teardown
-  delete everything (the bucket and table lose `Retain`).
+- **Built on `jobs-command`** (archived 2026-10-07, `next-release` `f40d145`). It provides the
+  `--deployment` global option, `baas admin deployment setup | teardown`, removes `--stack-name` /
+  `sync --name`, makes teardown delete everything (the bucket and table lose `Retain`), and builds the
+  deployer policy into setup. Today `BaasApp.deploymentRefusal` accepts `--deployment` only when it
+  names the single configured deployment; the selection rule replaces that check.
 
 Scope split with `jobs-command`. **`jobs-command` owns the grammar**: the `--deployment` option
 exists and replaces `--stack-name` and `sync --name`. **This change owns multiplicity**: setup
 accepting a non-default name, name validation, per-deployment files and their migration, the
-selection rule, removing `--config-path`, the runner tag, and `DeploymentNames`. Until this change,
-`--deployment` can only name the single configured deployment.
+selection rule, removing `--config-path`, the runner tag, and `DeploymentNames`. Accepted by
+`jobs-command` on 2026-10-07, together with `baas config list`.
 
 ## Goals / Non-Goals
 
