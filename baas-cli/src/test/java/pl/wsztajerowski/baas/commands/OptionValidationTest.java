@@ -48,6 +48,21 @@ class OptionValidationTest {
         }
     }
 
+    /**
+     * An invalid name is refused before the caller-identity lookup, the policy step and every other
+     * AWS call. A message naming the rule, not the account or AWS, proves the order.
+     */
+    @Test
+    void anInvalidDeploymentNameIsRefusedBeforeAnyAwsCall() throws Exception {
+        var captured = baas("--deployment", "aws-dev", "admin", "deployment", "setup");
+
+        assertThat(captured.exitCode()).isEqualTo(2);
+        assertThat(captured.err())
+            .contains("Deployment name 'aws-dev' must not start with \"aws\" (reserved by SSM)")
+            .doesNotContain("not this account's deployment");
+        assertThat(captured.out()).as("no policy is printed").isEmpty();
+    }
+
     /** U25: refused before the JAR is even looked at, so long before anything is uploaded. */
     @Test
     void aReservedTagIsRefusedBeforeTheJarOrAnyUpload() throws Exception {

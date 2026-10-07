@@ -12,6 +12,7 @@ import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.config.DeploymentNameRule;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.DeployerPolicyRenderer;
@@ -104,6 +105,17 @@ public class SetupCommand implements Callable<Integer> {
         // Before anything is loaded, resolved or deployed.
         validateFederationOptions();
         validateNetworkingOptions();
+        // Before any AWS call, the policy step included: a name some composed resource cannot carry
+        // would otherwise fail minutes into a deploy, or print a policy for a deployment that can
+        // never exist. A derived name needs no check; baas-<12 digits> always passes.
+        var named = BaasApp.deployment(spec);
+        if (named.isPresent()) {
+            Optional<String> violation = DeploymentNameRule.violation(named.get());
+            if (violation.isPresent()) {
+                logger.error("Deployment name '{}' {}. Nothing was done.", named.get(), violation.get());
+                return 2;
+            }
+        }
 
         BaasConfig config = configService().loadOrEmpty();
         if (region != null) config.getAws().setRegion(region);
@@ -125,7 +137,6 @@ public class SetupCommand implements Callable<Integer> {
         }
         logger.debug("Caller ARN: {}", callerArn);
         String resolvedPrefix = computePrefix(accountId);
-        var named = BaasApp.deployment(spec);
         if (named.isPresent() && !named.get().equals(resolvedPrefix)) {
             // Naming a deployment other than the account's own is the multiple-deployments change's.
             logger.error("--deployment {} is not this account's deployment ({}). Nothing was done.",
