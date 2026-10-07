@@ -12,6 +12,7 @@ import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.S3UploadService;
@@ -136,6 +137,8 @@ public class JobsShowSubcommand implements Callable<Integer> {
                 printView(console(), row, manifest, artifacts);
             }
         }
+        Hints.show(console(), logger, "measurements", "baas query --job-id " + jobId,
+            "files", "baas jobs download " + jobId);
         return 0;
     }
 

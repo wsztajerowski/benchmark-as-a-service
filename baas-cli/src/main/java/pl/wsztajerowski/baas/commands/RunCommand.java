@@ -14,6 +14,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
@@ -266,6 +267,23 @@ public class RunCommand implements Callable<Integer> {
                 }
                 printJobSummary(exitCode);
             }
+            hints(exitCode);
+        }
+    }
+
+    /** Where to look next, once a job exists; interactive terminals only (see {@link Hints}). */
+    private void hints(int exitCode) {
+        // In the finally: a command built outside picocli (a unit test) has no spec to print through,
+        // and a hint must never replace the outcome being reported.
+        if (summaryJobId == null || (console == null && spec == null)) {
+            return;
+        }
+        if (exitCode == 0) {
+            Hints.show(console(), logger, "measurements", "baas query --job-id " + summaryJobId,
+                "artifacts", "baas jobs download " + summaryJobId);
+        } else {
+            Hints.show(console(), logger, "what happened", "baas jobs show " + summaryJobId,
+                "boot log", "baas jobs download " + summaryJobId);
         }
     }
 

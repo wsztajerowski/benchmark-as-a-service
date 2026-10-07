@@ -13,6 +13,7 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsFilters;
@@ -192,6 +193,9 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
                 case "json" -> printJson(rows);
                 case "csv" -> printCsv(rows);
                 default -> printTable(console(), rows);
+            }
+            if (rows.isEmpty() && !allProjects) {
+                Hints.show(console(), logger, "which projects have results", "baas query --all-projects");
             }
         }
         return 0;

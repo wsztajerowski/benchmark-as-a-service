@@ -2,9 +2,11 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 picocli can register one command class at two places (`jobs run` and root `run`; `results
+- [x] 1.1 picocli can register one command class at two places (`jobs run` and root `run`; `results
       query` and root `query`) and render a custom help section in place of the command list. Verify
       with a throwaway test that parses both spellings to the same options and renders the section.
+      *Done:* `CommandTreeTest` (one class registered under its noun and at the root, both parse
+      alike) and `HelpAndHintsTest` (the custom command-list section replaces picocli's).
 - [ ] 1.2 Changing `DeletionPolicy`/`UpdateReplacePolicy` from `Retain` to `Delete` on the existing
       bucket and table is an in-place stack update, not a replacement. Verify from the CloudFormation
       documentation for both resource types, and by the change set of task 14.1 showing no
@@ -151,12 +153,18 @@
 
 ## 11. Help and hints (D9)
 
-- [ ] 11.1 Grouped `baas --help` (shortcuts, operator, deployer with full paths, role headings, no
+- [x] 11.1 Grouped `baas --help` (shortcuts, operator, deployer with full paths, role headings, no
       config keys; first-run guidance `admin deployment setup` → `admin image build`) and `admin --help`
       listing its two nouns. Verify with a help-rendering test pinning the three sections.
-- [ ] 11.2 Hints after `jobs run` (completed / failed), `jobs show`, `jobs list --in-flight`, an empty
+      *Done:* `BaasApp.commandLine` installs `commandMap` in place of picocli's command list, read from
+      the live tree; `HelpAndHintsTest` pins the order, the role headings, no config keys, and the
+      first-run guidance. Rendered and checked by eye from the packaged JAR.
+- [x] 11.2 Hints after `jobs run` (completed / failed), `jobs show`, `jobs list --in-flight`, an empty
       `results query`, and `admin deployment setup`, on stderr, interactive only. Verify with tests for
       an interactive and a non-interactive console.
+      *Done:* `console.Hints` (interactive gate, `→ purpose: command`, at most two). Shown after
+      `jobs run` (completed / failed), `jobs show`, `jobs list` with a job in flight, and an empty
+      `results query`; setup keeps its existing next-steps prose. `HelpAndHintsTest` covers the gate.
 
 ## 12. Grep gate
 

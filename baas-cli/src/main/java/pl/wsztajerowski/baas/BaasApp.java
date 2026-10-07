@@ -34,20 +34,18 @@ import java.nio.file.Path;
         RunCommand.class,
         ResultsQuerySubcommand.class
     },
-    // picocli lists direct children only, so `baas admin deployer-policy` is invisible here —
-    // and it is the one command a new user needs *before* anything else works. Lines stay under
-    // 80 columns: the footer wraps at the usage width and re-wrapping mid-command is unreadable.
+    // Lines stay under 80 columns: the footer wraps at the usage width and re-wrapping
+    // mid-command is unreadable. The command list itself is the grouped map rendered by
+    // commandMap(), not picocli's flat list.
     footer = {
         "",
         "First run, in order:",
-        "  baas admin deployer-policy             # attach to your own identity",
-        "  baas admin setup                       # deploy the stack",
-        "  baas admin build-image                 # bake the runner AMI (~15 min)",
+        "  baas admin deployment setup            # deploy; prints the IAM policy",
+        "                                         # your identity lacks, if any",
+        "  baas admin image build                 # bake the runner AMI (~15 min)",
         "  baas config set --operator-profile <p> # day-to-day credentials",
         "  baas run --benchmark-jar target/b.jar --project my-bench \\",
-        "    jmh -- MyBenchmark -f 1              # note the -- separator",
-        "",
-        "See infra/README.md for the one-time IAM step."
+        "    jmh -- MyBenchmark -f 1              # note the -- separator"
     }
 )
 public class BaasApp implements Runnable {
@@ -110,11 +108,56 @@ public class BaasApp implements Runnable {
         return new ConfigService();
     }
 
+    /**
+     * The root command line with the grouped command map in place of picocli's flat list. Built
+     * here so that {@code main} and the tests render the same help.
+     */
+    public static CommandLine commandLine(BaasApp app) {
+        var commandLine = new CommandLine(app);
+        commandLine.getHelpSectionMap().put(CommandLine.Model.UsageMessageSpec.SECTION_KEY_COMMAND_LIST_HEADING,
+            help -> System.lineSeparator());
+        commandLine.getHelpSectionMap().put(CommandLine.Model.UsageMessageSpec.SECTION_KEY_COMMAND_LIST,
+            help -> commandMap(commandLine));
+        return commandLine;
+    }
+
+    /**
+     * {@code baas --help}'s command list: the shortcuts with their targets, then the operator nouns
+     * and the deployer nouns with their verbs. Read from the command tree, so it cannot drift from
+     * it. Headings name the role, never a configuration key.
+     */
+    static String commandMap(CommandLine root) {
+        var sub = root.getSubcommands();
+        var out = new StringBuilder();
+        out.append("Shortcuts%n".formatted());
+        out.append("  %-23s %s%n".formatted("run = jobs run", firstLine(sub.get("run"))));
+        out.append("  %-23s %s%n".formatted("query = results query", firstLine(sub.get("query"))));
+        out.append("%nOperator commands (operator AWS credentials)%n".formatted());
+        for (String noun : java.util.List.of("jobs", "results", "config")) {
+            out.append("  %-23s %s%n".formatted(noun, verbs(sub.get(noun))));
+        }
+        out.append("%nDeployer commands (deployer AWS credentials)%n".formatted());
+        var admin = sub.get("admin").getSubcommands();
+        for (String noun : java.util.List.of("deployment", "image")) {
+            out.append("  %-23s %s%n".formatted("admin " + noun, verbs(admin.get(noun))));
+        }
+        return out.toString();
+    }
+
+    private static String verbs(CommandLine noun) {
+        return String.join(", ", noun.getSubcommands().keySet());
+    }
+
+    private static String firstLine(CommandLine command) {
+        String[] description = command.getCommandSpec().usageMessage().description();
+        return description.length == 0 ? "" : description[0];
+    }
+
     public static void main(String[] args) {
         // Must happen before the CommandLine is built — see LoggingMixin#applyEarlyVerbosity.
         LoggingMixin.applyEarlyVerbosity(args);
         BaasApp app = new BaasApp();
-        System.exit(new CommandLine(app)
+        System.exit(commandLine(app)
             .setExecutionStrategy(app::executionStrategy)
             .setExecutionExceptionHandler(BaasApp::reportFailure)
             .execute(args));
