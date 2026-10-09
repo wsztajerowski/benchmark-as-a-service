@@ -68,6 +68,10 @@ creates it, and fails the same way.
   wrong-region request for the caller's own bucket;
 - **forbidden:** 403. The bucket exists, but the caller may not read it.
 
+A redirect is probed again with a client in the region it names: from another region, another
+account's bucket answers 301 too, and only a request in its own region returns the 403. Task 1.1
+showed this live: `test` answered 301 from eu-central-1, then 403 from us-west-2.
+
 The early check before the preflight acts only on *reachable* in another region, which is today's
 message. It no longer acts on a 403. Today a 403 also carries the region header, so another account's
 bucket was reported as "the deployment lives in X".

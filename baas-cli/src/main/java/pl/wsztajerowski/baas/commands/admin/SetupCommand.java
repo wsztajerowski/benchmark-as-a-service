@@ -21,7 +21,10 @@ import pl.wsztajerowski.baas.infra.ParentImageResolver;
 import pl.wsztajerowski.baas.infra.RunnerImageExtension;
 import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 import pl.wsztajerowski.baas.infra.RunnerImageRenderer;
-import pl.wsztajerowski.baas.infra.S3UploadService;
+import pl.wsztajerowski.baas.infra.BucketProbe;
+import software.amazon.awssdk.services.cloudformation.model.StackStatus;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
+import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -158,13 +161,13 @@ public class SetupCommand implements Callable<Integer> {
         // Before the preflight: a deployer's grants name one region, so in another region the
         // preflight would print a policy for it and invite granting a second deployment that
         // cannot exist. The stack creates the bucket in its own region, so a bucket elsewhere means
-        // the deployment is elsewhere — no stack lookup is needed, and HeadBucket is global.
-        try (var s3 = factory.s3()) {
-            Optional<String> bucketRegion = new S3UploadService(s3).bucketRegion(config.bucket());
-            if (bucketRegion.isPresent() && !bucketRegion.get().equals(resolvedRegion)) {
-                logger.error(bucketBlocksSetup(config.bucket(), resolvedPrefix, bucketRegion.get(), resolvedRegion));
-                return 1;
-            }
+        // the deployment is elsewhere — no stack lookup is needed, and HeadBucket is global. Only a
+        // bucket the caller can read is its deployment's: another account's is left to the create
+        // path, which refuses it there.
+        BucketProbe bucket = BucketProbe.of(config.bucket(), resolvedRegion, factory::s3In);
+        if (bucket instanceof BucketProbe.Reachable(String bucketRegion) && !bucketRegion.equals(resolvedRegion)) {
+            logger.error(bucketBlocksSetup(config.bucket(), resolvedPrefix, bucketRegion, resolvedRegion));
+            return 1;
         }
 
         // The deployer policy is a step of setup, not a command of its own: rendered for this
@@ -182,7 +185,7 @@ public class SetupCommand implements Callable<Integer> {
         }
 
         try {
-            return deploy(factory, config, resolvedPrefix);
+            return deploy(factory, config, resolvedPrefix, bucket);
         } catch (IllegalStateException e) {
             // A refused precondition — the networking-immutability check most of all. It is an
             // expected outcome, so it exits 1 with its own message rather than surfacing through
@@ -227,7 +230,8 @@ public class SetupCommand implements Callable<Integer> {
     }
 
     /** The stack is named by the prefix: the stack is the deployment. */
-    private Integer deploy(AwsClientFactory factory, BaasConfig config, String resolvedPrefix) throws Exception {
+    private Integer deploy(AwsClientFactory factory, BaasConfig config, String resolvedPrefix,
+                           BucketProbe bucket) throws Exception {
         String templateBody = CloudFormationService.coreTemplate();
 
         Map<String, String> params = new LinkedHashMap<>();
@@ -240,7 +244,30 @@ public class SetupCommand implements Callable<Integer> {
         boolean created;
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
-            created = !cloudFormation.stackExists(resolvedPrefix);
+            Optional<StackStatus> status = cloudFormation.stackStatus(resolvedPrefix);
+            // A first create that rolled back holds no resources and cannot be updated, and no
+            // configuration file was written for it — re-running setup is the whole recovery.
+            boolean rolledBack = status.isPresent() && status.get() == StackStatus.ROLLBACK_COMPLETE;
+            created = status.isEmpty() || rolledBack;
+            if (created) {
+                // Before anything changes, the rolled-back stack included: the stack names its
+                // bucket and table after the deployment, so a taken name fails the whole create —
+                // and, recovered from automatically, would fail it again on every re-run.
+                boolean tableExists;
+                try (var dynamoDb = factory.dynamoDb()) {
+                    tableExists = tableExists(dynamoDb, resolvedPrefix + "-results");
+                }
+                Optional<String> conflict = nameConflict(bucket, tableExists, resolvedPrefix,
+                    config.getAws().resolveRegion());
+                if (conflict.isPresent()) {
+                    throw new IllegalStateException(conflict.get());
+                }
+            }
+            if (rolledBack) {
+                logger.info("Stack {} is in ROLLBACK_COMPLETE: an earlier create failed and left nothing behind. "
+                    + "Deleting it before creating it again.", resolvedPrefix);
+                cloudFormation.deleteStack(resolvedPrefix);
+            }
             if (!created) {
                 // Networking is fixed at creation. Checked before anything is submitted, so a
                 // refused update leaves the stack untouched rather than rolling back.
@@ -301,6 +328,46 @@ public class SetupCommand implements Callable<Integer> {
      * deleted that deployment's results. Only a bucket in this region is a retained leftover
      * Called only for a bucket in another region.
      */
+    /**
+     * Why a create cannot go ahead because a name the stack would create is taken, or empty when
+     * both are free. A leftover is named, never removed: it may hold an earlier deployment's results.
+     */
+    static Optional<String> nameConflict(BucketProbe bucket, boolean tableExists, String deployment, String region) {
+        String table = deployment + "-results";
+        if (bucket instanceof BucketProbe.Forbidden(String bucketRegion)) {
+            return Optional.of("""
+                The bucket name %1$s is taken by another AWS account (it answers from %2$s and refuses \
+                this identity), and bucket names are global, so deployment %1$s cannot be created.
+                  Choose another name:  baas --deployment <name> admin deployment setup
+                  (If the bucket is this account's, the identity lacks the deployer policy's s3:ListBucket on it.)
+                Nothing was deployed.""".formatted(deployment, bucketRegion));
+        }
+        if (bucket instanceof BucketProbe.Reachable(String bucketRegion) && bucketRegion.equals(region)) {
+            return Optional.of("""
+                Bucket %1$s already exists in %2$s with no deployment stack, so the stack cannot create it — \
+                a leftover of an earlier deployment or one made by hand. It may hold earlier results.
+                  Save what you need, then remove it:  aws s3 rb s3://%1$s --force
+                Nothing was deployed.""".formatted(deployment, bucketRegion));
+        }
+        if (tableExists) {
+            return Optional.of("""
+                Table %1$s already exists in %2$s with no deployment stack, so the stack cannot create it — \
+                a leftover of an earlier deployment. It may hold earlier results.
+                  Export what you need, then remove it:  aws dynamodb delete-table --table-name %1$s --region %2$s
+                Nothing was deployed.""".formatted(table, region));
+        }
+        return Optional.empty();
+    }
+
+    private static boolean tableExists(DynamoDbClient dynamoDb, String table) {
+        try {
+            dynamoDb.describeTable(r -> r.tableName(table));
+            return true;
+        } catch (ResourceNotFoundException e) {
+            return false;
+        }
+    }
+
     static String bucketBlocksSetup(String bucket, String deployment, String bucketRegion, String region) {
         return """
             Deployment %1$s lives in %2$s, not %3$s: its bucket %4$s is there, and bucket

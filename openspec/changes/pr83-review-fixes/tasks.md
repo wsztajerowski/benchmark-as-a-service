@@ -6,7 +6,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 R16: confirm `HeadBucket` returns the three outcomes the design relies on, with the
+- [x] 1.1 R16: confirm `HeadBucket` returns the three outcomes the design relies on, with the
   deployer profile. Run `aws s3api head-bucket` against: the deployment's own bucket from its region
   (200); the same bucket from another region (301 or 400, carrying `x-amz-bucket-region`); a bucket name
   certainly owned by another account, e.g. `test` (403, carrying the header); and a random unused name
@@ -15,27 +15,27 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 - [ ] 1.2 R2: confirm against LocalStack 4.14.0 (an IT) that `listObjectVersionsPaginator` on a missing
   bucket throws `NoSuchBucketException` and not a generic `S3Exception` with 404. Use whichever it
   throws in 3.2.
-- [ ] 1.3 R7: confirm from the EC2 API reference that `ClientToken` accepts up to 64 ASCII characters
+- [x] 1.3 R7: confirm from the EC2 API reference that `ClientToken` accepts up to 64 ASCII characters
   and that a job id (`20260820T174432812Z-a3f9c21b`, 28 characters) qualifies. Note the reference in
   `verify.md`.
-- [ ] 1.4 R3/R10: confirm that `Ec2ProvisioningService.runInstance` still sets
+- [x] 1.4 R3/R10: confirm that `Ec2ProvisioningService.runInstance` still sets
   `instanceInitiatedShutdownBehavior(TERMINATE)`, and that user-data runs as root on AL2023 so
   `shutdown -h now` is permitted. Cite cloud-init's documentation in `verify.md`.
-- [ ] 1.5 R9: confirm the e2e workflow's JCStress and JMH assertions (`e2e-cloud-test.yml`) do not
+- [x] 1.5 R9: confirm the e2e workflow's JCStress and JMH assertions (`e2e-cloud-test.yml`) do not
   require `score` to be a number. If one does, adjust it in 8.4.
 
 ## 2. Setup: names free before a create, and recovery from a failed create (R16, R1)
 
-- [ ] 2.1 R16: make `S3UploadService`'s bucket probe distinguish absent, reachable-in-region-X and
+- [x] 2.1 R16: make `S3UploadService`'s bucket probe distinguish absent, reachable-in-region-X and
   forbidden (403). The early check before the preflight acts only on reachable-in-another-region. Verify
   with unit tests: a stubbed 403 with a region header is no longer reported as "lives in".
-- [ ] 2.2 R16: on setup's create path, after the preflight and before `CreateStack`, refuse in three
+- [x] 2.2 R16: on setup's create path, after the preflight and before `CreateStack`, refuse in three
   cases: a reachable same-region bucket (naming `aws s3 rb s3://<prefix> --force` and that it may hold
   earlier results), a forbidden bucket (name taken by another account; choose another `--deployment`),
   and an existing `<prefix>-results` table (naming `aws dynamodb delete-table`). The update path skips
   these checks. Verify with `SetupCommand` tests for each refusal: no `CreateStack`, exit non-zero, the
   remedy in the message. Also verify that an updatable existing stack is not checked.
-- [ ] 2.3 R1: `CloudFormationService` exposes the stack's status and a `deleteStackAndWait`. Setup
+- [x] 2.3 R1: `CloudFormationService` exposes the stack's status and a `deleteStackAndWait`. Setup
   treats `ROLLBACK_COMPLETE` as follows: run the 2.2 checks, then delete the stack, wait, and create.
   `requireUpdatable`'s message names re-running `baas admin deployment setup` instead of teardown.
   Verify with tests: a rolled-back stack is deleted and then created; a rolled-back stack with a
