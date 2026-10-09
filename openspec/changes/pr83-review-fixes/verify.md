@@ -20,3 +20,7 @@
 
 - 3.1: `deleteAllObjects` catches `NoSuchBucketException`, logs it and returns; every other failure still throws (`S3UploadServiceIT`, 7 tests green).
 - **Gap W2:** `TeardownCommand.removeDeployment` is all AWS calls, and its tests replace it whole. "A missing bucket still deletes the stack and the file" is covered by the live check in 12.2, not by a unit test.
+
+## 4. User-data
+
+- 4.1: both `kill $WATCHDOG_PID` lines and the then-unused `WATCHDOG_PID` are gone, and all three `terminate-instances` calls end in `|| shutdown -h now`. `UserDataScriptBuilderTest` has 62 green tests: the watchdog executed with a failing stub ends in `shutdown -h now`; the refused-`running` path executed with every call refused ends in terminate then shutdown; `bash -n`; and `aLargeJobStaysWellUnderTheUserDataLimit`.

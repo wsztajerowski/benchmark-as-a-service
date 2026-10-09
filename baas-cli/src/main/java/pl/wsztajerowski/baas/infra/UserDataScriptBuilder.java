@@ -88,9 +88,8 @@ public class UserDataScriptBuilder {
           # case a user needs the log for — ship it before the instance disappears.
           aws s3 cp /var/log/cloud-init-output.log \\
             "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
-          aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
+          aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
         ) &
-        WATCHDOG_PID=$!
 
         # After the watchdog, never before it. Fills in the instance id when the CLI's own
         # `launched` write did not land. Two attempts rather than three: everything before the JVM
@@ -106,8 +105,7 @@ public class UserDataScriptBuilder {
           echo "Job already has an outcome, or has no job item: not starting the benchmark."
           aws s3 cp /var/log/cloud-init-output.log \\
             "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
-          kill $WATCHDOG_PID 2>/dev/null || true
-          aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
+          aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
           exit 0
         fi
 
@@ -286,9 +284,10 @@ public class UserDataScriptBuilder {
         aws s3 cp /var/log/cloud-init-output.log \\
           "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
 
-        # Cleanup
-        kill $WATCHDOG_PID 2>/dev/null || true
-        aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}"
+        # Self-termination, with the watchdog left armed: if this request fails, the watchdog
+        # is what remains. The instance is launched with shutdown behaviour TERMINATE, so an OS
+        # shutdown terminates it without an API call, a permission or an instance id.
+        aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
         """);
 
     public String build(String region, String bucket, String benchmarkType,

@@ -50,7 +50,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 4. User-data: the watchdog stays armed, and a failed terminate shuts the OS down (R3, R10)
 
-- [ ] 4.1 Remove both `kill $WATCHDOG_PID` lines. Add `|| shutdown -h now` to all three
+- [x] 4.1 Remove both `kill $WATCHDOG_PID` lines. Add `|| shutdown -h now` to all three
   `terminate-instances` calls: the end of the script, the refused-`running` path and the watchdog. No
   comment line may carry meaning, since comments are stripped. Verify with `UserDataScriptBuilderTest`:
   no `kill $WATCHDOG_PID` in the script, and every `terminate-instances` line ends in
