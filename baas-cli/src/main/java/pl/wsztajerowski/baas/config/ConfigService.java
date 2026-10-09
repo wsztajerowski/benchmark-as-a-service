@@ -103,7 +103,7 @@ public class ConfigService {
 
     /** Every configured deployment's configuration, in name order — what {@code config list} shows. */
     public List<BaasConfig> all() {
-        return deployments().stream().map(name -> readLogged(fileOf(name))).toList();
+        return deployments().stream().map(name -> readDeployment(name)).toList();
     }
 
     /**
@@ -117,11 +117,11 @@ public class ConfigService {
             if (!configured.contains(name)) {
                 throw new DeploymentSelectionException(unknown(name, configured));
             }
-            return readLogged(fileOf(name));
+            return readDeployment(name);
         }
         return switch (configured.size()) {
             case 0 -> throw new DeploymentSelectionException(noneConfigured());
-            case 1 -> readLogged(fileOf(configured.getFirst()));
+            case 1 -> readDeployment(configured.getFirst());
             default -> throw new DeploymentSelectionException(ambiguous(configured));
         };
     }
@@ -137,7 +137,7 @@ public class ConfigService {
         }
         return switch (configured.size()) {
             case 0 -> new BaasConfig();
-            case 1 -> readLogged(fileOf(configured.getFirst()));
+            case 1 -> readDeployment(configured.getFirst());
             default -> throw new DeploymentSelectionException(ambiguous(configured));
         };
     }
@@ -156,14 +156,14 @@ public class ConfigService {
             case 0 -> throw new DeploymentSelectionException("""
                 No deployment is configured on this machine, so config sync must be told which to adopt:
                   baas --deployment <name> config sync""");
-            case 1 -> readLogged(fileOf(configured.getFirst()));
+            case 1 -> readDeployment(configured.getFirst());
             default -> throw new DeploymentSelectionException(ambiguous(configured));
         };
     }
 
     private BaasConfig existingOrNew(String name, List<String> configured) {
         if (configured.contains(name)) {
-            return readLogged(fileOf(name));
+            return readDeployment(name);
         }
         BaasConfig fresh = new BaasConfig();
         fresh.setPrefix(name);
@@ -226,6 +226,30 @@ public class ConfigService {
                 + ": " + e.getMessage(), e);
         }
         logger.info("Moved {} to {} (one file per deployment now)", flat, target);
+    }
+
+    /**
+     * A deployment's file, which must name that deployment. A file copied to another name still
+     * carries the original's prefix, and every command builds its stack, bucket and table from the
+     * prefix — so a teardown of the copy would tear down the original. Refused before any AWS call.
+     * A file with no prefix (written by hand) takes its name.
+     */
+    private BaasConfig readDeployment(String name) {
+        Path file = fileOf(name);
+        BaasConfig config = readLogged(file);
+        String prefix = config.getPrefix();
+        if (prefix == null || prefix.isBlank()) {
+            config.setPrefix(name);
+        } else if (!prefix.equals(name)) {
+            throw new DeploymentSelectionException(mismatch(file, name, prefix));
+        }
+        return config;
+    }
+
+    static String mismatch(Path file, String name, String prefix) {
+        return ("%s is the file of deployment '%s' but records prefix '%s', which names another deployment. "
+            + "Nothing was done.%n  Rename the file to %s.yaml, or correct prefix to '%s'.")
+            .formatted(file, name, prefix, prefix, name);
     }
 
     private BaasConfig readLogged(Path path) {
