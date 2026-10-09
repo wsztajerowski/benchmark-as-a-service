@@ -50,6 +50,10 @@ public class Ec2ProvisioningService implements JobSession.Instances {
             tags.stream().collect(Collectors.toMap(Tag::key, Tag::value)));
 
         var response = ec2.runInstances(RunInstancesRequest.builder()
+            // Idempotency: the SDK retries a request whose response was lost, and without a token
+            // that retry launched a second instance the CLI never tracked. A job id is minted once
+            // per job and fits the token's 64 ASCII characters.
+            .clientToken(jobId)
             .imageId(amiId)
             // The string overload, not InstanceType.fromValue: a type newer than this SDK's enum maps
             // to UNKNOWN_TO_SDK_VERSION, which serialises as 'null', so EC2 rejected every instance
