@@ -63,3 +63,75 @@
 - 11.2: U31 deleted from `docs/review/open-findings.md` (its entry and its row in the index table).
 - 11.3: `baas-setup`, `baas-teardown`, `baas-jobs`, `baas-run`, `baas-states-job` and `baas-states-deployment` `.mmd` updated. Each was rendered with `mmdc` into the scratchpad and looked at. The first render of `baas-jobs` failed on an extra `end` left by the edit, which was fixed and re-rendered.
 - 11.4: release note carried by the docs commit's footer (below).
+
+## 12. Verification
+
+- 12.1: full reactor `mvn -o verify` at `cd779e2` (all code commits), `ASYNC_PATH` exported: BUILD SUCCESS. 944 tests: model 73, the fixtures 44 + 18, CLI 769, runner 40 (the async-profiler IT ran and was not skipped).
+- 12.2: **manual, live, 2026-10-09 23:40–00:05 CEST**, CLI and runner from this branch's build. 10 paid jobs (J8 never launched).
+
+  | # | Check | Result |
+  |---|---|---|
+  | L1 | R13: a copy of `baas-development.yaml` saved as `wiktor-copy.yaml`; `--deployment wiktor-copy admin deployment teardown --yes` and `config list` | Both refused naming the file, both prefixes and the fix; exit 1; `baas-development` stayed `CREATE_COMPLETE`; copy removed |
+  | L2 | R16 leftover bucket/table refusal and R2 missing-bucket teardown on `baas-development` | **Not run.** The teardown that must come first was denied by the session's permission classifier. Left for the user (W4) |
+  | J1 | Normal JMH run; `jobs list` polled during launch; instance attributes | `completed`, exit 0; listing showed `launching` (no instance) then `launched`, never `vanished` (R12); `ClientToken` = job id and shutdown behaviour `terminate` (R7); instance `terminated`, boot log uploaded (R3 normal path) |
+  | J2 | 25-variant `@Param` sweep, `avgt` (scratch JAR, not committed) | `results query --job-id` → 25 rows, no cut note; `--limit 5` → 5 with "Reporting 5 of 25"; single-iteration `scoreError` an empty CSV cell (R11, R9) |
+  | J3 | `jobs terminate --yes` from a second process while running | `Terminated instance …`, exit 0; the polling `baas run` reported `cancelled`, exit 1; instance `shutting-down` (R8) |
+  | J4 | Job on `baas-381492019823`; `--deployment baas-development jobs terminate <its id>` | "No job found", exit 1; job stayed `running` and completed (R6, different regions, so same-region scoping rests on unit tests) |
+  | J5 | Ctrl+C on a running job | Invalid: a background child of a non-interactive shell ignores SIGINT, so it ran to `completed`. Rerun as J5b |
+  | J5b | SIGINT with job control on, while running | exit 130; item `cancelled`; hook "Terminated instance …" through `JobStop`; instance `shutting-down` |
+  | J6 | SIGINT while `RunInstances` was in flight | Hook: "no instance to terminate" (lookup missed); the instance logged `job_status: running not recorded`, then "not starting the benchmark", and shut down; item `cancelled` |
+  | J7 | JCStress sanity | `completed`; JSON `score: null`, CSV empty score cells, table a faint `NaN` (R9) |
+  | J8 | Benchmark that does not exist, launched beside two others | `launch-failed` (`VcpuLimitExceeded`: us-east-1 allows 16 vCPU, i.e. two c5.2xlarge), `launch-error.txt` written. Not the intended path, but a correct one |
+  | J9 | `--timeout 60` on a 5-minute benchmark | `failed:124`, exit 1, instance `terminated` |
+  | J10 | R10: the operator role writes `timed-out` on a running job, as its watchdog would | `baas run` reported `timed-out`, exit 1, instance left `running`; `jobs terminate` said it ends itself, exit 0, instance still `running`; see the follow-up below |
+- 12.3: CI on PR #84 (run 37994637686): **JMH on EC2 via `baas run`** pass and **JCStress on EC2 via `baas run`** pass, both with this branch's CLI and runner on `baas-381492019823`. The `build` check (run 37994637880) first failed in `MongoResultsStoreContractIT.initializationError`: `ContainerFetchException: Can't get Docker image mongo:7.0.5`, a Docker Hub pull failure in a module this change does not touch. It passed on re-run.
+- 12.4: no measurement comparison. Nothing in this change reaches the benchmark process, the image or `environment.json`: user-data changed only after the benchmark exits, on paths that never start it, and inside the watchdog (design, *Comparability*). J1's and CI's runs used the unchanged image `1.3.0`.
+  - J10 follow-up: the instance finished its benchmark, its `completed` write was refused over `timed-out` (`job_status: completed not recorded`), it uploaded the boot log and went to `shutting-down` by itself. Neither CLI path terminated it.
+
+## Verification report (`/opsx:verify`, 2026-10-10)
+
+| Dimension | Status |
+|---|---|
+| Completeness | 32/33 tasks. Open: 12.2 (partly blocked, W4) |
+| Correctness | 16/16 delta requirements implemented; 41/46 scenarios have a test or a live check (W1, W2, W4, W6, W7) |
+| Coherence | Design followed; one recorded deviation (`BucketProbe` re-asks a redirect, task 1.1) |
+
+### Requirement → code → test
+
+| Requirement (delta) | Code | Test / live | Gap |
+|---|---|---|---|
+| *setup is self-sufficient* (`ROLLBACK_COMPLETE` recovery) | `SetupCommand.deploy`, `CloudFormationService.stackStatus`, `requireUpdatable` | `CloudFormationServiceTest` (2) | W1 |
+| *Bucket emptying handles object versions* (missing bucket) | `S3UploadService.deleteAllObjects` | `S3UploadServiceIT.emptyingABucketThatDoesNotExistSucceeds` | W2, W7 |
+| *Teardown removes every deployment resource* (scenario text only) | — | — | — |
+| *Setup checks the stack's fixed names are free* (ADDED) | `BucketProbe`, `SetupCommand.nameConflict`, `tableExists` | `BucketProbeTest` (6), `SetupCommandTest` (5) | W1, W4 |
+| *A job launches at most one instance* (ADDED) | `Ec2ProvisioningService.runInstance` | `theLaunchIsIdempotentOnTheJobId`; live J1 | — |
+| *`jobs terminate` stops one job of its deployment* (replaces the REMOVED one) | `JobTermination`, `JobStop` | `JobTerminationTest` (11); live J3, J4, J10 | W6 |
+| *The instance reports its own progress and outcome* | `UserDataScriptBuilder` | `UserDataScriptBuilderTest` (62); live J1, J6, J9, J10 | — |
+| *A vanished job is inferred, never written* | `JobListing.resolve/filter`, `VANISH_GRACE` | `JobListingTest` (12); live J1 | — |
+| *The CLI records why it stopped a job, then always terminates* | `JobSession`, `JobStop`, `JobStatus.endsItself` | `JobSessionTest` (28), `JobStatusTest`; live J3, J5b, J10 | — |
+| *Runner lookups are scoped to the deployment* | `Ec2ProvisioningService.findLive` | `Ec2ProvisioningServiceTest` (2 cases) | W6 |
+| *Results for one job are queryable by job ID* | `ResultsQuerySubcommand.effectiveLimit` | `ResultsQueryPipelineTest` (2 new); live J2 | — |
+| *Output carries a measurement's tags…* (unknown score) | `ResultRow.from`, `csvNumber`, `jsonNumber` | `ResultsFormatTest` (2 new); live J2, J7 | — |
+| *The best score per group…* (missing score never wins) | `ResultRow.from`, `ResultsGrouping.better` | `ResultsGroupingTest.aScoreTheItemDoesNotCarry…` | — |
+| *Listings share one ordering and paging pipeline* | `effectiveLimit`, `ResultsGrouping.sorted` | `ResultsQueryPipelineTest`, `anUnknownScoreSortsLastInBothDirections` | — |
+| *Each deployment has its own configuration file* (mismatch refused) | `ConfigService.readDeployment` | `ConfigServiceTest` (2 new), `TeardownConfigFileTest`; live L1 | — |
+| REMOVED *`baas jobs terminate` stops one job* | `terminateUnrecorded` deleted | `anIdWithNoItemTerminatesNothing` | — |
+
+### Warnings
+
+- **W1:** the order inside `SetupCommand.deploy` (check names → delete a rolled-back stack → create), and "an update does not check its own names", have no unit test, because `deploy()` builds its AWS clients itself. Nor were they run live (W4). Recommendation: give `deploy()` an injectable seam like `TeardownCommand.removeDeployment`, or run L2 below.
+- **W2:** "A missing bucket does not block teardown" is proven at `deleteAllObjects` (IT), not through `TeardownCommand`, which is all AWS. Covered by L2 once it runs.
+- **W3** (predates this change): `avgt` results default to `s/op`, so a nanosecond-scale score prints as `0.000000` at the fixed 6 decimals in JSON and CSV (live J2). It is a real measurement shown as zero. Recommendation: format by significant digits, or note `-tu ns` in the docs. Not this change's scope.
+- **W4:** live check L2 was not run. Tearing down `baas-development` (the step before both R16 refusals and the R2 missing-bucket teardown) was denied by this session's permission classifier. To run by hand:
+  1. `baas --deployment baas-development admin deployment teardown --yes`
+  2. `aws s3 mb s3://baas-development --region us-east-1`, then `baas --deployment baas-development admin deployment setup`: expect the leftover-bucket refusal and no stack. Then `aws s3 rb s3://baas-development`.
+  3. Repeat step 2 with `aws dynamodb create-table --table-name baas-development-results …`: expect the leftover-table refusal. Then delete the table.
+  4. `setup`, then `aws s3 rb s3://baas-development` (empty), then `teardown --yes`: expect exit 0 and the stack and file gone.
+  5. `setup` and `admin image build` to restore it.
+- **W5** (predates this change): the CSV `mode` cell is the literal text `null` for a JCStress row (live J7); JSON has a real `null`. Recommendation: an empty cell, matching R9's treatment of the score.
+- **W6:** same-region cross-deployment scoping (R6) is proven by unit tests only. Live J4 crossed regions, because no second deployment exists in either region (QUEUE's deferred two-deployments-in-one-region check covers it).
+- **W7:** "An undeletable object still stops teardown" has no test that forces a `DeleteObjects` error; the path (`IllegalStateException` → exit 1 before `deleteStack`) is unchanged code. Recommendation: a fake `S3Client` returning an error entry.
+
+### Assessment
+
+No critical defect in the implementation. One task is still open: 12.2, blocked on a permission only the user can grant (W4). The change is ready to merge once CI is green. It should not be archived until W4's live steps have run.
