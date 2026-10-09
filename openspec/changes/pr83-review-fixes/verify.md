@@ -128,10 +128,22 @@
   3. Repeat step 2 with `aws dynamodb create-table --table-name baas-development-results …`: expect the leftover-table refusal. Then delete the table.
   4. `setup`, then `aws s3 rb s3://baas-development` (empty), then `teardown --yes`: expect exit 0 and the stack and file gone.
   5. `setup` and `admin image build` to restore it.
-- **W5** (predates this change): the CSV `mode` cell is the literal text `null` for a JCStress row (live J7); JSON has a real `null`. Recommendation: an empty cell, matching R9's treatment of the score.
+- **W5** (predates this change): a JCStress row's `mode` is the string `"null"`: the literal text in CSV (live J7) and `"mode":"null"` in JSON (post-release round 5). Recommendation: an empty CSV cell and a JSON `null`, matching R9's treatment of the score.
 - **W6:** same-region cross-deployment scoping (R6) is proven by unit tests only. Live J4 crossed regions, because no second deployment exists in either region (QUEUE's deferred two-deployments-in-one-region check covers it).
 - **W7:** "An undeletable object still stops teardown" has no test that forces a `DeleteObjects` error; the path (`IllegalStateException` → exit 1 before `deleteStack`) is unchanged code. Recommendation: a fake `S3Client` returning an error entry.
 
 ### Assessment
 
 No critical defect in the implementation. One task is still open: 12.2, blocked on a permission only the user can grant (W4). The change is ready to merge once CI is green. It should not be archived until W4's live steps have run.
+
+## Post-release sanity check (v7.0.0, 2026-10-10 00:30–00:45 CEST)
+
+PR #83 was merge-committed into `main` (`b1772a0`); release run 37998298652 published **v7.0.0**. Its generated notes carried the leaked `Co-Authored-By`/`Claude-Session` trailers of three older commits, plus the pre-rename `--deployer-profile`. The release description was corrected with `gh release edit` (original kept locally); no commit was changed. Rounds used the published installer and CLI, installed into a scratch `BAAS_SHARE`/`BAAS_BIN`. 6 paid jobs.
+
+| Round | Check | Result |
+|---|---|---|
+| 1 | Published `install.sh` (pins `BAAS_VERSION_DEFAULT=7.0.0`); `--version`; JAR checksum; `config list`; bare `jobs list` with two deployments; `admin image show`; help | 7.0.0; SHA-256 matches the published `.sha256`; bare listing refused naming both deployments |
+| 2 | Run on `baas-381492019823` with no `--runner-jar` | Seeded `releases/7.0.0/benchmark-runner.jar` from the GitHub release, checksum-verified; `completed` |
+| 3 | JCStress on `baas-development`, which seeds the release runner into the second deployment; `jmh-with-prof` launched with the wrong type name, then with `-prof gc` | JCStress `completed`. The bad type was refused before launch. `-prof` is not a runner option (it is `-pr`): `failed:2`, boot log uploaded, instance terminated |
+| 4 | `jmh-with-prof -pr gc` and `jmh-with-async` (flamegraph) at once | Both `completed`; the `--in-flight` listing ran as they finished (inconclusive, settled in round 5) |
+| 5 | Long job on `baas-381492019823`: `jobs list --in-flight`, `jobs show`, then Ctrl+C | Listed as `running` with elapsed time; `cancelled`, exit 130, instance `shutting-down`; afterwards no live runner in either region; `--best-per type` across the rounds' rows correct |
