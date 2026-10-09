@@ -56,8 +56,10 @@ public record ResultRow(
             benchmarkNameOf(measurement),
             measurement.tags().getOrDefault(TagKeys.TYPE, ""),
             measurement.mode(),
-            measurement.score() == null ? 0 : measurement.score(),
-            measurement.scoreError() == null ? 0 : measurement.scoreError(),
+            // Absent means unknown, never zero: the store writes a NaN as absent, and a zero read
+            // back won every lower-is-better --best-per group and printed as a measurement.
+            measurement.score() == null ? Double.NaN : measurement.score(),
+            measurement.scoreError() == null ? Double.NaN : measurement.scoreError(),
             measurement.scoreUnit() == null ? "" : measurement.scoreUnit(),
             measurement.createdAt() == null ? "" : measurement.createdAt().toString(),
             measurement.tags(),

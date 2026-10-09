@@ -41,3 +41,10 @@
 ## 7. Listing
 
 - 7.1: `JobListing.VANISH_GRACE` = 5 min. `resolve` and `filter` take `now`, and `jobs list` and `jobs show` pass `Instant.now()`. Tests: `aJobYoungerThanTheGraceKeepsItsStoredStatus` (10 s old `launching`, shown and in flight) and `aJobOlderThanTheGraceWithNoInstanceVanished` (6 min). The existing tests pass `LATER`, a day after creation.
+
+## 8. Results query
+
+- 8.1: `ResultRow.from` maps an absent score or error to `NaN` (`aScoreTheItemDoesNotCarryNeverWinsALowerIsBetterGroup`, which builds the row through `ResultRow.from`).
+- 8.2: `csvNumber` prints an empty cell for a non-finite value (`anUnknownScoreIsAnEmptyCsvCell`, with the column count kept), and JSON gives `null` (`anUnknownScoreIsJsonNull`). `--sort-by score` puts non-finite last in both directions (`anUnknownScoreSortsLastInBothDirections`).
+- 8.3: `--limit` is an `Integer`; `effectiveLimit()` is the given value, else 0 under `--job-id`, else 20 (`aJobLookupReturnsEveryMeasurementByDefault` 30/30 with no cut note, `anExplicitLimitStillBoundsAJobLookup`). The project default of 20 is unchanged (`theDefaultIsTheTwentyNewestEveryMeasurement`).
+- 8.4: not needed, per 1.5.
