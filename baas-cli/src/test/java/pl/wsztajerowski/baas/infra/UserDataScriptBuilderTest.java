@@ -120,7 +120,7 @@ class UserDataScriptBuilderTest {
     void watchdogStartsImmediatelyAfterTheInstanceIdResolves() {
         String script = script();
 
-        assertThat(script.indexOf("WATCHDOG_PID=$!"))
+        assertThat(script.indexOf("\n) &\n"))
             .as("nothing that can fail may sit between resolving INSTANCE_ID and arming the watchdog")
             .isGreaterThan(script.indexOf("INSTANCE_ID=$("))
             .isLessThan(script.indexOf("environment.json"));
@@ -288,7 +288,7 @@ class UserDataScriptBuilderTest {
         String script = script();
 
         assertThat(script.indexOf("job_status running"))
-            .isGreaterThan(script.indexOf("WATCHDOG_PID=$!"))
+            .isGreaterThan(script.indexOf("\n) &\n"))
             .isLessThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
     }
 
@@ -332,10 +332,12 @@ class UserDataScriptBuilderTest {
         List<String> calls = runAgainstStubAws(script(), "conditional",
             "INSTANCE_ID=i-0abc\n" + block + "\necho benchmark-started >> \"$STUB_CALLS\"\n");
 
-        assertThat(calls).hasSize(3);
+        // The stub refuses every call, the terminate included, so the shutdown fallback follows it.
+        assertThat(calls).hasSize(4).doesNotContain("benchmark-started");
         assertThat(calls.get(0)).startsWith("dynamodb update-item").contains("running");
         assertThat(calls.get(1)).startsWith("s3 cp /var/log/cloud-init-output.log");
         assertThat(calls.get(2)).startsWith("ec2 terminate-instances").contains("i-0abc");
+        assertThat(calls.get(3)).isEqualTo("shutdown -h now");
     }
 
     /** Only a refusal stops the job; a table that cannot be reached is no reason to waste the instance. */
@@ -417,6 +419,34 @@ class UserDataScriptBuilderTest {
         assertThat(calls.get(2)).startsWith("ec2 terminate-instances");
     }
 
+    /**
+     * The watchdog is the last termination layer, so nothing disarms it, and a self-termination
+     * request that fails falls back to an OS shutdown, which the launch's shutdown behaviour turns
+     * into a termination (R3, R10).
+     */
+    @Test
+    void nothingDisarmsTheWatchdogAndEverySelfTerminationFallsBackToAShutdown() {
+        String script = script();
+
+        assertThat(script).doesNotContainPattern("\\bkill \\$").doesNotContain("WATCHDOG_PID");
+        assertThat(script.lines().filter(l -> l.contains("terminate-instances")).toList())
+            .hasSize(3)
+            .allSatisfy(l -> assertThat(l.strip()).endsWith("|| shutdown -h now"));
+    }
+
+    @Test
+    void aWatchdogWhoseTerminateFailsShutsTheInstanceDown() throws Exception {
+        String script = script();
+        int start = script.indexOf("(\n  sleep ${WALL_CLOCK_HARD_KILL}");
+        int end = script.indexOf(") &", start) + ") &".length();
+
+        List<String> calls = runAgainstStubAws(script, "fail",
+            "WALL_CLOCK_HARD_KILL=0\nINSTANCE_ID=i-0abc\n" + script.substring(start, end) + "\nwait\n");
+
+        assertThat(calls).last().asString().startsWith("shutdown -h now");
+        assertThat(calls.get(calls.size() - 2)).startsWith("ec2 terminate-instances");
+    }
+
     @Test
     void aRefusedStatusWriteIsExpectedAndAFailedOneIsLoggedButNeitherStopsTheScript() throws Exception {
         String script = script();
@@ -464,6 +494,12 @@ class UserDataScriptBuilderTest {
             esac
             """);
         assertThat(aws.toFile().setExecutable(true)).isTrue();
+        Path shutdown = bin.resolve("shutdown");
+        Files.writeString(shutdown, """
+            #!/usr/bin/env bash
+            printf 'shutdown %s\\n' "$*" >> "$STUB_CALLS"
+            """);
+        assertThat(shutdown.toFile().setExecutable(true)).isTrue();
         String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
         String function = script.substring(script.indexOf("job_status() {"), script.indexOf("\n}\n", script.indexOf("job_status() {")) + 3);
 
