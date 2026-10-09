@@ -150,7 +150,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 12. Verification
 
-- [ ] 12.1 Run the full reactor `mvn verify` green, with `ASYNC_PATH` exported. Record the test count
+- [x] 12.1 Run the full reactor `mvn verify` green, with `ASYNC_PATH` exported. Record the test count
   in `verify.md`.
 - [ ] 12.2 **Manual, live, on a second deployment** (`infra/README.md`, *A second deployment*). The
   deployer policy for the name is printed by setup.
@@ -162,11 +162,11 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
     stack gone and the file gone.
 
   Record each in `verify.md`.
-- [ ] 12.3 **Manual:** the `baas run` path is covered by no automated test. CI's two e2e jobs on PR #83
+- [x] 12.3 **Manual:** the `baas run` path is covered by no automated test. CI's two e2e jobs on PR #83
   must pass: they exercise user-data's success path with the new self-termination, plus R7's client
   token. Record the run ids in `verify.md`.
-- [ ] 12.4 Measurement comparison: not applicable. No change reaches the benchmark process, the image or
+- [x] 12.4 Measurement comparison: not applicable. No change reaches the benchmark process, the image or
   `environment.json` (design, *Comparability*). Record that in `verify.md` rather than running a
   comparison.
-- [ ] 12.5 Run `/opsx:verify` and record the result in `verify.md`: the requirement → code → test → gap
+- [x] 12.5 Run `/opsx:verify` and record the result in `verify.md`: the requirement → code → test → gap
   table, open warnings as W1, W2…, and any deviation from the design or these tasks.
