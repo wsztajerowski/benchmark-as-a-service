@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.infra;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
@@ -18,6 +20,8 @@ import java.util.List;
 import java.util.Optional;
 
 public class S3UploadService {
+
+    private static final Logger logger = LoggerFactory.getLogger(S3UploadService.class);
 
     private final S3Client s3;
 
@@ -84,6 +88,23 @@ public class S3UploadService {
      */
     public void deleteAllObjects(String bucket) {
         List<String> failures = new ArrayList<>();
+        try {
+            deleteEveryVersion(bucket, failures);
+        } catch (NoSuchBucketException e) {
+            // Already empty: a bucket deleted by hand, or a stack whose create rolled back before
+            // making it. Teardown carries on to the stack, which otherwise no re-run could reach.
+            logger.info("Bucket {} does not exist; nothing to empty.", bucket);
+            return;
+        }
+
+        if (!failures.isEmpty()) {
+            throw new IllegalStateException("Failed to delete " + failures.size()
+                + " object(s) from " + bucket + ": " + String.join(", ", failures.subList(0, Math.min(5, failures.size())))
+                + (failures.size() > 5 ? ", ..." : ""));
+        }
+    }
+
+    private void deleteEveryVersion(String bucket, List<String> failures) {
         s3.listObjectVersionsPaginator(r -> r.bucket(bucket)).stream().forEach(page -> {
             List<ObjectIdentifier> batch = new ArrayList<>();
             page.versions().forEach(version -> batch.add(ObjectIdentifier.builder()
@@ -100,12 +121,6 @@ public class S3UploadService {
                     failures.add(error.key() + " (" + error.code() + ": " + error.message() + ")"));
             }
         });
-
-        if (!failures.isEmpty()) {
-            throw new IllegalStateException("Failed to delete " + failures.size()
-                + " object(s) from " + bucket + ": " + String.join(", ", failures.subList(0, Math.min(5, failures.size())))
-                + (failures.size() > 5 ? ", ..." : ""));
-        }
     }
 
     /**

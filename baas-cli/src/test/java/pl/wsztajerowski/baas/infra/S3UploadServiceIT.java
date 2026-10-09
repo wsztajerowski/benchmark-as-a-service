@@ -63,6 +63,16 @@ class S3UploadServiceIT {
         assertThat(remaining.deleteMarkers()).isEmpty();
     }
 
+    /** Teardown's re-run after a bucket was removed by hand: an absent bucket is an empty one (R2). */
+    @Test
+    void emptyingABucketThatDoesNotExistSucceeds() {
+        var service = new S3UploadService(s3);
+
+        org.assertj.core.api.Assertions.assertThatCode(
+                () -> service.deleteAllObjects("baas-definitely-not-created-" + UUID.randomUUID()))
+            .doesNotThrowAnyException();
+    }
+
     @Test
     void deletingAnEmptyBucketIsANoOp() {
         new S3UploadService(s3).deleteAllObjects(bucket);

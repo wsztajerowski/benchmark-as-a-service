@@ -12,7 +12,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
   certainly owned by another account, e.g. `test` (403, carrying the header); and a random unused name
   (404). Record the four answers in `verify.md`. If a foreign bucket does not answer 403, stop and
   revisit the R16 design.
-- [ ] 1.2 R2: confirm against LocalStack 4.14.0 (an IT) that `listObjectVersionsPaginator` on a missing
+- [x] 1.2 R2: confirm against LocalStack 4.14.0 (an IT) that `listObjectVersionsPaginator` on a missing
   bucket throws `NoSuchBucketException` and not a generic `S3Exception` with 404. Use whichever it
   throws in 3.2.
 - [x] 1.3 R7: confirm from the EC2 API reference that `ClientToken` accepts up to 64 ASCII characters
@@ -43,7 +43,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 3. Teardown: a missing bucket is empty (R2)
 
-- [ ] 3.1 R2: `deleteAllObjects` treats a missing bucket as already empty, logging that it is gone; any
+- [x] 3.1 R2: `deleteAllObjects` treats a missing bucket as already empty, logging that it is gone; any
   other failure still throws. Verify with an `S3UploadServiceIT` case on a nonexistent bucket. Add a
   `TeardownCommand` test showing a teardown with a missing bucket deletes the stack and the file and exits
   0, and that a failed object deletion still exits 1 before `deleteStack`.
