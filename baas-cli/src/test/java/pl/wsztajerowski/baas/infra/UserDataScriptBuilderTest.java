@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas.infra;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
+import pl.wsztajerowski.baas.model.JobStatus;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 
@@ -262,10 +264,13 @@ class UserDataScriptBuilderTest {
 
         assertThat(script).contains("export JOB_STATUS_GUARD='" + pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder.NOT_TERMINAL + "'");
         assertThat(script).contains("--condition-expression \"attribute_exists(pk) AND ${JOB_STATUS_GUARD}\"");
-        assertThat(UserDataScriptBuilder.guardValues())
-            .contains("\":completed\":{\"S\":\"completed\"}", "\":failedPrefix\":{\"S\":\"failed:\"}",
-                "\":timedOut\":{\"S\":\"timed-out\"}", "\":cancelled\":{\"S\":\"cancelled\"}",
-                "\":launchFailed\":{\"S\":\"launch-failed\"}");
+        // Every terminal status the model defines reaches the shell's guard, and nothing else does.
+        String values = UserDataScriptBuilder.guardValues();
+        JobStatus.EXACT_TERMINAL.forEach(status -> assertThat(values).contains("{\"S\":\"" + status + "\"}"));
+        assertThat(values).contains("\":failedPrefix\":{\"S\":\"failed:\"}");
+        assertThat(values.split("\\},")).hasSize(JobStatus.EXACT_TERMINAL.size() + 1);
+        assertThat(DynamoDbJobRecorder.NOT_TERMINAL_VALUES.keySet())
+            .allSatisfy(placeholder -> assertThat(DynamoDbJobRecorder.NOT_TERMINAL).contains(placeholder));
     }
 
     /**

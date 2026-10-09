@@ -191,13 +191,14 @@ class DynamoDbJobRecorderIT {
             .updateExpression("SET #status = :s")
             .conditionExpression("attribute_exists(pk) AND " + DynamoDbJobRecorder.NOT_TERMINAL)
             .expressionAttributeNames(Map.of("#status", "status"))
-            .expressionAttributeValues(Map.of(
-                ":s", AttributeValue.fromS(status),
-                ":completed", AttributeValue.fromS(JobStatus.COMPLETED),
-                ":timedOut", AttributeValue.fromS(JobStatus.TIMED_OUT),
-                ":cancelled", AttributeValue.fromS(JobStatus.CANCELLED),
-                ":launchFailed", AttributeValue.fromS(JobStatus.LAUNCH_FAILED),
-                ":failedPrefix", AttributeValue.fromS(JobStatus.FAILED_PREFIX))));
+            .expressionAttributeValues(guardValuesWith(status)));
+    }
+
+    /** The guard's values as user-data sends them, built from the same generated map. */
+    private static Map<String, AttributeValue> guardValuesWith(String status) {
+        Map<String, AttributeValue> values = new java.util.HashMap<>(Map.of(":s", AttributeValue.fromS(status)));
+        DynamoDbJobRecorder.NOT_TERMINAL_VALUES.forEach((k, v) -> values.put(k, AttributeValue.fromS(v)));
+        return values;
     }
 
     private static AttributeDefinition attribute(String name) {
