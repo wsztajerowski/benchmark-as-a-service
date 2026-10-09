@@ -112,7 +112,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 9. Configuration: a file names its own deployment (R13)
 
-- [ ] 9.1 Every `ConfigService` read path refuses a file whose `prefix` differs from its name, before
+- [x] 9.1 Every `ConfigService` read path refuses a file whose `prefix` differs from its name, before
   any AWS client is built, naming the file, both values and "rename the file or correct `prefix`". An
   absent `prefix` is set from the name. Verify with `ConfigServiceTest`: a copied file is refused by
   `load`, `loadForSetup` and `loadForSync`, and `TeardownCommand` with that file deletes nothing.

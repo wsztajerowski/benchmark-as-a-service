@@ -58,6 +58,36 @@ class ConfigServiceTest {
         assertThat(unnamed().deployments()).containsExactly("baas-123456789012");
     }
 
+    // ─── A file names its own deployment (R13) ───────────────────────────────────
+
+    @Test
+    void aCopiedFileIsRefusedByEveryWayIntoIt() throws Exception {
+        configure("baas-123456789012");
+        Path deployments = root.resolve("deployments");
+        Files.copy(deployments.resolve("baas-123456789012.yaml"), deployments.resolve("wiktor-dev.yaml"));
+
+        for (var read : java.util.List.<Runnable>of(
+                () -> named("wiktor-dev").load(),
+                () -> named("wiktor-dev").loadForSetup(),
+                () -> named("wiktor-dev").loadForSync())) {
+            assertThatThrownBy(read::run)
+                .isInstanceOf(DeploymentSelectionException.class)
+                .hasMessageContaining("wiktor-dev.yaml")
+                .hasMessageContaining("'wiktor-dev'")
+                .hasMessageContaining("'baas-123456789012'")
+                .hasMessageContaining("Rename the file to baas-123456789012.yaml, or correct prefix to 'wiktor-dev'");
+        }
+        assertThat(named("baas-123456789012").load().getPrefix()).isEqualTo("baas-123456789012");
+    }
+
+    @Test
+    void aFileWithoutAPrefixTakesItsName() throws Exception {
+        Files.createDirectories(root.resolve("deployments"));
+        Files.writeString(root.resolve("deployments").resolve("wiktor-dev.yaml"), "aws:\n  region: us-east-1\n");
+
+        assertThat(named("wiktor-dev").load().getPrefix()).isEqualTo("wiktor-dev");
+    }
+
     // ─── Selection ───────────────────────────────────────────────────────────────
 
     @Test

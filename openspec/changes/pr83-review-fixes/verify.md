@@ -48,3 +48,7 @@
 - 8.2: `csvNumber` prints an empty cell for a non-finite value (`anUnknownScoreIsAnEmptyCsvCell`, with the column count kept), and JSON gives `null` (`anUnknownScoreIsJsonNull`). `--sort-by score` puts non-finite last in both directions (`anUnknownScoreSortsLastInBothDirections`).
 - 8.3: `--limit` is an `Integer`; `effectiveLimit()` is the given value, else 0 under `--job-id`, else 20 (`aJobLookupReturnsEveryMeasurementByDefault` 30/30 with no cut note, `anExplicitLimitStillBoundsAJobLookup`). The project default of 20 is unchanged (`theDefaultIsTheTwentyNewestEveryMeasurement`).
 - 8.4: not needed, per 1.5.
+
+## 9. Configuration
+
+- 9.1: `ConfigService.readDeployment` is used by `load`, `loadForSetup`, `loadForSync` and `all`. It refuses a mismatched prefix with `DeploymentSelectionException` naming the file, both values and the fix, and gives a missing prefix the file's name. Tests: `aCopiedFileIsRefusedByEveryWayIntoIt`, `aFileWithoutAPrefixTakesItsName`, and `TeardownConfigFileTest.aCopiedFileStopsTheTeardownBeforeAnythingIsDeleted` (the AWS step never runs; both files remain). `config list` also refuses such a machine, deliberately: listing a file that aims at another deployment would hide the problem.

@@ -49,6 +49,20 @@ class TeardownConfigFileTest {
         assertThat(only).exists();
     }
 
+    /** R13: a copy of another deployment's file would aim the teardown at that deployment. */
+    @Test
+    void aCopiedFileStopsTheTeardownBeforeAnythingIsDeleted() throws Exception {
+        Path main = TestDeployments.write(dir, TestDeployments.DEFAULT);
+        Path copy = main.resolveSibling("wiktor-dev.yaml");
+        Files.copy(main, copy);
+
+        int exit = teardown(-99, "--deployment", "wiktor-dev");
+
+        assertThat(exit).as("refused, and the AWS steps (which would exit -99) never ran").isNotIn(0, -99);
+        assertThat(main).exists();
+        assertThat(copy).exists();
+    }
+
     /** Runs teardown with its AWS steps replaced by {@code awsExit}. */
     private int teardown(int awsExit, String... global) {
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
