@@ -9,10 +9,11 @@ import java.util.Optional;
 import java.util.function.BooleanSupplier;
 
 /**
- * {@code baas jobs terminate}: record {@code cancelled}, then stop the job's instance. Unlike the
- * shutdown hook it reports a failed termination — exiting zero over a live instance would hide it
- * from {@code --in-flight} — and it stops a live instance whatever the item says, so a retry after
- * a failed termination still works.
+ * {@code baas jobs terminate}: record {@code cancelled}, then stop the job's instance, through the
+ * same {@link JobStop} the shutdown hook and the poll cap use. Unlike them it reports a failed
+ * termination — exiting zero over a live instance would hide it from {@code --in-flight} — and it
+ * stops a live instance of a job already {@code cancelled}, so a retry after a failed termination
+ * still works. A status after which the instance ends itself leaves the instance alone.
  */
 public final class JobTermination {
 
@@ -33,9 +34,14 @@ public final class JobTermination {
      * @return the exit code
      */
     public int terminate(String jobId, BooleanSupplier confirm) {
-        Optional<JobItem> found = recorder.find(jobId);
+        // The index finds the job's key; the item is then read through the key, strongly, because
+        // the index can lag a status the instance has just written.
+        Optional<JobItem> found = recorder.find(jobId).flatMap(recorder::read);
         if (found.isEmpty()) {
-            return terminateUnrecorded(jobId, confirm);
+            // No item in this deployment. Every runner this CLI launches is reserved first, so an id
+            // without an item is another deployment's job, or none — never something to terminate.
+            logger.error("No job found with id '{}'. List jobs with: baas jobs list", jobId);
+            return 1;
         }
         JobItem job = found.get();
         String live = liveInstance(job);
@@ -43,62 +49,43 @@ public final class JobTermination {
             logger.info("Job {} already ended ({}); nothing to terminate.", jobId, job.status());
             return 0;
         }
-        // The instance wrote this outcome itself and is uploading its boot log before it
-        // terminates; cutting that off loses the one record of a failed job. The same rule
-        // JobSession.stop follows.
-        if (JobStatus.isRecordedByInstance(job.status())) {
-            logger.info("Job {} already ended ({}); instance {} is uploading its boot log and "
-                + "terminates itself.", jobId, job.status(), live);
+        if (JobStatus.endsItself(job.status())) {
+            logger.info(endedItself(job.jobId(), job.status(), live));
             return 0;
         }
         if (!confirm.getAsBoolean()) {
             logger.info("Nothing was changed.");
             return 1;
         }
-        if (!job.isTerminal()) {
-            try {
-                stopRecorder.stop(job, JobStatus.CANCELLED);
-            } catch (RuntimeException e) {
-                logger.warn("Could not record the cancellation ({}); terminating anyway.", e.getMessage());
+        var result = JobStop.stop(job, JobStatus.CANCELLED, stopRecorder, instances,
+            () -> Optional.ofNullable(live));
+        return switch (result.action()) {
+            case LEFT_ALONE -> {
+                // The instance recorded its outcome between the read above and the cancel write.
+                logger.info(endedItself(jobId, result.status(), live));
+                yield 0;
             }
-        }
-        if (live == null) {
-            logger.info("Job {} recorded as cancelled; it has no live instance.", jobId);
-            return 0;
-        }
-        try {
-            instances.terminate(live);
-        } catch (RuntimeException e) {
-            logger.error("Failed to terminate instance {} of job {}: {}", live, jobId, e.getMessage());
-            return 1;
-        }
-        logger.info("Terminated instance {} of job {}.", live, jobId);
-        return 0;
+            case NO_INSTANCE -> {
+                logger.info("Job {} recorded as {}; it has no live instance.", jobId, result.status());
+                yield 0;
+            }
+            case TERMINATED -> {
+                logger.info("Terminated instance {} of job {}.", result.target(), jobId);
+                yield 0;
+            }
+            case TERMINATE_FAILED -> {
+                logger.error("Failed to terminate instance {} of job {}: {}", result.target(), jobId,
+                    result.failure().getMessage());
+                yield 1;
+            }
+        };
     }
 
-    /**
-     * A job with no item: launched by a CLI from before job items, whose instance carries the job-id
-     * tag and nothing more. Teardown names such jobs from that tag and points at this command, so it
-     * has to stop them. There is nothing to record.
-     */
-    private int terminateUnrecorded(String jobId, BooleanSupplier confirm) {
-        Optional<String> live = instances.findLive(jobId);
-        if (live.isEmpty()) {
-            logger.error("No job found with id '{}'. List jobs with: baas jobs list", jobId);
-            return 1;
-        }
-        if (!confirm.getAsBoolean()) {
-            logger.info("Nothing was changed.");
-            return 1;
-        }
-        try {
-            instances.terminate(live.get());
-        } catch (RuntimeException e) {
-            logger.error("Failed to terminate instance {} of job {}: {}", live.get(), jobId, e.getMessage());
-            return 1;
-        }
-        logger.info("Terminated instance {} of job {}, which has no job item to record it on.", live.get(), jobId);
-        return 0;
+    private static String endedItself(String jobId, String status, String live) {
+        return live == null
+            ? "Job %s already ended (%s); nothing to terminate.".formatted(jobId, status)
+            : "Job %s already ended (%s); instance %s uploads its boot log and terminates itself."
+                .formatted(jobId, status, live);
     }
 
     /** The job's pending or running instance: the recorded one if live, else whatever carries its tag. */

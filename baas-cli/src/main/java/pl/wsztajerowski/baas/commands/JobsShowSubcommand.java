@@ -82,7 +82,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
         var ec2 = factory.ec2();
         var s3 = factory.s3();
         var recorder = new DynamoDbJobRecorder(dynamoDb, config.resultsTable());
-        var instances = new Ec2ProvisioningService(ec2);
+        var instances = new Ec2ProvisioningService(ec2, config.stackName());
         var storage = new S3UploadService(s3);
         String bucket = config.bucket();
         return new Sources() {

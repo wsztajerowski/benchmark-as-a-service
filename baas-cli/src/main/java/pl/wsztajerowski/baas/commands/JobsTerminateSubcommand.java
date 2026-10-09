@@ -59,7 +59,7 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
             return new JobTermination(
                 new DynamoDbJobRecorder(dynamoDb, config.resultsTable()),
                 new DynamoDbJobRecorder(quickDynamoDb, config.resultsTable()),
-                new Ec2ProvisioningService(ec2))
+                new Ec2ProvisioningService(ec2, config.stackName()))
                 .terminate(jobId, confirmation());
         }
     }

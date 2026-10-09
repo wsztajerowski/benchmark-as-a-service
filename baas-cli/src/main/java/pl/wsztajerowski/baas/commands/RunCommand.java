@@ -434,7 +434,7 @@ public class RunCommand implements Callable<Integer> {
 
         // The session's clients are deliberately never closed: the shutdown hook may still be
         // using them while the main thread unwinds, and the JVM is exiting either way.
-        var ec2Instances = new Ec2ProvisioningService(factory.ec2());
+        var ec2Instances = new Ec2ProvisioningService(factory.ec2(), config.stackName());
         var current = new JobSession(job,
             new DynamoDbJobRecorder(factory.dynamoDb(), resolvedTable),
             new DynamoDbJobRecorder(factory.dynamoDb(STOP_WRITE_TIMEOUT), resolvedTable),

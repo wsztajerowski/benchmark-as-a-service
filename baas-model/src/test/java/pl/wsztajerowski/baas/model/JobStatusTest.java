@@ -23,18 +23,22 @@ class JobStatusTest {
         assertThat(JobStatus.RUNNING).matches(s -> !JobStatus.isTerminal(s)).matches(JobStatus::isInFlight);
     }
 
-    /** Vanished is computed, never stored, so it is neither an outcome a write guards nor progress. */
-    /** Only these leave the instance to terminate itself; the CLI stops it on any other outcome. */
+    /**
+     * The CLI leaves a live instance alone after these: the instance wrote the first two and its
+     * watchdog the third, and each is followed by the instance's own boot-log upload and termination.
+     * Only {@code cancelled} makes the CLI terminate.
+     */
     @Test
-    void onlyCompletedAndFailedAreRecordedByTheInstance() {
-        assertThat(JobStatus.isRecordedByInstance(JobStatus.COMPLETED)).isTrue();
-        assertThat(JobStatus.isRecordedByInstance(JobStatus.failed(3))).isTrue();
-        assertThat(JobStatus.isRecordedByInstance(JobStatus.CANCELLED)).isFalse();
-        assertThat(JobStatus.isRecordedByInstance(JobStatus.TIMED_OUT)).isFalse();
-        assertThat(JobStatus.isRecordedByInstance(JobStatus.LAUNCH_FAILED)).isFalse();
-        assertThat(JobStatus.isRecordedByInstance(null)).isFalse();
+    void completedFailedAndTimedOutEndThemselves() {
+        assertThat(JobStatus.endsItself(JobStatus.COMPLETED)).isTrue();
+        assertThat(JobStatus.endsItself(JobStatus.failed(3))).isTrue();
+        assertThat(JobStatus.endsItself(JobStatus.TIMED_OUT)).isTrue();
+        assertThat(JobStatus.endsItself(JobStatus.CANCELLED)).isFalse();
+        assertThat(JobStatus.endsItself(JobStatus.LAUNCH_FAILED)).isFalse();
+        assertThat(JobStatus.endsItself(null)).isFalse();
     }
 
+    /** Vanished is computed, never stored, so it is neither an outcome a write guards nor progress. */
     @Test
     void vanishedAndAbsentAreNeither() {
         assertThat(JobStatus.isTerminal(JobStatus.VANISHED)).isFalse();

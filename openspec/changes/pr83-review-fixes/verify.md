@@ -28,3 +28,12 @@
 ## 5. Launch
 
 - 5.1: `RunInstances` carries `.clientToken(jobId)` (`Ec2ProvisioningServiceTest.theLaunchIsIdempotentOnTheJobId`).
+
+## 6. Job termination
+
+- 6.1: `DynamoDbJobRecorder.NOT_TERMINAL_VALUES` is generated from `EXACT_TERMINAL` plus the prefix, and feeds `NOT_TERMINAL`, the CLI's writes and `UserDataScriptBuilder.guardValues()`. `UserDataScriptBuilderTest` checks the values against `EXACT_TERMINAL`. `DynamoDbJobRecorderIT` (10, LocalStack) still refuses every terminal status, and its simulated instance write uses the same map.
+- 6.2: `JobStatus.endsItself` covers completed, failed:n and timed-out (`JobStatusTest`). `JobSession.finish` terminates only on `cancelled`: `theWatchdogsTimeoutExitsOne` now also asserts nothing is terminated, and `aCancellationFromElsewhereStillTerminatesALiveInstance` is unchanged.
+- 6.3: `Ec2ProvisioningService(ec2, deployment)`. `findLive` adds the `baas-deployment` filter and refuses to run without one. Every caller passes `config.stackName()`: `RunCommand`, `JobsShowSubcommand`, `JobsTerminateSubcommand`.
+- 6.4: `JobStop` is the one step: bounded write → on refusal a strong re-read → `LEFT_ALONE` if `endsItself`, else terminate. `JobSession.stop` and `JobTermination` both use it. `JobTermination` resolves the id through the index, then reads the item strongly. New tests: `anInstanceThatCompletesBeforeTheCancelIsLeftToTerminateItself` (the review's race) and `aJobTheWatchdogTimedOutIsLeftToTerminateItself`.
+- 6.5: `terminateUnrecorded` is deleted (`anIdWithNoItemTerminatesNothing`).
+- 6.6: every end in `JobSession` goes through `end()` under the session's lock, and a late `stop()` returns the recorded status (`twoStopsAtOnceRecordAndTerminateOnce`, `stopIsANoOpOnceTheJobEnded`).

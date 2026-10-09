@@ -293,9 +293,49 @@ class JobSessionTest {
         session.reserve();
         session.recordLaunchFailed("X");
 
-        session.stop(JobStatus.CANCELLED);
+        String reported = session.stop(JobStatus.CANCELLED);
 
         assertThat(recorder.writes).doesNotContain("stop:cancelled");
+        assertThat(reported).as("R14: the status the job ended with, not the late caller's reason")
+            .isEqualTo(JobStatus.LAUNCH_FAILED);
+    }
+
+    /**
+     * R14: the shutdown hook and the poll cap stop the job at once. One writes and terminates; the
+     * other waits and reports what was recorded.
+     */
+    @Test
+    void twoStopsAtOnceRecordAndTerminateOnce() throws Exception {
+        launched();
+        var inside = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        recorder.beforeStop = () -> {
+            inside.countDown();
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        var hook = new java.util.concurrent.atomic.AtomicReference<String>();
+        Thread first = new Thread(() -> hook.set(session.stop(JobStatus.CANCELLED)));
+        first.start();
+        inside.await();
+
+        var cap = new java.util.concurrent.atomic.AtomicReference<String>();
+        Thread second = new Thread(() -> cap.set(session.stop(JobStatus.TIMED_OUT)));
+        second.start();
+        Thread.sleep(100);
+        assertThat(second.getState()).as("the second stop waits for the first").isIn(Thread.State.BLOCKED, Thread.State.WAITING);
+        release.countDown();
+        first.join(5_000);
+        second.join(5_000);
+
+        assertThat(recorder.writes).filteredOn(w -> w.startsWith("stop:")).containsExactly("stop:cancelled");
+        assertThat(instances.terminated).containsExactly("i-1");
+        assertThat(hook.get()).isEqualTo(JobStatus.CANCELLED);
+        assertThat(cap.get()).isEqualTo(JobStatus.CANCELLED);
+        assertThat(session.endStatus()).isEqualTo(recorder.status);
     }
 
     // ─── await ───────────────────────────────────────────────────────────────────
@@ -345,6 +385,9 @@ class JobSessionTest {
 
         assertThat(outcome.exitCode()).isEqualTo(1);
         assertThat(outcome.status()).isEqualTo(JobStatus.TIMED_OUT);
+        assertThat(instances.terminated)
+            .as("R10: the watchdog wrote this and is uploading the boot log before it terminates the instance")
+            .isEmpty();
     }
 
     @Test
