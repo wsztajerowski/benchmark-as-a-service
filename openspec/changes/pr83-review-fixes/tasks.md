@@ -68,22 +68,22 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
   `JobStatus.EXACT_TERMINAL` and `FAILED_PREFIX`. `Update.request` and
   `UserDataScriptBuilder.guardValues()` use it. Verify with tests: the guard values cover exactly
   `EXACT_TERMINAL` plus the prefix, and `DynamoDbJobRecorderIT` still refuses every terminal status.
-- [ ] 6.2 R10: rename `JobStatus.isRecordedByInstance` to `endsItself` and include `timed-out`.
+- [x] 6.2 R10: rename `JobStatus.isRecordedByInstance` to `endsItself` and include `timed-out`.
   `JobSession.finish` terminates a live instance only for `cancelled`. Verify with `JobStatusTest` and a
   `JobSession` test: a polled `timed-out` with a running instance is not terminated, and a polled
   `cancelled` still is.
-- [ ] 6.3 R6: `Ec2ProvisioningService.findLive` takes the deployment and filters on `baas-deployment`.
+- [x] 6.3 R6: `Ec2ProvisioningService.findLive` takes the deployment and filters on `baas-deployment`.
   Every caller passes it. Verify with a test asserting the request's filters.
-- [ ] 6.4 R8: extract the stop step (bounded write → on refusal a strong re-read → leave the instance if
+- [x] 6.4 R8: extract the stop step (bounded write → on refusal a strong re-read → leave the instance if
   `endsItself`, else terminate by id or by scoped lookup) into one class used by `JobSession.stop` and
   `JobTermination`. `JobTermination` reads the item strongly after resolving the id, and reports a failed
   termination. Verify with tests: the review's race (the index reads `running`, the `cancelled` write is
   refused over `completed`) terminates nothing and exits 0; a `timed-out` item with a live instance is
   left alone; the existing `JobSession` and `JobTermination` tests pass unchanged in intent.
-- [ ] 6.5 R6: delete `JobTermination.terminateUnrecorded`. An id with no item fails "No job found" and
+- [x] 6.5 R6: delete `JobTermination.terminateUnrecorded`. An id with no item fails "No job found" and
   terminates nothing. Verify with a test: an unknown id with a tagged instance of another deployment
   terminates nothing.
-- [ ] 6.6 R14: every end transition in `JobSession` (`stop`, `finish`, the instance-gone branch, both
+- [x] 6.6 R14: every end transition in `JobSession` (`stop`, `finish`, the instance-gone branch, both
   launch paths) claims the end through one `synchronized` method, and an already-ended `stop()` returns
   the recorded `endStatus`. Verify with a test: two threads call `stop(CANCELLED)` and
   `stop(TIMED_OUT)` concurrently, and exactly one status write and one terminate happen, both callers

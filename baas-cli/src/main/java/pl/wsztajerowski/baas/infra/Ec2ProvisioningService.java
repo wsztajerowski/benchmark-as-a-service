@@ -18,9 +18,16 @@ public class Ec2ProvisioningService implements JobSession.Instances {
     private static final Logger logger = LoggerFactory.getLogger(Ec2ProvisioningService.class);
 
     private final Ec2Client ec2;
+    private final String deployment;
 
     public Ec2ProvisioningService(Ec2Client ec2) {
+        this(ec2, null);
+    }
+
+    /** @param deployment the deployment whose runners {@link #findLive} may find */
+    public Ec2ProvisioningService(Ec2Client ec2, String deployment) {
         this.ec2 = ec2;
+        this.deployment = deployment;
     }
 
     /**
@@ -145,11 +152,19 @@ public class Ec2ProvisioningService implements JobSession.Instances {
     }
 
 
-    /** The pending or running instance of one job, found by its {@code baas-job-id} tag. */
+    /**
+     * The pending or running instance of one job, found by its {@code baas-job-id} tag, within this
+     * deployment. Scoped like every other runner query: an id typed against the wrong deployment
+     * must not reach the other deployment's runner.
+     */
     @Override
     public Optional<String> findLive(String jobId) {
+        if (deployment == null) {
+            throw new IllegalStateException("A job's instance is looked up within a deployment; none was given.");
+        }
         return ec2.describeInstancesPaginator(r -> r.filters(
                 Filter.builder().name("tag:" + JOB_ID_TAG).values(jobId).build(),
+                Filter.builder().name("tag:" + DEPLOYMENT_TAG).values(deployment).build(),
                 Filter.builder().name("instance-state-name").values("pending", "running").build()))
             .reservations().stream()
             .flatMap(res -> res.instances().stream())

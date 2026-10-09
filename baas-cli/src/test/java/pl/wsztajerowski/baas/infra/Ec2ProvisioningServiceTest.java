@@ -116,11 +116,22 @@ class Ec2ProvisioningServiceTest {
         ec2.answer = DescribeInstancesResponse.builder()
             .reservations(r -> r.instances(Instance.builder().instanceId("i-9").build())).build();
 
-        assertThat(new Ec2ProvisioningService(ec2).findLive("run-1")).contains("i-9");
+        assertThat(new Ec2ProvisioningService(ec2, "wiktor-dev").findLive("run-1")).contains("i-9");
         assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
             .containsExactlyInAnyOrder(
                 org.assertj.core.groups.Tuple.tuple("tag:baas-job-id", java.util.List.of("run-1")),
+                org.assertj.core.groups.Tuple.tuple("tag:baas-deployment", java.util.List.of("wiktor-dev")),
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
+    }
+
+    /** R6: a job's instance is never looked up across deployments, not even by omission. */
+    @Test
+    void aJobsInstanceIsNotLookedUpWithoutADeployment() {
+        var ec2 = new CapturingEc2();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new Ec2ProvisioningService(ec2).findLive("run-1"))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(ec2.describe).isNull();
     }
 
     /** An instance type newer than the SDK's enum must reach EC2 as typed, not as 'null'. */

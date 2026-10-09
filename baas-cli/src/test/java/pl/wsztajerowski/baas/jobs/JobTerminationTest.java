@@ -61,21 +61,42 @@ class JobTerminationTest {
         assertThat(termination.terminate("no-such-run", () -> true)).isEqualTo(1);
     }
 
-    /** Launched by a CLI from before job items: only the instance's tag knows the job id. */
+    /**
+     * R6: an id with no item in this deployment is another deployment's job, or none. Its tagged
+     * instance — which a scoped lookup would not even find — is never terminated from here.
+     */
     @Test
-    void aJobWithNoItemIsStoppedByItsInstanceTag() {
-        instances.byJobId.put("20261001T000000000Z-0badc0de", "i-old");
+    void anIdWithNoItemTerminatesNothing() {
+        instances.byJobId.put("20261001T000000000Z-0badc0de", "i-other-deployment");
+        recorder.status = null;
 
-        assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> true)).isZero();
-        assertThat(instances.terminated).containsExactly("i-old");
-        assertThat(recorder.writes).as("there is no item to write").isEmpty();
+        assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> { throw new AssertionError("not asked"); }))
+            .isEqualTo(1);
+        assertThat(instances.terminated).isEmpty();
+        assertThat(recorder.writes).isEmpty();
     }
 
+    /**
+     * R8: the job read as running, and the instance recorded its outcome just before the cancel
+     * write. The refused write is re-read, and the instance — uploading its boot log — is left alone.
+     */
     @Test
-    void aJobWithNoItemIsLeftAloneWhenTheConfirmationIsDeclined() {
-        instances.byJobId.put("20261001T000000000Z-0badc0de", "i-old");
+    void anInstanceThatCompletesBeforeTheCancelIsLeftToTerminateItself() {
+        runningOn("i-1");
+        recorder.beforeStop = () -> recorder.instanceWrites(JobStatus.COMPLETED);
 
-        assertThat(termination.terminate("20261001T000000000Z-0badc0de", () -> false)).isEqualTo(1);
+        assertThat(termination.terminate("r", () -> true)).isZero();
+        assertThat(recorder.status).isEqualTo(JobStatus.COMPLETED);
+        assertThat(instances.terminated).isEmpty();
+    }
+
+    /** R10: the watchdog recorded the timeout and is uploading the boot log before it terminates. */
+    @Test
+    void aJobTheWatchdogTimedOutIsLeftToTerminateItself() {
+        runningOn("i-1");
+        recorder.status = JobStatus.TIMED_OUT;
+
+        assertThat(termination.terminate("r", () -> { throw new AssertionError("not asked"); })).isZero();
         assertThat(instances.terminated).isEmpty();
     }
 

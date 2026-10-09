@@ -117,20 +117,24 @@ public final class JobSession {
             return Confirmation.CONFIRMED;
         }
         Optional<JobItem> current = readQuietly();
-        // An outcome only the instance writes means it got there first — RunInstances answered
-        // after the whole job (seen live on a slow link) — not that the job was stopped. The poll
-        // reports it, and the instance terminates itself after its boot-log upload.
-        if (current.isPresent() && JobStatus.isRecordedByInstance(current.get().status())) {
+        // A status after which the instance ends itself means it got there first — RunInstances
+        // answered after the whole job (seen live on a slow link) — not that the job was stopped.
+        // The poll reports it, and the instance terminates itself after its boot-log upload.
+        if (current.isPresent() && JobStatus.endsItself(current.get().status())) {
             logger.info("Job {} already ended ({}) before its launch was confirmed.",
                 job.jobId(), current.get().status());
             return Confirmation.CONFIRMED;
         }
         if (current.isPresent() && current.get().isTerminal()) {
-            logger.error("Job {} was stopped ({}) while it was launching; terminating {}.",
-                job.jobId(), current.get().status(), launchedInstanceId);
-            ended = true;
-            endStatus = current.get().status();
-            terminateQuietly(launchedInstanceId);
+            synchronized (this) {
+                if (ended) {
+                    return Confirmation.CANCELLED_WHILE_LAUNCHING;
+                }
+                logger.error("Job {} was stopped ({}) while it was launching; terminating {}.",
+                    job.jobId(), current.get().status(), launchedInstanceId);
+                terminateQuietly(launchedInstanceId);
+                end(current.get().status());
+            }
             return Confirmation.CANCELLED_WHILE_LAUNCHING;
         }
         // Refused because the instance already recorded `running`: the launch is confirmed.
@@ -139,8 +143,12 @@ public final class JobSession {
 
     /** Best effort: the caller reports the launch error whether or not this lands. */
     public void recordLaunchFailed(String errorCode) {
-        ended = true;
-        endStatus = JobStatus.LAUNCH_FAILED;
+        synchronized (this) {
+            if (ended) {
+                return;
+            }
+            end(JobStatus.LAUNCH_FAILED);
+        }
         try {
             recorder.launchFailed(job, errorCode);
         } catch (RuntimeException e) {
@@ -150,8 +158,8 @@ public final class JobSession {
 
     /**
      * Records why the CLI is stopping the job, then terminates its instance — whatever the write
-     * did, with one exception: a write refused because the instance already recorded its own
-     * outcome ({@code completed} or {@code failed:<n>}) leaves the instance alone, since it is
+     * did, with one exception: a write refused because the job already reached a status after which
+     * the instance ends itself ({@link JobStatus#endsItself}) leaves the instance alone, since it is
      * uploading its boot log and terminates itself. Never throws: it runs from the shutdown hook and
      * the poll cap, where nothing is left to handle an exception.
      *
@@ -160,37 +168,35 @@ public final class JobSession {
      * on the instance: its {@code running} write is refused over the recorded outcome, and it
      * terminates itself without starting the benchmark.
      *
+     * <p>Synchronized with every other way the job ends: the shutdown hook and the poll cap can
+     * both get here, and the second waits, then gets the status the first recorded instead of
+     * writing and terminating again.
+     *
      * @return the status the job ends with: {@code reason}, unless it already had one
      */
-    public String stop(String reason) {
+    public synchronized String stop(String reason) {
         if (ended) {
-            return reason;
+            return endStatus != null ? endStatus : reason;
         }
-        ended = true;
-        endStatus = stopAndTerminate(reason);
-        return endStatus;
+        String target = instanceId;
+        var result = JobStop.stop(job, reason, stopRecorder, instances,
+            () -> target != null ? Optional.of(target) : instances.findLive(job.jobId()));
+        switch (result.action()) {
+            case LEFT_ALONE -> logger.info("Job {} already ended ({}); its instance terminates itself.",
+                job.jobId(), result.status());
+            case NO_INSTANCE -> logger.info("Job {}: no instance to terminate.", job.jobId());
+            case TERMINATED -> logger.info("Terminated instance {}.", result.target());
+            case TERMINATE_FAILED -> logger.error("Failed to terminate instance {} ({}). The watchdog terminates it "
+                + "at its bound; or run: baas jobs terminate {}", result.target(), result.failure().getMessage(), job.jobId());
+        }
+        end(result.status());
+        return result.status();
     }
 
-    private String stopAndTerminate(String reason) {
-        String standing = reason;
-        if (writeStopQuietly(reason) == JobRecorder.Write.REFUSED) {
-            Optional<JobItem> current = readQuietly(stopRecorder);
-            if (current.isPresent() && current.get().isTerminal()) {
-                standing = current.get().status();
-                if (JobStatus.isRecordedByInstance(standing)) {
-                    logger.info("Job {} already ended ({}); its instance terminates itself.", job.jobId(), standing);
-                    return standing;
-                }
-            }
-        }
-        String target = instanceId != null ? instanceId : findLiveQuietly().orElse(null);
-        if (target == null) {
-            logger.info("Job {}: no instance to terminate.", job.jobId());
-            return standing;
-        }
-        logger.info("Terminating instance {} ...", target);
-        terminateQuietly(target);
-        return standing;
+    /** Records the end; called only while holding this session's lock, the status first. */
+    private void end(String status) {
+        endStatus = status;
+        ended = true;
     }
 
     /**
@@ -225,15 +231,19 @@ public final class JobSession {
 
             String state = instanceId == null ? "unknown" : instances.state(instanceId);
             if ("terminated".equals(state) || "shutting-down".equals(state)) {
-                ended = true;
                 // The final status is written moments before the instance terminates; a poll
                 // landing in between sees a dead instance and no status yet.
                 Optional<JobItem> late = readQuietly();
                 if (late.isPresent() && late.get().isTerminal()) {
                     return finish(late.get());
                 }
-                endStatus = measurementsStored.getAsBoolean() ? Outcome.STATUS_LOST : Outcome.VANISHED;
-                return new Outcome(endStatus, 1);
+                String lost = measurementsStored.getAsBoolean() ? Outcome.STATUS_LOST : Outcome.VANISHED;
+                synchronized (this) {
+                    if (!ended) {
+                        end(lost);
+                    }
+                    return new Outcome(endStatus, JobStatus.COMPLETED.equals(endStatus) ? 0 : 1);
+                }
             }
             progress.accept(state, elapsedSeconds);
             sleeper.sleep(pollMillis);
@@ -241,17 +251,20 @@ public final class JobSession {
     }
 
     /**
-     * A terminal status read from the item. A {@code cancelled} or {@code timed-out} that this CLI
-     * did not write came from elsewhere — another operator's {@code baas jobs terminate} — and
-     * guarantees nothing about the instance, so a live one is terminated here. A {@code completed}
-     * or {@code failed:<n>} was written by the instance itself, which terminates on its own after
-     * uploading its boot log; terminating it from here could cut that upload off.
+     * A terminal status read from the item. A {@code cancelled} this CLI did not write came from
+     * another operator's {@code baas jobs terminate}, which guarantees nothing about the instance,
+     * so a live one is terminated here. Every other terminal status is one after which the instance
+     * ends itself ({@link JobStatus#endsItself}): a {@code timed-out} read here was written by its
+     * watchdog, since this CLI's own poll cap goes through {@link #stop}. Terminating it from here
+     * could cut off its boot-log upload.
      */
-    private Outcome finish(JobItem item) {
-        ended = true;
+    private synchronized Outcome finish(JobItem item) {
+        if (ended) {
+            return new Outcome(endStatus, JobStatus.COMPLETED.equals(endStatus) ? 0 : 1);
+        }
         String status = item.status();
-        endStatus = status;
-        if ((JobStatus.CANCELLED.equals(status) || JobStatus.TIMED_OUT.equals(status)) && instanceId != null) {
+        end(status);
+        if (JobStatus.CANCELLED.equals(status) && instanceId != null) {
             String state = instances.state(instanceId);
             if ("pending".equals(state) || "running".equals(state)) {
                 logger.info("Job {} was {} elsewhere; terminating {}.", job.jobId(), status, instanceId);
@@ -261,38 +274,11 @@ public final class JobSession {
         return new Outcome(status, JobStatus.COMPLETED.equals(status) ? 0 : 1);
     }
 
-    /** The write's result, or {@code null} when it failed. */
-    private JobRecorder.Write writeStopQuietly(String reason) {
-        try {
-            JobRecorder.Write write = stopRecorder.stop(job, reason);
-            if (write == JobRecorder.Write.REFUSED) {
-                logger.debug("Job {} already had an outcome; {} was not recorded.", job.jobId(), reason);
-            }
-            return write;
-        } catch (RuntimeException e) {
-            logger.warn("Could not record {} on the job item ({}); terminating anyway.", reason, e.getMessage());
-            return null;
-        }
-    }
-
     private Optional<JobItem> readQuietly() {
-        return readQuietly(recorder);
-    }
-
-    private Optional<JobItem> readQuietly(JobRecorder from) {
         try {
-            return from.read(job);
+            return recorder.read(job);
         } catch (RuntimeException e) {
             logger.debug("Could not read the job item: {}", e.getMessage());
-            return Optional.empty();
-        }
-    }
-
-    private Optional<String> findLiveQuietly() {
-        try {
-            return instances.findLive(job.jobId());
-        } catch (RuntimeException e) {
-            logger.warn("Could not look up the instance of job {}: {}", job.jobId(), e.getMessage());
             return Optional.empty();
         }
     }
