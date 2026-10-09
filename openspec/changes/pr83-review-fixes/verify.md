@@ -52,3 +52,7 @@
 ## 9. Configuration
 
 - 9.1: `ConfigService.readDeployment` is used by `load`, `loadForSetup`, `loadForSync` and `all`. It refuses a mismatched prefix with `DeploymentSelectionException` naming the file, both values and the fix, and gives a missing prefix the file's name. Tests: `aCopiedFileIsRefusedByEveryWayIntoIt`, `aFileWithoutAPrefixTakesItsName`, and `TeardownConfigFileTest.aCopiedFileStopsTheTeardownBeforeAnythingIsDeleted` (the AWS step never runs; both files remain). `config list` also refuses such a machine, deliberately: listing a file that aims at another deployment would hide the problem.
+
+## 10. Dead code
+
+- 10.1: removed `S3UploadService.deleteBucket` (and its IT case `removesTheBucketItselfNotJustItsContents`; `detectsWhetherABucketNameIsTaken` now deletes through the client, and its Javadoc names `config sync` as its reader) and `JobListing.SHOWN_STATUSES`. `RunnerImageExtension.hash` now runs on `RunnerJarResolver.sha256Hex`, and a new literal pin, `theHashIsTheLeadingEightHexOfSha256` ("abc" → `ba7816bf`, computed independently with Python), shows the output is unchanged. `grep` finds no remaining reference.

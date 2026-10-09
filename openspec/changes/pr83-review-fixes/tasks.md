@@ -119,7 +119,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 10. Dead code (R15)
 
-- [ ] 10.1 Delete `S3UploadService.deleteBucket` and its IT cases, and `JobListing.SHOWN_STATUSES`.
+- [x] 10.1 Delete `S3UploadService.deleteBucket` and its IT cases, and `JobListing.SHOWN_STATUSES`.
   Rewrite `RunnerImageExtension.hash` on `RunnerJarResolver.sha256Hex`. Verify: the existing hash test
   pins identical output, and `grep` finds no remaining reference.
 

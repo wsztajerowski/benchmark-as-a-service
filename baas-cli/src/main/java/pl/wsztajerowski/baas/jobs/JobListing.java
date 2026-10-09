@@ -9,7 +9,6 @@ import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.function.Predicate;
 
 /**
@@ -86,9 +85,4 @@ public final class JobListing {
             .toList();
     }
 
-    /** The statuses a listing can show, for help text and documentation. */
-    public static final Set<String> SHOWN_STATUSES = Set.of(
-        JobStatus.LAUNCHING, JobStatus.LAUNCHED, JobStatus.RUNNING, JobStatus.COMPLETED,
-        JobStatus.FAILED_PREFIX + "<n>", JobStatus.TIMED_OUT, JobStatus.CANCELLED,
-        JobStatus.LAUNCH_FAILED, JobStatus.VANISHED);
 }

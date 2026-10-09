@@ -81,27 +81,8 @@ class S3UploadServiceIT {
     }
 
     /**
-     * CloudFormation refuses to delete a non-empty bucket, so teardown empties it first —
-     * every version and delete marker — and the stack deletion then removes the bucket.
-     */
-    @Test
-    void removesTheBucketItselfNotJustItsContents() {
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key("jobs/result.json").build(),
-            RequestBody.fromString("{}"));
-
-        var service = new S3UploadService(s3);
-        service.deleteAllObjects(bucket);
-        service.deleteBucket(bucket);
-
-        assertThat(s3.listBuckets().buckets())
-            .extracting(software.amazon.awssdk.services.s3.model.Bucket::name)
-            .doesNotContain(bucket);
-    }
-
-    /**
-     * A retained bucket blocks the stack that wants to recreate it, and CloudFormation reports
-     * that as "Validation failed with 1 error(s)" without ever naming S3. Setup pre-checks for
-     * it, so this has to distinguish present from absent correctly.
+     * {@code config sync} finds a deployment's region from its bucket, so present and absent have
+     * to be told apart correctly.
      */
     @Test
     void detectsWhetherABucketNameIsTaken() {
@@ -110,7 +91,7 @@ class S3UploadServiceIT {
         assertThat(service.bucketRegion(bucket)).isPresent();
         assertThat(service.bucketRegion("baas-definitely-not-created-" + UUID.randomUUID())).isEmpty();
 
-        service.deleteBucket(bucket);
+        s3.deleteBucket(r -> r.bucket(bucket));
         assertThat(service.bucketRegion(bucket)).isEmpty();
     }
 

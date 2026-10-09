@@ -6,10 +6,7 @@ import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,13 +100,7 @@ public final class RunnerImageExtension {
      * it would label one extension two ways. The same content yields the same hash everywhere.
      */
     public static String hash(String content) {
-        try {
-            byte[] digest = MessageDigest.getInstance("SHA-256")
-                .digest(content.stripTrailing().getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest).substring(0, 8);
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 is unavailable", e);
-        }
+        return RunnerJarResolver.sha256Hex(content.stripTrailing().getBytes(StandardCharsets.UTF_8)).substring(0, 8);
     }
 
     /** {@code none} for no extension, its hash otherwise — the value a marker names. */
