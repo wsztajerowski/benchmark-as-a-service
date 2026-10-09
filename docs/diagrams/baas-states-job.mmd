@@ -1,0 +1,43 @@
+%% One job: the job item's status. Writers: C = baas run, H = its shutdown hook,
+%% T = baas jobs terminate (any operator), I = the instance's user-data, W = the instance's watchdog.
+%% Every write after the reservation is a conditional UpdateItem that never replaces a terminal status.
+%% completed and failed:<n> are written only by I, and a timed-out the CLI did not write only by W: after
+%% any of them no CLI path terminates the instance, which ships its log and ends itself (ADR 0003, amended).
+%% Only cancelled makes a CLI terminate a live instance it did not stop itself.
+%% Never stored, computed by readers: vanished (non-terminal, no live tagged instance, created at least
+%% 5 min ago — jobs list and the poll), status-lost (as vanished but measurements exist — the poll only). baas run --format json
+%% reports the status it ended with as jobStatus.
+stateDiagram-v2
+    direction TB
+    state "launching" as Launching
+    state "launched" as Launched
+    state "running" as Running
+    state "completed" as Completed
+    state "failed:#lt;n#gt;" as Failed
+    state "timed-out" as TimedOut
+    state "cancelled" as Cancelled
+    state "launch-failed" as LaunchFailed
+
+    [*] --> Preflight
+    Preflight --> Refused: format, type, unreleased build without --runner-jar,<br/>no prefix, project, tags, timeout under 1 s, margin under 60 s,<br/>JAR missing, no image, stack outputs missing
+    Refused: Refused — nothing uploaded, no item
+    Preflight --> Uploaded: C uploads benchmark.jar<br/>(+ runner.jar, or seeds releases/)
+    Uploaded --> Stranded: reservation write fails (N3)
+    Stranded: Stranded — input/ in S3, no job item
+    Uploaded --> Launching: C reserves the item
+    Launching --> Launched: C, after RunInstances (only while still launching)
+    Launching --> LaunchFailed: C, RunInstances error (+ launch-error.txt)
+    Launching --> Running: I, when C's launched write was lost or late
+    Launching --> Cancelled: H Ctrl+C mid-launch · T
+    Launched --> Running: I, after the watchdog starts
+    Launched --> Cancelled: H · T
+    Launched --> TimedOut: C poll cap · W
+    Running --> Completed: I, exit 0
+    Running --> Failed: I, exit n (124 = process timeout)
+    Running --> TimedOut: C poll cap · W
+    Running --> Cancelled: H · T
+    Cancelled --> [*]: a late I running write is refused →<br/>instance ships its log, terminates, never benchmarks
+    Completed --> [*]: a late C launched write is refused → confirmed, not cancelled
+    Failed --> [*]
+    TimedOut --> [*]
+    LaunchFailed --> [*]

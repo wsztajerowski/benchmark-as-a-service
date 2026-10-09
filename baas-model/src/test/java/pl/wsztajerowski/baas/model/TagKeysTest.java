@@ -7,16 +7,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TagKeysTest {
 
     @Test
-    void theKnownVocabularyIsExactlyTheTenDocumentedKeys() {
+    void theKnownVocabularyIsExactlyTheElevenDocumentedKeys() {
         assertThat(TagKeys.KNOWN).containsExactlyInAnyOrder(
             "project", "type", "commit", "branch", "source",
-            "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion");
+            "jdk", "jvmVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion");
     }
 
     @Test
     void machineObservedKeysAreTheKnownKeysMinusTheCallerOverridableOnes() {
         assertThat(TagKeys.MACHINE_OBSERVED)
-            .containsExactlyInAnyOrder("type", "jdk", "cpuModel", "cpuArch", "instanceType", "imageVersion")
+            .containsExactlyInAnyOrder("type", "jdk", "jvmVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion")
             .doesNotContain("project", "commit", "branch", "source");
     }
 
@@ -27,7 +27,7 @@ class TagKeysTest {
     }
 
     /**
-     * How a run was triggered is not something the instance observes, so reserving it would buy no
+     * How a job was triggered is not something the instance observes, so reserving it would buy no
      * protection — the reserved keys exist to stop a result's tags disagreeing with its own
      * environment.json. Leaving it caller-overridable is what lets a consumer label a nightly or
      * release run.

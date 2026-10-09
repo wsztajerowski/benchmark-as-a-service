@@ -1,16 +1,17 @@
 package pl.wsztajerowski.baas.config;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
 /**
  * What {@code ~/.baas/config.yaml} holds, and — just as importantly — what it does not.
  *
- * <p>Stored: credentials, the region, the installation prefix, and the operator's own preferences.
+ * <p>Stored: credentials, the region, the deployment prefix, and the operator's own preferences.
  * Everything else is either <em>derived</em> from the prefix by the one composition rule, or
- * <em>resolved</em> from the installation's stack at use time.
+ * <em>resolved</em> from the deployment's stack at use time.
  *
- * <p>The distinction is not tidiness. A stored bucket or table name can point at one installation
+ * <p>The distinction is not tidiness. A stored bucket or table name can point at one deployment
  * while {@code prefix} names another, and a stored subnet or security-group id can outlive the
  * resource it names — replacing {@code RunnerSecurityGroup} moves its id, and a cached copy then
  * addresses a group that no longer exists. Deriving and resolving removes both failures instead of
@@ -20,9 +21,9 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public class BaasConfig {
 
     /**
-     * The installation this machine addresses: {@code baas-<accountId>}, plus {@code -dev} for the
-     * development installation. Written by {@code baas admin setup} and {@code baas config sync
-     * --name}. No default — a machine that has adopted no installation must say so rather than
+     * The deployment this machine addresses: {@code baas-<accountId>}, plus {@code -dev} for the
+     * development deployment. Written by {@code baas admin deployment setup} and {@code baas config sync
+     * --name}. No default — a machine that has adopted no deployment must say so rather than
      * silently address one.
      */
     private String prefix;
@@ -55,40 +56,50 @@ public class BaasConfig {
     public String requirePrefix() {
         if (prefix == null || prefix.isBlank()) {
             throw new IllegalStateException("""
-                No installation is configured on this machine.
-                  Adopt one:  baas config sync --name baas-<accountId>
-                  Create one: baas admin setup""");
+                No deployment is configured on this machine.
+                  Adopt one:  baas config sync --deployment baas-<accountId>
+                  Create one: baas admin deployment setup""");
         }
         return prefix;
     }
 
-    /** The core stack's name. Identical to the prefix — the stack is the installation. */
+    /** Every name composed from this deployment's prefix. */
     @JsonIgnore
-    public String stackName() { return requirePrefix(); }
+    public DeploymentNames names() { return DeploymentNames.of(requirePrefix()); }
+
+    /** The core stack's name. Identical to the prefix — the stack is the deployment. */
+    @JsonIgnore
+    public String stackName() { return names().stack(); }
 
     @JsonIgnore
-    public String bucket() { return requirePrefix(); }
+    public String bucket() { return names().bucket(); }
 
     @JsonIgnore
-    public String resultsTable() { return requirePrefix() + "-results"; }
+    public String resultsTable() { return names().resultsTable(); }
 
     @JsonIgnore
-    public String runnerInstanceProfile() { return requirePrefix() + "-profile-runner"; }
+    public String runnerInstanceProfile() { return names().runnerInstanceProfile(); }
 
     @JsonIgnore
-    public String amiParameterPath() { return "/" + requirePrefix() + "/runner/ami-id"; }
+    public String amiParameterPath() { return names().amiPointer(); }
 
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class AwsConfig {
         public static final String DEFAULT_REGION = "eu-central-1";
 
-        private String profile;
+        private String deployerProfile;
         private String operatorProfile;
         /** Only what the file says; null when it says nothing. See {@link #resolveRegion()}. */
         private String region;
 
-        public String getProfile() { return profile; }
-        public void setProfile(String profile) { this.profile = profile; }
+        /**
+         * Credential profile for {@code baas admin} — the deployer's, written by {@code admin
+         * deployment setup --deployer-aws-profile}. Read under its old key {@code aws.profile} too, which
+         * files from before the rename carry; the next save writes the new key only.
+         */
+        public String getDeployerProfile() { return deployerProfile; }
+        @JsonAlias("profile")
+        public void setDeployerProfile(String deployerProfile) { this.deployerProfile = deployerProfile; }
 
         public String getOperatorProfile() { return operatorProfile; }
         public void setOperatorProfile(String operatorProfile) { this.operatorProfile = operatorProfile; }
@@ -96,8 +107,8 @@ public class BaasConfig {
         /**
          * Credential profile for day-to-day commands (run/results/config show), which are
          * meant to run under BaasCliOperatorRole. Deliberately does NOT fall back to
-         * {@link #profile} — that field holds the deployer profile written by
-         * `baas admin setup`, and silently reusing it would hand every benchmark run
+         * {@link #deployerProfile} — that field holds the deployer profile written by
+         * `baas admin deployment setup`, and silently reusing it would hand every benchmark job
          * iam:CreateRole and cloudformation:*. A null return means "default credential
          * chain", so AWS_PROFILE still works.
          */
@@ -108,10 +119,12 @@ public class BaasConfig {
 
         /**
          * The region every command uses: the file's {@code aws.region}, else {@code AWS_REGION},
-         * else {@value #DEFAULT_REGION}. The file wins because it is what {@code admin setup} wrote
-         * for this installation. The environment is consulted at all so that a CI job, whose fresh
-         * config names no region, follows the region its credentials step was given instead of
-         * silently assuming the default.
+         * else {@value #DEFAULT_REGION}. The file's value is the deployment's own region —
+         * {@code admin deployment setup} writes the one it deployed to, {@code config sync} the one it found
+         * the deployment's bucket in — so it wins. The environment and the default matter only
+         * before any deployment is adopted: where {@code admin deployment setup} and
+         * {@code admin deployment setup} deploy or render its policy, and where {@code config sync} starts
+         * looking (any region finds the bucket).
          *
          * <p>Resolved, never stored: {@link #getRegion()} stays the file's own value, so saving a
          * configuration cannot copy an environment variable into the file and pin it there.
@@ -153,13 +166,13 @@ public class BaasConfig {
     /**
      * The watchdog counts from launch, the benchmark timeout from JVM start, so the margin has to
      * cover boot plus the final upload. Below this the watchdog can terminate the instance before
-     * {@code run-status} is written, and the run looks like it vanished.
+     * its final status is recorded, and the job looks like it vanished.
      */
     public static final int MIN_WATCHDOG_MARGIN_SECONDS = 60;
 
     /**
      * Off by default: git is consulted only when the operator opts in, and then only for the
-     * project name — {@code baas run} from the benchmark JAR's repository, {@code baas results}
+     * project name — {@code baas run} from the benchmark JAR's repository, {@code baas results query}
      * from the working directory's. {@code branch} and {@code commit} are never derived.
      */
     public static class GitConfig {

@@ -1,7 +1,7 @@
 services:
   localstack-baas:
     container_name: "${LOCALSTACK_DOCKER_NAME:-localstack-baas}"
-    image: localstack/localstack
+    image: localstack/localstack:4.14.0
     ports:
 #      - "127.0.0.1:4510-4559:4510-4559"  # external services port range
       - "4566:4566" # LocalStack Gateway
@@ -20,7 +20,7 @@ services:
     #                             AttributeName=gsi1pk,AttributeType=S AttributeName=gsi1sk,AttributeType=S \
     #     --key-schema AttributeName=pk,KeyType=HASH AttributeName=sk,KeyType=RANGE \
     #     --global-secondary-indexes \
-    #       'IndexName=requestId-index,KeySchema=[{AttributeName=gsi1pk,KeyType=HASH},{AttributeName=gsi1sk,KeyType=RANGE}],Projection={ProjectionType=ALL}'
+    #       'IndexName=jobId-index,KeySchema=[{AttributeName=gsi1pk,KeyType=HASH},{AttributeName=gsi1sk,KeyType=RANGE}],Projection={ProjectionType=ALL}'
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"

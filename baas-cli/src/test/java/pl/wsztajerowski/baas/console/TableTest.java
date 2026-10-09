@@ -42,7 +42,7 @@ class TableTest {
     @Test
     void thePlainResultsTableIsByteIdenticalToTheOldPrintf() {
         String expected = String.format(OLD_RESULTS_FORMAT,
-                "BENCHMARK", "REQUEST_ID", "TYPE", "MODE", "SCORE", "UNIT")
+                "BENCHMARK", "JOB_ID", "TYPE", "MODE", "SCORE", "UNIT")
             + "-".repeat(128) + System.lineSeparator()
             + String.format(OLD_RESULTS_FORMAT, "measure", "20260820T174432812Z-a3f9c21b", "jmh",
                 "thrpt", String.format("%.3f", 8234.123456), "ops/s")
@@ -102,7 +102,7 @@ class TableTest {
         assertThat(plain.toString()).doesNotContain("impl=hash");
     }
 
-    /** Shown only under --all-runs; faint, so it reads as set aside — and still aligned. */
+    /** Shown only under --show-excluded; faint, so it reads as set aside — and still aligned. */
     @Test
     void anExcludedRowIsFaintAndStillAligned() {
         var rows = List.of(row("p", Map.of("exclude_from_results", "true")), row("p", Map.of()));

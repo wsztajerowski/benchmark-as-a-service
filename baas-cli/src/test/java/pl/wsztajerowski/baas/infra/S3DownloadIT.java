@@ -21,14 +21,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The retrieval half of the thin-item bargain: measurements drop {@code rawData} on the way into
- * DynamoDB, so the whole run has to come back out of S3 intact.
+ * DynamoDB, so the whole job has to come back out of S3 intact.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class S3DownloadIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
             .withServices(LocalStackContainer.Service.S3);
 
     private static final String RESULT_PATH = "main/jmh/20260819_090000";
@@ -38,7 +38,7 @@ class S3DownloadIT {
     private S3UploadService storage;
 
     @BeforeEach
-    void createBucketWithARun() {
+    void createBucketWithAJob() {
         s3 = S3Client.builder()
             .endpointOverride(LOCAL_STACK.getEndpoint())
             .region(Region.of(LOCAL_STACK.getRegion()))
@@ -57,11 +57,11 @@ class S3DownloadIT {
         put(RESULT_PATH + "/packages.txt", "some-rpm-1.0");
         put(RESULT_PATH + "/logs/gc.log", "gc log");
         put(RESULT_PATH + "/com.example.Bench.run-Throughput/flame.html", "<html/>");
-        put("main/jmh/20260101_000000/jmh-result.json", "a different run");
+        put("main/jmh/20260101_000000/jmh-result.json", "a different job");
     }
 
     @Test
-    void listsEveryArtifactOfOneRunAndNothingFromAnother() {
+    void listsEveryArtifactOfOneJobAndNothingFromAnother() {
         var keys = storage.listKeys(bucket, RESULT_PATH + "/");
 
         assertThat(keys).hasSize(6);
@@ -69,7 +69,7 @@ class S3DownloadIT {
     }
 
     @Test
-    void downloadsTheWholeRunPreservingItsLayout(@TempDir Path destination) {
+    void downloadsTheWholeJobPreservingItsLayout(@TempDir Path destination) {
         String prefix = RESULT_PATH + "/";
         for (String key : storage.listKeys(bucket, prefix)) {
             storage.download(bucket, key, destination.resolve(key.substring(prefix.length())));
@@ -95,7 +95,7 @@ class S3DownloadIT {
     }
 
     @Test
-    void anUnknownRunListsNothingSoNoDirectoryIsEverCreated() {
+    void anUnknownJobListsNothingSoNoDirectoryIsEverCreated() {
         assertThat(storage.listKeys(bucket, "main/jmh/no-such-run/"))
             .as("emptiness is how the command detects an unknown run before writing anything")
             .isEmpty();

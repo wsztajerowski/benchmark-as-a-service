@@ -17,7 +17,8 @@ jobs:
       contents: write # to be able to publish a GitHub release
       issues: write # to be able to comment on released issues
       pull-requests: write # to be able to comment on released pull requests
-      id-token: write # to enable use of OIDC for npm provenance
+      # No id-token: nothing here publishes to npm or federates anywhere, and OperatorRole's
+      # trust admits any workflow of this repository, so a token minted in this job could assume it.
       packages: write
     steps:
       - name: Checkout sources
@@ -45,8 +46,13 @@ jobs:
       # 'Missing helper'. v9 is the newest major that renders against writer 8, and it still
       # treats a '!' subject as a major. Don't drop the ^9 until release-notes-generator ships
       # a stable release built on writer 9.
+      #
+      # Every package is pinned exactly. This job holds contents: write and publishes the runner JAR
+      # beside its .sha256, so whatever it installs could swap both; and an unpinned major has
+      # broken a release before. An upgrade is a deliberate edit of this line. Their own
+      # dependencies still resolve at install time — there is no lockfile.
       - name: Install dependencies
-        run: npm install --no-save semantic-release @semantic-release/commit-analyzer @semantic-release/exec @semantic-release/github @semantic-release/release-notes-generator 'conventional-changelog-conventionalcommits@^9'
+        run: npm install --no-save semantic-release@25.0.9 @semantic-release/commit-analyzer@13.0.1 @semantic-release/exec@7.1.0 @semantic-release/github@12.0.10 @semantic-release/release-notes-generator@14.1.1 conventional-changelog-conventionalcommits@9.3.1
 
       - name: Generate release configuration
         run: |

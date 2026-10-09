@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -14,6 +15,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
@@ -22,14 +24,18 @@ import pl.wsztajerowski.baas.infra.ImageBuilderService;
 import pl.wsztajerowski.baas.infra.RunnerImage;
 import pl.wsztajerowski.baas.infra.RunnerJarResolver;
 import pl.wsztajerowski.baas.infra.S3UploadService;
-import pl.wsztajerowski.baas.infra.SsmService;
 import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
-import pl.wsztajerowski.baas.model.RunId;
-import pl.wsztajerowski.baas.model.RunLayout;
+import pl.wsztajerowski.baas.model.JobId;
+import pl.wsztajerowski.baas.model.JobItem;
+import pl.wsztajerowski.baas.model.JobStatus;
+import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 import pl.wsztajerowski.baas.results.ResultsTable;
+import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
+import pl.wsztajerowski.baas.jobs.JobSession;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -40,7 +46,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.OptionalInt;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import java.util.regex.Pattern;
@@ -65,10 +70,10 @@ import java.util.regex.Pattern;
         "--project can be derived from the JAR's git repository instead:",
         "  baas config set --git-resolve-project true",
         "",
-        "Measurements go to the DynamoDB results table. S3 receives process output,",
-        "logs, profiler artifacts, the verbatim result JSON and the run-status",
-        "sentinel. Discarding measurements needs an explicit --no-database; an",
-        "unresolvable table fails before anything is launched."
+        "Measurements and the job's status go to the DynamoDB results table; see",
+        "them with baas results query and baas jobs list. S3 receives process output,",
+        "logs, profiler artifacts and the verbatim result JSON. An unresolvable",
+        "table fails before anything is launched."
     },
     separator = " "
 )
@@ -92,10 +97,10 @@ public class RunCommand implements Callable<Integer> {
     private volatile StatusLine statusLine;
 
     /**
-     * Set once the poll has seen the run end — a run-status sentinel, or the instance already
-     * terminated. The shutdown hook then leaves the instance to terminate itself.
+     * The job's lifecycle once it has been named — reserve, launch, poll, stop. Volatile because
+     * the shutdown hook reads it from another thread.
      */
-    private volatile boolean runEnded;
+    private volatile JobSession session;
 
     @Parameters(index = "0", paramLabel = "<type>",
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
@@ -109,7 +114,7 @@ public class RunCommand implements Callable<Integer> {
         description = "Path to the pre-built benchmark JAR. Required — baas run builds nothing.")
     Path benchmarkJar;
 
-    @Option(names = "--runner-jar", description = "Local runner JAR to upload for this run instead of "
+    @Option(names = "--runner-jar", description = "Local runner JAR to upload for this job instead of "
         + "pinning the release matching this CLI's version. Required from an unreleased build.")
     Path runnerJar;
 
@@ -126,37 +131,34 @@ public class RunCommand implements Callable<Integer> {
 
     @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
         + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
-        + "machine-observed keys (imageVersion, instanceType, jdk, cpuModel, cpuArch, type) — those are "
-        + "captured on the instance so a result's tags can't disagree with its own environment.json.")
+        + "machine-observed keys (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type) — those are "
+        + "captured on the instance so a result's tags can't disagree with its own environment.json — "
+        + "and for project, which --project names.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
     @Option(names = "--project", description = "Project name for the results partition. Required unless "
         + "git.resolveProject is enabled, which derives it from the repository holding --benchmark-jar.")
     String project;
 
-    @Option(names = "--no-database", description = "Discard measurements instead of storing them. "
-        + "Explicit opt-in: without it, an unresolvable results table fails before provisioning.")
-    boolean noDatabase;
-
     // No --image-version and no --ami-id: exactly one image is maintained, so there is nothing to
     // select between, and an override could only name an image whose results are not comparable.
     @Option(names = "--format", defaultValue = "text",
-        description = "Run summary format: text (default) or json. json writes one object to "
-            + "standard output — on the failure path too, which is when the run id is most "
+        description = "Job summary format: text (default) or json. json writes one object to "
+            + "standard output — on the failure path too, which is when the job id is most "
             + "needed — while diagnostics stay on standard error.")
     String format;
 
     /**
      * `run`/`results`/`config show` are meant to run under BaasCliOperatorRole. When no
      * operator profile is configured they fall through to the default credential chain
-     * rather than reusing `aws.profile`, which holds deployer credentials.
+     * rather than reusing `aws.deployerProfile`, which holds deployer credentials.
      */
     public static Optional<String> operatorCredentialsWarning(BaasConfig config) {
         return operatorCredentialsWarning(config, System.getenv());
     }
 
     /**
-     * The runner subnet and security group, read from the installation's stack outputs.
+     * The runner subnet and security group, read from the deployment's stack outputs.
      *
      * <p>Not cached in {@code ~/.baas/config.yaml}: editing {@code RunnerSecurityGroup}'s
      * {@code GroupDescription} replaces the security group and changes its id, and a stored copy
@@ -177,9 +179,9 @@ public class RunCommand implements Callable<Integer> {
         }
         if (!missing.isEmpty()) {
             throw new IllegalStateException(
-                "Stack %s did not report %s. Run `baas admin setup`, or point this machine at a "
+                "Stack %s did not report %s. Run `baas admin deployment setup`, or point this machine at a "
                     .formatted(config.stackName(), String.join(", ", missing))
-                    + "deployed installation with `baas config sync --name <prefix>`.");
+                    + "existing deployment with `baas config sync --deployment <prefix>`.");
         }
         return outputs;
     }
@@ -189,7 +191,7 @@ public class RunCommand implements Callable<Integer> {
      * one.
      *
      * <p>Silent when credentials already arrive from the environment. The warning's own advice —
-     * {@code baas config set --operator-profile} — is not merely redundant there but wrong: in
+     * {@code baas config set --operator-aws-profile} — is not merely redundant there but wrong: in
      * continuous integration the credentials come from an OIDC federation the job performed, and
      * there is no profile to name. Falling through to the default credential chain is what the
      * method's own contract calls correct in that case, so warning about it trained the reader to
@@ -201,7 +203,7 @@ public class RunCommand implements Callable<Integer> {
         }
         return Optional.of(
             "No aws.operatorProfile configured — using the default AWS credential chain. "
-                + "Set one with: baas config set --operator-profile <profile-name>");
+                + "Set one with: baas config set --operator-aws-profile <profile-name>");
     }
 
     /**
@@ -218,25 +220,27 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * The AMI a run will launch from, or empty when there is none to launch from.
+     * The AMI a job will launch from, or empty when there is none to launch from.
      *
      * <p>Empty is a hard stop, not a fallback: `baas run` has no boot-time install path, and
      * inventing one would mean two provisioning paths whose results are silently incomparable.
      * Resolution happens before the JAR upload so a missing image costs nothing.
      */
     public static Optional<RunnerImage> resolveRunnerImage(ImageBuilderService images, String prefix) {
-        return images.currentImage("/" + prefix + "/runner/ami-id");
+        return images.currentImage(DeploymentNames.of(prefix).amiPointer());
     }
 
     /**
-     * What the JSON summary reports. Populated as the run reaches each fact rather than assembled
-     * at the end, because the failure path has to be able to print whatever is known so far: a run
+     * What the JSON summary reports. Populated as the job reaches each fact rather than assembled
+     * at the end, because the failure path has to be able to print whatever is known so far: a job
      * that died after launching still has an id, and that id is the whole point of the option.
      */
-    String summaryRunId;
+    String summaryJobId;
     String summaryProject;
     String summaryResultPath;
     String summaryInstanceId;
+    /** The job item's status as the job ended; see {@link JobSession#endStatus()}. */
+    String summaryJobStatus;
 
     boolean jsonSummary() {
         return "json".equalsIgnoreCase(format);
@@ -254,12 +258,33 @@ public class RunCommand implements Callable<Integer> {
             return exitCode;
         } finally {
             // In a finally so it also covers the paths that throw — resolveProject() and
-            // resolveResultsTable() both do. Those fail before a run exists, so the object
+            // resolveResultsTable() both do. Those fail before a job exists, so the object
             // carries nulls; a consumer still gets one parseable object saying it failed rather
             // than empty output it has to special-case.
             if (jsonSummary()) {
-                printRunSummary(exitCode);
+                var ended = session;
+                if (ended != null) {
+                    summaryJobStatus = ended.endStatus();
+                }
+                printJobSummary(exitCode);
             }
+            hints(exitCode);
+        }
+    }
+
+    /** Where to look next, once a job exists; interactive terminals only (see {@link Hints}). */
+    private void hints(int exitCode) {
+        // In the finally: a command built outside picocli (a unit test) has no spec to print through,
+        // and a hint must never replace the outcome being reported.
+        if (summaryJobId == null || (console == null && spec == null)) {
+            return;
+        }
+        if (exitCode == 0) {
+            Hints.show(console(), logger, "measurements", "baas query --job-id " + summaryJobId,
+                "artifacts", "baas jobs download " + summaryJobId);
+        } else {
+            Hints.show(console(), logger, "what happened", "baas jobs show " + summaryJobId,
+                "boot log", "baas jobs download " + summaryJobId);
         }
     }
 
@@ -272,11 +297,11 @@ public class RunCommand implements Callable<Integer> {
         }
         if (!VALID_TYPES.contains(benchmarkType)) {
             logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
-            return 1;
+            return 2;
         }
 
         // Checked first, before resolving the project, the results table, the runner image or
-        // anything else: a run that cannot name the runner JAR it will execute is going to fail
+        // anything else: a job that cannot name the runner JAR it will execute is going to fail
         // anyway, and there is deliberately no fallback — two provisioning paths produce silently
         // incomparable results.
         if (runnerJar == null && !BaasVersion.isReleased()) {
@@ -298,13 +323,17 @@ public class RunCommand implements Callable<Integer> {
         summaryProject = resolvedProject;
 
         // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
-        // and the upload: a run that cannot say where its measurements go is going to fail anyway.
-        String resolvedTable = resolveResultsTable(config, noDatabase).orElse(null);
+        // and the upload: a job that cannot say where its measurements go is going to fail anyway.
+        String resolvedTable = resolveResultsTable(config);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         Timings timings = resolveTimings(config);
+        // Before any AWS call, like every other check on what the caller typed: a reserved or
+        // project tag used to be refused only after the JAR upload, leaving an input/ in S3 that
+        // no job item names and nothing expires.
+        Map<String, String> runnerTags = buildRunnerTags(benchmarkType, resolvedProject);
         int resolvedTimeout = timings.timeoutSeconds();
         int resolvedWallClock = timings.watchdogSeconds();
-        logger.debug("Resolved run parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
+        logger.debug("Resolved job parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedProject, benchmarkParams);
 
         operatorCredentialsWarning(config).ifPresent(logger::warn);
@@ -318,7 +347,6 @@ public class RunCommand implements Callable<Integer> {
                 benchmarkJar);
             return 1;
         }
-        Path jarPath = benchmarkJar;
 
         // 2. Resolve the runner image, before anything is uploaded or launched. A missing image
         //    is a hard stop — there is no fallback to AL2023 + yum, since two provisioning paths
@@ -332,7 +360,7 @@ public class RunCommand implements Callable<Integer> {
             if (resolved.isEmpty()) {
                 logger.error("""
                         No runner image is published for this account ({}).
-                          Build one:  baas admin build-image
+                          Build one:  baas admin image build
                         Nothing was launched — the runner boots from a purpose-built AMI and \
                         there is no boot-time install path.""",
                     config.getAws().resolveRegion());
@@ -343,38 +371,38 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
 
-        // Before naming the run and before any upload: a torn-down or wrong installation used to
-        // upload the benchmark JAR and only then fail here. Resolved per run rather than cached in
+        // Before naming the job and before any upload: a torn-down or wrong deployment used to
+        // upload the benchmark JAR and only then fail here. Resolved per job rather than cached in
         // config: replacing RunnerSecurityGroup moves its id, and a stored copy then names a group
         // that no longer exists. The operator role already holds cloudformation:DescribeStacks on
         // its own stack, so this costs one call.
         Map<String, String> networking = resolveNetworking(factory, config);
 
-        // 3. Name the run. One clock read: the instant travels into the identifier, into the S3
+        // 3. Name the job. One clock read: the instant travels into the identifier, into the S3
         //    prefix and on to the runner as --created-at, so the prefix name and the stored
         //    timestamp are the same value rather than two values that happen to be close.
-        Instant runInstant = Instant.now();
-        String runId = RunId.generate(runInstant);
-        String createdAt = runInstant.toString();
-        String resultPath = RunLayout.runPrefix(resolvedProject, runId);
-        summaryRunId = runId;
+        Instant jobInstant = Instant.now();
+        String jobId = JobId.generate(jobInstant);
+        String createdAt = jobInstant.toString();
+        String resultPath = JobLayout.jobPrefix(resolvedProject, jobId);
+        summaryJobId = jobId;
         summaryResultPath = resultPath;
-        logger.info("Run {} — results will land under s3://{}/{}",
-            runId, config.bucket(), resultPath);
+        logger.info("Job {} — results will land under s3://{}/{}",
+            jobId, config.bucket(), resultPath);
 
-        // 4. Upload JARs into the run's own prefix, so one prefix holds the whole run.
+        // 4. Upload JARs into the job's own prefix, so one prefix holds the whole job.
         logger.info("Uploading benchmark JAR to S3...");
-        String benchmarkJarKey = RunLayout.benchmarkJarKey(resolvedProject, runId);
+        String benchmarkJarKey = JobLayout.benchmarkJarKey(resolvedProject, jobId);
         try (var s3 = factory.s3()) {
-            new S3UploadService(s3).upload(jarPath, config.bucket(), benchmarkJarKey);
+            new S3UploadService(s3).upload(benchmarkJar, config.bucket(), benchmarkJarKey);
         }
 
-        // The instance's only runner-JAR source. A --runner-jar override stays per-run under the
-        // run's own input/, so releases/ holds released artifacts only.
+        // The instance's only runner-JAR source. A --runner-jar override stays per-job under the
+        // job's own input/, so releases/ holds released artifacts only.
         String runnerJarS3Key;
         if (runnerJar != null) {
             logger.info("Uploading runner JAR to S3...");
-            runnerJarS3Key = RunLayout.runnerJarOverrideKey(resolvedProject, runId);
+            runnerJarS3Key = JobLayout.runnerJarOverrideKey(resolvedProject, jobId);
             try (var s3 = factory.s3()) {
                 new S3UploadService(s3).upload(runnerJar, config.bucket(), runnerJarS3Key);
             }
@@ -384,131 +412,195 @@ public class RunCommand implements Callable<Integer> {
                 runnerJarS3Key = RunnerJarResolver.resolve(s3, config.bucket(),
                     BaasVersion.current(), config.getRunner().getSourceRepo());
             }
-            // Which runner build a run executed is the first thing anyone comparing two results
-            // asks, so it is reported on every run — not only on the one that seeded the slot.
+            // Which runner build a job executed is the first thing anyone comparing two results
+            // asks, so it is reported on every job — not only on the one that seeded the slot.
             logger.info("Runner JAR: {} (pinned to CLI version {})",
                 runnerJarS3Key, BaasVersion.current());
         }
 
-        // 5. Build user-data
-        Map<String, String> runnerTags =
-            buildRunnerTags(benchmarkType, resolvedProject);
+        // 5. Build user-data. The job item's sort key is built here, once, by ResultKeys, and
+        //    handed to the instance verbatim; see UserDataScriptBuilder's JOB_SORT_KEY.
+        JobItem job = new JobItem(jobId, resolvedProject, jobInstant, resultPath, resolvedInstanceType,
+            JobStatus.LAUNCHING, null, null, runnerTags, null);
         String userData = new UserDataScriptBuilder().build(
             config.getAws().resolveRegion(), config.bucket(),
-            benchmarkType, runId, resultPath, createdAt, benchmarkJarKey,
+            benchmarkType, jobId, resultPath, createdAt, benchmarkJarKey,
             resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            resolvedTable, noDatabase, benchmarkParams, runnerTags);
-        // The script is what actually decides whether a run works; when a runner dies before it
+            resolvedTable, job.sortKey(), benchmarkParams, runnerTags);
+        // The script is what actually decides whether a job works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
-        // 6. Launch instance. It carries only the fixed tags (see Ec2ProvisioningService
-        //    #instanceTags): every caller --tag, and the observed imageVersion/instanceType, reach
-        //    the stored result through the runner's own --tag options in user-data, which is the
-        //    only place `baas results` reads. See
-        //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
-        logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
+        // The session's clients are deliberately never closed: the shutdown hook may still be
+        // using them while the main thread unwinds, and the JVM is exiting either way.
+        var ec2Instances = new Ec2ProvisioningService(factory.ec2(), config.stackName());
+        var current = new JobSession(job,
+            new DynamoDbJobRecorder(factory.dynamoDb(), resolvedTable),
+            new DynamoDbJobRecorder(factory.dynamoDb(STOP_WRITE_TIMEOUT), resolvedTable),
+            ec2Instances);
 
-        String instanceId;
-        try (var ec2 = factory.ec2()) {
-            instanceId = new Ec2ProvisioningService(ec2).runInstance(
-                runnerImage.amiId(), resolvedInstanceType,
-                networking.get("SubnetId"), networking.get("SecurityGroupId"),
-                config.runnerInstanceProfile(),
-                userData, runId);
+        // 6. Reserve the job before launching it. An instance without a record is exactly the
+        //    invisible job `baas jobs` exists to show, so a reservation that cannot be written
+        //    launches nothing.
+        try {
+            current.reserve();
+        } catch (RuntimeException e) {
+            logger.error("""
+                Could not record run {} in the results table, so nothing was launched: {}
+                If the operator role lacks dynamodb:UpdateItem, the deployment predates run \
+                tracking — update it with `baas admin deployment setup`.""", jobId, e.getMessage());
+            return 1;
         }
-        summaryInstanceId = instanceId;
-        logger.info("Instance launched: {}", instanceId);
-        logger.info("Run ID: {}", runId);
+        session = current;
 
-        // 7. Shutdown hook
+        // 7. Shutdown hook, registered before the launch: an interrupt while RunInstances is in
+        //    flight still finds the instance, by its job-id tag. Once the job has ended the
+        //    instance terminates itself, and the watchdog backs it up; terminating it from here as
+        //    well would cut off its final cloud-init-output.log upload. This layer is for a CLI
+        //    that stops while the job is still in flight.
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             // Cleared first, or the termination message would be drawn over by the status line.
             var line = statusLine;
             if (line != null) {
                 line.close();
             }
-            // Once the run has ended the instance terminates itself, and the watchdog still backs it
-            // up. Terminating it from here as well announced a termination on every successful run
-            // and could cut off the instance's final cloud-init-output.log upload. This layer is
-            // for a CLI that stops while the run is still in flight: Ctrl+C, or the poll cap.
-            if (runEnded) {
-                logger.debug("Run ended; instance {} terminates itself.", instanceId);
-                return;
-            }
-            logger.info("Terminating instance {} ...", instanceId);
-            try (var ec2 = factory.ec2()) {
-                new Ec2ProvisioningService(ec2).terminateInstance(instanceId);
+            var active = session;
+            if (active != null && !active.ended()) {
+                active.stop(JobStatus.CANCELLED);
+            } else if (active != null) {
+                logger.debug("Job ended; instance {} terminates itself.", active.instanceId());
             }
         }));
 
-        // 8. Poll
-        return poll(factory, config, instanceId, runId, resultPath, resolvedWallClock);
+        // 8. Launch. It carries only the fixed tags (see Ec2ProvisioningService#instanceTags):
+        //    every caller --tag, and the observed imageVersion/instanceType, reach the stored
+        //    result through the runner's own --tag options in user-data, which is the only place
+        //    `baas results query` reads. See
+        //    UserDataScriptBuilderTest#passesEnvironmentTagsToTheRunnerNotJustToTheInstance.
+        logger.info("Launching EC2 instance ({}) from {}...", resolvedInstanceType, runnerImage.amiId());
+        String instanceId;
+        try {
+            instanceId = ec2Instances.runInstance(
+                runnerImage.amiId(), resolvedInstanceType,
+                networking.get("SubnetId"), networking.get("SecurityGroupId"),
+                config.runnerInstanceProfile(),
+                userData, jobId, config.stackName());
+        } catch (RuntimeException e) {
+            recordLaunchFailure(factory, config, current, e, runnerImage.amiId(),
+                resolvedInstanceType, networking.get("SubnetId"));
+            return 1;
+        }
+        summaryInstanceId = instanceId;
+        logger.info("Instance launched: {}", instanceId);
+        logger.info("Job ID: {}", jobId);
+        if (current.confirmLaunched(instanceId) == JobSession.Confirmation.CANCELLED_WHILE_LAUNCHING) {
+            return 1;
+        }
+
+        // 9. Poll
+        return poll(factory, config, current, resolvedWallClock);
     }
 
-    private int poll(AwsClientFactory factory, BaasConfig config, String instanceId,
-                     String runId, String resultPath, int wallClockSeconds) throws InterruptedException {
-        long startMs = System.currentTimeMillis();
-        long timeoutMs = (long) wallClockSeconds * 1000;
-        String bucket = config.bucket();
-        String statusKey = resultPath + "/run-status";
-        String logPath = "s3://" + bucket + "/" + resultPath + "/cloud-init-output.log";
+    /** Bounds the status write that precedes a termination; see AwsClientFactory#dynamoDb(Duration). */
+    static final java.time.Duration STOP_WRITE_TIMEOUT = java.time.Duration.ofSeconds(5);
 
-        // Built once, not per iteration: every client construction re-resolves the
-        // profile, and with a role-assuming operator profile that means a fresh
-        // sts:AssumeRole — hundreds of them over a long run.
-        try (var s3 = factory.s3(); var ec2 = factory.ec2(); var line = openStatusLine()) {
-            var storage = new S3UploadService(s3);
-            var provisioning = new Ec2ProvisioningService(ec2);
+    /**
+     * A launch that failed leaves no instance and so no boot log. What there is to keep is in the
+     * exception and in the request, so both go to the job's prefix, where {@code baas jobs download}
+     * finds them, and the error code goes on the job item, where {@code baas jobs list} shows it.
+     * Both are best effort: the launch error is reported whether or not they land, since a launch
+     * often fails for the same reason they would — the network or the credentials.
+     */
+    private void recordLaunchFailure(AwsClientFactory factory, BaasConfig config, JobSession current,
+                                     RuntimeException error, String amiId, String instanceType,
+                                     String subnetId) {
+        String errorCode = null;
+        String awsRequestId = null;
+        if (error instanceof AwsServiceException aws) {
+            awsRequestId = aws.requestId();
+            if (aws.awsErrorDetails() != null) {
+                errorCode = aws.awsErrorDetails().errorCode();
+            }
+        }
+        JobItem job = current.job();
+        logger.error("Launching the instance for job {} failed{}: {}", job.jobId(),
+            errorCode == null ? "" : " (" + errorCode + ")", error.getMessage());
+        current.recordLaunchFailed(errorCode);
+        String report = String.join("\n",
+            "jobId: " + job.jobId(),
+            "time: " + Instant.now(),
+            "errorCode: " + (errorCode == null ? "" : errorCode),
+            "awsRequestId: " + (awsRequestId == null ? "" : awsRequestId),
+            "instanceType: " + instanceType,
+            "amiId: " + amiId,
+            "subnetId: " + subnetId,
+            "message: " + error.getMessage(),
+            "");
+        try (var s3 = factory.s3()) {
+            new S3UploadService(s3).putText(config.bucket(),
+                JobLayout.launchErrorKey(job.project(), job.jobId()), report);
+            logger.info("Launch error recorded: baas jobs download {}", job.jobId());
+        } catch (RuntimeException e) {
+            logger.warn("Could not upload {} ({})", JobLayout.LAUNCH_ERROR_NAME, e.getMessage());
+        }
+    }
 
-            while (true) {
-                long elapsed = (System.currentTimeMillis() - startMs) / 1000;
-                if (elapsed * 1000 > timeoutMs) {
-                    logger.error("Client-side wall-clock cap exceeded ({}s). Exiting poll.", wallClockSeconds);
-                    return 1;
-                }
-
-                Optional<String> status = storage.getObjectIfExists(bucket, statusKey);
-                if (status.isPresent()) {
-                    // The run is over: a line still saying "running" beside its results is wrong,
-                    // and would be redrawn under every row of the table printed next.
-                    closeIfOpen(line);
-                    var exitCode = exitCodeFor(status.get().trim(), factory, config, runId, logPath);
-                    if (exitCode.isPresent()) {
-                        runEnded = true;
-                        return exitCode.getAsInt();
-                    }
-                } else {
-                    String state = provisioning.instanceState(instanceId);
-                    if ("terminated".equals(state) || "shutting-down".equals(state)) {
-                        // The instance is already going; nothing is left for the hook to stop.
-                        runEnded = true;
-                        // The sentinel is written moments before the instance terminates, so a
-                        // poll landing in that window sees a dead instance and no status yet.
-                        // Re-read once before reporting a successful run as a failure.
-                        var lateStatus = storage.getObjectIfExists(bucket, statusKey);
-                        closeIfOpen(line);
-                        if (lateStatus.isPresent()) {
-                            var exitCode = exitCodeFor(lateStatus.get().trim(), factory, config, runId, logPath);
-                            if (exitCode.isPresent()) {
-                                return exitCode.getAsInt();
-                            }
-                        }
-                        logger.error("Instance {} is {} but wrote no run-status sentinel — the runner "
-                            + "died before finishing.\nRunner log (present only if the instance got "
-                            + "far enough to upload it): {}", instanceId, state, logPath);
-                        return 1;
-                    }
+    private int poll(AwsClientFactory factory, BaasConfig config, JobSession current, int capSeconds)
+        throws InterruptedException {
+        JobItem job = current.job();
+        String logPath = "s3://" + config.bucket() + "/" + job.resultPath() + "/cloud-init-output.log";
+        JobSession.Outcome outcome;
+        try (var line = openStatusLine()) {
+            outcome = current.await(capSeconds, 15_000, System::currentTimeMillis, Thread::sleep,
+                () -> measurementsStored(factory, config, job.jobId()),
+                (state, elapsed) -> {
                     if (line != null) {
-                        line.update(statusText(state, elapsed, instanceId));
+                        line.update(statusText(state, elapsed, current.instanceId()));
                     } else {
                         logger.info("Still running ({})... elapsed: {}s", state, elapsed);
                     }
-                }
+                });
+            // The job is over: a line still saying "running" beside its results is wrong, and
+            // would be redrawn under every row of the table printed next.
+            closeIfOpen(line);
+        }
+        return report(outcome, factory, config, job.jobId(), current.instanceId(), logPath);
+    }
 
-                Thread.sleep(15_000);
-            }
+    /** Says what the outcome was, shows the results of a completed job, and returns its exit code. */
+    private int report(JobSession.Outcome outcome, AwsClientFactory factory, BaasConfig config,
+                       String jobId, String instanceId, String logPath) {
+        String status = outcome.status();
+        logger.info("Job status: {}", status);
+        if (outcome.completed()) {
+            showResults(factory, config, jobId);
+        } else if (status.startsWith(JobStatus.FAILED_PREFIX)) {
+            logger.error("Benchmark failed. Runner log: {}", logPath);
+        } else if (JobStatus.TIMED_OUT.equals(status)) {
+            logger.error("Job {} timed out. Runner log (if the instance got far enough to upload "
+                + "it): {}", jobId, logPath);
+        } else if (JobStatus.CANCELLED.equals(status)) {
+            logger.error("Job {} was cancelled.", jobId);
+        } else if (JobSession.Outcome.STATUS_LOST.equals(status)) {
+            logger.error("Instance {} terminated without recording its final status, but the job "
+                + "stored measurements: baas results query --job-id {}\nRunner log: {}",
+                instanceId, jobId, logPath);
+        } else {
+            logger.error("Instance {} terminated without recording a final status — the runner "
+                + "died before finishing.\nRunner log (present only if the instance got far "
+                + "enough to upload it): {}", instanceId, logPath);
+        }
+        return outcome.exitCode();
+    }
+
+    /** Asked only when the instance is gone without a final status; a failed read counts as none. */
+    private boolean measurementsStored(AwsClientFactory factory, BaasConfig config, String jobId) {
+        try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
+            return !results.queryByJobId(jobId).isEmpty();
+        } catch (RuntimeException e) {
+            logger.debug("Could not check for stored measurements: {}", e.getMessage());
+            return false;
         }
     }
 
@@ -537,7 +629,7 @@ public class RunCommand implements Callable<Integer> {
             state, formatElapsed(elapsedSeconds), instanceId);
     }
 
-    static String formatElapsed(long seconds) {
+    public static String formatElapsed(long seconds) {
         long h = seconds / 3600;
         long m = seconds % 3600 / 60;
         long s = seconds % 60;
@@ -553,44 +645,24 @@ public class RunCommand implements Callable<Integer> {
         return console;
     }
 
-    /** Maps a run-status sentinel to an exit code, or empty while the run is still in flight. */
-    private OptionalInt exitCodeFor(String body, AwsClientFactory factory, BaasConfig config,
-                                    String runId, String logPath) {
-        logger.info("Run status: {}", body);
-        if ("completed".equals(body)) {
-            showResults(factory, config, runId);
-            return OptionalInt.of(0);
-        }
-        if (body.startsWith("failed:")) {
-            logger.error("Benchmark failed. Runner log: {}", logPath);
-            return OptionalInt.of(1);
-        }
-        return OptionalInt.empty();
-    }
-
     /**
-     * Reads the same path {@code baas results} does, so the post-run summary can never disagree
+     * Reads the same path {@code baas results query} does, so the post-job summary can never disagree
      * with what a later query reports.
      *
-     * <p>A missing table name cannot normally get this far — {@link #resolveResultsTable} rejects
-     * it before provisioning — but {@code --no-database} reaches here with nothing to show, and a
-     * benchmark that has already run and terminated must not be reported as failed over a summary.
+     * <p>A benchmark that has already run and terminated must not be reported as failed over a
+     * summary, so a failed read is a warning.
      */
-    private void showResults(AwsClientFactory factory, BaasConfig config, String runId) {
-        if (noDatabase) {
-            logger.info("--no-database: the runner stored nothing, so there is no result to show.");
-            return;
-        }
+    private void showResults(AwsClientFactory factory, BaasConfig config, String jobId) {
         String tableName = config.resultsTable();
         try (var results = new ResultsQueryService(factory.dynamoDb(), tableName)) {
-            var rows = results.queryByRequestId(runId);
-            reportRunResults(rows, runId, r -> ResultsTable.print(console(), r));
+            var rows = results.queryByJobId(jobId);
+            reportJobResults(rows, jobId, r -> ResultsTable.print(console(), r));
         } catch (Exception e) {
             logger.warn("Could not fetch results from the results table: {}", e.getMessage());
         }
     }
 
-    /** Shared with {@code baas results}, which must resolve the same partition. */
+    /** Shared with {@code baas results query}, which must resolve the same partition. */
     static String projectFromToplevel(String toplevel) {
         return GitProject.fromToplevel(toplevel);
     }
@@ -649,6 +721,12 @@ public class RunCommand implements Callable<Integer> {
      * below the benchmark's own timeout.
      */
     static int watchdogBound(int timeoutSeconds, int marginSeconds) {
+        if (timeoutSeconds < 1) {
+            throw new IllegalArgumentException(
+                "The benchmark timeout must be at least 1 second; got " + timeoutSeconds + ". `timeout 0` "
+                    + "disables the process timeout and a negative one fails the job unstarted. "
+                    + "Nothing was launched.");
+        }
         if (marginSeconds < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
             throw new IllegalArgumentException(
                 "The watchdog margin must be at least " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS
@@ -661,9 +739,9 @@ public class RunCommand implements Callable<Integer> {
     /**
      * Tag keys populated from values observed on the instance, plus {@code type} — derived from
      * the executed subcommand, not from anything measured, but the same defect class: a caller
-     * override would make a JMH run report {@code type=jcstress} while the manifest and the
+     * override would make a JMH job report {@code type=jcstress} while the manifest and the
      * actual subcommand disagree. A result's tags must never be able to disagree with that same
-     * run's {@code environment.json} (see {@code UserDataScriptBuilder}'s {@code --tag} block),
+     * job's {@code environment.json} (see {@code UserDataScriptBuilder}'s {@code --tag} block),
      * so {@link #buildRunnerTags} rejects a caller {@code --tag} for any of these outright rather
      * than silently dropping or overriding it. {@code project}, {@code commit} and {@code branch}
      * are deliberately NOT in this set — design.md specifies the caller wins for those.
@@ -673,33 +751,25 @@ public class RunCommand implements Callable<Integer> {
     static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
 
     /**
-     * The results table this run will write to, or empty when {@code --no-database} was passed.
+     * The results table this job records its status in and stores its measurements to.
      *
      * <p>Resolved before the runner-image lookup and before anything is uploaded or launched, like
      * every other precondition this command checks early: discovering it later costs a paid
-     * instance. There is no silent fallback. Before the cutover, an unset store selected a no-op
-     * adapter and the run reported success while the measurements were discarded; that behaviour
-     * still exists, but it now has to be asked for by name.
+     * instance. There is no option to go without one. Every job records its status in the table,
+     * so a job with no table could not be seen at all — and the {@code --no-database} that once
+     * discarded measurements had outlived any use.
      */
-    static Optional<String> resolveResultsTable(BaasConfig config, boolean noDatabase) {
-        if (noDatabase) {
-            return Optional.empty();
-        }
-        if (config.getPrefix() == null || config.getPrefix().isBlank()) {
-            throw new IllegalStateException("""
-                No installation is configured, so this run has nowhere to store its measurements.
-                  Adopt one:              baas config sync --name baas-<accountId>
-                  Or discard the results: baas run --no-database ...
-                Nothing was built or launched.""");
-        }
-        return Optional.of(config.resultsTable());
+    static String resolveResultsTable(BaasConfig config) {
+        // Throws, naming the command that adopts a deployment, when none is configured.
+        return config.resultsTable();
     }
 
     /**
-     * Extracted from call() so it can be tested without AWS. Caller tags come first so a
-     * deliberate --tag project=... still wins over the derived value. A caller tag colliding with
-     * a {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or
-     * allowed to override — a silently discarded tag is its own surprise.
+     * Extracted from call() so it can be tested without AWS. A caller tag colliding with a
+     * {@link #RESERVED_TAG_KEYS reserved key} is rejected rather than silently dropped or allowed
+     * to override — a silently discarded tag is its own surprise. So is {@code project}: it names
+     * the S3 prefix and the job item through {@code --project}, and the measurements' partition
+     * through this tag, so a second input for it split one job across two projects.
      */
     Map<String, String> buildRunnerTags(String benchmarkType, String project) {
         return buildRunnerTags(benchmarkType, project, System.getenv());
@@ -719,7 +789,13 @@ public class RunCommand implements Callable<Integer> {
                     + " observed on the instance (or derived from the benchmark type), and a "
                     + "caller override would let a result's tags disagree with its own "
                     + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
-                    + ". project, commit, branch and source remain caller-settable.");
+                    + ". commit, branch and source remain caller-settable.");
+        }
+        if (extraTags.containsKey(TagKeys.PROJECT)) {
+            throw new IllegalArgumentException(
+                "--tag project cannot be set: the project is named by --project (or derived from git "
+                    + "when git.resolveProject is on), and a second value would store the measurements "
+                    + "under a different project than the job. Pass --project <name> instead.");
         }
         Map<String, String> tags = new LinkedHashMap<>();
         tags.put(TagKeys.PROJECT, project);
@@ -733,11 +809,11 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * How this run was triggered. Not a reserved key: the instance never observes it, so a forged
+     * How this job was triggered. Not a reserved key: the instance never observes it, so a forged
      * value misleads nobody about the measurement environment — which is the only thing
      * {@link #RESERVED_TAG_KEYS} exists to protect. Deriving it rather than leaving it to a
      * convention tag is what makes absence meaningful: a key only present when someone types it
-     * would make {@code --group-by source} unreliable in exactly the direction that matters.
+     * would make {@code --best-per source} unreliable in exactly the direction that matters.
      *
      * <p>{@code CI} is the cross-vendor convention and GitHub Actions sets both it and
      * {@code GITHUB_ACTIONS}; {@code CI=false} is honoured because some environments set it that
@@ -750,51 +826,56 @@ public class RunCommand implements Callable<Integer> {
     }
 
     /**
-     * The post-run summary, which under {@code --format json} must not be printed at all.
+     * The post-job summary, which under {@code --format json} must not be printed at all.
      *
      * <p>The table goes to the {@link Console} — deliberately, since a table is a command
      * payload rather than a diagnostic. But so is the JSON summary, and two payloads on
      * one stream is not a stream anyone can parse: the table lands first and
-     * {@code baas run --format json | jq} fails on the very first token. Caught by a real CI run,
-     * which read an empty run id and then queried {@code --request-id ""}.
+     * {@code baas run --format json | jq} fails on the very first token. Caught by a real CI job,
+     * which read an empty job id and then queried {@code --job-id ""}.
      *
      * <p>The rows are not folded into the summary object. They are a separate concern with a
-     * separate command — the object carries the run id precisely so
-     * {@code baas results --request-id} can fetch them.
+     * separate command — the object carries the job id precisely so
+     * {@code baas results query --job-id} can fetch them.
      *
      * @param printTable passed as a function so this is testable without an AWS client
      */
-    void reportRunResults(List<ResultRow> rows, String runId, Consumer<List<ResultRow>> printTable) {
+    void reportJobResults(List<ResultRow> rows, String jobId, Consumer<List<ResultRow>> printTable) {
         if (jsonSummary()) {
-            logger.info("Run {} stored {} measurement(s) — baas results --request-id {}",
-                runId, rows.size(), runId);
+            logger.info("Job {} stored {} measurement(s) — baas results query --job-id {}",
+                jobId, rows.size(), jobId);
             return;
         }
-        // Named, not just shown: this is the value `baas download <runId>` takes.
-        logger.info("Results for run {} (baas download {}):", runId, runId);
+        // Named, not just shown: this is the value `baas jobs download <jobId>` takes.
+        logger.info("Results for job {} (baas jobs download {}):", jobId, jobId);
         printTable.accept(rows);
     }
 
     /**
-     * One object on the {@link Console}, never coloured, following {@code ResultsCommand.printJson}'s rule exactly:
+     * One object on the {@link Console}, never coloured, following {@code ResultsQuerySubcommand.printJson}'s rule exactly:
      * the payload goes to standard output and every diagnostic to the logger, so
      * {@code baas run --format json | jq} is not corrupted by a timestamped log line — including
      * under {@code -v}.
      *
-     * <p>Printed on both outcomes. A failed run is precisely when a continuous-integration job
-     * needs the id: to {@code baas download} it and surface {@code cloud-init-output.log}, the
-     * documented place to start when a run dies before producing output. The command's exit code
-     * is unchanged by this — it still exits non-zero when the run failed.
+     * <p>{@code status} is the command's own verdict, kept for existing consumers; {@code jobStatus}
+     * is what the job item says — {@code timed-out}, {@code cancelled}, {@code failed:<n>} and the
+     * rest — or {@code vanished}/{@code status-lost}, or {@code null} before a job was recorded.
+     *
+     * <p>Printed on both outcomes. A failed job is precisely when a continuous-integration job
+     * needs the id: to {@code baas jobs download} it and surface {@code cloud-init-output.log}, the
+     * documented place to start when a job dies before producing output. The command's exit code
+     * is unchanged by this — it still exits non-zero when the job failed.
      *
      * <p>Formatted with {@link Locale#ROOT} for the same reason the results formatters are: a
      * comma-decimal locale would emit text that is not JSON, silently and only on some machines.
      */
-    void printRunSummary(int exitCode) {
+    void printJobSummary(int exitCode) {
         console().printf(
-            "{\"runId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
-                + "\"exitCode\":%d,\"instanceId\":%s}%n",
-            jsonString(summaryRunId), jsonString(summaryProject), jsonString(summaryResultPath),
-            exitCode == 0 ? "completed" : "failed", exitCode, jsonString(summaryInstanceId));
+            "{\"jobId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
+                + "\"jobStatus\":%s,\"exitCode\":%d,\"instanceId\":%s}%n",
+            jsonString(summaryJobId), jsonString(summaryProject), jsonString(summaryResultPath),
+            exitCode == 0 ? "completed" : "failed", jsonString(summaryJobStatus), exitCode,
+            jsonString(summaryInstanceId));
     }
 
     /** A JSON string literal, or the {@code null} literal — absent is not the empty string. */

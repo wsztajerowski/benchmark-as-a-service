@@ -25,7 +25,7 @@ import static org.assertj.core.api.Assertions.fail;
 @Testcontainers(disabledWithoutDocker = true)
 public class TestcontainersWithS3BaseIT {
     protected static final String TEST_BUCKET_NAME = "test-bucket";
-    private static final String LOCAL_STACK_VERSION = "0.12.16";
+    private static final String LOCAL_STACK_VERSION = "4.14.0";
     @Container
     protected final static LocalStackContainer LOCAL_STACK_CONTAINER =
         new LocalStackContainer(DockerImageName.parse("localstack/localstack:" + LOCAL_STACK_VERSION))

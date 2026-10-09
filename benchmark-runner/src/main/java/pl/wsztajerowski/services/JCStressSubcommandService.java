@@ -7,12 +7,14 @@ import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.process.BenchmarkProcessBuilder;
 import pl.wsztajerowski.results.JCStressMeasurementMapper;
 import pl.wsztajerowski.services.options.CommonSharedOptions;
 import pl.wsztajerowski.services.options.JCStressOptions;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.Instant;
 import java.util.List;
 
 import static pl.wsztajerowski.commands.JCStressHtmlResultParser.getJCStressHtmlResultParser;
@@ -35,25 +37,32 @@ public class JCStressSubcommandService {
         this.jcStressOptions = jcStressOptions;
     }
 
+    /** JCStress's command line, without the output redirection. An absent option adds no argument. */
+    BenchmarkProcessBuilder jcstressProcess() {
+        return benchmarkProcessBuilder(benchmarkPath)
+            .addArgumentWithValue("-r", jcStressOptions.reportPath())
+            .addArgumentIfValueIsNotNull("-c", jcStressOptions.cpuNumber())
+            .addArgumentIfValueIsNotNull("-f", jcStressOptions.forks())
+            .addArgumentIfValueIsNotNull("-fsm", jcStressOptions.forkMultiplier())
+            .addArgumentIfValueIsNotNull("-hs", jcStressOptions.heapSize())
+            .addArgumentIfValueIsNotNull("-jvmArgs", jcStressOptions.jvmArgs())
+            .addArgumentIfValueIsNotNull("-jvmArgsPrepend", jcStressOptions.jvmArgsPrepend())
+            .addArgumentIfValueIsNotNull("-pth", jcStressOptions.preTouchHeap())
+            .addArgumentIfValueIsNotNull("-sc", jcStressOptions.splitCompilationModes())
+            .addArgumentIfValueIsNotNull("-spinStyle", jcStressOptions.spinStyle())
+            .addArgumentIfValueIsNotNull("-strideCount", jcStressOptions.strideCount())
+            .addArgumentIfValueIsNotNull("-strideSize", jcStressOptions.strideSize())
+            .addArgumentIfValueIsNotNull("-m", jcStressOptions.mode())
+            .addArgumentIfValueIsNotNull("-t", jcStressOptions.testNameRegex());
+    }
+
     public void executeCommand() {
         Path reportPath = jcStressOptions.reportPath();
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JCStress. Output path: {}", outputPath);
+        int exitCode;
         try {
-            benchmarkProcessBuilder(benchmarkPath)
-                .addArgumentWithValue("-r", reportPath)
-                .addArgumentIfValueIsNotNull("-c", jcStressOptions.cpuNumber())
-                .addArgumentIfValueIsNotNull("-f", jcStressOptions.forks())
-                .addArgumentIfValueIsNotNull("-fsm", jcStressOptions.forkMultiplier())
-                .addArgumentIfValueIsNotNull("-hs", jcStressOptions.heapSize())
-                .addArgumentIfValueIsNotNull("-jvmArgs", jcStressOptions.jvmArgs())
-                .addArgumentIfValueIsNotNull("-jvmArgsPrepend", jcStressOptions.jvmArgsPrepend())
-                .addArgumentIfValueIsNotNull("-pth", jcStressOptions.preTouchHeap())
-                .addArgumentIfValueIsNotNull("-sc", jcStressOptions.splitCompilationModes())
-                .addArgumentIfValueIsNotNull("-spinStyle", jcStressOptions.spinStyle())
-                .addArgumentIfValueIsNotNull("-strideCount", jcStressOptions.strideCount())
-                .addArgumentIfValueIsNotNull("-strideSize", jcStressOptions.strideSize())
-                .addArgumentIfValueIsNotNull("-t", jcStressOptions.testNameRegex())
+            exitCode = jcstressProcess()
                 .withOutputPath(jcStressOptions.processOutput())
                 .buildAndStartProcess()
                 .waitFor();
@@ -64,9 +73,20 @@ public class JCStressSubcommandService {
         logger.info("Saving test outputs on S3");
         storageService
             .saveFile(outputPath.resolve("jcstress-output.txt"), jcStressOptions.processOutput());
-        RunLogs.upload(storageService, outputPath);
+        JobLogs.upload(storageService, outputPath);
 
+        // Not fatal on its own: whether JCStress exits non-zero for failed tests is not something
+        // this runner relies on, and a job whose tests failed must still store its summary. A job
+        // that left no report is what fails — naming the process, not the missing file it implies.
         Path resultFilepath = reportPath.resolve( "index.html");
+        if (exitCode != 0) {
+            logger.warn("JCStress exited with code {}", exitCode);
+        }
+        if (!Files.isRegularFile(resultFilepath)) {
+            logger.error("JCStress output:\n{}", readQuietly(jcStressOptions.processOutput()));
+            throw new JavaWonderlandException(
+                "JCStress exited with exit code %d and wrote no report at %s".formatted(exitCode, resultFilepath));
+        }
         logger.info("Parsing JCStress html output: {}", resultFilepath);
         JCStressResult jcStressResult = getJCStressHtmlResultParser(resultFilepath, outputPath)
             .parse();
@@ -81,17 +101,26 @@ public class JCStressSubcommandService {
                 }
             );
 
-        // Store last: a run that fails here must still leave its S3 artifacts behind.
+        // Store last: a job that fails here must still leave its S3 artifacts behind.
         List<StoredMeasurement> measurements = List.of(JCStressMeasurementMapper.toMeasurement(
             jcStressResult,
             commonOptions.project(),
-            commonOptions.requestId(),
+            commonOptions.jobId(),
             commonOptions.createdAt(),
             commonOptions.tags(),
             outputPath.toString(),
             outputPath.resolve("environment.json").toString()));
 
-        logger.info("Storing JCStress summary for request {}", commonOptions.requestId());
+        logger.info("Storing JCStress summary for request {}", commonOptions.jobId());
         resultsStore.write(measurements);
+    }
+
+    /** Diagnostics on a path that is already failing: an unreadable output must not mask why. */
+    private static String readQuietly(Path file) {
+        try {
+            return Files.readString(file);
+        } catch (IOException | RuntimeException e) {
+            return "(unreadable: " + e.getMessage() + ")";
+        }
     }
 }

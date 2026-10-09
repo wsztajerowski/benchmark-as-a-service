@@ -32,9 +32,9 @@ class RunCommandTest {
     }
 
     /**
-     * {@code --show-toplevel} returns the worktree directory, so a run launched from
+     * {@code --show-toplevel} returns the worktree directory, so a job launched from
      * {@code .claude/worktrees/ddb-phase3} was attributed to project {@code ddb-phase3} — a
-     * partition {@code baas results} would never look in.
+     * partition {@code baas results query} would never look in.
      */
     @Test
     void aLinkedWorktreeResolvesToItsRepository() {
@@ -98,46 +98,39 @@ class RunCommandTest {
     }
 
     /**
-     * Before the cutover, absent store configuration selected a no-op adapter: the run booted an
+     * Before the cutover, absent store configuration selected a no-op adapter: the job booted an
      * instance, measured, reported success and discarded every number. Failing here — before the
      * runner-image lookup, the upload and the launch — is what replaced that, so the cost of a
      * misconfigured CLI is an error message rather than a paid instance and no data.
      */
     @Test
-    void refusesToRunWhenNoInstallationIsConfigured() {
+    void refusesToRunWhenNoDeploymentIsConfigured() {
         var config = configWithResultsTable(null);
 
-        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
+        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("baas config sync --name")
-            .hasMessageContaining("--no-database");
+            .hasMessageContaining("baas config sync --deployment")
+            .hasMessageNotContaining("--no-database");
     }
 
     @Test
-    void treatsABlankInstallationAsUnconfigured() {
+    void treatsABlankDeploymentAsUnconfigured() {
         var config = new BaasConfig();
         config.setPrefix("   ");
 
-        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config, false))
+        assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
             .isInstanceOf(IllegalStateException.class);
     }
 
     @Test
-    void derivesTheResultsTableFromTheConfiguredInstallation() {
+    void derivesTheResultsTableFromTheConfiguredDeployment() {
         var config = configWithResultsTable("baas-123456789012-results");
 
-        assertThat(RunCommand.resolveResultsTable(config, false))
-            .contains("baas-123456789012-results");
+        assertThat(RunCommand.resolveResultsTable(config))
+            .isEqualTo("baas-123456789012-results");
     }
 
-    /** Discarding results is legitimate, but it has to be asked for by name. */
-    @Test
-    void noDatabaseResolvesToNoTableWithoutConsultingTheConfig() {
-        assertThat(RunCommand.resolveResultsTable(configWithResultsTable(null), true))
-            .isEmpty();
-    }
-
-    /** The table is derived from the installation, so "no table" means "no installation". */
+    /** The table is derived from the deployment, so "no table" means "no deployment". */
     private static BaasConfig configWithResultsTable(String table) {
         var config = new BaasConfig();
         if (table != null) {
@@ -163,19 +156,33 @@ class RunCommandTest {
             .containsEntry("experiment", "gc-tuning");
     }
 
+    /**
+     * The runner reads the project from this tag, while the S3 prefix and the job item take
+     * --project: a caller value stored the measurements under one project and the job under another.
+     */
     @Test
-    void anExplicitTagOverridesTheDerivedValue() {
+    void aProjectTagIsRejectedInFavourOfTheProjectOption() {
         var command = new RunCommand();
         command.extraTags.put("project", "explicit");
 
-        assertThat(command.buildRunnerTags("jmh", "derived"))
-            .containsEntry("project", "explicit");
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "derived"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("--project");
+    }
+
+    @Test
+    void aProjectTagIsRejectedEvenWhenItAgreesWithTheProject() {
+        var command = new RunCommand();
+        command.extraTags.put("project", "same");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "same"))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     /**
      * Branch used to survive only as a path segment of the result path and was stored nowhere. The
      * unified prefix drops that segment, so what the path stopped carrying the tags must carry —
-     * tags being the entire query surface `baas results` has.
+     * tags being the entire query surface `baas results query` has.
      */
     @Test
     void tagsTheBranchNowThatThePathNoLongerCarriesIt() {
@@ -190,13 +197,13 @@ class RunCommandTest {
 
     /**
      * On a laptop with no operator profile the warning is the whole point: `run`/`results` are
-     * meant to run under BaasCliOperatorRole, and falling through to `aws.profile` would silently
+     * meant to run under BaasCliOperatorRole, and falling through to `aws.deployerProfile` would silently
      * use deployer credentials.
      */
     @Test
     void warnsOnALaptopWithNoOperatorProfileAndNoAmbientCredentials() {
         assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(), Map.of()))
-            .get().asString().contains("--operator-profile");
+            .get().asString().contains("--operator-aws-profile");
     }
 
     /**
@@ -226,11 +233,11 @@ class RunCommandTest {
     // ─── source: the trigger tag (2.1, 2.2) ─────────────────────────────────────
     //
     // Derived rather than left to convention, so that absence is meaningful: a key present only
-    // when someone types it makes `--group-by source` unreliable in exactly the direction that
+    // when someone types it makes `--best-per source` unreliable in exactly the direction that
     // matters — verifying that CI and laptop runs are comparable.
 
     @Test
-    void aLaptopRunIsTaggedLocal() {
+    void aLaptopJobIsTaggedLocal() {
         var command = new RunCommand();
 
         assertThat(command.buildRunnerTags("jmh", "lynx-journal", Map.of()))
@@ -238,7 +245,7 @@ class RunCommandTest {
     }
 
     @Test
-    void aContinuousIntegrationRunIsTaggedCi() {
+    void aContinuousIntegrationJobIsTaggedCi() {
         var command = new RunCommand();
 
         assertThat(command.buildRunnerTags("jmh", "lynx-journal",
@@ -247,7 +254,7 @@ class RunCommandTest {
     }
 
     /**
-     * Unlike a machine-observed key, `source` is caller-overridable — it says how a run was
+     * Unlike a machine-observed key, `source` is caller-overridable — it says how a job was
      * triggered, which the instance never observes, so a supplied value cannot make a result's
      * tags disagree with its own environment.json. This is what lets a consumer label a nightly.
      */
@@ -273,7 +280,7 @@ class RunCommandTest {
 
     /**
      * Some environments set {@code CI=false} to opt out; honouring that is what stops a developer
-     * machine carrying a stray {@code CI} export from mislabelling every local run.
+     * machine carrying a stray {@code CI} export from mislabelling every local job.
      */
     @Test
     void ciSetToFalseIsNotContinuousIntegration() {
@@ -316,7 +323,22 @@ class RunCommandTest {
     }
 
     /**
-     * type is derived from the executed subcommand — overriding it would make a JMH run report
+     * An image extension may swap Corretto for another vendor's build, so the vendor is observed on
+     * the instance like the version is — and a caller value would let a result claim a JVM it did
+     * not run on.
+     */
+    @Test
+    void rejectsACallerTagForTheJvmVendor() {
+        var command = new RunCommand();
+        command.extraTags.put("jvmVendor", "Acme");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("jvmVendor");
+    }
+
+    /**
+     * type is derived from the executed subcommand — overriding it would make a JMH job report
      * type=jcstress while the manifest and the actual subcommand disagree, the same defect class
      * as the other five reserved keys.
      */
@@ -330,7 +352,7 @@ class RunCommandTest {
             .hasMessageContaining("type");
     }
 
-    /** design.md deliberately specifies that the caller wins for project and commit. */
+    /** The caller supplies commit; it is never derived. */
     @Test
     void stillAllowsCommitToBeOverriddenByTheCaller() {
         var command = new RunCommand();
@@ -355,7 +377,7 @@ class RunCommandTest {
     }
 
     @Test
-    void aRunOutsideARepositoryStillCarriesItsProjectAndType() {
+    void aJobOutsideARepositoryStillCarriesItsProjectAndType() {
         var command = new RunCommand();
 
         assertThat(command.buildRunnerTags("jmh", "explicit-project"))
@@ -378,6 +400,18 @@ class RunCommandTest {
                 .as(option)
                 .isInstanceOf(picocli.CommandLine.UnmatchedArgumentException.class);
         }
+    }
+
+    /**
+     * Every job records its status in the results table, so there is no job without one; the
+     * option that discarded measurements is gone rather than kept as a no-op.
+     */
+    @Test
+    void theDiscardOptionIsUnknown() {
+        var parser = new picocli.CommandLine(new RunCommand());
+
+        assertThatThrownBy(() -> parser.parseArgs("--benchmark-jar", "b.jar", "--no-database", "jmh"))
+            .isInstanceOf(picocli.CommandLine.UnmatchedArgumentException.class);
     }
 
     /** Exit 2, the usage-error code, before the unreleased-build check that would exit 1. */
@@ -463,7 +497,7 @@ class RunCommandTest {
         assertThat(RunCommand.watchdogBound(1000, 120)).isEqualTo(1120);
     }
 
-    /** Below the floor the watchdog could kill the instance before run-status is written. */
+    /** Below the floor the watchdog could kill the instance before its final status is written. */
     @Test
     void aMarginBelowTheFloorIsRefused() {
         assertThatThrownBy(() -> RunCommand.watchdogBound(7200, 10))
@@ -472,7 +506,7 @@ class RunCommandTest {
     }
 
     /**
-     * A reactor build cannot name a release, so it cannot pin the runner JAR a run executes. The
+     * A reactor build cannot name a release, so it cannot pin the runner JAR a job executes. The
      * refusal is the same no-fallback stance the runner AMI takes, and it lands before the project
      * or results table is resolved, before any upload and before the first AWS client is
      * constructed — reachable in a unit test precisely because nothing AWS-shaped happens first.

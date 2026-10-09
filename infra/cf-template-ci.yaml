@@ -16,7 +16,7 @@
 # WorkflowRole used to live here. It is gone: GitHub Actions now federates directly into
 # BaasCliOperatorRole, which the core stack owns and declares. A role-chained session is capped at
 # 60 minutes by STS regardless of MaxSessionDuration, against a 7200 s default benchmark timeout —
-# and the failure mode was a red job with a good measurement, an un-terminated instance and a full
+# and the failure mode was a red CI job with a good measurement, an un-terminated instance and a full
 # EC2 bill. Its only grants OperatorRole lacked existed for the self-hosted runner action and died
 # with it.
 
@@ -31,7 +31,7 @@ Resources:
   GithubOidc:
     Type: AWS::IAM::OIDCProvider
     # An identity provider outlives any one stack: the core stack's trust policy references its
-    # ARN, so deleting it would break every installation that federates through it.
+    # ARN, so deleting it would break every deployment that federates through it.
     DeletionPolicy: Retain
     Properties:
       Url: https://token.actions.githubusercontent.com
@@ -47,5 +47,5 @@ Resources:
 Outputs:
   GithubOidcProviderArn:
     Description: >-
-      Pass to `baas admin setup --oidc-provider-arn` to federate a core stack into this provider.
+      Pass to `baas admin deployment setup --oidc-provider-arn` to federate a core stack into this provider.
     Value: !Ref GithubOidc

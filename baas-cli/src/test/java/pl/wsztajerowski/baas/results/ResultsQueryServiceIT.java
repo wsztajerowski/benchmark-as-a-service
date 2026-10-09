@@ -9,6 +9,9 @@ import org.testcontainers.utility.DockerImageName;
 import pl.wsztajerowski.baas.model.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.MeasurementKind;
 import pl.wsztajerowski.baas.model.ResultKeys;
+import pl.wsztajerowski.baas.model.JobItem;
+import pl.wsztajerowski.baas.model.JobItemMapper;
+import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -33,7 +36,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Covers every access path against a real DynamoDB: the project partition, the request-ID index,
+ * Covers every access path against a real DynamoDB: the project partition, the job-ID index,
  * and the two scans (every project, and the picker's project list). Both are exercised end to end through {@code MeasurementItemMapper}, so a key-encoding
  * mistake shows up as a missing row here rather than in production.
  */
@@ -42,7 +45,7 @@ class ResultsQueryServiceIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:3.8"))
+        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
             .withServices(LocalStackContainer.Service.DYNAMODB);
 
     private DynamoDbClient client;
@@ -71,7 +74,7 @@ class ResultsQueryServiceIT {
                 key(MeasurementItemMapper.PK, KeyType.HASH),
                 key(MeasurementItemMapper.SK, KeyType.RANGE))
             .globalSecondaryIndexes(GlobalSecondaryIndex.builder()
-                .indexName(ResultKeys.REQUEST_ID_INDEX_NAME)
+                .indexName(ResultKeys.JOB_ID_INDEX_NAME)
                 .keySchema(
                     key(MeasurementItemMapper.GSI1PK, KeyType.HASH),
                     key(MeasurementItemMapper.GSI1SK, KeyType.RANGE))
@@ -95,20 +98,20 @@ class ResultsQueryServiceIT {
     }
 
     @Test
-    void theRequestIdIndexReturnsEveryMeasurementOfOneRun() {
+    void theJobIdIndexReturnsEveryMeasurementOfOneJob() {
         put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
         put(measurement("lynx-journal", "req-1", "methodTwo", Map.of()));
         put(measurement("lynx-journal", "req-1", "methodThree", Map.of()));
         put(measurement("lynx-journal", "req-2", "methodOther", Map.of()));
 
-        assertThat(service.queryByRequestId("req-1")).hasSize(3);
+        assertThat(service.queryByJobId("req-1")).hasSize(3);
     }
 
     @Test
-    void anUnknownRequestIdReturnsNothingRatherThanFailing() {
+    void anUnknownJobIdReturnsNothingRatherThanFailing() {
         put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
 
-        assertThat(service.queryByRequestId("no-such-run")).isEmpty();
+        assertThat(service.queryByJobId("no-such-run")).isEmpty();
     }
 
     @Test
@@ -134,36 +137,36 @@ class ResultsQueryServiceIT {
     }
 
     /**
-     * Exclusion is a property of a project sweep, not of every query: naming a run by its id is a
-     * request for that run. Without this the project's own CI self-test — which tags itself
+     * Exclusion is a property of a project sweep, not of every query: naming a job by its id is a
+     * request for that job. Without this the project's own CI self-test — which tags itself
      * excluded because it measures fixture code — is invisible to every assertion surface but
-     * {@code baas download}.
+     * {@code baas jobs download}.
      */
     @Test
-    void anExplicitRunLookupReturnsAnExcludedRun() {
+    void anExplicitJobLookupReturnsAnExcludedJob() {
         put(measurement("lynx-journal", "req-excluded", "selfTest",
             Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
 
-        assertThat(service.queryByRequestId("req-excluded"))
+        assertThat(service.queryByJobId("req-excluded"))
             .singleElement()
             .extracting(ResultRow::benchmarkName)
             .isEqualTo("com.example.Bench.selfTest");
     }
 
     /**
-     * What 2.5 is really about. {@code RunCommand.showResults} fetches by run id and prints the
+     * What 2.5 is really about. {@code RunCommand.showResults} fetches by job id and prints the
      * table; before this change it printed "No results found." after a <em>successful</em> excluded
      * run, because the fetch itself dropped the rows. Asserting on the rendered summary rather than
      * only on the row count is what pins the user-visible half of that.
      */
     @Test
-    void thePostRunSummaryOfAnExcludedRunIsNotEmpty() {
+    void thePostJobSummaryOfAnExcludedJobIsNotEmpty() {
         put(measurement("lynx-journal", "req-excluded", "selfTest",
             Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
 
         var out = new java.io.StringWriter();
         ResultsTable.print(pl.wsztajerowski.baas.console.Console.plain(new java.io.PrintWriter(out)),
-            service.queryByRequestId("req-excluded"));
+            service.queryByJobId("req-excluded"));
 
         assertThat(out.toString())
             .doesNotContain("No results found.")
@@ -174,24 +177,24 @@ class ResultsQueryServiceIT {
     /**
      * The landmine this change was warned about: deleting the filter expression alone would leave
      * {@code #tags}, {@code #excluded} and {@code :excluded} declared but unused, and DynamoDB
-     * rejects that outright — so EVERY {@code --request-id} query would fail at runtime with a
+     * rejects that outright — so EVERY {@code --job-id} query would fail at runtime with a
      * {@code ValidationException} while every builder-level unit test stayed green. Only a
      * round-trip against a real endpoint sees it, which is why this case is an IT.
      */
     @Test
-    void anOrdinaryRunLookupStillSucceedsRatherThanFailingValidation() {
+    void anOrdinaryJobLookupStillSucceedsRatherThanFailingValidation() {
         put(measurement("lynx-journal", "req-1", "methodOne", Map.of("branch", "main")));
 
-        assertThat(service.queryByRequestId("req-1")).hasSize(1);
+        assertThat(service.queryByJobId("req-1")).hasSize(1);
     }
 
     /**
      * The other half of the new contract: the sweep and the filters layered on it still drop an
-     * excluded run. `baas results --tag` filters client-side over queryProject, so the row must
+     * excluded job. `baas results query --tag` filters client-side over queryProject, so the row must
      * already be gone by the time the tag filter runs.
      */
     @Test
-    void aTagFilterOverTheSweepStillOmitsAnExcludedRun() {
+    void aTagFilterOverTheSweepStillOmitsAnExcludedJob() {
         put(measurement("lynx-journal", "req-1", "kept", Map.of("branch", "main")));
         put(measurement("lynx-journal", "req-2", "excluded",
             Map.of("branch", "main", ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
@@ -204,7 +207,7 @@ class ResultsQueryServiceIT {
             .isEqualTo("com.example.Bench.kept");
     }
 
-    /** {@code --all-runs}: the sweep keeps excluded rows, and the request still validates. */
+    /** {@code --show-excluded}: the sweep keeps excluded rows, and the request still validates. */
     @Test
     void aSweepIncludingExcludedRowsReturnsThem() {
         put(measurement("lynx-journal", "req-1", "kept", Map.of()));
@@ -274,6 +277,66 @@ class ResultsQueryServiceIT {
         assertThat(service.queryProject("project-with-no-runs")).isEmpty();
     }
 
+    // ─── Job items share the table (run-status-in-dynamodb) ───────────────────────
+
+    @Test
+    void everyProjectIgnoresJobItems() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        putJob("lynx-journal", "req-1");
+        putJob("only-runs", "req-9");
+
+        assertThat(service.scanAllProjects(false)).hasSize(1);
+        assertThat(service.scanAllProjects(true))
+            .as("--show-excluded widens exclusion, never the item kind")
+            .hasSize(1);
+    }
+
+    @Test
+    void thePickerDoesNotOfferAProjectThatHasOnlyJobItems() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        putJob("only-runs", "req-9");
+
+        assertThat(service.listVisibleProjects()).containsExactly("lynx-journal");
+    }
+
+    @Test
+    void aLookupByJobIdReturnsTheMeasurementsNotTheJobItem() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        put(measurement("lynx-journal", "req-1", "methodTwo", Map.of()));
+        putJob("lynx-journal", "req-1");
+
+        assertThat(service.queryByJobId("req-1")).hasSize(2);
+    }
+
+    @Test
+    void aJobThatStoredNothingResolvesItsPathFromTheJobItem() {
+        putJob("lynx-journal", "req-failed");
+
+        assertThat(service.resultPathForJob("req-failed")).isEqualTo("jobs/lynx-journal/req-failed");
+    }
+
+    @Test
+    void aJobFromBeforeJobItemsStillResolvesFromItsMeasurements() {
+        put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
+
+        assertThat(service.resultPathForJob("req-old")).isEqualTo("main/jmh/ts");
+    }
+
+    @Test
+    void anUnknownJobIdResolvesToNoPath() {
+        assertThat(service.resultPathForJob("no-such-run")).isNull();
+    }
+
+    private void putJob(String project, String jobId) {
+        var job = new JobItem(jobId, project, Instant.parse("2026-10-03T00:00:00Z"),
+            "jobs/" + project + "/" + jobId, "c5.2xlarge", JobStatus.LAUNCHING, null, null,
+            Map.of("project", project), null);
+        var item = new java.util.HashMap<>(JobItemMapper.key(job));
+        item.putAll(JobItemMapper.identityAttributes(job));
+        item.put(JobItemMapper.STATUS, software.amazon.awssdk.services.dynamodb.model.AttributeValue.fromS(job.status()));
+        client.putItem(PutItemRequest.builder().tableName(tableName).item(item).build());
+    }
+
     private void put(StoredMeasurement measurement) {
         client.putItem(PutItemRequest.builder()
             .tableName(tableName)
@@ -282,9 +345,9 @@ class ResultsQueryServiceIT {
     }
 
     private static StoredMeasurement measurement(
-        String project, String requestId, String method, Map<String, String> tags) {
+        String project, String jobId, String method, Map<String, String> tags) {
         return new StoredMeasurement(
-            project, requestId, Instant.parse("2026-08-19T09:00:00.000Z"), MeasurementKind.JMH,
+            project, jobId, Instant.parse("2026-08-19T09:00:00.000Z"), MeasurementKind.JMH,
             "com.example.Bench", method, "thrpt", Map.of(), 1234.5, 1.0, "ops/s",
             Map.of(), null, tags,
             "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json", null);

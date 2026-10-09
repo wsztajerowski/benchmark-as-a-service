@@ -13,18 +13,18 @@ import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 /**
- * The {@code baas results} table, also printed by {@code baas run} after a run. Command payload,
- * so it goes to the {@link Console} rather than the logger — see {@code ResultsCommand#printJson}.
+ * The {@code baas results query} table, also printed by {@code baas run} after a job. Command payload,
+ * so it goes to the {@link Console} rather than the logger — see {@code ResultsQuerySubcommand#printJson}.
  */
 public final class ResultsTable {
 
-    // 28 is RunId.LENGTH. Truncating at 17 landed inside the old <type>-<date> prefix, which
+    // 28 is JobId.LENGTH. Truncating at 17 landed inside the old <type>-<date> prefix, which
     // rendered distinct rows identically; a fixed-width id removes truncation as a question.
     // No ±ERROR column: the table is for reading scores side by side, and the error stays in JSON
     // and CSV, where something can compute with it.
     private static final List<Column> COLUMNS = List.of(
         Column.left("BENCHMARK", 45),
-        Column.left("REQUEST_ID", 28),
+        Column.left("JOB_ID", 28),
         Column.left("TYPE", 14),
         Column.left("MODE", 8),
         Column.right("SCORE", 14),
@@ -37,7 +37,7 @@ public final class ResultsTable {
     private ResultsTable() {
     }
 
-    /** One project's rows, no tag lines — what {@code baas run} prints after a run. */
+    /** One project's rows, no tag lines — what {@code baas run} prints after a job. */
     public static void print(Console console, List<ResultRow> rows) {
         print(console, rows, false, false);
     }
@@ -63,14 +63,14 @@ public final class ResultsTable {
             String shortName = r.benchmarkName().contains(".")
                 ? r.benchmarkName().substring(r.benchmarkName().lastIndexOf('.') + 1)
                 : r.benchmarkName();
-            // An excluded row is shown only under --all-runs, and faint so it reads as set aside.
+            // An excluded row is shown only under --show-excluded, and faint so it reads as set aside.
             UnaryOperator<String> rowStyle = r.excluded() ? console::faint : UnaryOperator.identity();
             var cells = new ArrayList<Cell>();
             if (withProject) {
                 cells.add(new Cell(truncate(r.project(), 23), rowStyle));
             }
             cells.add(new Cell(truncate(shortName, 44), rowStyle));
-            cells.add(new Cell(r.requestId(), rowStyle));
+            cells.add(new Cell(r.jobId(), rowStyle));
             cells.add(new Cell(truncate(r.benchmarkType(), 13), rowStyle));
             cells.add(new Cell(r.mode() != null ? r.mode() : "", rowStyle));
             cells.add(number(console, r.score(), rowStyle));

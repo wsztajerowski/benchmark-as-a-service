@@ -12,7 +12,7 @@ import java.util.Map;
  * the whole tag map rather than a fixed set of promoted fields.
  */
 public record ResultRow(
-    String requestId,
+    String jobId,
     String benchmarkName,
     String benchmarkType,
     String mode,
@@ -32,10 +32,10 @@ public record ResultRow(
     }
 
     /** Without params: every benchmark that declares no {@code @Param}. */
-    public ResultRow(String requestId, String benchmarkName, String benchmarkType, String mode,
+    public ResultRow(String jobId, String benchmarkName, String benchmarkType, String mode,
                      double score, double scoreError, String scoreUnit, String createdAt,
                      Map<String, String> tags, String project) {
-        this(requestId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
+        this(jobId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
             tags, project, Map.of());
     }
 
@@ -43,21 +43,23 @@ public record ResultRow(
      * Without the stored partition's project: falls back to the {@code project} tag, which every
      * measurement the runner wrote carries. For rows built by hand, mostly in tests.
      */
-    public ResultRow(String requestId, String benchmarkName, String benchmarkType, String mode,
+    public ResultRow(String jobId, String benchmarkName, String benchmarkType, String mode,
                      double score, double scoreError, String scoreUnit, String createdAt,
                      Map<String, String> tags) {
-        this(requestId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
+        this(jobId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
             tags, tags == null ? null : tags.get(TagKeys.PROJECT));
     }
 
     public static ResultRow from(StoredMeasurement measurement) {
         return new ResultRow(
-            measurement.requestId(),
+            measurement.jobId(),
             benchmarkNameOf(measurement),
             measurement.tags().getOrDefault(TagKeys.TYPE, ""),
             measurement.mode(),
-            measurement.score() == null ? 0 : measurement.score(),
-            measurement.scoreError() == null ? 0 : measurement.scoreError(),
+            // Absent means unknown, never zero: the store writes a NaN as absent, and a zero read
+            // back won every lower-is-better --best-per group and printed as a measurement.
+            measurement.score() == null ? Double.NaN : measurement.score(),
+            measurement.scoreError() == null ? Double.NaN : measurement.scoreError(),
             measurement.scoreUnit() == null ? "" : measurement.scoreUnit(),
             measurement.createdAt() == null ? "" : measurement.createdAt().toString(),
             measurement.tags(),
@@ -68,11 +70,11 @@ public record ResultRow(
     /**
      * The model keeps class and method apart because the sort key is built from both; the display
      * wants the fully qualified name JMH itself reports. JCStress has neither, and its single
-     * summary row is named for the run.
+     * summary row is named for the job.
      */
     private static String benchmarkNameOf(StoredMeasurement measurement) {
         if (measurement.benchmarkClass() == null) {
-            return "(jcstress) " + measurement.requestId();
+            return "(jcstress) " + measurement.jobId();
         }
         return measurement.benchmarkClass() + "." + measurement.benchmarkMethod();
     }
@@ -86,13 +88,13 @@ public record ResultRow(
         return tags.get(key);
     }
 
-    /** Tagged {@code exclude_from_results=true}: hidden from sweeps, shown faint under {@code --all-runs}. */
+    /** Tagged {@code exclude_from_results=true}: hidden from sweeps, shown faint under {@code --show-excluded}. */
     public boolean excluded() {
         return ResultsQueryService.EXCLUDED_VALUE.equals(tags.get(ResultsQueryService.EXCLUDE_FROM_RESULTS));
     }
 
     /**
-     * Read from the free-form tag map, so null for every run recorded before the prebaked-image
+     * Read from the free-form tag map, so null for every job recorded before the prebaked-image
      * change. Flat in the JSON output, where CI and other consumers read them.
      */
     public String imageVersion() {

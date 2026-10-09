@@ -18,7 +18,7 @@ baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 
 - **AWS account** and credentials — see [Permissions](#permissions) for the two roles involved. If
   you authenticate through SSO, you also need the **AWS CLI**: `aws sso login` is what writes the
   token cache the Java SDK reads. `baas` never shells out to `aws` itself.
-- No database to bring. The results table is created by `baas admin setup` alongside the rest of
+- No database to bring. The results table is created by `baas admin deployment setup` alongside the rest of
   the stack.
 - Maven, Gradle, or whatever your benchmark project already uses, to build **your own** benchmark
   JAR — `baas run` builds nothing, so this is not a prerequisite of `baas` itself. Building `baas`
@@ -37,7 +37,7 @@ Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/`, a launche
 `~/.local/bin/baas`, and a copy of the installer itself alongside the jar — that stored copy is
 what makes `--update` reachable later, since a piped install leaves nothing else on disk to
 re-invoke. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never touches
-`~/.baas/config.yaml`, which belongs to `baas admin setup`.
+`~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config sync`.
 
 Installer options: `--version <v>` (install a specific release instead of the latest),
 `--update`, `--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides:
@@ -76,27 +76,23 @@ checkout is the developer's explicit special case, not a silent stand-in for a p
 One-time, and it needs the elevated deployer credentials described under
 [Permissions](#permissions).
 
-> **SSO users:** an SSO session's caller ARN carries a per-session name, so a second `baas admin
-> setup` computes a different prefix — creating a *separate* stack, bucket and results table (all
-> retained) and repointing your config at the empty one. It presents as "all my benchmark history
-> is gone," though the original table is untouched. Run `setup` from a stable identity until this
-> is fixed (tracked as finding **A10** in
-> [`docs/review/baas-cli-findings.md`](docs/review/baas-cli-findings.md)).
-
 ```bash
-baas admin setup
+baas admin deployment setup
 ```
 
 This deploys the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 and
 DynamoDB gateway endpoints, security group, the results bucket, the results table, and the
-runner/operator IAM roles — then writes the outputs, including the table name, to
-`~/.baas/config.yaml`. Nothing sensitive goes in that file.
+runner/operator IAM roles — then records the deployment in `~/.baas/deployments/<name>.yaml`: its
+name, region and credential profile names. Nothing sensitive goes in that file.
 
-Two things to know about naming: the stack, bucket and table are all derived from `baas-<prefix>`,
-where `prefix` is a hash of your caller ARN. You don't choose it, and it's stable for a given
-identity. The bucket and the table are both declared `DeletionPolicy: Retain` — benchmark history
-outlives any single stack — so a previous teardown can leave either behind and block the next
-setup. `baas admin setup` checks for both and tells you how to recover.
+Two things to know: the stack, bucket and table are all named after the deployment,
+`baas-<accountId>`, which setup derives from your AWS account — you don't choose it. And **nothing
+survives a teardown**: the bucket and the table are deleted with the deployment, so export what you
+want to keep first.
+
+If your identity lacks the deployer policy, setup prints the policy it needs on standard output and
+stops without creating anything — `baas admin deployment setup > policy.json` hands it to whoever
+attaches it.
 
 Setup finishes by printing follow-up steps for the operator role. **Do them** — until you do,
 `baas run` uses your default credential chain rather than the narrow role.
@@ -106,7 +102,7 @@ Setup finishes by printing follow-up steps for the operator role. **Do them** �
 One-time, and again with deployer credentials. Takes ~15 minutes.
 
 ```bash
-baas admin build-image
+baas admin image build
 ```
 
 `baas run` **fails until this exists** — the runner boots from a purpose-built AMI and installs
@@ -119,16 +115,18 @@ move benchmark numbers (`perf_event_paranoid`, `kptr_restrict`, transparent huge
 That file is the only place a tool version is written down, and `git log -p` on it is the image
 history.
 
-**The definition is bundled into the CLI when it is built**, and `build-image` bakes that bundled
-copy — it reads no file from disk. An installed `baas` therefore bakes the image its release
-shipped with, and editing a `runner-image.yaml` next to it changes nothing. Changing the image
-today means editing `infra/runner-image.yaml` in a checkout of this repository, rebuilding the CLI
-(`mvn package`), and running `baas admin build-image` from that build. Letting an installed CLI
-bake a definition you supply is not built yet (finding U20 in
-[`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md)).
+**The base definition is bundled into the CLI when it is built**, and `build-image` bakes that
+bundled copy — it reads no file from disk, so editing a `runner-image.yaml` next to an installed
+`baas` changes nothing. A base moves only forward, by upgrading the CLI: `build-image` refuses a
+bundled base older than the deployment's. What a deployment adds on top is its **extension**,
+an AWSTOE document you pull with `baas admin image show --extension > ext.yaml`, edit, and push with
+`baas admin image build --extension ext.yaml`; teardown saves it beside your config before deleting
+the stack, which holds its only copy. The workflow is in
+[`infra/README.md`](infra/README.md), the rationale in
+[ADR 0004](docs/adr/0004-runner-image-only-moves-forward.md).
 
 Changing a version is a one-line edit **plus** a bump of `imageVersion` in the same file. Image
-Builder components are immutable at a given version, so `baas admin build-image` checks that up
+Builder components are immutable at a given version, so `baas admin image build` checks that up
 front and refuses to start a build the stack would reject 15 minutes later:
 
 ```
@@ -137,8 +135,8 @@ Bump imageVersion in infra/runner-image.yaml.
 ```
 
 Exactly one image exists at a time. A successful build publishes the new AMI to
-`/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a run launched during
-a build never resolves a deleted AMI. `baas admin image` reports what is currently published, and
+`/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a job launched during
+a build never resolves a deleted AMI. `baas admin image show` reports what is currently published, and
 flags when the definition bundled in the CLI you are running declares a version that isn't built yet.
 
 ### 4. Run a benchmark
@@ -161,7 +159,7 @@ baas config set --git-resolve-project true
 ```
 
 `baas run` then names the project after the git repository that **contains the benchmark JAR** —
-not the directory you typed the command in — and `baas results` uses the current directory's
+not the directory you typed the command in — and `baas results query` uses the current directory's
 repository instead of asking. `branch` and `commit` are never derived either way.
 
 Types: `jmh`, `jmh-with-async` (async-profiler flame graphs), `jmh-with-prof` (JMH's own
@@ -177,7 +175,7 @@ profilers), `jcstress`.
 > ```
 
 Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--instance-type`,
-`--timeout`, `--watchdog-margin`, `--tag key=value`, `--no-database`.
+`--timeout`, `--watchdog-margin`, `--tag key=value`, `--format json`.
 
 > **`--watchdog-margin` is added to `--timeout`, not a bound of its own.** The instance terminates
 > itself `timeout + margin` seconds after launch (default margin 300, minimum 60), and the CLI stops
@@ -188,31 +186,53 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and the
 > instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
 > `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
-> values the run's own `environment.json` records, so the two can never disagree.
+> values the job's own `environment.json` records, so the two can never disagree.
 
-> **A run with nowhere to store its measurements fails before it costs anything.** If the table
-> name is missing from your config, `baas run` stops before any upload — before any AWS call at
-> all — and tells you to run `baas config sync`. To deliberately throw the numbers away, pass
-> `--no-database`.
+> **A job with nowhere to record itself fails before it costs anything.** If no deployment is
+> configured, `baas run` stops before any upload — before any AWS call at all — and tells you to run
+> `baas config sync`. There is no option to discard measurements: every job records its status in
+> the results table, so a job without one could not be seen.
 
-`-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved run
+> **Every job is recorded before it launches.** `baas run` writes the job to the results table, then
+> launches; if that write fails, nothing is launched. A launch that fails is recorded too, with
+> the AWS error in `launch-error.txt`, so `baas jobs download <jobId>` works for it.
+
+`-v` / `--verbose` works on every command and switches `baas`'s own logging to debug — resolved job
 parameters, the AMI, the CloudFormation parameters, and the full generated user-data script. It
 must come before the `--` separator, or it is passed to the benchmark instead.
 
-### 5. Read results
+### 5. See your jobs
 
 ```bash
-baas results --project my-benchmarks
+baas jobs list                 # the 20 most recent jobs, every project and status
+baas jobs list --in-flight     # only jobs whose instance is still pending or running
+baas jobs terminate <jobId>    # record it as cancelled and terminate its instance
 ```
 
-Prints `BENCHMARK | REQUEST_ID | TYPE | MODE | SCORE | UNIT`, reading the table directly. With `-v`,
+A job whose CLI died — killed, a laptop gone to sleep, a dropped network — is still listed, and can
+still be stopped. `list` shows `JOB_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE |
+STARTED | ELAPSED`, takes `--limit`, `--project`, `--tag key=value` and `--format table|json|csv`, and
+hides nothing by default, CI jobs included. A job whose instance is gone without an outcome shows as
+`vanished`. `terminate` asks first on a terminal; pass `--yes` in scripts.
+
+> **Upgrade every `baas` that points at the deployment.** A CLI from before job tracking reads
+> job items as measurements: its `baas results query --all-projects`, project picker and lookups by job id
+> fail once one exists. `baas results query --project <name>` keeps working.
+
+### 6. Read results
+
+```bash
+baas results query --project my-benchmarks
+```
+
+Prints `BENCHMARK | JOB_ID | TYPE | MODE | SCORE | UNIT`, reading the table directly. With `-v`,
 each row is followed by an indented line carrying all of its tags. JSON and CSV always carry the
 tags, and the score error the table leaves out.
 
 Without `--project`, a terminal offers a numbered list of the projects that hold results (with
 `git.resolveProject` enabled, the current directory's repository is used instead); a pipe or
-`--format json|csv` gets an error listing them. It drops rows tagged `exclude_from_results=true`,
-groups by `(project, benchmark, branch)` and keeps the best score in each group. Filters:
+`--format json|csv` gets an error listing them. It lists every measurement, newest first, 20 at a
+time, and drops rows tagged `exclude_from_results=true`. `baas query` is the same command. Filters:
 
 | | |
 |---|---|
@@ -220,57 +240,56 @@ groups by `(project, benchmark, branch)` and keeps the best score in each group.
 | `--all-projects` | Every project, with a PROJECT column. Reads the whole table |
 | `--tag key=value` | Repeatable; repeated tags must **all** match |
 | `--benchmark-name <regex>` | Match on the benchmark name |
-| `--request-id <id>` | Every measurement of one run. Cannot be combined with `--project`, `--all-projects`, `--benchmark-name` or `--tag` |
-| `--group-by <tag>` | Group by something other than `branch` |
-| `--all-runs` | Every measurement, not just the best per group — including excluded runs, shown faint |
-| `--limit <n>`, `--format json\|csv` | Bound and reshape the output |
+| `--exclude-tag key=value` | Repeatable; a row matching **any** is dropped |
+| `--job-id <id>` | One job's measurements. Combines with every filter except `--project` and `--all-projects` |
+| `--best-per <tag>` | Only the best score per benchmark, mode and value of `<tag>` (e.g. `branch`): the highest for throughput, the lowest for time per operation |
+| `--show-excluded` | Also show jobs tagged `exclude_from_results=true`, drawn faint |
+| `--sort-by created\|benchmark\|score\|project`, `--asc` | Order; newest first by default |
+| `--limit <n>` (20; 0 = all), `--offset <n>`, `--format json\|csv`, `--watch` | Page, reshape or follow the output |
 
-Every command takes `--config-path <file>` to use a configuration other than `~/.baas/config.yaml` —
-the way to read another installation, such as a torn-down one whose table was retained.
-
-### 6. Fetch everything a run produced
+### 7. Fetch everything a job produced
 
 ```bash
-baas download 20260820T174432812Z-a3f9c21b
+baas jobs download 20260820T174432812Z-a3f9c21b
 ```
 
-Takes the run id `baas run` printed (or a literal S3 result path, `runs/<project>/<runId>` — also
-accepted for a run stored before the unified layout, at its original `<branch>/<type>/<timestamp>`
-path), and pulls down the whole run: the verbatim `jmh-result.json`, `environment.json`, process
+Takes the job id `baas run` printed, and pulls down the whole job: the verbatim `jmh-result.json`, `environment.json`, process
 output, logs and profiling artifacts. The stored measurement deliberately drops JMH's `rawData`
 and `scorePercentiles` — per-iteration numbers dominate a result's size — so this is where you go
 when you need them.
 
-### 7. Check that two results are comparable
+### 8. Check that two results are comparable
 
-Every run records the environment it measured on, in two tiers.
+Every job records the environment it measured on, in two tiers.
 
 **Tier 1 — the results store.** Each result carries the environment it observed as tags —
 `imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` — so you can see and slice by it
 without fetching anything: `-v` prints them under each row, `--tag imageVersion=1.2.0` keeps one
-image's results, and `--group-by instanceType` keeps the best per instance type. Runs recorded
-before these tags existed carry none.
+image's results, and `--best-per instanceType` keeps the best per instance type.
 
-**Tier 2 — the manifest.** `<result-path>/environment.json` holds ~20 fields describing what
-actually ran: image version and AMI, instance type, CPU model and topology, memory, OS and kernel,
-JVM and tool versions, and the kernel tunables in effect. `<result-path>/packages.txt` holds the
-full `rpm -qa`, kept separate so it doesn't drown the readable file.
+**Tier 2 — the manifest.** `<result-path>/environment.json` describes what actually ran, in seven
+groups: `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools` and
+`tunables`. `<result-path>/packages.txt` holds the full `rpm -qa`, kept separate so it doesn't drown
+the readable file. `baas jobs show <id>` prints a job's status, its environment and its artifacts;
+`baas jobs diff` compares two jobs' environments:
 
 ```bash
-baas env diff runs/lynx-journal/20260724T120000000Z-a3f9c21b \
-              runs/lynx-journal/20260811T093000000Z-b7e4d0f2
+baas jobs diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
 ```
 
 ```
-FIELD          <run A>                         <run B>
-amiId          ami-091ea218d041f91eb           ami-0a89e2bd4bf6f208a
-imageVersion   1.0.0                           1.1.0
-jvmVersion     openjdk version "25.0.4" ...    openjdk version "25.0.3" ...
+Differs in: machine, jvm, packages
+
+GROUP      FIELD              20260724T120000000Z-a3f9c21b   20260811T093000000Z-b7e4d0f2
+machine    amiId              ami-091ea218d041f91eb          ami-0a89e2bd4bf6f208a
+jvm        version            25.0.4                         25.0.3
+
+Packages (AMIs differ): 1 changed · 0 added · 0 removed
+  changed  openssl-libs  3.0.8-1.amzn2023.0.14 → 3.0.8-1.amzn2023.0.16
 ```
 
-Result paths are `runs/<project>/<runId>`, as printed by `baas run`. A run recorded before the
-unified layout keeps its original `<branch>/<type>/<timestamp>` path; both shapes still resolve.
-Identical environments report no differences and exit 0.
+Packages are compared only when the AMIs differ — one AMI is one package set. Identical
+environments report no differences and exit 0.
 
 Note the split: `infra/runner-image.yaml` is the *declaration* — what was asked for.
 `environment.json` is the *observation* — what was got, including what the image cannot control
@@ -280,13 +299,12 @@ it from the declaration.
 ### Tear down
 
 ```bash
-baas admin teardown                  # deletes the stack, retains the bucket
-baas admin teardown --delete-bucket  # also empties and deletes the bucket
+baas admin deployment teardown       # deletes everything: stack, bucket, results table, image
 ```
 
 Two safety gates: it aborts if any benchmark runner is still running, and without `--yes` it makes
-you type the stack name. The results bucket and the results table both survive it — benchmark
-history outlives the stack — and teardown names both so the next setup doesn't fail on them.
+you type the deployment's name. **Nothing survives it** — every job and measurement goes with the
+bucket and the table — and it says so before asking.
 
 ## How it works
 
@@ -295,12 +313,13 @@ baas run
   ├─ resolve the results table and the runner AMI from /<prefix>/runner/ami-id
   │    (fails here if either is missing, before any upload or launch —
   │    --benchmark-jar is required; baas run builds nothing)
-  ├─ upload --benchmark-jar to s3://<bucket>/runs/<project>/<runId>/input/benchmark.jar
+  ├─ upload --benchmark-jar to s3://<bucket>/jobs/<project>/<jobId>/input/benchmark.jar
   ├─ seed releases/<version>/benchmark-runner.jar from GitHub Releases, checksum-
   │    verified, the first time that version runs — never overwritten after
+  ├─ record the job (launching) in the results table — no record, no launch
   └─ ec2:RunInstances from that AMI, with a generated user-data script
        ├─ record the environment: environment.json + packages.txt, uploaded
-       │    BEFORE the benchmark starts, so a crashed run still says what it
+       │    BEFORE the benchmark starts, so a crashed job still says what it
        │    crashed on  (nothing is installed — the toolchain is already baked)
        ├─ download benchmark-runner.jar from S3 — the instance reaches no host
        │    outside the account
@@ -308,10 +327,11 @@ baas run
        │    └─ launch the benchmark JAR as a subprocess, parse results,
        │       upload output and the verbatim result JSON to S3, then write
        │       one item per measurement, tagged with what it observed
-       ├─ write the run-status sentinel to S3
+       ├─ record running, then completed / failed:<n> on the job item
+       │    (the watchdog records timed-out)
        └─ self-terminate
-  ├─ poll run-status every 15s
-  └─ print this run's measurements from the table
+  ├─ poll the job item every 15s
+  └─ print this job's measurements from the table
 ```
 
 Instances self-terminate through **three** independent mechanisms — a process `timeout`, a
@@ -321,17 +341,17 @@ Ctrl+C. Any one alone leaves a way to orphan a paid instance.
 **S3 first, then the table.** The verbatim result JSON is uploaded before the measurement is
 stored, so a stored row always has its full-fidelity counterpart to point at. The item carries what
 a table view needs; `rawData` and `scorePercentiles` live only in S3, reachable with
-`baas download`.
+`baas jobs download`.
 
-**Nothing is silently discarded.** A run with no store configured fails before any upload, and a
-store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. Discarding
-measurements requires `--no-database`.
+**Nothing is silently discarded.** A job with no store configured fails before any upload, and a
+store write that ultimately fails exits non-zero while leaving the S3 artifacts intact. No option
+discards measurements.
 
 Design rationale, the invariants the runner depends on, and the open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md).
-Call-level sequence diagrams and C4 views (`c4-*.mmd`): [`docs/diagrams/`](docs/diagrams/). The
-command surface, state graph and known gaps:
-[`docs/analysis/cli-usage-analysis.md`](docs/analysis/cli-usage-analysis.md).
+Call-level sequence diagrams, state machines (`baas-states-*.mmd`) and C4 views (`c4-*.mmd`):
+[`docs/diagrams/`](docs/diagrams/). Decisions since: [`docs/adr/`](docs/adr/). Known open issues:
+[`docs/review/open-findings.md`](docs/review/open-findings.md).
 
 ## Permissions
 
@@ -339,10 +359,10 @@ Two roles, deliberately separate:
 
 | Role | Policy | Used by |
 |---|---|---|
-| Deployer | `infra/deployer-policy.json` | `baas admin setup` / `baas admin build-image` / `baas admin teardown` |
-| Operator | `infra/operator-policy.json` (role created by the stack) | `baas run` / `baas results` |
+| Deployer | `infra/deployer-policy.json` | `baas admin deployment setup` / `baas admin image build` / `baas admin deployment teardown` |
+| Operator | `infra/operator-policy.json` (role created by the stack) | `baas run` / `baas results query` |
 
-`aws.operatorProfile` in `~/.baas/config.yaml` does **not** fall back to `aws.profile`. That's
+`aws.operatorProfile` in a deployment's file does **not** fall back to `aws.deployerProfile`. That's
 intentional: the fallback would silently hand everyday commands deploy-level rights.
 [`infra/README.md`](infra/README.md) covers the assume-role setup.
 
@@ -417,9 +437,8 @@ export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib   # .so on Linux
 ```
 
 Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and both write to
-LocalStack S3 and the LocalStack table. Swap `--results-table`/`--dynamodb-endpoint` for
-`--no-database` if you'd rather not create the table — one of the two must be named, since the
-runner treats absent store configuration as an error rather than quietly discarding results.
+LocalStack S3 and the LocalStack table, which has to exist: the runner treats absent store
+configuration as an error rather than quietly discarding results, and no option discards them.
 
 Setting `ASYNC_PATH` also enables `JmhWithAsyncProfilerSubcommandServiceIT`, which is skipped
 without it — so `mvn verify` covers async profiling only when that variable is set.
@@ -449,7 +468,7 @@ Variables (no secrets — a role ARN is not sensitive, and nothing else is left 
 `e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its
 `pull_request` trigger is path-filtered and there is no schedule. It tags its own measurements
 `exclude_from_results=true` — it benchmarks fixture code — so they never reach a comparison, while
-`baas results --request-id <runId>` still returns them.
+`baas results query --job-id <jobId>` still returns them.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the
 real version is set at release time. The bump comes from the commit subjects under the
@@ -463,7 +482,7 @@ there says why.
 
 [`e2e-cloud-test.yml`](.github/workflows/e2e-cloud-test.yml) is the end-to-end test: one
 `ubuntu-latest` job federates into the operator role and drives `baas run` against the real
-installation ([`docs/diagrams/baas-ci-e2e.mmd`](docs/diagrams/baas-ci-e2e.mmd)). It provisions a
+deployment ([`docs/diagrams/baas-ci-e2e.mmd`](docs/diagrams/baas-ci-e2e.mmd)). It provisions a
 paid instance, so it runs on path-filtered pull requests and on demand:
 
 ```bash

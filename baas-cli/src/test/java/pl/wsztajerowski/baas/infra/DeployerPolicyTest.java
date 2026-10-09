@@ -24,10 +24,10 @@ class DeployerPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-        // baas admin build-image publishes the runner AMI pointer. The mongo SecureString
+        // baas admin image build publishes the runner AMI pointer. The mongo SecureString
         // this used to cover is gone; the action survives for a different resource.
         "ssm:PutParameter",
-        // baas admin teardown --delete-bucket empties the bucket, then CloudFormation removes it
+        // baas admin deployment teardown empties the bucket, then CloudFormation removes it
         "s3:ListBucket",
         "s3:ListBucketVersions",
         "s3:DeleteObject",
@@ -145,7 +145,7 @@ class DeployerPolicyTest {
 
     @ParameterizedTest
     @ValueSource(strings = {
-        // `baas admin build-image` registers the recipe, then runs the pipeline
+        // `baas admin image build` registers the recipe, then runs the pipeline
         "imagebuilder:CreateComponent",
         "imagebuilder:CreateImageRecipe",
         "imagebuilder:CreateInfrastructureConfiguration",
@@ -232,7 +232,7 @@ class DeployerPolicyTest {
             .doesNotContain("*")
             // The five Image Builder resources are now distinguishable by type
             // (-component-runner, -recipe-runner, -pipeline-runner, ...), so the scope is the
-            // installation itself rather than a name fragment they happened to share.
+            // deployment itself rather than a name fragment they happened to share.
             .allMatch(arn -> arn.contains(InfraFixtures.PREFIX + "-"));
 
         assertThat((List<String>) statementWithSid("ImageBuilderRead").get("Action"))
@@ -278,10 +278,10 @@ class DeployerPolicyTest {
      * else is currently attached to that group, so the remaining reserve below the cap is
      * precautionary rather than protecting a known consumer.
      *
-     * <p>Measured against a realistic installation prefix ({@code baas-<accountId>}), not an
+     * <p>Measured against a realistic deployment prefix ({@code baas-<accountId>}), not an
      * eight-character stand-in: {@code ${PREFIX}} appears thirteen times, so a short fixture
      * understated the real size by roughly a hundred characters. The policy renders to 4219
-     * non-whitespace characters for a shared installation and 4271 for a dev one — 389 spare under
+     * non-whitespace characters for a shared deployment and 4271 for a dev one — 389 spare under
      * this 4608 budget, and 512 still reserved between this budget and the 5120 hard cap. Every
      * character added to the prefix costs thirteen here, which is why the mode vocabulary is
      * closed rather than a free-form name.

@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  *
  * <p>The file on disk is a template, never a policy: every resource it names is derived from the
  * caller's account, region and ARN-hash prefix, so there is no correct wildcard form to attach.
- * {@code baas admin setup} prints the rendered output when the caller is missing something.
+ * {@code baas admin deployment setup} prints the rendered output when the caller is missing something.
  */
 public class DeployerPolicyRenderer {
 

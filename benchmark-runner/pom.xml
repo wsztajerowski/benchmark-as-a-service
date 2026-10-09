@@ -46,10 +46,6 @@
             <artifactId>gson</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fatboyindustrial.gson-javatime-serialisers</groupId>
-            <artifactId>gson-javatime-serialisers</artifactId>
-        </dependency>
-        <dependency>
             <groupId>info.picocli</groupId>
             <artifactId>picocli</artifactId>
         </dependency>

@@ -24,7 +24,7 @@ class CoreTemplateTest {
 
 /**
      * Inverted, not deleted. This assertion previously pinned 27017's PRESENCE, because Atlas does
-     * not serve clients on 443 and omitting the rule made every run fail at the database write.
+     * not serve clients on 443 and omitting the rule made every job fail at the database write.
      * Measurements go to DynamoDB over a gateway endpoint now, so the rule grants egress nothing
      * uses — and a security group rule nobody can explain is one somebody restores. Keeping the
      * test as a negative is what makes its removal deliberate rather than reversible by accident.
@@ -118,7 +118,7 @@ class CoreTemplateTest {
     }
 
     /**
-     * Suspended, not enabled: results are write-once and a run id carries 32 bits of entropy, so
+     * Suspended, not enabled: results are write-once and a job id carries 32 bits of entropy, so
      * the overwrite versioning guarded against no longer has a mechanism. Stated rather than
      * implied — there is now no server-side recovery from one.
      */
@@ -132,14 +132,14 @@ class CoreTemplateTest {
     }
 
     /**
-     * The deleted rule's premise — everything under {@code runs/} is re-creatable from source — is
+     * The deleted rule's premise — everything under {@code jobs/} is re-creatable from source — is
      * exactly what the unified layout falsifies: results live there now, and the uploaded JAR is
      * the only copy of what a measurement actually ran. Asserted as an absence so the rule cannot
      * come back unnoticed.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void noLifecycleRuleExpiresCurrentObjectsUnderRuns() {
+    void noLifecycleRuleExpiresCurrentObjectsUnderJobs() {
         var lifecycle = (Map<String, Object>)
             InfraFixtures.properties(template, "S3MainBucket").get("LifecycleConfiguration");
         var rules = (List<Map<String, Object>>) lifecycle.get("Rules");
@@ -227,7 +227,7 @@ class CoreTemplateTest {
 
         assertThat(resources.values())
             .as("AWS::ImageBuilder::Image builds during stack operations — it would add ~15 minutes "
-                + "to every `baas admin setup`, including ones that changed nothing about the image")
+                + "to every `baas admin deployment setup`, including ones that changed nothing about the image")
             .noneSatisfy(resource ->
                 assertThat(((Map<String, Object>) resource).get("Type"))
                     .isEqualTo("AWS::ImageBuilder::Image"));
@@ -275,17 +275,97 @@ class CoreTemplateTest {
             .containsEntry("InfrastructureConfigurationArn", "RunnerImageInfrastructure.Arn")
             .containsEntry("DistributionConfigurationArn", "RunnerImageDistribution.Arn");
 
-        var components = (List<Map<String, Object>>)
+        var components = (List<Object>)
             InfraFixtures.properties(template, "RunnerImageRecipe").get("Components");
-        assertThat(components)
-            .singleElement()
-            .satisfies(component ->
-                assertThat(component).containsEntry("ComponentArn", "RunnerImageComponent.Arn"));
+        assertThat(components.getFirst()).isEqualTo(Map.of("ComponentArn", "RunnerImageComponent.Arn"));
+        assertThat(components.getLast()).isEqualTo(Map.of("ComponentArn", "RunnerImageContractComponent.Arn"));
+        assertThat((List<Object>) components.get(1))
+            .contains(Map.of("ComponentArn", "RunnerImageExtensionComponent.Arn"));
 
         var outputs = (Map<String, Object>) template.get("Outputs");
         assertThat((Map<String, Object>) outputs.get("RunnerImagePipelineArn"))
-            .as("baas admin build-image passes this value verbatim to StartImagePipelineExecution")
+            .as("baas admin image build passes this value verbatim to StartImagePipelineExecution")
             .containsEntry("Value", "RunnerImagePipeline.Arn");
+    }
+
+    /**
+     * Base, then the operator's extension, then the contract — last, so whatever the extension did,
+     * the checks see the result. The extension's entry is conditional: no extension, no component.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theRecipeRunsBaseThenExtensionThenContract() {
+        var components = (List<Object>)
+            InfraFixtures.properties(template, "RunnerImageRecipe").get("Components");
+
+        assertThat(components).hasSize(3);
+        assertThat((List<Object>) components.get(1))
+            .as("!If [HasRunnerImageExtension, <extension>, AWS::NoValue]")
+            .containsExactly("HasRunnerImageExtension",
+                Map.of("ComponentArn", "RunnerImageExtensionComponent.Arn"), "AWS::NoValue");
+
+        assertThat(InfraFixtures.resource(template, "RunnerImageExtensionComponent"))
+            .containsEntry("Condition", "HasRunnerImageExtension");
+        var conditions = (Map<String, Object>) template.get("Conditions");
+        assertThat(conditions.get("HasRunnerImageExtension"))
+            .as("an empty extension parameter means no extension")
+            .isEqualTo(List.of(List.of("RunnerImageExtensionData", "")));
+    }
+
+    /**
+     * Components and Version are create-only on a recipe, so a changed component list replaces it,
+     * and the replacement needs an unused version: the recipe's is derived, never the base's.
+     */
+    @Test
+    void derivedVersionsVersionTheRecipeAndTheContract() {
+        assertThat(InfraFixtures.properties(template, "RunnerImageRecipe"))
+            .containsEntry("Version", "RunnerImageRecipeVersion");
+        assertThat(InfraFixtures.properties(template, "RunnerImageContractComponent"))
+            .as("the contract carries the label, which moves only with the recipe")
+            .containsEntry("Version", "RunnerImageRecipeVersion")
+            .containsEntry("Data", "RunnerImageContractData");
+        assertThat(InfraFixtures.properties(template, "RunnerImageExtensionComponent"))
+            .containsEntry("Version", "RunnerImageExtensionVersion")
+            .containsEntry("Data", "RunnerImageExtensionData");
+        assertThat(InfraFixtures.properties(template, "RunnerImageComponent"))
+            .as("the base alone keeps the hand-bumped version")
+            .containsEntry("Version", "RunnerImageVersion");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void theAmiIsTaggedWithTheLabel() {
+        var distributions = (List<Map<String, Object>>)
+            InfraFixtures.properties(template, "RunnerImageDistribution").get("Distributions");
+        var amiTags = (Map<String, Object>)
+            ((Map<String, Object>) distributions.getFirst().get("AmiDistributionConfiguration")).get("AmiTags");
+
+        assertThat(amiTags)
+            .as("baas admin image show and every job read the image's identity from this tag; with an "
+                + "extension it must name the extension too, or the image passes for a stock one")
+            .containsEntry("baas-image-version", "RunnerImageLabel");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void imageTestsRunSoTheContractCanFailTheBuild() {
+        var tests = (Map<String, Object>)
+            InfraFixtures.properties(template, "RunnerImagePipeline").get("ImageTestsConfiguration");
+
+        assertThat(tests)
+            .as("the contract's checks live in its test phase; with tests disabled they never run "
+                + "and an image that broke BaaS is published")
+            .containsEntry("ImageTestsEnabled", true);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void everyImageParameterThePlanSendsIsDeclared() {
+        var parameters = (Map<String, Object>) template.get("Parameters");
+
+        assertThat(parameters)
+            .as("a planned parameter the template does not declare is rejected by CloudFormation")
+            .containsKeys(RunnerImageParameters.ALL.toArray(String[]::new));
     }
 
     @Test
@@ -324,7 +404,7 @@ class CoreTemplateTest {
             .toList();
 
         assertThat(statements)
-            .as("named slots or a second pointer would let two runs disagree about which image "
+            .as("named slots or a second pointer would let two jobs disagree about which image "
                 + "'the' image is")
             .containsExactly(
                 "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${ResourceNamePrefix}/runner/ami-id");
@@ -333,25 +413,19 @@ class CoreTemplateTest {
         assertThat(outputs).containsKey("RunnerAmiParameterName");
     }
 
+    /** Nothing survives a teardown: a deployment's data leaves with it unless exported first. */
     @Test
-    void workingBucketSurvivesStackDeletion() {
-        var bucket = InfraFixtures.resource(template, "S3MainBucket");
-
-        assertThat(bucket)
-            .as("teardown promises the bucket is retained — that must be declared, not a side effect of a failing delete")
-            .containsEntry("DeletionPolicy", "Retain")
-            .containsEntry("UpdateReplacePolicy", "Retain");
+    void theWorkingBucketIsDeletedWithTheStack() {
+        assertThat(InfraFixtures.resource(template, "S3MainBucket"))
+            .containsEntry("DeletionPolicy", "Delete")
+            .containsEntry("UpdateReplacePolicy", "Delete");
     }
 
     @Test
-    void theResultsTableIsRetainedOnBothDeleteAndReplace() {
-        var table = InfraFixtures.resource(template, "ResultsTable");
-
-        assertThat(table)
-            .as("benchmark history outlives the stack, same as the bucket — losing it to a stray "
-                + "teardown or a replacement update is not recoverable")
-            .containsEntry("DeletionPolicy", "Retain")
-            .containsEntry("UpdateReplacePolicy", "Retain");
+    void theResultsTableIsDeletedWithTheStack() {
+        assertThat(InfraFixtures.resource(template, "ResultsTable"))
+            .containsEntry("DeletionPolicy", "Delete")
+            .containsEntry("UpdateReplacePolicy", "Delete");
     }
 
     @Test
@@ -379,12 +453,12 @@ class CoreTemplateTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void theResultsTableHasExactlyOneIndexKeyedOnRequestId() {
+    void theResultsTableHasExactlyOneIndexKeyedOnJobId() {
         var properties = InfraFixtures.properties(template, "ResultsTable");
         var indexes = (List<Map<String, Object>>) properties.get("GlobalSecondaryIndexes");
 
         assertThat(indexes).hasSize(1);
-        assertThat(indexes.get(0).get("IndexName")).isEqualTo(ResultKeys.REQUEST_ID_INDEX_NAME);
+        assertThat(indexes.get(0).get("IndexName")).isEqualTo(ResultKeys.JOB_ID_INDEX_NAME);
 
         var keySchema = (List<Map<String, Object>>) indexes.get(0).get("KeySchema");
         assertThat(keySchema).hasSize(2);
@@ -436,8 +510,33 @@ class CoreTemplateTest {
     void theRunnerCanWriteAndBatchDeleteResultsButNeverReadOrSingleItemDeleteThem() {
         var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("RunnerRole"));
 
-        assertThat(actions).containsExactlyInAnyOrder("dynamodb:PutItem", "dynamodb:BatchWriteItem");
-        assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query");
+        assertThat(actions).containsExactlyInAnyOrder(
+            "dynamodb:PutItem", "dynamodb:BatchWriteItem", "dynamodb:UpdateItem");
+        assertThat(actions).doesNotContain("dynamodb:Scan", "dynamodb:DeleteItem", "dynamodb:Query",
+            "dynamodb:GetItem");
+    }
+
+    /**
+     * The runner's puts are confined to measurement partitions, so it cannot forge a job item,
+     * and its one update is confined to the JOB partition, so it cannot rewrite a measurement.
+     */
+    @Test
+    void theRunnerPutsOnlyMeasurementsAndUpdatesOnlyJobItems() {
+        var runner = dynamoDbPolicyDocumentFor("RunnerRole");
+
+        assertThat(leadingKeysCondition(runner, "dynamodb:PutItem"))
+            .isEqualTo(Map.of("ForAllValues:StringLike", List.of("RESULT#*")));
+        assertThat(leadingKeysCondition(runner, "dynamodb:BatchWriteItem"))
+            .isEqualTo(Map.of("ForAllValues:StringLike", List.of("RESULT#*")));
+        assertThat(leadingKeysCondition(runner, "dynamodb:UpdateItem"))
+            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("JOB")));
+    }
+
+    /** The operator's first write on the table, and it reaches job items only. */
+    @Test
+    void theOperatorUpdatesOnlyJobItems() {
+        assertThat(leadingKeysCondition(dynamoDbPolicyDocumentFor("OperatorRole"), "dynamodb:UpdateItem"))
+            .isEqualTo(Map.of("ForAllValues:StringEquals", List.of("JOB")));
     }
 
     /**
@@ -451,9 +550,10 @@ class CoreTemplateTest {
     void theOperatorCanReadResultsButNeverWriteThem() {
         var actions = InfraFixtures.actions(dynamoDbPolicyDocumentFor("OperatorRole"));
 
-        assertThat(actions)
-            .containsExactlyInAnyOrder("dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem");
-        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:DeleteItem");
+        assertThat(actions).containsExactlyInAnyOrder(
+            "dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem", "dynamodb:UpdateItem");
+        assertThat(actions).doesNotContain(
+            "dynamodb:PutItem", "dynamodb:BatchWriteItem", "dynamodb:DeleteItem");
     }
 
     @Test
@@ -482,7 +582,7 @@ class CoreTemplateTest {
 
         assertThat(branches.get(0)).isEqualTo("FederateGitHub");
         assertThat(branches.get(2))
-            .as("an installation supplying no federation parameters must deploy exactly as before")
+            .as("a deployment supplying no federation parameters must deploy exactly as before")
             .isEqualTo("AWS::NoValue");
     }
 
@@ -498,7 +598,7 @@ class CoreTemplateTest {
     }
 
     /**
-     * One {@code StringLike} value per repository, composed by {@code baas admin setup} from
+     * One {@code StringLike} value per repository, composed by {@code baas admin deployment setup} from
      * {@code --github-org} and each {@code --github-repo}. The template refs the list directly:
      * CloudFormation cannot iterate one, and every in-template trick for it leans on {@code
      * Fn::Sub} re-scanning substituted text, which it does not do.
@@ -533,12 +633,12 @@ class CoreTemplateTest {
 
     /**
      * A session that expired mid-poll would leave the shell watchdog as the only termination
-     * layer: the job goes red, the measurement is fine and the full instance-lifetime is billed.
+     * layer: the CI job goes red, the measurement is fine and the full instance-lifetime is billed.
      * Strictly above the 7500 s wall-clock default, because terminating the instance needs
-     * credentials too — after the run has finished.
+     * credentials too — after the job has finished.
      */
     @Test
-    void theOperatorSessionOutlastsTheRunItPolls() {
+    void theOperatorSessionOutlastsTheJobItPolls() {
         assertThat((Integer) InfraFixtures.properties(template, "OperatorRole")
             .get("MaxSessionDuration"))
             .isGreaterThan(7500);
@@ -579,5 +679,26 @@ class CoreTemplateTest {
                 .anyMatch(action -> action.startsWith("dynamodb:")))
             .findFirst()
             .orElseThrow(() -> new AssertionError("No dynamodb policy document on " + logicalId));
+    }
+
+    /**
+     * The {@code dynamodb:LeadingKeys} condition of the one statement granting {@code action}, as
+     * operator → values. Fails if the action is granted by more than one statement, which would
+     * let an unconditioned copy widen the conditioned one.
+     */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> leadingKeysCondition(Map<String, Object> document, String action) {
+        var statements = ((List<Map<String, Object>>) document.get("Statement")).stream()
+            .filter(statement -> {
+                Object raw = statement.get("Action");
+                return raw instanceof List<?> list ? list.contains(action) : action.equals(raw);
+            })
+            .toList();
+        assertThat(statements).as("statements granting " + action).hasSize(1);
+        var condition = (Map<String, Map<String, Object>>) statements.getFirst().get("Condition");
+        assertThat(condition).as("condition on " + action).isNotNull();
+        var byOperator = new java.util.TreeMap<String, Object>();
+        condition.forEach((operator, keys) -> byOperator.put(operator, keys.get("dynamodb:LeadingKeys")));
+        return byOperator;
     }
 }

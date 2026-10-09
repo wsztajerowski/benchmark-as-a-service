@@ -2,14 +2,12 @@ package pl.wsztajerowski.process;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.FileUtils;
 import pl.wsztajerowski.JavaWonderlandException;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,6 +25,11 @@ public class BenchmarkProcessBuilder {
             .addArgument("java")
             .addArgument("-jar")
             .addArgument(benchmarkPath.toString());
+    }
+
+    /** The command line built so far, for tests that pin what reaches the benchmark process. */
+    public List<String> commands() {
+        return List.copyOf(commands);
     }
 
     public BenchmarkProcessBuilder withOutputPath(Path path){
@@ -65,7 +68,7 @@ public class BenchmarkProcessBuilder {
         try {
             logger.debug("Running process: {}", processBuilder.command());
             processBuilder.redirectErrorStream(true); // redirect error stream to standard output stream
-            FileUtils.ensurePathExists(outputPath);
+            Files.createDirectories(outputPath.toAbsolutePath().getParent());
             processBuilder.redirectOutput(outputPath.toFile());
             Process process = processBuilder.start();
             return process;

@@ -11,7 +11,7 @@ context: |
   Read before writing any artifact:
   - CLAUDE.md — *Invariants* (breaking one costs money or loses data) and *Accepted risks*
     (settled decisions; do not re-raise them as problems).
-  - docs/review/*.md — open findings, cited by ID (A3, S8, D1…).
+  - docs/review/open-findings.md — open findings, cited by ID (S14, P11, U28…); docs/adr/ — decisions, incl. hardenings declined.
 
   Real AWS spend per run. The project's standing cost was zero until the runner AMI snapshot
   (~$0.20/mo), so any new standing cost is a change in kind and must be argued, not absorbed.
@@ -25,7 +25,7 @@ rules:
   proposal:
     - Impact must include a Cost line whenever AWS resources change, and must name what is
       deliberately NOT changed — especially invariants preserved.
-    - Cite the docs/review finding IDs the change closes.
+    - Cite the docs/review/open-findings.md IDs the change closes.
 
   design:
     - Check CLAUDE.md's Accepted risks table before choosing an approach. Those are decided;
@@ -44,8 +44,13 @@ rules:
     - For measurement-affecting changes, include a task comparing a benchmark score against a
       pre-change run that investigates any difference rather than accepting it. Run-to-run variance
       is large (CI history spans 10.0M-29.6M ops/s on one benchmark), so the task records the spread.
-    - Include tasks to update CLAUDE.md when an invariant changes, and the docs/review status
-      table when a finding is closed.
+    - Include tasks to update CLAUDE.md when an invariant changes, and to delete a closed finding's
+      entry from docs/review/open-findings.md (an ADR if the decision is worth keeping).
+    - A change touching infra/, IAM (either policy or a role in the template) or the runner image
+      includes a manual task to verify it on a second deployment — setup, admin image build, a run,
+      teardown (infra/README.md, A second deployment) — and record the result in verify.md. CI's e2e
+      runs the PR's CLI against the default deployment's stack, IAM and AMI, so it never exercises
+      such a change.
     - 'The last task is: run /opsx:verify and record the result in verify.md in the change
       directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…)
       that later notes can cite, and any deviation from design or tasks. verify.md is a convention,

@@ -30,6 +30,31 @@ public final class ResultsFilters {
     }
 
     /**
+     * {@code --exclude-tag k=v}, repeatable: a row matching <em>any</em> pair is dropped — the mirror of
+     * {@code --tag}, where a row must match all. A list, not a map, so {@code branch=a} and
+     * {@code branch=b} can both be given.
+     */
+    public static <R> List<R> byExcludedTags(List<R> rows, List<String> pairs,
+                                              java.util.function.BiFunction<R, String, String> tagOf) {
+        if (pairs == null || pairs.isEmpty()) {
+            return rows;
+        }
+        List<String[]> parsed = pairs.stream().map(ResultsFilters::pair).toList();
+        return rows.stream()
+            .filter(row -> parsed.stream().noneMatch(kv -> kv[1].equals(tagOf.apply(row, kv[0]))))
+            .toList();
+    }
+
+    /** A {@code key=value} pair, both sides non-empty; anything else is a usage error. */
+    public static String[] pair(String text) {
+        int eq = text == null ? -1 : text.indexOf('=');
+        if (eq <= 0 || eq == text.length() - 1) {
+            throw new IllegalArgumentException("Expected key=value, got '" + text + "'.");
+        }
+        return new String[]{text.substring(0, eq), text.substring(eq + 1)};
+    }
+
+    /**
      * A regular expression, found anywhere in the name — {@code --benchmark-name Queue} is expected
      * to match {@code com.example.QueueBenchmark.offer}, so this is {@code find}, not {@code matches}.
      */

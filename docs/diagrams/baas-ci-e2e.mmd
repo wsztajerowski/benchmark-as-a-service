@@ -1,31 +1,43 @@
 sequenceDiagram
     participant GH as GitHub (pull_request paths / workflow_dispatch)
-    participant Job as e2e-cloud-test job<br/>ubuntu-latest
+    participant Job as benchmark job<br/>ubuntu-latest
+    participant JC as jcstress job<br/>ubuntu-latest
     participant STS as AWS STS
     participant CLI as baas CLI<br/>(reactor build)
-    participant AWS as Installation
+    participant AWS as Deployment
 
     GH->>Job: trigger (one at a time per ref, never cancelled mid-run)
+    GH->>JC: same trigger, the two jobs run in parallel, each with its own instance
     Job->>Job: mvn clean package -DskipTests
     Job->>STS: AssumeRoleWithWebIdentity(vars.OPERATOR_ROLE_ARN, 9000 s)
     STS-->>Job: operator credentials in the environment (no profile)
-    Job->>CLI: config sync --name vars.CORE_STACK_NAME
-    Note over Job,CLI: The fresh config names no region, so baas follows AWS_REGION,<br/>which configure-aws-credentials exported from vars.AWS_REGION
+    Job->>CLI: config sync --deployment vars.CORE_STACK_NAME
+    Note over Job,CLI: sync finds the deployment's region from its bucket and stores it,<br/>so the job follows the deployment whatever vars.AWS_REGION says
     CLI->>AWS: DescribeStacks
     Job->>CLI: run jmh-with-async --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
     CLI->>AWS: upload, launch, poll (see baas-run.mmd)
     CLI-->>Job: one JSON object on stdout, success or failure
-    Job->>Job: GITHUB_OUTPUT run_id, result_path, project
-    Job->>CLI: results --request-id <id> --format json
+    Job->>Job: GITHUB_OUTPUT run_id, result_path, project, job_status
+    Job->>CLI: results --job-id <id> --format json
     Note over Job: asserts imageVersion, instanceType, project, branch, commit, source=ci
-    Job->>CLI: results --project <repo> --group-by commit --format json
-    Note over Job: asserts the excluded run is absent
-    Job->>CLI: results --project <repo> --all-runs --format json
+    Job->>CLI: results --project <repo> --best-per commit --format json
+    Note over Job: asserts the excluded job is absent
+    Job->>CLI: results --project <repo> --show-excluded --format json
     Note over Job: asserts it is present
     Job->>CLI: download <run_id> -o ./artifacts
-    Note over Job: asserts environment.json, jmh-result.json, run-status, output, flamegraph, JFR
+    Note over Job: asserts environment.json, jmh-result.json, no legacy run-status object, output, flamegraph, JFR, and the summary jobStatus reads completed (the job item, as polled)
     opt failure and a result_path was reported
-        Job->>CLI: download <result_path> -o ./failed (by PATH: a failed run has no index entry)
+        Job->>CLI: download <result_path> -o ./failed (by PATH: a failed job has no index entry)
         Job->>Job: print cloud-init-output.log
     end
     Job->>GH: upload ./artifacts
+    Note over JC,CLI: same build, federation and config sync as the benchmark job
+    JC->>CLI: run jcstress --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-stress-tests.jar<br/>-- --mode sanity
+    CLI->>AWS: upload, launch, poll (see baas-run.mmd)
+    CLI-->>JC: one JSON object on stdout
+    Note over JC: asserts the summary jobStatus reads completed
+    JC->>CLI: results --job-id <id> --format json
+    Note over JC: asserts exactly one row, benchmarkType jcstress, a (jcstress) name and the job's tags,<br/>never pass or fail counts, since the fixture's forbidden test races
+    JC->>CLI: download <run_id> -o ./artifacts
+    Note over JC: asserts environment.json and jcstress-output.txt
+    JC->>GH: upload ./artifacts

@@ -74,4 +74,23 @@ class ResultsFiltersTest {
             .as("a known key matching nothing is an ordinary empty result")
             .isEmpty();
     }
+
+    @Test
+    void anExcludedTagDropsTheRowsCarryingIt() {
+        var ci = row("a.B.run", Map.of("source", "ci"));
+        var local = row("a.B.run", Map.of("source", "local"));
+
+        assertThat(ResultsFilters.byExcludedTags(List.of(ci, local), List.of("source=ci"), ResultRow::tag))
+            .containsExactly(local);
+    }
+
+    @Test
+    void anyExcludedPairDropsTheRow() {
+        var a = row("a.B.run", Map.of("branch", "a"));
+        var b = row("a.B.run", Map.of("branch", "b"));
+        var c = row("a.B.run", Map.of("branch", "c"));
+
+        assertThat(ResultsFilters.byExcludedTags(List.of(a, b, c), List.of("branch=a", "branch=b"), ResultRow::tag))
+            .containsExactly(c);
+    }
 }

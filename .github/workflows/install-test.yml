@@ -88,8 +88,8 @@ jobs:
 
       - name: Uninstall leaves the configuration intact
         run: |
-          mkdir -p "$HOME/.baas" && echo 'prefix: sentinel' > "$HOME/.baas/config.yaml"
+          mkdir -p "$HOME/.baas/deployments" && echo 'prefix: sentinel' > "$HOME/.baas/deployments/sentinel.yaml"
           sh scripts/install.sh --uninstall
           [ ! -e "$HOME/.local/bin/baas" ] || { echo "shim survived"; exit 1; }
-          [ "$(cat "$HOME/.baas/config.yaml")" = "prefix: sentinel" ] \
+          [ "$(cat "$HOME/.baas/deployments/sentinel.yaml")" = "prefix: sentinel" ] \
             || { echo "configuration touched"; exit 1; }

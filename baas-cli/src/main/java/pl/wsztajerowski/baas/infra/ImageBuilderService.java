@@ -23,7 +23,7 @@ import java.util.Optional;
  * <p>The ordering in {@link #publish} is the part that matters: the pointer is repointed
  * <em>before</em> the replaced image is retired. Retiring first would aim
  * {@code /<prefix>/runner/ami-id} at a deregistered AMI for the whole ~15-minute build, failing
- * every run launched in that window.
+ * every job launched in that window.
  */
 public class ImageBuilderService {
 
@@ -77,7 +77,7 @@ public class ImageBuilderService {
         writePointer(parameterName, newAmiId);
         logger.info("Published {} to {}", newAmiId, parameterName);
 
-        // Only after the repoint. The remaining race — a run that read the old ID before this
+        // Only after the repoint. The remaining race — a job that read the old ID before this
         // write and calls RunInstances after the deregister — is accepted: single-operator
         // scale, and it fails loudly as InvalidAMIID.NotFound rather than silently.
         replaced
@@ -85,6 +85,25 @@ public class ImageBuilderService {
             .ifPresent(this::retireQuietly);
 
         return newAmiId;
+    }
+
+    /**
+     * A build that fails in its test stage — the contract rejecting what an extension did — has
+     * already registered its AMI, and Image Builder leaves it. Nothing else ever names it, so it
+     * would bill for its snapshot indefinitely. The pointer has not moved, so this can only ever be
+     * an image no job uses. Found live: the first contract failure left one.
+     */
+    private void retireFailedOutput(software.amazon.awssdk.services.imagebuilder.model.Image image) {
+        if (image.outputResources() == null) {
+            return;
+        }
+        image.outputResources().amis().stream()
+            .map(software.amazon.awssdk.services.imagebuilder.model.Ami::image)
+            .filter(amiId -> amiId != null && describeImage(amiId).isPresent())
+            .forEach(amiId -> {
+                logger.info("Retiring {}, produced by the failed build", amiId);
+                retireQuietly(amiId);
+            });
     }
 
     /**
@@ -98,7 +117,9 @@ public class ImageBuilderService {
     private void retireQuietly(String amiId) {
         try {
             retire(amiId);
-        } catch (Ec2Exception e) {
+        } catch (SdkException e) {
+            // SdkException, not Ec2Exception: a timeout or an expired session never reaches EC2
+            // and arrives as a client-side exception, and it is just as harmless here.
             logger.warn("Could not retire replaced image {}: {}. The new image is published and "
                 + "in use; the old one may need removing by hand.", amiId, e.getMessage());
         }
@@ -127,6 +148,7 @@ public class ImageBuilderService {
                         "Image build " + buildArn + " reported AVAILABLE but distributed no AMI"));
             }
             if (!IN_PROGRESS.contains(status)) {
+                retireFailedOutput(image);
                 throw new IllegalStateException("Image build %s: %s%s".formatted(
                     image.state().statusAsString(), buildArn,
                     image.state().reason() != null ? " — " + image.state().reason() : ""));
@@ -148,7 +170,7 @@ public class ImageBuilderService {
             // stripTrailing, not equals: Image Builder drops the trailing newline when it stores a
             // component document, and renderComponent() ends with one because its template is a
             // Java text block. Comparing exactly reported "content differs" for content that was
-            // identical, and blocked every build on a fresh installation — `baas admin setup`
+            // identical, and blocked every build on a fresh deployment — `baas admin deployment setup`
             // registers the component, so `build-image` always finds a stored copy to compare
             // against. Only trailing whitespace is forgiven; a real edit still fails.
             if (!registered.stripTrailing().equals(renderedComponent.stripTrailing())) {
@@ -201,7 +223,7 @@ public class ImageBuilderService {
 
     /**
      * The AMI's tags are set by the stack's DistributionConfiguration, so this is a backstop for an
-     * image built before those tags existed. Without them {@code baas admin image} has no identity
+     * image built before those tags existed. Without them {@code baas admin image show} has no identity
      * to report and {@code baas run} has no {@code imageVersion} to tag results with.
      */
     void ensureIdentityTags(String amiId, String imageVersion, String parentAmiId) {
@@ -251,9 +273,9 @@ public class ImageBuilderService {
     }
 
     /**
-     * Removes everything {@code build-image} created outside the stack, for an installation being
+     * Removes everything {@code build-image} created outside the stack, for a deployment being
      * torn down: the AMI the pointer names (with its snapshots), the pointer itself, and every
-     * Image Builder record of the installation's recipe.
+     * Image Builder record of the deployment's recipe.
      *
      * <p>Every step catches its own failure and carries on, because by the time this runs the
      * stack is already gone and the teardown has succeeded. A leftover is a cost leak, not a
@@ -263,7 +285,7 @@ public class ImageBuilderService {
      * @return one line per leftover, naming it and the command that removes it; empty when
      *         nothing is left
      */
-    public List<String> retireInstallation(String parameterName, String recipeName) {
+    public List<String> retireDeployment(String parameterName, String recipeName) {
         List<String> leftovers = new ArrayList<>();
 
         Optional<String> pointed = Optional.empty();
@@ -303,7 +325,7 @@ public class ImageBuilderService {
 
     /**
      * Every build version of every image version named after the recipe. Records cost nothing,
-     * but they are the last trace of the installation and they number the next installation's
+     * but they are the last trace of the deployment and they number the next deployment's
      * builds — after the 2026-10-01 wipe the first rebuild came out as {@code /2}.
      */
     private List<String> deleteImageRecords(String recipeName) {

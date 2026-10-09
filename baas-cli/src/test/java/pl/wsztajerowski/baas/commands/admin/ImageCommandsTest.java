@@ -6,19 +6,21 @@ import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.config.BaasConfig;
+import pl.wsztajerowski.baas.infra.RunnerImageParameters;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ImageCommandsTest {
 
     @ParameterizedTest
-    @ValueSource(strings = {"build-image", "image"})
+    @ValueSource(strings = {"build", "show"})
     void resolvesUnderAdmin(String subcommand) {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("admin", subcommand, "--help");
+            .parseArgs("admin", "image", subcommand, "--help");
 
         assertThat(result.subcommand().commandSpec().name()).isEqualTo("admin");
-        assertThat(result.subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
+        assertThat(result.subcommand().subcommand().commandSpec().name()).isEqualTo("image");
+        assertThat(result.subcommand().subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
     }
 
     /**
@@ -28,7 +30,7 @@ class ImageCommandsTest {
      * had pointed that field at deployer credentials.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"build-image", "image"})
+    @ValueSource(strings = {"build-image", "image", "build"})
     void isNotResolvableAsATopLevelCommand(String subcommand) {
         assertThat(new CommandLine(new BaasApp()).getSubcommands())
             .as("these sit under admin precisely because they need deployer credentials")
@@ -36,18 +38,18 @@ class ImageCommandsTest {
     }
 
     /**
-     * Both commands read {@code aws.profile} directly rather than
+     * Both commands read {@code aws.deployerProfile} directly rather than
      * {@link BaasConfig.AwsConfig#resolveOperatorProfile()}, which is the accessor the day-to-day
      * commands use. The two fields must not be confusable.
      */
     @Test
     void deployerProfileIsTheOneTheseCommandsRead() {
         var aws = new BaasConfig.AwsConfig();
-        aws.setProfile("baas-deployer");
+        aws.setDeployerProfile("baas-deployer");
         aws.setOperatorProfile("baas-operator");
 
-        assertThat(aws.getProfile())
-            .as("`baas admin build-image` builds its clients from this field")
+        assertThat(aws.getDeployerProfile())
+            .as("`baas admin image build` builds its clients from this field")
             .isEqualTo("baas-deployer");
         assertThat(aws.resolveOperatorProfile())
             .as("and never from this one, which cannot reach imagebuilder or the pointer")
@@ -55,17 +57,57 @@ class ImageCommandsTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"build-image", "image"})
+    @ValueSource(strings = {"build", "show"})
     void verboseIsAcceptedSoTheArgvPreScanApplies(String subcommand) {
         CommandLine.ParseResult result = new CommandLine(new BaasApp())
-            .parseArgs("admin", subcommand, "-v");
+            .parseArgs("admin", "image", subcommand, "-v");
 
-        assertThat(result.subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
+        assertThat(result.subcommand().subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
     }
 
     @Test
     void adminListsBothImageCommands() {
-        assertThat(new CommandLine(new BaasApp()).getSubcommands().get("admin").getSubcommands())
-            .containsKeys("build-image", "image");
+        assertThat(new CommandLine(new BaasApp()).getSubcommands().get("admin").getSubcommands()
+            .get("image").getSubcommands())
+            .containsKeys("build", "show");
+    }
+
+    // ─── an older bundled base (U39) ─────────────────────────────────────────────
+
+    @Test
+    void versionsOrderNumericallyNotAsText() {
+        assertThat(RunnerImageParameters.compareVersions("1.10.0", "1.9.0")).isPositive();
+        assertThat(RunnerImageParameters.compareVersions("1.2.0", "1.3.0")).isNegative();
+        assertThat(RunnerImageParameters.compareVersions("2.0.0", "2.0.0")).isZero();
+    }
+
+    /** Building it would replace the newer component, and the older one registers cleanly. */
+    @Test
+    void buildImageRefusesABaseOlderThanTheDeployments() {
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
+            .contains("1.3.0", "1.4.0", "baas-123456789012", "Upgrade the CLI", "Nothing was changed");
+    }
+
+    @Test
+    void buildImageAllowsTheSameOrANewerBaseAndAFirstBuild() {
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", "1.3.0", "p")).isNull();
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.4.0", "1.3.0", "p")).isNull();
+        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", null, "p"))
+            .as("a stack with no image parameter yet has nothing to downgrade")
+            .isNull();
+    }
+
+    @Test
+    void anOlderCliIsToldToUpgradeNeverToBuild() {
+        assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.4.0"))
+            .contains("upgrade the CLI")
+            .doesNotContain("run `baas admin image build`");
+    }
+
+    @Test
+    void aNewerCliIsToldToBuild() {
+        assertThat(ImageShowSubcommand.driftWarning("1.4.0", "1.3.0")).contains("run `baas admin image build`");
+        assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.3.0")).isNull();
+        assertThat(ImageShowSubcommand.driftWarning("1.3.0", null)).isNull();
     }
 }

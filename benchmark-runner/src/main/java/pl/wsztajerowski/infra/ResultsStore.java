@@ -5,7 +5,7 @@ import pl.wsztajerowski.baas.model.StoredMeasurement;
 import java.util.List;
 
 /**
- * Where a run's measurements go. The port speaks the domain, not storage: each adapter owns its
+ * Where a job's measurements go. The port speaks the domain, not storage: each adapter owns its
  * physical layout, so one item per measurement maps cleanly to one document per measurement and
  * nothing DynamoDB-specific leaks through.
  *
@@ -14,7 +14,7 @@ import java.util.List;
 public interface ResultsStore {
 
     /**
-     * Writes every measurement from one run, or throws. Partial success is never reported — a
+     * Writes every measurement from one job, or throws. Partial success is never reported — a
      * caller that sees no exception may assume every measurement landed.
      *
      * @throws ResultsStoreException when the write ultimately fails after any configured retries

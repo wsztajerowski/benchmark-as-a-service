@@ -11,6 +11,20 @@ class ConfigShowSubcommandTest {
 
     /** `config show` is where an operator checks whether git derivation is on, and which file is read. */
     @Test
+    void labelsTheDeployerAndTheOperatorProfile() {
+        BaasConfig config = new BaasConfig();
+        config.getAws().setDeployerProfile("baas-admin");
+        config.getAws().setOperatorProfile("baas-operator");
+
+        String shown = ConfigShowSubcommand.render(config, Path.of("c.yaml"));
+
+        assertThat(shown)
+            .contains("deployerProfile:          baas-admin")
+            .contains("operatorProfile:          baas-operator")
+            .doesNotContain("  profile:");
+    }
+
+    @Test
     void reportsTheFileAndTheGitAndWatchdogPreferences() {
         BaasConfig config = new BaasConfig();
         config.getGit().setResolveProject(true);

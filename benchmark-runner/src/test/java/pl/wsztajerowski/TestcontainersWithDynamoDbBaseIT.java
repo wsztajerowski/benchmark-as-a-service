@@ -26,7 +26,7 @@ import static pl.wsztajerowski.baas.model.MeasurementItemMapper.GSI1PK;
 import static pl.wsztajerowski.baas.model.MeasurementItemMapper.GSI1SK;
 import static pl.wsztajerowski.baas.model.MeasurementItemMapper.PK;
 import static pl.wsztajerowski.baas.model.MeasurementItemMapper.SK;
-import static pl.wsztajerowski.baas.model.ResultKeys.REQUEST_ID_INDEX_NAME;
+import static pl.wsztajerowski.baas.model.ResultKeys.JOB_ID_INDEX_NAME;
 
 /**
  * Adds a results table to the shared LocalStack container. Extends the S3 base rather than starting
@@ -66,7 +66,7 @@ public class TestcontainersWithDynamoDbBaseIT extends TestcontainersWithS3BaseIT
                 key(PK, KeyType.HASH),
                 key(SK, KeyType.RANGE))
             .globalSecondaryIndexes(GlobalSecondaryIndex.builder()
-                .indexName(REQUEST_ID_INDEX_NAME)
+                .indexName(JOB_ID_INDEX_NAME)
                 .keySchema(
                     key(GSI1PK, KeyType.HASH),
                     key(GSI1SK, KeyType.RANGE))

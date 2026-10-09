@@ -25,15 +25,13 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    @Option(names = "--aws-profile", description = "AWS CLI profile name.")
-    String awsProfile;
+    @Option(names = "--deployer-aws-profile",
+        description = "AWS CLI profile for `baas admin` commands (deployer credentials).")
+    String deployerProfile;
 
-    @Option(names = "--operator-profile",
+    @Option(names = "--operator-aws-profile",
         description = "AWS CLI profile that assumes BaasCliOperatorRole — used by run/results/config.")
     String operatorProfile;
-
-    @Option(names = "--region", description = "AWS region.")
-    String region;
 
     @Option(names = "--instance-type", description = "Default EC2 instance type.")
     String instanceType;
@@ -49,12 +47,16 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     // Arity 1, not a bare flag: a flag could turn derivation on but never back off.
     @Option(names = "--git-resolve-project", arity = "1", paramLabel = "<true|false>",
         description = "Derive the project from git when --project is absent: baas run from the "
-            + "benchmark JAR's repository, baas results from the current directory's.")
+            + "benchmark JAR's repository, baas results query from the current directory's.")
     Boolean gitResolveProject;
 
-    // No --prefix. Adopting an installation is `baas config sync --name`, which checks the stack
+    // No --prefix. Adopting a deployment is `baas config sync --deployment`, which checks the stack
     // exists first; this option wrote the same field unchecked, so a typo surfaced only as the
     // first real command's AWS error. It dated from when the prefix was a name you chose.
+    //
+    // No --region, for the same reason. The region is the deployment's: `baas admin deployment setup
+    // --region` chooses it and `config sync` finds it from the bucket. Set by hand, it aimed a
+    // machine at a region with no deployment, and `run` then advised building an image there.
 
     @Spec CommandSpec spec;
 
@@ -64,23 +66,27 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        if (benchmarkTimeout != null && benchmarkTimeout < 1) {
+            logger.error("--timeout must be at least 1 second; got {}. 0 would disable the process "
+                + "timeout on the instance.", benchmarkTimeout);
+            return 2;
+        }
         if (watchdogMargin != null && watchdogMargin < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
             logger.error("--watchdog-margin must be at least {} seconds; got {}.",
                 BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS, watchdogMargin);
             return 2;
         }
-        BaasConfig config = configService().loadOrEmpty();
+        BaasConfig config = configService().load();
 
-        if (awsProfile != null) config.getAws().setProfile(awsProfile);
+        if (deployerProfile != null) config.getAws().setDeployerProfile(deployerProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
-        if (region != null) config.getAws().setRegion(region);
         if (instanceType != null) config.getEc2().setDefaultInstanceType(instanceType);
         if (benchmarkTimeout != null) config.getEc2().setBenchmarkTimeoutSeconds(benchmarkTimeout);
         if (watchdogMargin != null) config.getEc2().setWatchdogMarginSeconds(watchdogMargin);
         if (gitResolveProject != null) config.getGit().setResolveProject(gitResolveProject);
 
         configService().save(config);
-        logger.info("Configuration saved to {}", configService().configFilePath());
+        logger.info("Configuration saved to {}", configService().fileOf(config.requirePrefix()));
         return 0;
     }
 }

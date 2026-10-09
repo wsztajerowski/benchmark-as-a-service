@@ -48,7 +48,7 @@ final class InfraFixtures {
     static final String ACCOUNT_ID = "123456789012";
     static final String REGION = "eu-central-1";
     /**
-     * A realistic installation prefix, not an 8-character stand-in. {@code ${PREFIX}} appears
+     * A realistic deployment prefix, not an 8-character stand-in. {@code ${PREFIX}} appears
      * thirteen times in the rendered policy, so measuring against a short prefix understated
      * the real size by roughly a hundred characters.
      */

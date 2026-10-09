@@ -42,11 +42,11 @@ class UnknownConfigKeyTest {
 
     @Test
     void aFileWithOnlyKnownKeysReportsNothing() throws Exception {
-        Path file = tempDir.resolve("config.yaml");
-        ConfigService service = ConfigService.at(file);
+        ConfigService service = new ConfigService(tempDir, java.util.Optional.empty());
         BaasConfig config = new BaasConfig();
         config.setPrefix("baas-123456789012");
         service.save(config);
+        Path file = service.fileOf("baas-123456789012");
 
         assertThat(ConfigService.read(file).unknownKeys()).isEmpty();
     }

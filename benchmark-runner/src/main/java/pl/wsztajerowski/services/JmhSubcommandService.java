@@ -16,7 +16,6 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static java.text.MessageFormat.format;
-import static pl.wsztajerowski.FileUtils.ensurePathExists;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
 
 public class JmhSubcommandService {
@@ -37,7 +36,7 @@ public class JmhSubcommandService {
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JMH. Output path: {}", outputPath);
         try {
-            ensurePathExists(jmhOptions.outputOptions().machineReadableOutput());
+            Files.createDirectories(jmhOptions.outputOptions().machineReadableOutput().toAbsolutePath().getParent());
             int exitCode = prepopulatedJmhBenchmarkProcessBuilder(jmhOptions)
                 .buildAndStartProcess()
                 .waitFor();
@@ -46,7 +45,7 @@ public class JmhSubcommandService {
             storageService
                 .saveFile(outputPath.resolve("jmh-output.txt"), jmhOptions.outputOptions().processOutput());
 
-            RunLogs.upload(storageService, outputPath);
+            JobLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -62,7 +61,7 @@ public class JmhSubcommandService {
             storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
             JmhRunResults.NO_PROFILER_OUTPUT);
 
-        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.requestId());
+        logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);
     }
 }

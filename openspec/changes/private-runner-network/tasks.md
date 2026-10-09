@@ -96,6 +96,6 @@
   fail, and that only S3 and DynamoDB are reachable
 - [ ] 8.7 Update `docs/diagrams/` for the two-subnet topology and the shutdown-based termination
 - [ ] 8.8 Update `docs/adr/0001-self-contained-baas-cli.md` where it assumes public-subnet runners
-- [ ] 8.9 Mark finding S8 fixed in `docs/review/baas-cli-findings.md` and update the status table
+- [ ] 8.9 If this change scopes runner termination after all, update S8 in ADR 0005 and CLAUDE.md's *Accepted risks*
 - [ ] 8.10 Document that diagnosing a failed run now depends entirely on the S3 boot log, since there is no
   SSH or Session Manager access

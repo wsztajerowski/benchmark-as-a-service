@@ -3,7 +3,9 @@ package pl.wsztajerowski.baas.infra;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
- * Parsed {@code infra/runner-image.yaml} — the declaration of the measurement environment.
+ * Parsed {@code infra/runner-image.yaml} — the declaration of the measurement environment's base.
+ * A deployment's extension is not part of it: that is an operator-owned AWSTOE document held in
+ * the stack, with no schema here.
  *
  * <p>Deliberately not the same shape as {@code <result-path>/environment.json}: this is what was
  * asked for, that is what was got. The observation is strictly richer (instance type, CPU model,
@@ -13,7 +15,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
  * missing value. Each CLI reads only the copy bundled in its own JAR, so no older file carries
  * retired keys — and leniency here turned a typo ({@code perf_event_paranoid}) into a silently
  * permissive image: the field defaulted to {@code 0}, below the declared {@code 1}, and the bake,
- * the component and every run's manifest reported it as though it had been chosen.
+ * the component and every job's manifest reported it as though it had been chosen.
  */
 public record RunnerImageDefinition(
     String imageVersion,
@@ -24,24 +26,21 @@ public record RunnerImageDefinition(
 
     /**
      * Every value the bake uses, by its path in the YAML, so the error names the line to fix.
-     * {@code kernelRelease} is required on {@code perf} alone, the one package pinned to a kernel.
      */
     public RunnerImageDefinition requireComplete() {
         var missing = new java.util.ArrayList<String>();
         check(missing, "imageVersion", imageVersion);
         check(missing, "parentImage", parentImage);
         if (parentImage != null) {
-            check(missing, "parentImage.region", parentImage.region());
-            check(missing, "parentImage.amiId", parentImage.amiId());
+            check(missing, "parentImage.amiName", parentImage.amiName());
         }
         check(missing, "tools", tools);
         if (tools != null) {
             checkPackage(missing, "tools.corretto", tools.corretto());
-            checkPackage(missing, "tools.perf", tools.perf());
+            check(missing, "tools.perf", tools.perf());
             if (tools.perf() != null) {
-                check(missing, "tools.perf.kernelRelease", tools.perf().kernelRelease());
+                check(missing, "tools.perf.package", tools.perf().packageName());
             }
-            checkPackage(missing, "tools.awsCli", tools.awsCli());
             check(missing, "tools.asyncProfiler", tools.asyncProfiler());
             if (tools.asyncProfiler() != null) {
                 check(missing, "tools.asyncProfiler.version", tools.asyncProfiler().version());
@@ -75,26 +74,32 @@ public record RunnerImageDefinition(
         }
     }
 
-        public record ParentImage(String region, String amiId) {
+    /**
+     * One exact AL2023 release, by AMI name. An AMI ID would bind the definition to one region; the
+     * name resolves to the same release — same kernel, same repository — in every region.
+     */
+    public record ParentImage(String amiName) {
     }
 
-        public record Tools(Package corretto, Package perf, Package awsCli, AsyncProfiler asyncProfiler) {
+    public record Tools(Package corretto, KernelPackage perf, AsyncProfiler asyncProfiler) {
     }
 
     /** An RPM pinned to an exact {@code name-version-release}. */
-        public record Package(
-        @JsonProperty("package") String packageName,
-        String version,
-        /** Only {@code perf} carries this; it is informational and travels with the perf pin. */
-        String kernelRelease
-    ) {
+    public record Package(@JsonProperty("package") String packageName, String version) {
         /** The {@code dnf install} argument: {@code name-version-release}. */
         public String nvr() {
             return packageName + "-" + version;
         }
     }
 
-        public record AsyncProfiler(String version, String installPath) {
+    /**
+     * An RPM built from one kernel build, so the only right version is the running kernel's. Pinning
+     * one could only disagree with the parent image; the base installs the running kernel's instead.
+     */
+    public record KernelPackage(@JsonProperty("package") String packageName) {
+    }
+
+    public record AsyncProfiler(String version, String installPath) {
         public String downloadUrl() {
             return "https://github.com/async-profiler/async-profiler/releases/download/v%s/async-profiler-%s-linux-x64.tar.gz"
                 .formatted(version, version);
@@ -106,7 +111,7 @@ public record RunnerImageDefinition(
         }
     }
 
-        public record Kernel(
+    public record Kernel(
         Integer perfEventParanoid,
         Integer kptrRestrict,
         String transparentHugepages,

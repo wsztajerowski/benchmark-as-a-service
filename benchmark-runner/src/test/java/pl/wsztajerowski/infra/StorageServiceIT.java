@@ -4,6 +4,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.TestcontainersWithS3BaseIT;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
@@ -25,7 +27,7 @@ class StorageServiceIT extends TestcontainersWithS3BaseIT {
     }
 
     @Test
-    void test_uploadObjectSuccess() {
+    void test_uploadObjectSuccess() throws IOException {
         // given
         Path sampleFilePath = createPathForTestResource("sample.json");
 
@@ -36,6 +38,6 @@ class StorageServiceIT extends TestcontainersWithS3BaseIT {
         assertThatJson(listObjectsInTestBucket())
             .isArray()
             .extracting("Key", "Size")
-            .contains(tuple("sample.json", 353));
+            .contains(tuple("sample.json", Files.size(sampleFilePath)));
     }
 }

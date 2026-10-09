@@ -98,16 +98,22 @@
             <resource>
                 <directory>src/main/resources</directory>
             </resource>
+            <!-- Filtered, and kept apart so nothing else is: the runner's compile target is the
+                 lowest Java the runner-image contract accepts, and this is its only copy. -->
+            <resource>
+                <directory>src/main/resources-filtered</directory>
+                <filtering>true</filtering>
+            </resource>
             <resource>
                 <directory>${project.basedir}/../infra</directory>
                 <targetPath>templates</targetPath>
                 <includes>
                     <include>cf-template-core.yaml</include>
-                    <!-- deployer-policy.json is a template, not a policy: `baas admin setup`
+                    <!-- deployer-policy.json is a template, not a policy: `baas admin deployment setup`
                          renders it with the caller's account/region/prefix and prints it when a
                          permission is missing, so it has to be readable at runtime. -->
                     <include>deployer-policy.json</include>
-                    <!-- `baas admin build-image` renders the Image Builder component and recipe
+                    <!-- `baas admin image build` renders the Image Builder component and recipe
                          from this at runtime, so it ships rather than staying a repo file. -->
                     <include>runner-image.yaml</include>
                 </includes>
@@ -131,6 +137,18 @@
             </testResource>
         </testResources>
         <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- A command built outside a BaasApp tree reads ~/.baas, and any read migrates a
+                         flat config.yaml there - moving the developer's real file. Unit tests get a
+                         home of their own, which also keeps ~/.aws credentials out of them. -->
+                    <systemPropertyVariables>
+                        <user.home>${project.build.directory}/test-home</user.home>
+                    </systemPropertyVariables>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>

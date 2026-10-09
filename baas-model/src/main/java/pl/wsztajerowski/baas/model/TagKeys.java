@@ -14,6 +14,8 @@ public final class TagKeys {
     public static final String COMMIT = "commit";
     public static final String BRANCH = "branch";
     public static final String JDK = "jdk";
+    /** {@code java.vendor} on the instance: tells apart two vendors' builds of one Java version. */
+    public static final String JVM_VENDOR = "jvmVendor";
     public static final String CPU_MODEL = "cpuModel";
     public static final String CPU_ARCH = "cpuArch";
     public static final String INSTANCE_TYPE = "instanceType";
@@ -21,7 +23,7 @@ public final class TagKeys {
     public static final String SOURCE = "source";
 
     public static final Set<String> KNOWN = Set.of(
-        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, JDK, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE,
+        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE,
         IMAGE_VERSION);
 
     /** {@link #SOURCE} values baas run derives; a caller may supply any other. */
@@ -32,12 +34,12 @@ public final class TagKeys {
      * Observed on the instance (or derived from the benchmark type), so a caller may not set them:
      * an override would let a result's tags disagree with its own environment.json. `project`,
      * `commit`, `branch` and `source` are deliberately absent — design.md specifies caller-wins for
-     * those. `source` in particular says how a run was triggered, which the instance never
+     * those. `source` in particular says how a job was triggered, which the instance never
      * observes: a forged value misleads nobody about the environment, and reserving it would
-     * foreclose a consumer labelling a nightly or release run.
+     * foreclose a consumer labelling a nightly or release job.
      */
     public static final List<String> MACHINE_OBSERVED =
-        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, CPU_MODEL, CPU_ARCH, TYPE);
+        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
 
     private TagKeys() {}
 }

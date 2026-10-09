@@ -15,6 +15,9 @@ import software.amazon.awssdk.services.cloudformation.model.Stack;
 import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 import software.amazon.awssdk.services.cloudformation.model.UpdateStackRequest;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -28,6 +31,14 @@ public class CloudFormationService {
 
     public CloudFormationService(CloudFormationClient cf) {
         this.cf = cf;
+    }
+
+    /** The core stack template, bundled into the CLI; setup and build-image submit the same one. */
+    public static String coreTemplate() throws IOException {
+        try (InputStream is = CloudFormationService.class.getResourceAsStream("/templates/cf-template-core.yaml")) {
+            if (is == null) throw new IllegalStateException("CF template not found in classpath");
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
     }
 
     /**
@@ -58,7 +69,7 @@ public class CloudFormationService {
      * Updates an existing stack, changing only the named parameters and carrying every other one
      * forward with {@code UsePreviousValue}.
      *
-     * <p>{@code baas admin build-image} owns three parameters and knows nothing about the rest. A
+     * <p>{@code baas admin image build} owns three parameters and knows nothing about the rest. A
      * plain create-style call would send only what it knows, and CloudFormation
      * fills the remainder from template defaults — which for a stack deployed with
      * {@code --use-existing-vpc} means {@code UseExistingVpc} silently flips back to "false" and
@@ -66,7 +77,7 @@ public class CloudFormationService {
      */
     public void updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
-            "Stack '" + stackName + "' does not exist. Run `baas admin setup` first."));
+            "Stack '" + stackName + "' does not exist. Run `baas admin deployment setup` first."));
         // Setup sends every existing stack down this path, so this is where a failed first create
         // has to be recognised, before CloudFormation answers with its own less useful rejection.
         requireUpdatable(stack);
@@ -110,7 +121,8 @@ public class CloudFormationService {
         if (stack.stackStatus() == StackStatus.ROLLBACK_COMPLETE) {
             throw new IllegalStateException(
                 "Stack '" + stack.stackName() + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
-                "Delete it first with: baas admin teardown --stack-name " + stack.stackName() + " --yes");
+                "Re-run setup, which deletes it and creates it again: baas --deployment " + stack.stackName()
+                + " admin deployment setup");
         }
     }
 
@@ -182,7 +194,7 @@ public class CloudFormationService {
     }
 
     /**
-     * The parameters a deployed stack currently carries. {@code baas admin setup} compares the
+     * The parameters a deployed stack currently carries. {@code baas admin deployment setup} compares the
      * networking ones against what an invocation submits, so a change is refused before anything
      * reaches CloudFormation rather than discovered as a replaced subnet afterwards.
      */
@@ -193,6 +205,11 @@ public class CloudFormationService {
                     software.amazon.awssdk.services.cloudformation.model.Parameter::parameterKey,
                     p -> p.parameterValue() == null ? "" : p.parameterValue())))
             .orElseGet(Map::of);
+    }
+
+    /** The stack's status, or empty when there is no such stack. */
+    public Optional<StackStatus> stackStatus(String stackName) {
+        return describeStack(stackName).map(Stack::stackStatus);
     }
 
     public boolean stackExists(String stackName) {

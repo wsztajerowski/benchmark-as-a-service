@@ -2,7 +2,7 @@ package pl.wsztajerowski.baas.infra;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.baas.model.RunLayout;
+import pl.wsztajerowski.baas.model.JobLayout;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
@@ -19,6 +19,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
+import java.util.HexFormat;
 
 /**
  * Seeds and resolves the version-pinned runner JAR at {@code releases/<version>/}.
@@ -33,8 +34,8 @@ public final class RunnerJarResolver {
 
     private static final Logger logger = LoggerFactory.getLogger(RunnerJarResolver.class);
 
-    private static final String JAR_ASSET = RunLayout.RUNNER_JAR_NAME;
-    private static final String CHECKSUM_ASSET = RunLayout.RUNNER_JAR_NAME + ".sha256";
+    private static final String JAR_ASSET = JobLayout.RUNNER_JAR_NAME;
+    private static final String CHECKSUM_ASSET = JobLayout.RUNNER_JAR_NAME + ".sha256";
     private static final Duration TIMEOUT = Duration.ofMinutes(2);
 
     private RunnerJarResolver() {
@@ -42,12 +43,12 @@ public final class RunnerJarResolver {
 
     /**
      * Upload-if-absent, never overwrite. A present object is used as-is, so a corrupted one does
-     * not self-repair — the fix is deleting the key so the next run re-seeds it. Overwriting
+     * not self-repair — the fix is deleting the key so the next job re-seeds it. Overwriting
      * instead would make {@code releases/<version>/} mutable, which is the one property the whole
      * pinning argument rests on.
      */
     public static String resolve(S3Client s3, String bucket, String version, String sourceRepo) {
-        String key = RunLayout.runnerJarKey(version);
+        String key = JobLayout.runnerJarKey(version);
         if (exists(s3, bucket, key)) {
             logger.debug("Runner JAR already seeded at s3://{}/{}", bucket, key);
             return key;
@@ -118,13 +119,7 @@ public final class RunnerJarResolver {
 
     public static String sha256Hex(byte[] bytes) {
         try {
-            byte[] digest = MessageDigest.getInstance("SHA-256").digest(bytes);
-            StringBuilder hex = new StringBuilder(64);
-            for (byte b : digest) {
-                hex.append(Character.forDigit((b >> 4) & 0xF, 16));
-                hex.append(Character.forDigit(b & 0xF, 16));
-            }
-            return hex.toString();
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (NoSuchAlgorithmException e) {
             throw new IllegalStateException("SHA-256 unavailable", e);
         }

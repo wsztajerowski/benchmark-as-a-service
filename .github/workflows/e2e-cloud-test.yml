@@ -1,8 +1,9 @@
-# The project's own end-to-end self-test: one real benchmark run on one real EC2 instance,
-# launched exactly the way a developer's laptop launches one.
+# The project's own end-to-end self-test: one real benchmark job per CI job, each on its own real EC2
+# instance, launched exactly the way a developer's laptop launches one. `benchmark` covers the
+# image-dependent type (jmh-with-async); `jcstress` covers the JCStress path in sanity mode.
 #
 # It drives the CLI rather than re-implementing it. Nothing here provisions or terminates an
-# instance, mints a run identifier, builds an S3 key, installs a JDK or a profiler onto the
+# instance, mints a job identifier, builds an S3 key, installs a JDK or a profiler onto the
 # measuring instance, or reads database configuration from a parameter store — `baas run` owns all
 # of that, and a workflow that re-implemented any of it could leave CI measuring something
 # different from a laptop after a CLI change.
@@ -11,7 +12,7 @@
 # `private-runner-network` moves runners onto a subnet with no route to github.com, which a
 # self-hosted runner agent must reach.
 #
-# Cost: this provisions a paid instance per triggering event, so the pull_request trigger is
+# Cost: this provisions a paid instance per job per triggering event, so the pull_request trigger is
 # path-filtered and there is no schedule. workflow_dispatch is what makes it provable on demand.
 
 name: E2E Production Benchmark Test
@@ -24,12 +25,13 @@ on:
       - 'baas-model/**'
       - 'benchmark-runner/**'
       - 'fake-jmh-benchmarks/**'
+      - 'fake-stress-tests/**'
       - 'infra/**'
       - 'pom.xml'
       - '.github/workflows/e2e-cloud-test.yml'
 
 concurrency:
-  # One paid run at a time per ref; a superseded push should not leave two instances running.
+  # One paid job at a time per ref; a superseded push should not leave two instances running.
   group: e2e-cloud-test-${{ github.ref }}
   cancel-in-progress: false
 
@@ -85,7 +87,7 @@ jobs:
           role-session-name: GitHubActions
 
       - name: Sync configuration from the deployed core stack
-        run: $BAAS config sync --name "${{ vars.CORE_STACK_NAME }}"
+        run: $BAAS config sync --deployment "${{ vars.CORE_STACK_NAME }}"
 
       # --runner-jar is mandatory, not a convenience: a reactor build's version is
       # 0.0.0-semantically-released, which names no release, so `baas run` refuses to resolve a
@@ -93,8 +95,8 @@ jobs:
       # runner it just built rather than the last released one.
       #
       # --tag exclude_from_results=true because this measures fixture code and carries no
-      # analytical meaning. It stays visible to `--request-id`, which is a request for one named
-      # run rather than a query over the project's history.
+      # analytical meaning. It stays visible to `--job-id`, which is a request for one named
+      # job rather than a query over the project's history.
       - name: Run the benchmark on EC2
         id: run
         run: |
@@ -102,7 +104,7 @@ jobs:
           # The exit code is captured rather than allowed to end the step, because the summary
           # has to reach GITHUB_OUTPUT on the failure path too — that is the whole reason
           # --format json prints on failure. Under bash -e an exiting `baas run` would take the
-          # run id with it, and the boot-log step below would have nothing to download.
+          # job id with it, and the boot-log step below would have nothing to download.
           status=0
           $BAAS run "$BENCHMARK_TYPE" \
             --format json \
@@ -117,30 +119,31 @@ jobs:
                --async-output-type=flamegraph,jfr \
                --async-additional-param threads=true \
             | tee summary.json || status=$?
-          run_id=$(jq -r '.runId // empty' summary.json)
+          job_id=$(jq -r '.jobId // empty' summary.json)
           {
-            echo "run_id=$run_id"
+            echo "job_id=$job_id"
             echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
             echo "project=$(jq -r '.project // empty' summary.json)"
+            echo "job_status=$(jq -r '.jobStatus // empty' summary.json)"
           } >> "$GITHUB_OUTPUT"
           # An unparseable summary must fail here, naming itself. Without this the empty id flows
-          # into `baas results --request-id ""`, which fails in DynamoDB as "The AttributeValue for
+          # into `baas results query --job-id ""`, which fails in DynamoDB as "The AttributeValue for
           # a key attribute cannot contain an empty string value. Key: gsi1pk" — an error that
           # says nothing about the actual cause, three steps away from it.
-          if [ "$status" -eq 0 ] && [ -z "$run_id" ]; then
-            echo "::error::the run succeeded but its JSON summary carried no runId"
+          if [ "$status" -eq 0 ] && [ -z "$job_id" ]; then
+            echo "::error::the job succeeded but its JSON summary carried no jobId"
             echo "--- captured stdout ---"; cat summary.json
             exit 1
           fi
           exit "$status"
 
       # Every assertion below is expressed against a value this job supplied or received. The
-      # previous self-test asserted tags.source == "gha-e2e-test" while the runs were tagged
+      # previous self-test asserted tags.source == "gha-e2e-test" while the jobs were tagged
       # "gha-e2e-test-async" — a literal maintained separately from the invocation, which is why
       # it could never pass.
-      - name: The run's measurements are retrievable by the id the run reported
+      - name: The job's measurements are retrievable by the id the job reported
         run: |
-          $BAAS results --request-id "${{ steps.run.outputs.run_id }}" --format json \
+          $BAAS results query --job-id "${{ steps.run.outputs.job_id }}" --format json \
             | tee measurements.json
           test "$(jq 'length' measurements.json)" -gt 0
 
@@ -154,29 +157,30 @@ jobs:
           test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
           test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
 
-      # Excluded from the project sweep, present under its own id and under --all-runs: the halves
-      # of the exclusion contract, asserted against each other. The sweep groups by commit — a tag
-      # only this run carries — so best-per-group selection cannot be what hides it: if exclusion
-      # broke, this run would be its group's only row and would surface.
-      - name: The excluded run is absent from the project sweep
+      # Excluded from the project query, present under its own id and under --show-excluded: the
+      # halves of the exclusion contract, asserted against each other. The query lists every
+      # measurement with no limit, so neither grouping nor paging can be what hides it: if
+      # exclusion broke, this job's rows would surface.
+      - name: The excluded job is absent from the project sweep
         run: |
-          $BAAS results --project "$PROJECT" --group-by commit --format json > sweep.json
-          test "$(jq --arg id "${{ steps.run.outputs.run_id }}" \
-            '[.[] | select(.requestId == $id)] | length' sweep.json)" -eq 0
+          $BAAS results query --project "$PROJECT" --limit 0 --format json > sweep.json
+          test "$(jq --arg id "${{ steps.run.outputs.job_id }}" \
+            '[.[] | select(.jobId == $id)] | length' sweep.json)" -eq 0
 
-      - name: The excluded run is present when every run is asked for
+      - name: The excluded job is present when every job is asked for
         run: |
-          $BAAS results --project "$PROJECT" --all-runs --format json > every-run.json
-          test "$(jq --arg id "${{ steps.run.outputs.run_id }}" \
-            '[.[] | select(.requestId == $id)] | length' every-run.json)" -gt 0
+          $BAAS results query --project "$PROJECT" --show-excluded --limit 0 --format json > every-job.json
+          test "$(jq --arg id "${{ steps.run.outputs.job_id }}" \
+            '[.[] | select(.jobId == $id)] | length' every-job.json)" -gt 0
 
-      - name: The image-dependent artifacts reached the run's own prefix
+      - name: The image-dependent artifacts reached the job's own prefix
         run: |
-          $BAAS download "${{ steps.run.outputs.run_id }}" -o ./artifacts
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./artifacts
           find ./artifacts -type f | sort
           test -s ./artifacts/environment.json
           test -s ./artifacts/jmh-result.json
-          test -s ./artifacts/run-status
+          # Job status lives on the job item now, not in the prefix (run-status-in-dynamodb).
+          test ! -e ./artifacts/run-status
           test -s "./artifacts/${BENCHMARK_TYPE}-output.txt"
           # Written by async-profiler on the baked image — the tunables, the pinned profiler and
           # perf versions and the artifact upload path, all exercised end to end.
@@ -185,21 +189,139 @@ jobs:
           find ./artifacts -name '*.jfr' | grep -q . || {
             echo "no JFR recording produced"; exit 1; }
 
-      - name: Publish the run's artifacts
+      # The outcome as recorded on the job item: the summary's jobStatus is the item's status as
+      # the poll ended, so it needs no second lookup by id.
+      - name: The job item recorded the outcome
+        run: |
+          test "${{ steps.run.outputs.job_status }}" = "completed" || {
+            echo "::error::job item status is '${{ steps.run.outputs.job_status }}', expected completed"; exit 1; }
+
+      - name: Publish the job's artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-run-${{ steps.run.outputs.run_id }}
+          name: benchmark-job-${{ steps.run.outputs.job_id }}
           path: ./artifacts
           if-no-files-found: ignore
 
-      # Downloaded by RESULT PATH, not by run id, and that distinction is the whole point of the
-      # summary carrying both. `baas download <runId>` resolves the id through requestId-index —
-      # but a run that failed stored no measurement, so it has no index entry, and the lookup
-      # reports "No run found" exactly when the boot log is most needed. Verified against a real
-      # forced failure: the id form fails, the path form retrieves all seven artifacts.
+      # Downloaded by job id, which resolves through the job item even when no measurement was
+      # stored.
       - name: Surface the runner boot log on failure
-        if: failure() && steps.run.outputs.result_path != ''
+        if: failure() && steps.run.outputs.job_id != ''
         run: |
-          $BAAS download "${{ steps.run.outputs.result_path }}" -o ./failed || true
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./failed || true
+          cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"
+
+  # The JCStress path end to end: the runner's JCStress subcommand, its HTML report parsing, the
+  # single JCSTRESS# item and jcstress-output.txt. Attached, like the job above. Sanity mode keeps it
+  # to seconds of JCStress on top of the boot.
+  #
+  # Asserted by shape only. The fixture's TestWithForbiddenResults fails whenever its non-atomic
+  # increment races, which is nondeterministic; the runner stores the summary either way, so the
+  # job ends completed and no assertion may depend on pass or fail counts.
+  jcstress:
+    name: JCStress on EC2 via baas run
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      BAAS: java -jar baas-cli/target/baas-cli.jar
+      PROJECT: ${{ github.event.repository.name }}
+      RUN_BRANCH: ${{ github.head_ref || github.ref_name }}
+      RUN_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          java-version: 25
+          distribution: temurin
+          cache: maven
+
+      - name: Build the CLI, the runner and the fixture tests
+        run: mvn -B -q clean package -DskipTests
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          # Same federation and session length as the job above, for the same reasons.
+          role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 9000
+          role-session-name: GitHubActions
+
+      - name: Sync configuration from the deployed core stack
+        run: $BAAS config sync --deployment "${{ vars.CORE_STACK_NAME }}"
+
+      # --mode is the runner's, forwarded to JCStress as -m: on the runner -m is the MongoDB
+      # connection string. --runner-jar and exclude_from_results as in the job above.
+      - name: Run the JCStress tests on EC2
+        id: run
+        run: |
+          set -o pipefail
+          status=0
+          $BAAS run jcstress \
+            --format json \
+            --project "$PROJECT" \
+            --tag branch="$RUN_BRANCH" \
+            --tag commit="$RUN_COMMIT" \
+            --runner-jar benchmark-runner/target/benchmark-runner.jar \
+            --benchmark-jar fake-stress-tests/target/fake-stress-tests.jar \
+            --tag exclude_from_results=true \
+            -- --mode sanity \
+            | tee summary.json || status=$?
+          job_id=$(jq -r '.jobId // empty' summary.json)
+          {
+            echo "job_id=$job_id"
+            echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
+            echo "job_status=$(jq -r '.jobStatus // empty' summary.json)"
+          } >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] && [ -z "$job_id" ]; then
+            echo "::error::the job succeeded but its JSON summary carried no jobId"
+            echo "--- captured stdout ---"; cat summary.json
+            exit 1
+          fi
+          exit "$status"
+
+      - name: The job item recorded the outcome
+        run: |
+          test "${{ steps.run.outputs.job_status }}" = "completed" || {
+            echo "::error::job item status is '${{ steps.run.outputs.job_status }}', expected completed"; exit 1; }
+
+      # A JCStress job is one item, named for the job rather than for a class and method.
+      - name: The job stored exactly one JCStress measurement carrying this CI job's tags
+        run: |
+          $BAAS results query --job-id "${{ steps.run.outputs.job_id }}" --format json \
+            | tee measurements.json
+          test "$(jq 'length' measurements.json)" -eq 1
+          test "$(jq -r '.[0].benchmarkType' measurements.json)" = "jcstress"
+          jq -e '.[0].benchmarkName | startswith("(jcstress)")' measurements.json > /dev/null
+          test "$(jq -r '.[0].tags.project' measurements.json)" = "$PROJECT"
+          test "$(jq -r '.[0].tags.branch' measurements.json)" = "$RUN_BRANCH"
+          test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
+          test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
+
+      - name: The JCStress output and the environment manifest reached the job's prefix
+        run: |
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./artifacts
+          find ./artifacts -type f | sort
+          test -s ./artifacts/environment.json
+          test -s ./artifacts/jcstress-output.txt
+
+      - name: Publish the job's artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jcstress-job-${{ steps.run.outputs.job_id }}
+          path: ./artifacts
+          if-no-files-found: ignore
+
+      - name: Surface the runner boot log on failure
+        if: failure() && steps.run.outputs.job_id != ''
+        run: |
+          $BAAS jobs download "${{ steps.run.outputs.job_id }}" -o ./failed || true
           cat ./failed/cloud-init-output.log || echo "no boot log was uploaded"

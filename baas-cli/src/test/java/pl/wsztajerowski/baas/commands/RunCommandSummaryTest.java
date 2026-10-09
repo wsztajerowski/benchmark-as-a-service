@@ -16,12 +16,12 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * {@code --format json} exists because the run id reaches only {@code logger.info} → stderr with a
- * timestamp prefix, so a continuous-integration job cannot correlate a run it launched.
+ * {@code --format json} exists because the job id reaches only {@code logger.info} → stderr with a
+ * timestamp prefix, so a continuous-integration job cannot correlate a job it launched.
  *
  * <p>The success path cannot be driven without provisioning an instance — CLAUDE.md records that
  * {@code RunCommand.call()} is executed by no test — so the object's shape is pinned against
- * {@link RunCommand#printRunSummary} directly, and the wiring that prints it on failure is driven
+ * {@link RunCommand#printJobSummary} directly, and the wiring that prints it on failure is driven
  * through {@code call()} on a path that fails before any AWS call.
  */
 class RunCommandSummaryTest {
@@ -54,66 +54,86 @@ class RunCommandSummaryTest {
     private static String printSummary(RunCommand command, int exitCode) {
         var out = new StringWriter();
         command.console = Console.plain(new PrintWriter(out));
-        command.printRunSummary(exitCode);
+        command.printJobSummary(exitCode);
         return out.toString();
     }
 
     @Test
-    void theSummaryCarriesEveryFieldACallerNeedsToCorrelateARun() throws Exception {
+    void theSummaryCarriesEveryFieldACallerNeedsToCorrelateAJob() throws Exception {
         var command = new RunCommand();
         command.format = "json";
-        command.summaryRunId = "20260820T174432812Z-a3f9c21b";
+        command.summaryJobId = "20260820T174432812Z-a3f9c21b";
         command.summaryProject = "lynx-journal";
-        command.summaryResultPath = "runs/lynx-journal/20260820T174432812Z-a3f9c21b/";
+        command.summaryResultPath = "jobs/lynx-journal/20260820T174432812Z-a3f9c21b/";
         command.summaryInstanceId = "i-0123456789abcdef0";
 
         JsonNode parsed = JSON.readTree(printSummary(command, 0));
 
-        assertThat(parsed.get("runId").asText()).isEqualTo("20260820T174432812Z-a3f9c21b");
+        assertThat(parsed.get("jobId").asText()).isEqualTo("20260820T174432812Z-a3f9c21b");
         assertThat(parsed.get("project").asText()).isEqualTo("lynx-journal");
         assertThat(parsed.get("resultPath").asText())
-            .isEqualTo("runs/lynx-journal/20260820T174432812Z-a3f9c21b/");
+            .isEqualTo("jobs/lynx-journal/20260820T174432812Z-a3f9c21b/");
         assertThat(parsed.get("status").asText()).isEqualTo("completed");
         assertThat(parsed.get("exitCode").asInt()).isZero();
         assertThat(parsed.get("instanceId").asText()).isEqualTo("i-0123456789abcdef0");
     }
 
     /**
-     * The failure case is precisely when the id is needed — to {@code baas download} it and surface
-     * {@code cloud-init-output.log}, the documented place to start when a run dies before producing
+     * The failure case is precisely when the id is needed — to {@code baas jobs download} it and surface
+     * {@code cloud-init-output.log}, the documented place to start when a job dies before producing
      * output. So the object is printed, and the command still exits non-zero.
      */
     @Test
-    void aFailedRunStillReportsItsIdentifierAndExitsNonZero() throws Exception {
+    void aFailedJobStillReportsItsIdentifierAndExitsNonZero() throws Exception {
         var command = new RunCommand();
         command.format = "json";
-        command.summaryRunId = "20260820T174432812Z-a3f9c21b";
+        command.summaryJobId = "20260820T174432812Z-a3f9c21b";
         command.summaryProject = "lynx-journal";
-        command.summaryResultPath = "runs/lynx-journal/20260820T174432812Z-a3f9c21b/";
+        command.summaryResultPath = "jobs/lynx-journal/20260820T174432812Z-a3f9c21b/";
         command.summaryInstanceId = "i-0123456789abcdef0";
 
         JsonNode parsed = JSON.readTree(printSummary(command, 1));
 
         assertThat(parsed.get("status").asText()).isEqualTo("failed");
         assertThat(parsed.get("exitCode").asInt()).isOne();
-        assertThat(parsed.get("runId").asText()).isEqualTo("20260820T174432812Z-a3f9c21b");
+        assertThat(parsed.get("jobId").asText()).isEqualTo("20260820T174432812Z-a3f9c21b");
+    }
+
+    /**
+     * {@code status} says only completed or failed. A consumer that needs to tell a timeout from a
+     * cancellation or a benchmark's own exit code used to list runs and filter them by id.
+     */
+    @Test
+    void theStoredStatusRidesAlongsideTheVerdict() throws Exception {
+        var command = new RunCommand();
+        command.format = "json";
+        command.summaryJobId = "20260820T174432812Z-a3f9c21b";
+        command.summaryJobStatus = "timed-out";
+
+        JsonNode parsed = JSON.readTree(printSummary(command, 1));
+
+        assertThat(parsed.get("status").asText()).isEqualTo("failed");
+        assertThat(parsed.get("jobStatus").asText()).isEqualTo("timed-out");
     }
 
     @Test
-    void aRunThatFailsBeforeLaunchingStillWritesOneParseableObject() throws Exception {
+    void aJobThatFailsBeforeLaunchingStillWritesOneParseableObject() throws Exception {
         var captured = run("run", "--format", "json", "--benchmark-jar", "/nonexistent.jar", "not-a-type");
 
         assertThat(captured.exitCode()).isNotZero();
         JsonNode parsed = JSON.readTree(captured.out().strip());
         assertThat(parsed.get("status").asText()).isEqualTo("failed");
         assertThat(parsed.get("exitCode").asInt()).isNotZero();
-        assertThat(parsed.get("runId").isNull())
-            .as("no run was named, and a placeholder would be indistinguishable from a real id")
+        assertThat(parsed.get("jobId").isNull())
+            .as("no job was named, and a placeholder would be indistinguishable from a real id")
+            .isTrue();
+        assertThat(parsed.get("jobStatus").isNull())
+            .as("nothing was recorded, so there is no stored status to report")
             .isTrue();
     }
 
     /**
-     * The rule CLAUDE.md states for {@code ResultsCommand.printJson}: payload on standard output,
+     * The rule CLAUDE.md states for {@code ResultsQuerySubcommand.printJson}: payload on standard output,
      * diagnostics on the logger. A timestamp prefix on the payload line breaks {@code | jq}, and
      * {@code -v} is exactly when a diagnostic is most likely to land on the wrong stream.
      *
@@ -139,10 +159,10 @@ class RunCommandSummaryTest {
     }
 
     /**
-     * The defect a real CI run found. {@code showResults} prints the post-run table through
+     * The defect a real CI job found. {@code showResults} prints the post-run table through
      * {@code ResultsTable}, onto standard output — correctly, as a command payload. But the JSON summary is a payload on that same stream, so under
      * {@code --format json} the table landed first and {@code | jq} failed on the opening token.
-     * The workflow read an empty run id and went on to query {@code --request-id ""}.
+     * The workflow read an empty job id and went on to query {@code --job-id ""}.
      *
      * <p>The earlier redirect test missed this because it drove a path that fails before launching,
      * which never reaches {@code showResults} at all.
@@ -151,32 +171,32 @@ class RunCommandSummaryTest {
     void theResultTableIsSuppressedUnderJsonSoStandardOutputHoldsTheObjectAlone() throws Exception {
         var command = new RunCommand();
         command.format = "json";
-        command.summaryRunId = "20260920T161636923Z-08785de7";
+        command.summaryJobId = "20260920T161636923Z-08785de7";
         command.summaryProject = "benchmark-as-a-service";
-        command.summaryResultPath = "runs/benchmark-as-a-service/20260920T161636923Z-08785de7/";
+        command.summaryResultPath = "jobs/benchmark-as-a-service/20260920T161636923Z-08785de7/";
         command.summaryInstanceId = "i-03c3ad558f45b388c";
 
         var printed = new java.util.concurrent.atomic.AtomicBoolean(false);
         var out = new StringWriter();
         command.console = Console.plain(new PrintWriter(out));
-        command.reportRunResults(java.util.List.of(), "20260920T161636923Z-08785de7",
+        command.reportJobResults(java.util.List.of(), "20260920T161636923Z-08785de7",
             rows -> printed.set(true));
-        command.printRunSummary(0);
+        command.printJobSummary(0);
 
         assertThat(printed).as("the table must not be printed when the object owns stdout").isFalse();
         String captured = out.toString().strip();
         assertThat(captured.lines()).hasSize(1);
-        assertThat(JSON.readTree(captured).get("runId").asText())
+        assertThat(JSON.readTree(captured).get("jobId").asText())
             .isEqualTo("20260920T161636923Z-08785de7");
     }
 
-    /** Default output is unchanged: the table is still the point of a run you watch. */
+    /** Default output is unchanged: the table is still the point of a job you watch. */
     @Test
     void theResultTableStillPrintsWithoutTheOption() {
         var command = new RunCommand();
         var printed = new java.util.concurrent.atomic.AtomicBoolean(false);
 
-        command.reportRunResults(java.util.List.of(), "20260920T161636923Z-08785de7",
+        command.reportJobResults(java.util.List.of(), "20260920T161636923Z-08785de7",
             rows -> printed.set(true));
 
         assertThat(printed).isTrue();
@@ -189,7 +209,7 @@ class RunCommandSummaryTest {
         assertThat(captured.exitCode()).isNotZero();
         assertThat(captured.out())
             .as("default output is unchanged — the summary is opt-in")
-            .doesNotContain("\"runId\"");
+            .doesNotContain("\"jobId\"");
         assertThat(captured.err()).contains("not-a-type");
     }
 }

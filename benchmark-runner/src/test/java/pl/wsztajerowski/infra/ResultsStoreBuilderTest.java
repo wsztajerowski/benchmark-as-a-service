@@ -19,16 +19,13 @@ class ResultsStoreBuilderTest {
     }
 
     @Test
-    void noDatabaseSelectsTheExplicitDiscardStore() {
-        assertThat(ResultsStoreBuilder.builder().withNoDatabase(true).build())
-            .isInstanceOf(NoOpResultsStore.class);
-    }
-
-    @Test
     void absentConfigurationIsAHardFailureRatherThanASilentDiscard() {
         assertThatThrownBy(() -> ResultsStoreBuilder.builder().build())
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("--no-database");
+            .hasMessageContaining("--results-table")
+            .hasMessageContaining("--mongo-connection-string")
+            .as("no option discards measurements any more")
+            .hasMessageNotContaining("--no-database");
     }
 
     @Test
@@ -47,15 +44,6 @@ class ResultsStoreBuilderTest {
             .build())
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("both");
-    }
-
-    @Test
-    void noDatabaseAlongsideAStoreIsRejected() {
-        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
-            .withTableName("results")
-            .withNoDatabase(true)
-            .build())
-            .isInstanceOf(IllegalStateException.class);
     }
 
     @Test

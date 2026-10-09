@@ -8,30 +8,34 @@ privilege tier each grouping implies.
 ## Requirements
 
 ### Requirement: Deployer-privileged commands are grouped under `admin`
-The `baas` command tree SHALL group `setup` and `teardown` under a nested `admin` subcommand (`baas admin setup`, `baas admin teardown`). These SHALL NOT be reachable as top-level commands (e.g. `baas setup` directly SHALL NOT exist).
+The `baas` command tree SHALL group every command that needs deployer credentials under a nested `admin`
+subcommand, as two nouns: `admin deployment` with the verbs `setup` and `teardown`, and `admin image`
+with the verbs `build` and `show`. None of these SHALL be reachable as top-level commands, and
+`admin deployer-policy`, `admin setup`, `admin teardown`, `admin build-image` and `admin image` without
+a verb SHALL NOT exist as commands.
 
 #### Scenario: Admin commands are nested
-- **WHEN** a user runs `baas admin setup --help`
+- **WHEN** a user runs `baas admin deployment setup --help`
 - **THEN** picocli shows the setup command's options
-- **WHEN** a user runs `baas setup` (without the `admin` prefix)
+- **WHEN** a user runs `baas setup` (without the `admin` prefix) or `baas admin setup`
 - **THEN** picocli reports an unknown command error
 
-### Requirement: Daily-use commands remain top-level
-`run`, `results`, and `config` (with its `set`/`show` subcommands) SHALL remain directly reachable from the `baas` root command, unaffected by the `admin` grouping.
+#### Scenario: The image is a noun with two verbs
+- **WHEN** a user runs `baas admin image`
+- **THEN** its usage, naming `build` and `show`, is printed and no AWS call is made
 
-#### Scenario: Top-level commands unchanged
-- **WHEN** a user runs `baas run jmh -- MyBenchmark -f 1`, `baas results`, or `baas config show`
-- **THEN** each resolves to the same command implementation as before this change, with no `admin` prefix required
-
-### Requirement: `baas admin build-image` builds the runner image
-`baas admin build-image` SHALL render the recipe from `infra/runner-image.yaml`, update the stack when the
-recipe version changed, trigger the image build, poll to completion, write the resulting AMI ID to
-`/<prefix>/runner/ami-id`, retire the AMI it replaced, and report the new AMI ID. It SHALL run under
-deployer credentials (`aws.profile`), consistent with every other `baas admin` subcommand.
+### Requirement: `baas admin image build` builds the runner image
+`baas admin image build` SHALL render the base from the `infra/runner-image.yaml` bundled with the CLI,
+resolve the base's parent release in the stack's region, update the stack when the base or the
+extension changed, trigger the image build, poll to completion, write the resulting AMI ID to
+`/<prefix>/runner/ami-id`, retire the AMI it replaced, and report the new AMI ID and label. It SHALL
+accept `--extension <file>` to replace the deployment's extension, subject to the size limit and the
+stale-push guard; without it, the deployed extension SHALL be carried forward unchanged. It SHALL run
+under deployer credentials (`aws.deployerProfile`), consistent with every other `baas admin` subcommand.
 
 #### Scenario: Successful build reports the AMI
-- **WHEN** `baas admin build-image` completes
-- **THEN** it prints the new AMI ID and image version, and exits 0
+- **WHEN** `baas admin image build` completes
+- **THEN** it prints the new AMI ID and the image label, and exits 0
 
 #### Scenario: Build failure is surfaced
 - **WHEN** the image build fails
@@ -39,53 +43,84 @@ deployer credentials (`aws.profile`), consistent with every other `baas admin` s
   and the previous AMI untouched
 
 #### Scenario: Build uses deployer credentials
-- **WHEN** `config.yaml` sets both `aws.profile` and `aws.operatorProfile` and `baas admin build-image`
+- **WHEN** the configuration sets both `aws.deployerProfile` and `aws.operatorProfile` and `baas admin image build`
   runs
-- **THEN** AWS clients are built from `aws.profile`
+- **THEN** AWS clients are built from `aws.deployerProfile`
 
-### Requirement: `baas admin image` reports the current image
-`baas admin image` SHALL report the current runner image's version, AMI ID, build timestamp, and parent
-AMI ID, and SHALL report clearly when no image has been built. Command payload SHALL be written to
-`System.out` rather than the logger, so it remains pipeable.
+#### Scenario: Pushing an extension
+- **WHEN** `baas admin image build --extension ext.yaml` runs with a file whose marker matches the
+  deployed extension
+- **THEN** the stack holds the file's content as the extension and the new image's label carries its
+  hash
+
+### Requirement: `baas admin image show` reports the current image
+`baas admin image show` SHALL report the current runner image's label, AMI ID, build timestamp, and parent
+AMI ID, and SHALL report clearly when no image has been built. When an extension is deployed, it SHALL
+also report the extension's hash, its size against the 4096-byte limit, and the names of its steps
+grouped by phase. When the image's base version differs from the base bundled with the running CLI, it
+SHALL warn naming the bundled base version and `baas admin image build`. With `--extension`, it SHALL
+instead print the deployed extension preceded by its base marker line, or, when none is deployed, the
+starter document marked `none`. Command payload SHALL be written to `System.out` rather than the
+logger, so it remains pipeable.
 
 #### Scenario: Current image is reported
-- **WHEN** an image has been built and `baas admin image` runs
-- **THEN** the output names the image version, AMI ID, build time, and parent AMI
+- **WHEN** an image has been built and `baas admin image show` runs
+- **THEN** the output names the image label, AMI ID, build time, and parent AMI
 
 #### Scenario: No image built yet
-- **WHEN** no image has been built and `baas admin image` runs
-- **THEN** the output states that no image exists and names `baas admin build-image`
+- **WHEN** no image has been built and `baas admin image show` runs
+- **THEN** the output states that no image exists and names `baas admin image build`
+
+#### Scenario: The extension is summarised
+- **WHEN** the deployed extension has build steps `InstallOtelCollector` and `InstallBpftrace`
+- **THEN** the output names its hash, its size against 4096 bytes, and both step names under the build
+  phase
+
+#### Scenario: Pulling the extension
+- **WHEN** `baas admin image show --extension > ext.yaml` runs on a deployment holding extension
+  `3f9a1c2e`
+- **THEN** `ext.yaml` starts with a marker naming `3f9a1c2e`, followed by the deployed extension
+
+#### Scenario: Pulling when nothing is deployed
+- **WHEN** `baas admin image show --extension` runs on a deployment holding no extension
+- **THEN** it prints the starter document with a marker naming `none`
+
+#### Scenario: The drift warning names the bundled base
+- **WHEN** the deployed image's base is `1.2.0` and the CLI bundles base `1.3.0`
+- **THEN** a warning names `1.3.0` as the bundled base and `baas admin image build`
 
 ### Requirement: `baas run` requires a built image
 `baas run` SHALL resolve the runner AMI from `/<prefix>/runner/ami-id` and SHALL fail before provisioning
 any resource when that parameter is absent or names an AMI that no longer exists. The failure message
-SHALL name `baas admin build-image`.
+SHALL name `baas admin image build`.
 
 #### Scenario: No image built yet
 - **WHEN** `baas run jmh -- MyBenchmark` is invoked with no AMI pointer present
-- **THEN** the command exits non-zero naming `baas admin build-image`, and no EC2 instance is launched
+- **THEN** the command exits non-zero naming `baas admin image build`, and no EC2 instance is launched
 
 #### Scenario: Pointer names a deleted AMI
 - **WHEN** the pointer resolves to an AMI that has been deregistered
 - **THEN** the command exits non-zero without launching an instance
 
-### Requirement: `baas env diff` compares two runs' environments
-`baas env diff <resultPathA> <resultPathB>` SHALL be available as a top-level command, alongside the other
-day-to-day commands, and SHALL run under operator credentials.
+### Requirement: `baas jobs diff` compares two jobs' environments
+`baas jobs diff <jobA> <jobB>` SHALL be a verb of the top-level `jobs` noun, take two job identifiers,
+and run under operator credentials. `baas env` SHALL NOT exist.
 
-#### Scenario: Command is top-level, not under admin
+#### Scenario: Diff is a verb of the jobs noun
 - **WHEN** `baas --help` is rendered
-- **THEN** `env` appears as a top-level command and not as an `admin` subcommand
+- **THEN** `jobs` appears among the operator commands with `diff` among its verbs, and neither `env` nor an
+  `admin` subcommand offers a diff
 
 #### Scenario: Output is pipeable
-- **WHEN** `baas env diff` output is redirected to a file
+- **WHEN** `baas jobs diff` output is redirected to a file
 - **THEN** the payload contains no logger timestamp prefixes
 
 ### Requirement: User tags are passed through to the runner
 `baas run` SHALL forward every `--tag key=value` option into the user-data script as a runner argument.
 It SHALL NOT apply any caller tag to the EC2 instance: the instance carries only `project=baas`,
-`baas-role=benchmark-runner` and `baas-request-id=<runId>`. A caller tag on the instance could collide with
-a fixed key, which EC2 rejects for the whole launch, and would be subject to EC2's tag limits.
+`baas-role=benchmark-runner`, `baas-job-id=<jobId>` and `baas-deployment=<prefix>`. A caller tag on the
+instance could collide with a fixed key, which EC2 rejects for the whole launch, and would be subject to
+EC2's tag limits.
 
 #### Scenario: User tags appear in rendered user-data
 - **WHEN** `baas run --tag branch=main --tag experiment=gc jmh -- MyBenchmark` renders user-data
@@ -93,43 +128,35 @@ a fixed key, which EC2 rejects for the whole launch, and would be subject to EC2
 
 #### Scenario: No caller tag reaches the instance
 - **WHEN** `baas run --tag project=foo --tag branch=main jmh -- MyBenchmark` launches its instance
-- **THEN** the instance's tags are exactly `project=baas`, `baas-role` and `baas-request-id`, and the launch
-  does not fail on a duplicate key
+- **THEN** the instance's tags are exactly `project=baas`, `baas-role`, `baas-job-id` and
+  `baas-deployment`, and the launch does not fail on a duplicate key
+
+#### Scenario: The instance names its deployment
+- **WHEN** `baas --deployment wiktor-dev run jmh -- MyBenchmark` launches its instance
+- **THEN** the instance carries `baas-deployment=wiktor-dev`
 
 #### Scenario: Environment tags are still forwarded
 - **WHEN** user-data is rendered
 - **THEN** it still forwards `imageVersion` and `instanceType` observed on the instance
 
-### Requirement: Discarding results requires an explicit flag on the run path
-`baas run` SHALL expose a `--no-database` pass-through that selects the no-op store on the runner.
-Without it, an unresolvable table name SHALL fail before any instance is launched.
-
-#### Scenario: Unresolvable table fails before provisioning
-- **WHEN** `baas run jmh -- MyBenchmark` is invoked with no table name in config and no `--no-database`
-- **THEN** the command exits non-zero and no EC2 instance is launched
-
-#### Scenario: Explicit opt-in is honoured
-- **WHEN** `baas run --no-database jmh -- MyBenchmark` is invoked
-- **THEN** the run proceeds and the runner performs no database write
-
 ### Requirement: Results filters cover the supported query patterns
-`baas results` SHALL accept `--request-id`, `--benchmark-name`, `--tag <key>=<value>` (repeatable),
-`--project`, `--all-projects`, `--all-runs`, `--group-by` and `--limit`. `--request-id` SHALL be mutually
-exclusive with every option that selects rows — `--project`, `--all-projects`, `--benchmark-name` and
-`--tag` — because one run is already narrower than any of them and a disagreeing selector would be
-ignored silently. `--project` and `--all-projects` SHALL be mutually exclusive with each other. An
-invalid combination SHALL fail with a message naming the conflicting option.
+`baas results query` SHALL accept `--job-id`, `--benchmark-name`, `--tag <key>=<value>` (repeatable),
+`--exclude-tag <key>=<value>` (repeatable), `--project`, `--all-projects`, `--best-per <tag>`,
+`--show-excluded`, `--sort-by`, `--asc`, `--limit`, `--offset`, `--format` and `--watch`. `--job-id`
+SHALL NOT combine with `--project` or `--all-projects`, which select a different access path, and
+`--project` and `--all-projects` SHALL be mutually exclusive with each other. An invalid combination
+SHALL fail with a message naming the conflicting option.
 
 #### Scenario: Tag filter is accepted
-- **WHEN** `baas results --project p --tag jdk=25.0.4` is invoked
+- **WHEN** `baas results query --project p --tag jdk=25.0.4` is invoked
 - **THEN** matching rows are returned
 
 #### Scenario: Conflicting filters are rejected
-- **WHEN** both `--tag branch=main` and `--request-id abc` are given
-- **THEN** the command exits non-zero explaining that `--request-id` cannot be combined with other filters
+- **WHEN** both `--job-id abc` and `--all-projects` are given
+- **THEN** the command exits non-zero naming `--all-projects`, and issues no query
 
-#### Scenario: A run lookup does not take a project
-- **WHEN** both `--request-id abc` and `--project p` are given
+#### Scenario: A job lookup does not take a project
+- **WHEN** both `--job-id abc` and `--project p` are given
 - **THEN** the command exits non-zero naming `--project`, and issues no query
 
 #### Scenario: One project and every project are exclusive
@@ -141,39 +168,8 @@ invalid combination SHALL fail with a message naming the conflicting option.
 - **THEN** at most five rows are returned
 
 #### Scenario: Removed options are rejected
-- **WHEN** `baas results --living-branches` or `baas results --all` is invoked
+- **WHEN** `baas results query --all-jobs`, `--group-by branch`, `--living-branches` or `--all` is given
 - **THEN** picocli reports an unknown option error
-
-### Requirement: A command downloads a run's S3 artifacts
-The CLI SHALL provide a command taking either a run identifier or a literal S3 result path, plus a
-destination directory, downloading every S3 object under that run's prefix. A run identifier SHALL be
-resolved to the run's stored result path rather than reconstructed from its other attributes.
-
-#### Scenario: Artifacts land locally
-- **WHEN** the command is invoked with a run identifier and a destination
-- **THEN** the destination contains the run's result JSON, `environment.json`, process output and logs
-
-#### Scenario: A literal result path is accepted
-- **WHEN** the command is invoked with a result path rather than an identifier
-- **THEN** that prefix is downloaded
-
-#### Scenario: Destination is reported
-- **WHEN** the download completes
-- **THEN** the command prints the destination path and exits 0
-
-### Requirement: Teardown reports what it retains
-`baas admin teardown` SHALL state, before the confirmation prompt, that the results table and the working
-bucket are retained by default, so an operator is not left believing that history was deleted. Its
-messages SHALL describe the retained names as derived from the installation's AWS account, and SHALL
-NOT attribute them to the caller's identity.
-
-#### Scenario: Retention is stated before confirmation
-- **WHEN** `baas admin teardown` prompts for confirmation
-- **THEN** the prompt text names both the retained bucket and the retained results table
-
-#### Scenario: Retention message explains the name a re-setup will ask for
-- **WHEN** `baas admin teardown` completes having retained the bucket
-- **THEN** the message states that a later `baas admin setup` in the same account will request that same bucket name, and says how to keep or remove it
 
 ### Requirement: `baas run` consumes a pre-built benchmark JAR
 `baas run` SHALL NOT build the benchmark project. It SHALL require the benchmark JAR to be named
@@ -183,7 +179,7 @@ does not exist. The failure message SHALL name the option that supplies it.
 
 #### Scenario: A named JAR is used as-is
 - **WHEN** `baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark` is invoked
-- **THEN** that JAR is uploaded for the run, and no build is performed in the working directory
+- **THEN** that JAR is uploaded for the job, and no build is performed in the working directory
 
 #### Scenario: An unnamed JAR fails before provisioning
 - **WHEN** `baas run jmh -- MyBenchmark` is invoked with no benchmark JAR named
@@ -196,25 +192,25 @@ does not exist. The failure message SHALL name the option that supplies it.
 
 #### Scenario: No build is attempted in any circumstance
 - **WHEN** `baas run` is invoked from a directory containing a buildable project
-- **THEN** no build tool is invoked, and the run uses only the named JAR
+- **THEN** no build tool is invoked, and the job uses only the named JAR
 
 ### Requirement: `baas run` can report its outcome as a machine-readable object
 `baas run` SHALL accept a `--format json` option that writes a single summary object to standard
-output, carrying at least the run identifier, the project, the run's S3 result path, the outcome, the
+output, carrying at least the job identifier, the project, the job's S3 result path, the outcome, the
 process exit code and the launched instance's identifier. The object SHALL be written on the failure
-path as well as on success — a failed run is precisely when its identifier is needed — and the command
-SHALL still exit non-zero when the run failed. Diagnostics SHALL remain on the logger so that standard
+path as well as on success — a failed job is precisely when its identifier is needed — and the command
+SHALL still exit non-zero when the job failed. Diagnostics SHALL remain on the logger so that standard
 output holds the object alone.
 
 #### Scenario: The summary is machine-readable
 - **WHEN** `baas run --format json jmh -- MyBenchmark` completes and its standard output is piped to a
   JSON parser
-- **THEN** the parser succeeds, and the parsed object carries the run identifier, project, result path,
+- **THEN** the parser succeeds, and the parsed object carries the job identifier, project, result path,
   outcome, exit code and instance identifier
 
-#### Scenario: A failed run still reports its identifier
-- **WHEN** a run launched with `--format json` fails
-- **THEN** the summary object is written with a failed outcome and the run's exit code, and the command
+#### Scenario: A failed job still reports its identifier
+- **WHEN** a job launched with `--format json` fails
+- **THEN** the summary object is written with a failed outcome and the job's exit code, and the command
   exits non-zero
 
 #### Scenario: Diagnostics do not corrupt the object
@@ -232,62 +228,30 @@ output holds the object alone.
   specifies, and no JSON object is written
 
 ### Requirement: Resource names the CLI needs are derived or resolved, not cached
-`~/.baas/config.yaml` SHALL store only what cannot be obtained from the installation itself: the
-credential settings, the region, the installation prefix, and the operator's own preferences. Names
-the composition rule determines — the working bucket, the results table and the runner instance
-profile — SHALL be derived from the prefix at use time. Identifiers AWS assigns, specifically the
-runner subnet and security group, SHALL be resolved from the installation's stack outputs at use
-time rather than cached, so that a replaced resource cannot leave a stale identifier behind.
+A deployment's configuration file SHALL store only what cannot be obtained from the deployment
+itself: the credential settings, the region, the deployment prefix, and the operator's own
+preferences. Names the composition rule determines — the working bucket, the results table and the
+runner instance profile — SHALL be derived from the prefix at use time. Identifiers AWS assigns,
+specifically the runner subnet and security group, SHALL be resolved from the deployment's stack
+outputs at use time rather than cached, so that a replaced resource cannot leave a stale identifier
+behind.
 
 #### Scenario: A replaced security group does not strand the configuration
 - **WHEN** the runner security group is replaced by a stack update and its identifier changes, and `baas run` is invoked afterwards with no intervening configuration command
-- **THEN** the run uses the current security group identifier
+- **THEN** the job uses the current security group identifier
 
 #### Scenario: Config carries no derivable names
 - **WHEN** `baas config show` reports the configuration after `baas config sync`
 - **THEN** no stored field holds the bucket name, the results table name or the runner instance profile name
 
-### Requirement: Every command accepts an alternative configuration file
-Every `baas` command SHALL accept `--config-path <file>`, naming the configuration file the invocation
-reads and writes in place of `~/.baas/config.yaml`. The option SHALL be accepted before or after the
-subcommand name. When `--config-path` names a file that does not exist, a command that only reads
-configuration SHALL fail naming the path, and `baas config sync`, `baas config set` and `baas admin setup`
-SHALL create it. Without the option, behaviour on a missing `~/.baas/config.yaml` is unchanged. No command
-SHALL accept a per-invocation override of the results table or the working bucket: addressing another
-installation means naming that installation's configuration file.
-
-#### Scenario: Reading a retired installation's history
-- **WHEN** `baas results --config-path ~/.baas/retired.yaml --project lynx-journal` runs, and that file
-  names a retired installation's prefix
-- **THEN** that installation's measurements are reported, and `~/.baas/config.yaml` is neither read nor
-  changed
-
-#### Scenario: A second configuration is created by sync
-- **WHEN** `baas config sync --name baas-123456789012-dev --config-path ~/.baas/dev.yaml` runs and the
-  file does not exist
-- **THEN** `~/.baas/dev.yaml` is written with that prefix, and `~/.baas/config.yaml` is unchanged
-
-#### Scenario: A mistyped path fails rather than reading nothing
-- **WHEN** `baas results --config-path ~/.baas/nope.yaml` runs and the file does not exist
-- **THEN** the command exits non-zero naming `~/.baas/nope.yaml`, and issues no AWS call
-
-#### Scenario: The option is inherited on either side of the subcommand
-- **WHEN** `baas --config-path f.yaml results` and `baas results --config-path f.yaml` are each invoked
-- **THEN** both read `f.yaml`
-
-#### Scenario: Table and bucket overrides are gone
-- **WHEN** `baas results --results-table t`, `baas download --results-table t` or
-  `baas download --bucket b` is invoked
-- **THEN** picocli reports an unknown option error
-
 ### Requirement: Git is consulted only when the operator enables it
 The configuration SHALL carry a `git.resolveProject` preference, `false` by default and set with
 `baas config set --git-resolve-project <true|false>`. When it is `false`, no command SHALL invoke git. When it is `true`, git SHALL be
-consulted only to derive a project name, as the `baas run` and `baas results` project requirements
+consulted only to derive a project name, as the `baas run` and `baas results query` project requirements
 specify; it SHALL NOT be consulted for `branch` or `commit`.
 
 #### Scenario: A fresh configuration does not use git
-- **WHEN** `baas run` or `baas results` is invoked with a configuration that does not set
+- **WHEN** `baas run` or `baas results query` is invoked with a configuration that does not set
   `git.resolveProject`
 - **THEN** no git process is started
 
@@ -379,7 +343,7 @@ absolute wall-clock bound.
 ### Requirement: The region resolves from the file, then the environment
 Every command SHALL use the configuration file's `aws.region` when it is set, else the `AWS_REGION`
 environment variable when it is set, else `eu-central-1`. The resolved value SHALL NOT be written back to
-the file by any command except `baas admin setup`, which records the region it deployed to.
+the file by any command except `baas admin deployment setup`, which records the region it deployed to.
 
 #### Scenario: A CI job follows its own region
 - **WHEN** a configuration with no `aws.region` is used with `AWS_REGION=eu-west-1`
@@ -389,3 +353,216 @@ the file by any command except `baas admin setup`, which records the region it d
 - **WHEN** the file sets `aws.region: eu-central-1` and `AWS_REGION=us-east-1`
 - **THEN** the command addresses `eu-central-1`
 
+### Requirement: `baas run` always resolves the results table
+`baas run` SHALL resolve the deployment's results table on every invocation, before the runner-image
+lookup and before any upload, and SHALL pass it to the runner. An unresolvable table SHALL fail before any
+instance is launched. `baas run` SHALL NOT offer an option that discards measurements.
+
+#### Scenario: Unresolvable table fails before provisioning
+- **WHEN** `baas run jmh -- MyBenchmark` is invoked with no deployment configured
+- **THEN** the command exits non-zero and no EC2 instance is launched
+
+#### Scenario: The discard option is gone
+- **WHEN** `baas run --no-database jmh -- MyBenchmark` is invoked
+- **THEN** picocli reports an unknown option and nothing is uploaded or launched
+
+### Requirement: Commands are nouns with verbs, and only a one-noun verb has a top-level alias
+Every canonical command SHALL have the form `baas [admin] <noun> <verb>`. The operator nouns SHALL be
+`jobs` (`run`, `list`, `show`, `diff`, `download`, `terminate`), `results` (`query`) and `config`
+(`show`, `set`, `sync`). A top-level alias SHALL exist only for a verb that belongs to exactly one
+noun, and the aliases SHALL be `baas run` for `baas jobs run` and `baas query` for `baas results
+query`. A noun given without a verb SHALL print its usage and do nothing else. No alias SHALL exist
+for a verb shared by several nouns.
+
+#### Scenario: An alias runs its canonical command
+- **WHEN** `baas run jmh -- MyBenchmark -f 1` is invoked
+- **THEN** it behaves exactly as `baas jobs run jmh -- MyBenchmark -f 1`
+
+#### Scenario: A bare noun prints usage
+- **WHEN** `baas jobs` is invoked with no verb
+- **THEN** its verbs are listed and nothing is executed
+
+#### Scenario: A shared verb has no alias
+- **WHEN** `baas list` or `baas show` is invoked
+- **THEN** picocli reports an unknown command error
+
+### Requirement: Top-level help is grouped by workload
+`baas --help` SHALL list, in order: the shortcuts, each shown with its canonical command (`run = jobs
+run`); the operator commands under a heading naming operator AWS credentials, one line per noun listing
+its verbs; and the deployer commands under a heading naming deployer AWS credentials, one line per noun
+written as its full path (`admin deployment …`, `admin image …`). The help SHALL NOT name configuration
+keys. The first-run guidance SHALL name `admin deployment setup` then `admin image build`.
+
+#### Scenario: The map is visible from the root
+- **WHEN** `baas --help` is rendered
+- **THEN** the three sections appear in that order, and the deployer lines read `admin deployment` and
+  `admin image`
+
+#### Scenario: Aliases show their target
+- **WHEN** `baas --help` is rendered
+- **THEN** the shortcut lines read `run = jobs run` and `query = results query`
+
+### Requirement: Next-step hints are shown to people, never to scripts
+A command MAY end by suggesting at most two follow-up commands, each written to standard error through
+the logger as `→ <purpose>: <exact command>` with real identifiers filled in. Hints SHALL appear only
+when the console is interactive, by the same definition that gates colour, and SHALL never appear on
+standard output. There SHALL be no option to disable them.
+
+#### Scenario: A finished job points to its measurements
+- **WHEN** `baas jobs show <id>` completes on an interactive terminal
+- **THEN** standard error ends with `→ measurements: baas query --job-id <id>`
+
+#### Scenario: Scripts see no hints
+- **WHEN** the same command runs with standard output redirected or without a console
+- **THEN** no hint is written to either stream
+
+### Requirement: A deployment is named only by `--deployment`
+Every command SHALL accept a global, inherited `--deployment <name>` option, and every pointer to a
+concrete deployment SHALL be that option: `teardown --stack-name`, `config sync --name` and
+`--config-path` SHALL NOT exist. The option SHALL never be positional. When the option is absent, a
+command SHALL use the only configured deployment if exactly one is configured, and SHALL fail listing
+the configured names, with the hint `→ choose one: baas config list`, if two or more are. When none is
+configured, every command SHALL fail reporting that no deployment is configured, except
+`baas admin deployment setup`, which derives the name. A name that is not configured SHALL fail
+naming the configured deployments, except in `baas admin deployment setup` and `baas config sync`,
+which create its configuration. No environment variable and no stored setting SHALL select a
+deployment. No command SHALL accept a per-invocation override of the results table or the working
+bucket.
+
+#### Scenario: Teardown is aimed by the global option
+- **WHEN** `baas --deployment baas-123456789012 admin deployment teardown` is invoked on a machine
+  configured for that deployment
+- **THEN** that deployment is the one torn down
+
+#### Scenario: A different deployment is refused
+- **WHEN** `baas --deployment other results query` is given on a machine configured only for `baas-123456789012`
+- **THEN** the command exits non-zero naming `other` and the configured `baas-123456789012`, and calls no AWS API
+
+#### Scenario: Removed pointers are rejected
+- **WHEN** `baas admin deployment teardown --stack-name x`, `baas config sync --name x` or `baas --config-path f.yaml results query` is invoked
+- **THEN** picocli reports an unknown option error
+
+#### Scenario: One deployment needs no flag
+- **WHEN** `baas results query` runs with only `baas-123456789012` configured
+- **THEN** it reads `baas-123456789012`'s results
+
+#### Scenario: Two deployments require the flag
+- **WHEN** `baas run jmh -- MyBenchmark` runs with `baas-123456789012` and `wiktor-dev` configured and no `--deployment`
+- **THEN** the command exits non-zero listing both names and the hint `→ choose one: baas config list`, issues no AWS call and launches nothing
+
+#### Scenario: Teardown is never ambiguous
+- **WHEN** `baas admin deployment teardown --yes` runs with two deployments configured and no `--deployment`
+- **THEN** the command exits non-zero listing both names and deletes nothing
+
+#### Scenario: An environment variable selects nothing
+- **WHEN** `BAAS_DEPLOYMENT=wiktor-dev baas results query` runs with two deployments configured
+- **THEN** the command fails listing both names, as if the variable were unset
+
+#### Scenario: Table and bucket overrides are gone
+- **WHEN** `baas results query --results-table t`, `baas jobs download --results-table t` or `baas jobs download --bucket b` is invoked
+- **THEN** picocli reports an unknown option error
+
+### Requirement: Filter options mean the same on every command
+An option offered by more than one command SHALL mean the same thing on each, and a filter meaningful
+for several commands SHALL exist on each. `--project p` SHALL mean "only project p" everywhere; what a
+command does without it is that command's own default and SHALL be stated in its help.
+
+#### Scenario: A project filter narrows both listings alike
+- **WHEN** `baas jobs list --project p` and `baas results query --project p` are run
+- **THEN** each reports only project `p`'s rows
+
+#### Scenario: The default without a project is stated
+- **WHEN** `baas jobs list --help` and `baas results query --help` are rendered
+- **THEN** each states what it reports when `--project` is absent
+
+### Requirement: Listings share one ordering and paging pipeline
+`baas jobs list` and `baas results query` SHALL apply, in order: their filters, then `--best-per` where
+offered, then sorting, then `--offset <m>`, then `--limit <n>`. The default sort SHALL be newest
+first; `--sort-by <field>` SHALL choose another field and `--asc` SHALL reverse the direction.
+`--limit` SHALL default to 20, `--limit 0` SHALL mean no limit, and a cut SHALL be announced on
+standard error as how many of how many rows were reported.
+
+#### Scenario: The default is the twenty newest
+- **WHEN** 30 rows match and no paging option is given
+- **THEN** the 20 newest are reported, newest first, and standard error reports 20 of 30
+
+#### Scenario: An offset pages backwards in time
+- **WHEN** `--offset 20 --limit 20` is given over 30 matching rows
+- **THEN** the 10 oldest rows are reported
+
+#### Scenario: Another order is chosen explicitly
+- **WHEN** `baas results query --project p --sort-by benchmark --asc` is run
+- **THEN** rows are ordered by benchmark name, ascending
+
+### Requirement: Each deployment has its own configuration file
+The CLI SHALL keep one configuration file per deployment, `~/.baas/deployments/<name>.yaml`, where
+`<name>` is the deployment's prefix. No file SHALL record a default deployment, and no command SHALL
+switch one. `baas admin deployment setup` and `baas config sync` SHALL write the file of the
+deployment they act on, and `baas admin deployment teardown` SHALL delete the file of the deployment
+it tears down once the teardown has completed, whether or not other deployments remain.
+
+#### Scenario: Setup writes the deployment's own file
+- **WHEN** `baas --deployment wiktor-dev admin deployment setup` completes
+- **THEN** `~/.baas/deployments/wiktor-dev.yaml` holds that deployment's prefix and region, and no other file changes
+
+#### Scenario: Teardown removes the file
+- **WHEN** `baas --deployment wiktor-dev admin deployment teardown --yes` completes
+- **THEN** `~/.baas/deployments/wiktor-dev.yaml` no longer exists
+
+#### Scenario: Tearing down the last deployment
+- **WHEN** the only configured deployment is torn down
+- **THEN** no deployment is configured, and the next command other than setup reports "No deployment is configured"
+
+### Requirement: An existing flat configuration is migrated once
+When `~/.baas/config.yaml` holds a `prefix`, the CLI SHALL move its content to
+`~/.baas/deployments/<prefix>.yaml`, renaming the key `aws.profile` to `aws.deployerProfile`, and
+remove `~/.baas/config.yaml` before resolving the deployment. No deployment file SHALL carry
+`aws.profile` afterwards; a deployment file that still carries one SHALL have it renamed the same way
+when read. When the target file already exists, the flat file's content SHALL replace it, since the
+flat file can only have been written later by an older CLI. A `~/.baas/config.yaml` with no `prefix`
+SHALL be left untouched and ignored.
+
+#### Scenario: First run after upgrading
+- **WHEN** a command runs and `~/.baas/config.yaml` holds `prefix: baas-123456789012` and no deployment file exists
+- **THEN** `~/.baas/deployments/baas-123456789012.yaml` holds the same settings, `~/.baas/config.yaml` is gone, and the command addresses that deployment
+
+#### Scenario: The deployer key is renamed in the move
+- **WHEN** the flat file holds `aws.profile: baas-admin` and `aws.operatorProfile: baas-operator`
+- **THEN** the deployment file holds `aws.deployerProfile: baas-admin` and `aws.operatorProfile: baas-operator`, and no `aws.profile`
+
+#### Scenario: An older CLI afterwards fails loudly
+- **WHEN** a CLI from before this change runs after the migration
+- **THEN** it finds no `~/.baas/config.yaml` and reports that no deployment is configured, rather than addressing any deployment
+
+### Requirement: `baas config list` lists the configured deployments
+`baas config list` SHALL print one row per file in `~/.baas/deployments/`, with the columns
+DEPLOYMENT, REGION, OPERATOR PROFILE and DEPLOYER PROFILE, read from the files alone. It SHALL make no
+AWS call and SHALL NOT require any deployment to be selected, so it works with any number of
+configured deployments. `--format json` SHALL print the same rows as a JSON array. With no deployment
+configured it SHALL print that none is configured and exit 0. `list` SHALL NOT be aliased at the top
+level.
+
+#### Scenario: Two deployments listed without credentials
+- **WHEN** `baas config list` runs with `baas-123456789012` and `wiktor-dev` configured and no AWS credentials available
+- **THEN** it prints both rows with their region and profiles, and exits 0
+
+#### Scenario: Machine-readable listing
+- **WHEN** `baas config list --format json` runs
+- **THEN** stdout is a JSON array with one object per deployment and nothing else
+
+#### Scenario: No deployment configured
+- **WHEN** `baas config list` runs with no deployment configured
+- **THEN** it reports that no deployment is configured and exits 0
+
+### Requirement: The deployer profile option is named for the deployer
+`baas config set` SHALL accept `--deployer-aws-profile <name>`, stored as `aws.deployerProfile`, beside
+`--operator-aws-profile`. It SHALL NOT accept `--aws-profile`. `baas config show` SHALL label the two
+profiles as the deployer profile and the operator profile.
+
+#### Scenario: Setting the deployer profile
+- **WHEN** `baas config set --deployer-aws-profile baas-admin` runs
+- **THEN** the selected deployment's file holds `aws.deployerProfile: baas-admin`
+
+#### Scenario: The old option is gone
+- **WHEN** `baas config set --aws-profile baas-admin` runs
+- **THEN** picocli reports an unknown option error and nothing is written

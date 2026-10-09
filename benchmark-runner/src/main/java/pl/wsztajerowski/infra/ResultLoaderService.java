@@ -1,6 +1,5 @@
 package pl.wsztajerowski.infra;
 
-import com.fatboyindustrial.gsonjavatime.Converters;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.reflect.TypeToken;
@@ -22,9 +21,9 @@ public class ResultLoaderService {
     }
 
     public static ResultLoaderService getResultLoaderService() {
-        Gson gson = Converters.registerLocalDateTime(new GsonBuilder()
-                .enableComplexMapKeySerialization()
-                .setVersion(1.0))
+        Gson gson = new GsonBuilder()
+            .enableComplexMapKeySerialization()
+            .setVersion(1.0)
             .create();
         return new ResultLoaderService(gson);
     }

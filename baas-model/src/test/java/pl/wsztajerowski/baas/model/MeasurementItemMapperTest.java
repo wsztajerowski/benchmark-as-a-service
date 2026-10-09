@@ -105,7 +105,7 @@ class MeasurementItemMapperTest {
     void aNaNScoreErrorIsNormalizedToAbsentRatherThanRejectedByDynamoDb() {
         var original = StoredMeasurementFixtures.jmh();
         var withNaNScoreError = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
             Map.of(),
             original.score(), Double.NaN, original.scoreUnit(),
@@ -127,7 +127,7 @@ class MeasurementItemMapperTest {
     void aPositiveInfinityScoreIsNormalizedToAbsentRatherThanRejectedByDynamoDb() {
         var original = StoredMeasurementFixtures.jmh();
         var withInfiniteScore = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
             Map.of(),
             Double.POSITIVE_INFINITY, original.scoreError(), original.scoreUnit(),
@@ -152,7 +152,7 @@ class MeasurementItemMapperTest {
     void aSecondaryMetricWithANonFiniteScoreIsDroppedRatherThanRejectedByDynamoDb() {
         var original = StoredMeasurementFixtures.jmh();
         var withBadSecondaryMetric = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
@@ -182,7 +182,7 @@ class MeasurementItemMapperTest {
     void aSecondaryMetricWithANullUnitIsDroppedRatherThanStoredEmpty() {
         var original = StoredMeasurementFixtures.jmh();
         var withNullUnit = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
@@ -209,7 +209,7 @@ class MeasurementItemMapperTest {
     void secondaryMetricsIsOmittedEntirelyWhenEveryEntryIsUnusable() {
         var original = StoredMeasurementFixtures.jmh();
         var allBad = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
@@ -234,7 +234,7 @@ class MeasurementItemMapperTest {
     void aMeasurementBuiltFromANanosecondPrecisionClockStillRoundTrips() {
         var original = StoredMeasurementFixtures.jmh();
         var withNanosecondPrecisionClock = new StoredMeasurement(
-            original.project(), original.requestId(),
+            original.project(), original.jobId(),
             Instant.parse("2026-08-17T22:07:06.123456789Z"), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
             Map.of(),
@@ -245,5 +245,17 @@ class MeasurementItemMapperTest {
 
         assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(withNanosecondPrecisionClock)))
             .isEqualTo(withNanosecondPrecisionClock);
+    }
+
+    /** A reader that forgot to exclude job items must fail, not render an empty row. */
+    @Test
+    void aJobItemIsRefusedAsAMeasurement() {
+        var job = new HashMap<>(JobItemMapper.key(Instant.parse("2026-10-03T00:00:00Z"), "r-1"));
+        job.putAll(JobItemMapper.identityAttributes(JobItemMapperTest.run()));
+
+        assertThatThrownBy(() -> MeasurementItemMapper.fromItem(job))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("pk=JOB")
+            .hasMessageContaining("must exclude job items");
     }
 }

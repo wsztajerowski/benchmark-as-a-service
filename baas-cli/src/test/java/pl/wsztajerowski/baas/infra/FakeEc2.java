@@ -27,10 +27,14 @@ class FakeEc2 implements Ec2Client {
 
     final Map<String, Image> images = new LinkedHashMap<>();
     final List<String> calls;
+    /** The last describeImages request, so a test can see which owners it asked for. */
+    DescribeImagesRequest lastDescribeImages;
     /** When set, describeImages fails with this error code instead of answering. */
     String describeImagesErrorCode;
     /** When set, deregisterImage fails with this error code. */
     String deregisterErrorCode;
+    /** When set, deregisterImage fails client-side, as a timeout or an expired session does. */
+    RuntimeException deregisterClientFailure;
     /** When set, deleteSnapshot fails with this error code. */
     String deleteSnapshotErrorCode;
 
@@ -50,6 +54,23 @@ class FakeEc2 implements Ec2Client {
                 .awsErrorDetails(AwsErrorDetails.builder().errorCode(describeImagesErrorCode).build())
                 .build();
         }
+        lastDescribeImages = request;
+        if (request.imageIds().isEmpty()) {
+            // A lookup by filter (the parent-release resolution): every filter has to match, and an
+            // empty answer is an empty list, never an error.
+            // Like EC2: a search leaves deprecated images out unless the request asks for them.
+            boolean includeDeprecated = Boolean.TRUE.equals(request.includeDeprecated());
+            return DescribeImagesResponse.builder().images(images.values().stream()
+                .filter(image -> includeDeprecated || image.deprecationTime() == null
+                    || java.time.Instant.parse(image.deprecationTime()).isAfter(java.time.Instant.now()))
+                .filter(image -> request.filters().stream().allMatch(filter -> filter.values().contains(
+                    switch (filter.name()) {
+                        case "name" -> image.name();
+                        case "architecture" -> image.architectureAsString();
+                        default -> throw new IllegalArgumentException("FakeEc2 cannot filter on " + filter.name());
+                    })))
+                .toList()).build();
+        }
         var found = request.imageIds().stream().filter(images::containsKey).map(images::get).toList();
         if (found.isEmpty()) {
             // What EC2 actually returns for a deregistered AMI, and the case `baas run` must
@@ -65,6 +86,9 @@ class FakeEc2 implements Ec2Client {
     @Override
     public DeregisterImageResponse deregisterImage(DeregisterImageRequest request) {
         calls.add("deregisterImage:" + request.imageId());
+        if (deregisterClientFailure != null) {
+            throw deregisterClientFailure;
+        }
         if (deregisterErrorCode != null) {
             throw (Ec2Exception) Ec2Exception.builder()
                 .message(deregisterErrorCode)

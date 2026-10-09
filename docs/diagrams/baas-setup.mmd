@@ -3,67 +3,73 @@ sequenceDiagram
     participant picocli as picocli CommandLine
     participant SC as SetupCommand
     participant STS as AWS STS
+    participant IAM as AWS IAM
     participant S3 as AWS S3
+    participant DDB as AWS DynamoDB
     participant CFSvc as CloudFormationService
     participant CF as AWS CloudFormation
-    participant DDB as AWS DynamoDB
     participant FS as Local Filesystem
 
-    Note over User,FS: baas admin setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas admin setup [--region] [--aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    Note over User,FS: baas admin deployment setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
+    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
     picocli->>SC: parse and bind options into fields
+    Note over SC: validate federation and networking options before anything is loaded --<br/>a partial federation set, or --vpc-id/--subnet-id/--sg-id without<br/>--use-existing-vpc (or the flag without all three) -> exit 2 (U34)
     SC->>FS: ConfigService.load()
-    FS-->>SC: BaasConfig from ~/.baas/config.yaml
-    Note over SC: apply --region / --aws-profile over config defaults
+    FS-->>SC: loadForSetup() -- deployments/D.yaml (or a new one named D), else the only one,<br/>else empty: the name is derived below. Two or more and no D: refused. D validated first, before any AWS call
+    Note over SC: apply --region / --deployer-aws-profile over config defaults
     SC->>STS: sts.getCallerIdentity()
     STS-->>SC: account id
-    Note over SC: prefix = "baas-" + accountId + mode.suffix()<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results"<br/>Nothing about the CALLER reaches the name -- one installation<br/>per account, plus --mode dev. Not user-selectable.
-    opt --use-existing-vpc set
-        Note over SC: require --vpc-id + --subnet-id + --sg-id, else exit 1
+    Note over SC: prefix = D, the only configured one, else "baas-" + accountId<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results" (DeploymentNames)<br/>Nothing about the CALLER reaches the name -- a second<br/>deployment exists only because its name was typed.
+    SC->>S3: BucketProbe -- headBucket(bucketName) here, then again in the region a redirect names
+    Note over SC,S3: absent (404) / reachable in region X (200) / forbidden (403).<br/>From another region, ANY account's bucket answers 301 -- only its own<br/>region tells the caller's bucket (200) from another account's (403)
+    alt reachable in ANOTHER region
+        SC-->>User: the deployment lives there -- setup --region <it>, exit 1, no delete advice (U23)
+    end
+    Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second deployment
+    SC->>IAM: SimulatePrincipalPolicy(critical actions) -- opportunistic preflight
+    alt denied
+        SC-->>User: stderr names the denied actions, STDOUT holds the rendered deployer<br/>policy (setup > policy.json hands it over) -- exit 1, nothing created
     end
     SC->>FS: load /templates/cf-template-core.yaml from the classpath
     FS-->>SC: template body
 
-    rect rgb(255, 244, 230)
-        Note over SC,DDB: Collision pre-check. The bucket AND the results table are both<br/>DeletionPolicy Retain, so a previous teardown can leave either behind,<br/>and CloudFormation would then fail with an opaque error naming neither.<br/>Both are checked: fixing only the bucket then fails again on the table.
-        SC->>CF: describeStacks(stackName) -- stackExists?
-        SC->>S3: headBucket(bucketName) -- bucketExists?
-        SC->>DDB: describeTable(tableName) -- tableExists?
-        alt stack absent BUT bucket present
-            SC-->>User: explain the retained bucket, print recovery commands, exit 1
-        else stack absent BUT table present
-            SC-->>User: explain the retained table, print recovery commands, exit 1
+    SC->>CF: describeStacks(stackName) -- status?
+    alt stack absent, or ROLLBACK_COMPLETE (create)
+        SC->>DDB: describeTable(prefix-results) -- exists?
+        alt bucket reachable HERE, bucket forbidden, or table exists
+            SC-->>User: name the leftover and its removal (aws s3 rb / aws dynamodb delete-table),<br/>or for another account's bucket ask for another --deployment.<br/>Exit 1 -- nothing created, nothing deleted, a rolled-back stack left as it is (R16)
+        end
+        opt status ROLLBACK_COMPLETE
+            Note over SC: a failed first create: no resources, no config file written
+            SC->>CFSvc: deleteStack(stack) -- waits for DELETE_COMPLETE, then the create below (R1)
         end
     end
-
-    SC->>CF: describeStacks(stackName) -- exists?
-    alt stack exists (update)
+    alt stack exists and updatable (update)
         Note over SC: networking params sent only if this invocation named them,<br/>and refused if they differ from the deployed values.<br/>Federation params carried forward unless named or revoked.
+        Note over SC: image parameters: only those the deployed stack lacks.<br/>Base, parent and extension are carried forward, so a plain<br/>setup never reverts an image or drops an extension
         SC->>CFSvc: updateStackParameters(stack, template, changed params)
-        alt status ROLLBACK_COMPLETE
-            CFSvc-->>User: refuse -- delete it first with<br/>baas admin teardown --stack-name X --yes
-        else updatable
-            CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
-            alt nothing changed
-                CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
-            else changes applied
-                CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
-            end
+        CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
+        alt nothing changed
+            CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
+        else changes applied
+            CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
         end
-    else stack absent (create)
+    else create
+        Note over SC: every image parameter is planned (parent resolved by<br/>DescribeImages in this region), never left at a template placeholder
         SC->>CFSvc: createStack(stack, template, explicit params incl. federation or empty)
         CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
         CFSvc->>CF: waiter.waitUntilStackCreateComplete()
     end
 
     SC->>CF: describeStacks() -- OperatorRoleArn output, to print only
-    SC->>FS: ConfigService.save() -- prefix, aws.profile, resolved aws.region
+    SC->>FS: ConfigService.save() -- deployments/<prefix>.yaml: prefix, aws.deployerProfile, resolved aws.region
+    SC->>FS: write ~/.baas/runner-image-extension.yaml (beside deployments/, never in it), only if absent
     Note over SC,FS: nothing derivable or resolvable is stored
 
     alt created
-        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-profile NAME<br/>Next: baas admin build-image (~15 min)
+        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-aws-profile NAME<br/>Next: baas admin image build (~15 min)
     else updated
-        SC-->>User: "Installation <prefix> is deployed. Operator role: <arn>"
+        SC-->>User: "Deployment <prefix> is deployed. Operator role: <arn>"
     end
 
     SC-->>User: exit 0

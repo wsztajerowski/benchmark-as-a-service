@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.infra;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
@@ -12,7 +13,7 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * Checks, before {@code baas admin setup} spends any time, that the caller can actually do the
+ * Checks, before {@code baas admin deployment setup} spends any time, that the caller can actually do the
  * job — and when it cannot, prints the exact policy to attach.
  *
  * <p>This is an affordance, not a control: anyone holding the deployer policy can call IAM
@@ -89,25 +90,26 @@ public class DeployerPreflight {
      * resource-scoped, the shape {@code SimulatePrincipalPolicy} can actually answer.
      */
     static Map<String, String> criticalActionsToResources(String accountId, String region, String prefix) {
+        DeploymentNames names = DeploymentNames.of(prefix);
         Map<String, String> actionToResource = new LinkedHashMap<>();
         actionToResource.put("cloudformation:CreateStack",
-            "arn:aws:cloudformation:%s:%s:stack/%s/*".formatted(region, accountId, prefix));
-        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::" + prefix);
+            "arn:aws:cloudformation:%s:%s:stack/%s/*".formatted(region, accountId, names.stack()));
+        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::" + names.bucket());
         // The runner AMI pointer, not the Mongo connection string this used to probe: since the
         // cutover, setup writes no Mongo parameter and the table name travels in user-data. The
-        // AMI pointer is the one SSM write the deployer still performs (from `admin build-image`),
+        // AMI pointer is the one SSM write the deployer still performs (from `admin image build`),
         // so probing it here still catches a stale attached policy before the long operation.
         actionToResource.put("ssm:PutParameter",
-            "arn:aws:ssm:%s:%s:parameter/%s/runner/ami-id".formatted(region, accountId, prefix));
+            "arn:aws:ssm:%s:%s:parameter%s".formatted(region, accountId, names.amiPointer()));
         actionToResource.put("iam:GetRole",
-            "arn:aws:iam::%s:role/%s-role-runner".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s".formatted(accountId, names.runnerRole()));
         actionToResource.put("iam:CreateRole",
-            "arn:aws:iam::%s:role/%s-role-operator".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s".formatted(accountId, names.operatorRole()));
         // dynamodb:CreateTable is unconditioned and resource-scoped, same as the five above — a
         // deployer running with a stale attached policy previously passed preflight only to have
         // the real stack update fail partway on this action and roll back.
         actionToResource.put("dynamodb:CreateTable",
-            "arn:aws:dynamodb:%s:%s:table/%s-results".formatted(region, accountId, prefix));
+            "arn:aws:dynamodb:%s:%s:table/%s".formatted(region, accountId, names.resultsTable()));
         // Same lesson, same shape, and it cost a stuck stack to learn twice. Deploying a core
         // stack with federation parameters changes OperatorRole two ways, through two different
         // IAM APIs, and BOTH grants are newer than any policy attached before they existed:
@@ -121,9 +123,9 @@ public class DeployerPreflight {
         // state needs ContinueUpdateRollback and a human. Probe every action an update of this
         // role actually issues, not just the one that motivated the change.
         actionToResource.put("iam:UpdateAssumeRolePolicy",
-            "arn:aws:iam::%s:role/%s-role-operator".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s".formatted(accountId, names.operatorRole()));
         actionToResource.put("iam:UpdateRole",
-            "arn:aws:iam::%s:role/%s-role-operator".formatted(accountId, prefix));
+            "arn:aws:iam::%s:role/%s".formatted(accountId, names.operatorRole()));
         return actionToResource;
     }
 

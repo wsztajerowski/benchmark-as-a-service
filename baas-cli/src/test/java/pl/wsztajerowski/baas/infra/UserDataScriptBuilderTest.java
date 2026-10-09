@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas.infra;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
+import pl.wsztajerowski.baas.model.JobStatus;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 
@@ -28,18 +30,20 @@ class UserDataScriptBuilderTest {
     }
 
     private String script(Map<String, String> runnerTags) {
-        return script(runnerTags, "baas-a1b2c3d4-results", false);
+        return script(runnerTags, "baas-a1b2c3d4-results");
     }
 
-    private String script(Map<String, String> runnerTags, String resultsTable, boolean noDatabase) {
+    private static final String JOB_SORT_KEY = "2026-07-24T12:00:00.000Z#20260724T120000000Z-a3f9c21b";
+
+    private String script(Map<String, String> runnerTags, String resultsTable) {
         String encoded = new UserDataScriptBuilder().build(
             "eu-central-1", "baas-a1b2c3d4", "jmh",
             "20260724T120000000Z-a3f9c21b",
-            "runs/lynx-journal/20260724T120000000Z-a3f9c21b",
+            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b",
             "2026-07-24T12:00:00Z",
-            "runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
+            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
             7200, 7500,
-            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, noDatabase,
+            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, JOB_SORT_KEY,
             List.of("MyBenchmark", "-f", "1"), runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
@@ -99,7 +103,7 @@ class UserDataScriptBuilderTest {
     void watchdogShipsTheLogBeforeHardKillingTheInstance() {
         String script = script();
 
-        int watchdogStart = script.indexOf("# Layer 1: background watchdog");
+        int watchdogStart = script.indexOf("sleep ${WALL_CLOCK_HARD_KILL}");
         int watchdogTerminate = script.indexOf("terminate-instances", watchdogStart);
         int uploadInWatchdog = script.indexOf("cloud-init-output.log", watchdogStart);
 
@@ -118,7 +122,7 @@ class UserDataScriptBuilderTest {
     void watchdogStartsImmediatelyAfterTheInstanceIdResolves() {
         String script = script();
 
-        assertThat(script.indexOf("WATCHDOG_PID=$!"))
+        assertThat(script.indexOf("\n) &\n"))
             .as("nothing that can fail may sit between resolving INSTANCE_ID and arming the watchdog")
             .isGreaterThan(script.indexOf("INSTANCE_ID=$("))
             .isLessThan(script.indexOf("environment.json"));
@@ -126,7 +130,7 @@ class UserDataScriptBuilderTest {
 
     /**
      * Under {@code set -e} a failed IMDSv2 fetch exits before the watchdog starts and orphans a
-     * paid instance. Errors are handled by exit code and the run-status sentinel instead.
+     * paid instance. Errors are handled by exit code and the job item's status instead.
      */
     @Test
     void hasNoSetE() {
@@ -138,7 +142,7 @@ class UserDataScriptBuilderTest {
     /**
      * cloud-init starts the script in /, and the runner walks the tree below its cwd looking
      * for .log files to upload. From / that walks the entire root filesystem and aborts on
-     * /proc entries that disappear mid-walk, which fails the run after the benchmark has
+     * /proc entries that disappear mid-walk, which fails the job after the benchmark has
      * already completed.
      */
     @Test
@@ -167,8 +171,8 @@ class UserDataScriptBuilderTest {
         List<String> params = List.of("MyBenchmark", "-p", "pattern=a$b", "-jvmArgs", "-Dx=\"q\" `id`",
             "$(touch " + marker + ")", "it's", "two words", "back\\slash", "a;b");
         String encoded = new UserDataScriptBuilder().build(
-            "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "runs/p/id", "2026-07-24T12:00:00Z",
-            "runs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", false,
+            "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "jobs/p/id", "2026-07-24T12:00:00Z",
+            "jobs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", JOB_SORT_KEY,
             params, Map.of());
 
         List<String> elements = evaluateArray(
@@ -203,14 +207,13 @@ class UserDataScriptBuilderTest {
         String script = script();
 
         assertThat(script).contains("export RESULTS_TABLE='baas-a1b2c3d4-results'");
-        assertThat(script).contains("STORE_ARGS=(--results-table \"${RESULTS_TABLE}\")");
-        assertThat(script).contains("\"${STORE_ARGS[@]}\"");
+        assertThat(script).contains("--results-table  \"${RESULTS_TABLE}\" \\");
     }
 
     /**
      * Not cosmetic: while this fetch existed the runner picked up MONGO_CONNECTION_STRING from
      * the environment and wrote to Atlas, so a leftover line here would send measurements to a
-     * store the CLI can no longer read — and the run would still report success.
+     * store the CLI can no longer read — and the job would still report success.
      */
     @Test
     void fetchesNoMongoConnectionStringFromSsm() {
@@ -224,47 +227,297 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * Both branches are always present in the script text — which one runs is decided at boot by
-     * these two exports, so they are what the CLI's choice actually reduces to. That the right
-     * branch is taken is asserted by executing it, below.
+     * Every job names the table: its status is recorded there too, so there is no job without one,
+     * and the runner is never told to discard measurements.
      */
     @Test
-    void selectsTheNoOpStoreOnlyWhenNoDatabaseIsAskedFor() {
-        assertThat(script()).contains("export NO_DATABASE='false'");
+    void alwaysPassesTheResultsTableAndNeverDiscards() {
+        String script = script();
+        assertThat(script).doesNotContain("NO_DATABASE").doesNotContain("--no-database");
+        assertThat(script.lines().filter(l -> l.strip().startsWith("--results-table")))
+            .as("the runner is named exactly one store, unconditionally")
+            .hasSize(1);
+    }
 
-        String discarding = script(Map.of(), null, true);
-        assertThat(discarding).contains("export NO_DATABASE='true'");
-        assertThat(discarding).contains("export RESULTS_TABLE=''");
+    // ─── Job status on the job item ──────────────────────────────────────────────
+
+    @Test
+    void writesNoJobStatusObjectToS3() {
+        assertThat(script()).doesNotContain("/run-status");
+    }
+
+    /** Built by ResultKeys in the CLI; the shell must not rebuild it from CREATED_AT. */
+    @Test
+    void theJobItemKeyArrivesVerbatim() {
+        String script = script();
+
+        assertThat(script).contains("export JOB_SORT_KEY='" + JOB_SORT_KEY + "'");
+        assertThat(script).contains(
+            "--key '{\"pk\":{\"S\":\"JOB\"},\"sk\":{\"S\":\"'\"${JOB_SORT_KEY}\"'\"}}'");
+        assertThat(script).doesNotContain("${CREATED_AT}#");
+    }
+
+    /** The shell's guard is the CLI's own expression and values, so "terminal" means one thing. */
+    @Test
+    void theTerminalGuardIsTheCLIsOwn() {
+        String script = script();
+
+        assertThat(script).contains("export JOB_STATUS_GUARD='" + pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder.NOT_TERMINAL + "'");
+        assertThat(script).contains("--condition-expression \"attribute_exists(pk) AND ${JOB_STATUS_GUARD}\"");
+        // Every terminal status the model defines reaches the shell's guard, and nothing else does.
+        String values = UserDataScriptBuilder.guardValues();
+        JobStatus.EXACT_TERMINAL.forEach(status -> assertThat(values).contains("{\"S\":\"" + status + "\"}"));
+        assertThat(values).contains("\":failedPrefix\":{\"S\":\"failed:\"}");
+        assertThat(values.split("\\},")).hasSize(JobStatus.EXACT_TERMINAL.size() + 1);
+        assertThat(DynamoDbJobRecorder.NOT_TERMINAL_VALUES.keySet())
+            .allSatisfy(placeholder -> assertThat(DynamoDbJobRecorder.NOT_TERMINAL).contains(placeholder));
     }
 
     /**
-     * The runner selects its adapter from exactly one of these, and rejects both-or-neither. The
-     * script decides at boot which single argument it passes, so the two can never arrive
-     * together however the CLI is invoked.
+     * The watchdog is a forked subshell, which sees only the functions defined before the fork:
+     * defined after it, `job_status timed-out` would be "command not found" on exactly the path
+     * it exists for — and {@code bash -n} would not notice.
      */
     @Test
-    void passesExactlyOneStoreSelectionArgument() throws Exception {
-        for (boolean noDatabase : new boolean[]{false, true}) {
-            String script = script(Map.of(), noDatabase ? null : "baas-a1b2c3d4-results", noDatabase);
-            String harness = script.lines()
-                .filter(l -> l.startsWith("export RESULTS_TABLE=") || l.startsWith("export NO_DATABASE="))
-                .collect(java.util.stream.Collectors.joining("\n"))
-                + "\n"
-                + script.substring(script.indexOf("if [[ \"${NO_DATABASE}\""),
-                    script.indexOf("# Layer 2"))
-                + "for element in \"${STORE_ARGS[@]}\"; do printf '%s\\n' \"$element\"; done\n";
+    void jobStatusIsDefinedBeforeTheWatchdogForks() {
+        String script = script();
 
-            Process process = new ProcessBuilder("bash", "-c", harness).start();
-            String stdout = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
-            assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
-            assertThat(process.exitValue()).isZero();
+        assertThat(script.indexOf("job_status() {"))
+            .isPositive()
+            .isLessThan(script.indexOf("INSTANCE_ID=$("))
+            .isLessThan(script.indexOf("sleep ${WALL_CLOCK_HARD_KILL}"));
+    }
 
-            assertThat(stdout.lines().toList())
-                .as("--no-database=" + noDatabase)
-                .isEqualTo(noDatabase
-                    ? List.of("--no-database")
-                    : List.of("--results-table", "baas-a1b2c3d4-results"));
+    @Test
+    void recordsRunningOnlyAfterTheWatchdogStarts() {
+        String script = script();
+
+        assertThat(script.indexOf("job_status running"))
+            .isGreaterThan(script.indexOf("\n) &\n"))
+            .isLessThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
+    }
+
+    @Test
+    void recordsTheOutcomeWhereTheSentinelUsedToBe() {
+        String script = script();
+        int benchmark = script.indexOf("java -jar /app/benchmark-runner.jar");
+
+        assertThat(script.indexOf("job_status \"${STATUS}\"", benchmark))
+            .isPositive()
+            .isLessThan(script.lastIndexOf("cloud-init-output.log"));
+    }
+
+    /** The runner's Java SDK reads the same variables; exporting them would change its retries. */
+    @Test
+    void retrySettingsApplyToTheStatusCommandOnly() {
+        String script = script();
+
+        assertThat(script.lines().map(String::strip))
+            .noneMatch(l -> l.startsWith("export AWS_MAX_ATTEMPTS") || l.startsWith("export AWS_RETRY_MODE"));
+        assertThat(script).contains(
+            "err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS=\"${attempts}\" aws dynamodb update-item");
+        assertThat(script).contains("local status=\"$1\" attempts=\"${2:-3}\"");
+        // 2 attempts x (5 s connect + 10 s read) + up to 2 s of standard-mode backoff = ~32 s for the
+        // one write on the path to the JVM, inside the 60 s minimum watchdog margin. Three attempts
+        // would be ~51 s, leaving the boot, the manifest and four downloads under 10 s.
+        assertThat(script).contains("--cli-connect-timeout 5 --cli-read-timeout 10");
+        assertThat(script).contains("job_status running 2\n");
+    }
+
+    /**
+     * Executes the rendered block after the {@code running} write against a stub {@code aws}. A
+     * refusal — the job was cancelled while its instance was launching, or has no item — must stop
+     * the instance before the benchmark: the CLI may have cancelled it without finding the instance,
+     * and nothing else would then end it before its timeout.
+     */
+    @Test
+    void aRefusedRunningWriteShipsTheLogAndTerminatesInsteadOfRunningTheBenchmark() throws Exception {
+        String block = runningWriteBlock(script());
+
+        List<String> calls = runAgainstStubAws(script(), "conditional",
+            "INSTANCE_ID=i-0abc\n" + block + "\necho benchmark-started >> \"$STUB_CALLS\"\n");
+
+        // The stub refuses every call, the terminate included, so the shutdown fallback follows it.
+        assertThat(calls).hasSize(4).doesNotContain("benchmark-started");
+        assertThat(calls.get(0)).startsWith("dynamodb update-item").contains("running");
+        assertThat(calls.get(1)).startsWith("s3 cp /var/log/cloud-init-output.log");
+        assertThat(calls.get(2)).startsWith("ec2 terminate-instances").contains("i-0abc");
+        assertThat(calls.get(3)).isEqualTo("shutdown -h now");
+    }
+
+    /** Only a refusal stops the job; a table that cannot be reached is no reason to waste the instance. */
+    @Test
+    void aRecordedOrFailedRunningWriteLetsTheBenchmarkStart() throws Exception {
+        String block = runningWriteBlock(script());
+
+        for (String mode : List.of("ok", "fail")) {
+            List<String> calls = runAgainstStubAws(script(), mode,
+                "INSTANCE_ID=i-0abc\n" + block + "\necho benchmark-started >> \"$STUB_CALLS\"\n");
+
+            assertThat(calls).as(mode).hasSize(2);
+            assertThat(calls.get(0)).as(mode).startsWith("dynamodb update-item");
+            assertThat(calls.get(1)).as(mode).isEqualTo("benchmark-started");
         }
+    }
+
+    private static String runningWriteBlock(String script) {
+        int start = script.indexOf("job_status running 2");
+        assertThat(start).as("running write").isPositive();
+        return script.substring(start, script.indexOf("\nfi\n", start) + "\nfi\n".length());
+    }
+
+    /**
+     * EC2 rejects user-data over 16 KB raw, and every such run ends {@code launch-failed}. A long
+     * {@code -p} sweep or a large {@code --tag options=...} is what grows it, so this renders an
+     * outsized but plausible run and holds it well under the limit.
+     */
+    @Test
+    void aLargeJobStaysWellUnderTheUserDataLimit() {
+        Map<String, String> tags = new java.util.LinkedHashMap<>();
+        tags.put("project", "benchmark-as-a-service");
+        tags.put("branch", "feature/some-fairly-long-branch-name-for-a-change");
+        tags.put("commit", "0123456789abcdef0123456789abcdef01234567");
+        tags.put("source", "ci");
+        tags.put("exclude_from_results", "true");
+        tags.put("options", "-prof async:event=cpu;output=flamegraph;dir=/app/async-output -jvmArgs -Xmx4g");
+        List<String> params = List.of("pl.wsztajerowski.SomeBenchmark.measure", "-f", "3", "-wi", "5", "-i", "10",
+            "-p", "size=1,10,100,1000,10000,100000", "-p", "implementation=synchronized,reentrant,stamped,atomic",
+            "-p", "threads=1,2,4,8,16", "-jvmArgs", "-XX:+UseG1GC -Xms4g -Xmx4g");
+        String encoded = new UserDataScriptBuilder().build(
+            "eu-central-1", "baas-381492019823", "jmh-with-async",
+            "20260724T120000000Z-a3f9c21b",
+            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b",
+            "2026-07-24T12:00:00.123Z",
+            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
+            7200, 7500, "1.2.0", "ami-0ae60d9d990dc00df", "releases/6.1.0/benchmark-runner.jar",
+            "baas-381492019823-results", JOB_SORT_KEY, params, tags);
+        int rawBytes = Base64.getDecoder().decode(encoded).length;
+
+        assertThat(rawBytes).isLessThan(UserDataScriptBuilder.USER_DATA_LIMIT_BYTES * 3 / 4);
+    }
+
+    /** The comments are most of the source's size, and the instance has no use for them. */
+    @Test
+    void commentLinesAreNotRendered() {
+        assertThat(script().lines().skip(2).map(String::stripLeading))
+            .noneMatch(line -> line.startsWith("#"));
+    }
+
+    /**
+     * Executes the rendered watchdog subshell itself, with its delay set to zero and a stub
+     * {@code aws} that records each call. Proves the function is visible inside the forked
+     * subshell and that the outcome is recorded before the log upload and the termination.
+     */
+    @Test
+    void theWatchdogRecordsTimedOutBeforeShippingTheLogAndTerminating() throws Exception {
+        String script = script();
+        int start = script.indexOf("(\n  sleep ${WALL_CLOCK_HARD_KILL}");
+        int end = script.indexOf(") &", start) + ") &".length();
+        assertThat(start).as("watchdog block").isPositive();
+
+        List<String> calls = runAgainstStubAws(script, "ok",
+            "WALL_CLOCK_HARD_KILL=0\nINSTANCE_ID=i-0abc\n" + script.substring(start, end) + "\nwait\n");
+
+        assertThat(calls).hasSize(3);
+        assertThat(calls.get(0)).startsWith("dynamodb update-item").contains("timed-out").contains("i-0abc");
+        assertThat(calls.get(1)).startsWith("s3 cp /var/log/cloud-init-output.log");
+        assertThat(calls.get(2)).startsWith("ec2 terminate-instances");
+    }
+
+    /**
+     * The watchdog is the last termination layer, so nothing disarms it, and a self-termination
+     * request that fails falls back to an OS shutdown, which the launch's shutdown behaviour turns
+     * into a termination (R3, R10).
+     */
+    @Test
+    void nothingDisarmsTheWatchdogAndEverySelfTerminationFallsBackToAShutdown() {
+        String script = script();
+
+        assertThat(script).doesNotContainPattern("\\bkill \\$").doesNotContain("WATCHDOG_PID");
+        assertThat(script.lines().filter(l -> l.contains("terminate-instances")).toList())
+            .hasSize(3)
+            .allSatisfy(l -> assertThat(l.strip()).endsWith("|| shutdown -h now"));
+    }
+
+    @Test
+    void aWatchdogWhoseTerminateFailsShutsTheInstanceDown() throws Exception {
+        String script = script();
+        int start = script.indexOf("(\n  sleep ${WALL_CLOCK_HARD_KILL}");
+        int end = script.indexOf(") &", start) + ") &".length();
+
+        List<String> calls = runAgainstStubAws(script, "fail",
+            "WALL_CLOCK_HARD_KILL=0\nINSTANCE_ID=i-0abc\n" + script.substring(start, end) + "\nwait\n");
+
+        assertThat(calls).last().asString().startsWith("shutdown -h now");
+        assertThat(calls.get(calls.size() - 2)).startsWith("ec2 terminate-instances");
+    }
+
+    @Test
+    void aRefusedStatusWriteIsExpectedAndAFailedOneIsLoggedButNeitherStopsTheScript() throws Exception {
+        String script = script();
+
+        assertThat(jobStatusOutput(script, "ok")).contains("job_status: completed").contains("after");
+        assertThat(jobStatusOutput(script, "conditional"))
+            .contains("job_status: completed not recorded: status already terminal, or no job item at this key")
+            .contains("after");
+        assertThat(jobStatusOutput(script, "fail"))
+            .contains("job_status: completed not recorded (exit 255): boom")
+            .contains("after");
+    }
+
+    /** Without an instance id (IMDS failed) the write still lands, just without that attribute. */
+    @Test
+    void theStatusWriteWorksWithoutAnInstanceId() throws Exception {
+        List<String> calls = runAgainstStubAws(script(), "ok", "INSTANCE_ID=\njob_status running\n");
+
+        assertThat(calls).singleElement().asString()
+            .contains("SET #status = :s").doesNotContain("instanceId");
+    }
+
+    private String jobStatusOutput(String script, String mode) throws Exception {
+        Path log = tempDir.resolve("out-" + mode);
+        runAgainstStubAws(script, mode, "INSTANCE_ID=i-0abc\njob_status completed > " + log + "\necho after >> " + log + "\n");
+        return Files.readString(log);
+    }
+
+    /**
+     * Runs the script's exports, its {@code job_status} definition and {@code body} under bash,
+     * with {@code aws} replaced by a stub that appends its arguments to a file and then succeeds,
+     * fails a condition, or fails outright.
+     */
+    private List<String> runAgainstStubAws(String script, String mode, String body) throws Exception {
+        Path calls = tempDir.resolve("calls-" + System.nanoTime());
+        Path bin = Files.createDirectories(tempDir.resolve("bin-" + System.nanoTime()));
+        Path aws = bin.resolve("aws");
+        Files.writeString(aws, """
+            #!/usr/bin/env bash
+            printf '%s\\n' "$*" >> "$STUB_CALLS"
+            case "$STUB_MODE" in
+              ok) exit 0 ;;
+              conditional) echo "An error occurred (ConditionalCheckFailedException) when calling the UpdateItem operation" >&2; exit 254 ;;
+              *) echo "boom" >&2; exit 255 ;;
+            esac
+            """);
+        assertThat(aws.toFile().setExecutable(true)).isTrue();
+        Path shutdown = bin.resolve("shutdown");
+        Files.writeString(shutdown, """
+            #!/usr/bin/env bash
+            printf 'shutdown %s\\n' "$*" >> "$STUB_CALLS"
+            """);
+        assertThat(shutdown.toFile().setExecutable(true)).isTrue();
+        String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
+        String function = script.substring(script.indexOf("job_status() {"), script.indexOf("\n}\n", script.indexOf("job_status() {")) + 3);
+
+        ProcessBuilder builder = new ProcessBuilder("bash", "-c", exports + function + body)
+            .redirectErrorStream(true);
+        builder.environment().put("PATH", bin + ":" + System.getenv("PATH"));
+        builder.environment().put("STUB_CALLS", calls.toString());
+        builder.environment().put("STUB_MODE", mode);
+        Process running = builder.start();
+        String output = new String(running.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(running.waitFor(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(running.exitValue()).as("bash said: " + output).isZero();
+        return Files.exists(calls) ? Files.readAllLines(calls) : List.of();
     }
 
     // ─── Environment manifest ────────────────────────────────────────────────────
@@ -275,7 +528,7 @@ class UserDataScriptBuilderTest {
         int benchmarkStart = script.indexOf("java -jar /app/benchmark-runner.jar");
 
         assertThat(script.indexOf("${RESULT_PATH}/environment.json"))
-            .as("a run that crashes must still leave a record of what it crashed on")
+            .as("a job that crashes must still leave a record of what it crashed on")
             .isNotNegative()
             .isLessThan(benchmarkStart);
         assertThat(script.indexOf("${RESULT_PATH}/packages.txt"))
@@ -295,7 +548,7 @@ class UserDataScriptBuilderTest {
             script.indexOf("java -jar /app/benchmark-runner.jar"));
 
         assertThat(betweenUploadAndBenchmark)
-            .as("a conditional here would lose the manifest on exactly the runs that need it")
+            .as("a conditional here would lose the manifest on exactly the jobs that need it")
             .doesNotContain("exit ")
             .doesNotContain("EXIT_CODE");
     }
@@ -303,10 +556,10 @@ class UserDataScriptBuilderTest {
     @Test
     void manifestRecordsWhatTheImageCannotControl() {
         assertThat(script())
-            .as("instance type and CPU model are properties of the run, not of the image, and "
+            .as("instance type and CPU model are properties of the job, not of the image, and "
                 + "they move a score further than a JDK patch level does")
             .contains("\"instanceType\": \"${INSTANCE_TYPE}\"")
-            .contains("\"cpuModel\": \"${CPU_MODEL}\"");
+            .contains("\"model\": \"${CPU_MODEL}\"");
     }
 
     @Test
@@ -320,7 +573,7 @@ class UserDataScriptBuilderTest {
 
     /**
      * The manifest is assembled by shell interpolation, so a stray quote or a missing comma
-     * produces a file that only fails when someone runs `baas env diff` weeks later. Substituting
+     * produces a file that only fails when someone runs `baas jobs diff` weeks later. Substituting
      * representative values and parsing the result catches that here.
      */
     @Test
@@ -345,9 +598,16 @@ class UserDataScriptBuilderTest {
         assertThatCode(() -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> parsed = new ObjectMapper().readValue(resolved, Map.class);
-            assertThat(parsed)
-                .containsKeys("schemaVersion", "imageVersion", "amiId", "instanceType",
-                    "cpuModel", "kernelRelease", "jvmVersion", "perfEventParanoid");
+            assertThat(parsed).as("the environment only, in seven groups, and no job identity")
+                .containsOnlyKeys("schemaVersion", "machine", "cpu", "memory", "os", "jvm", "tools", "tunables");
+            assertThat((Map<String, Object>) parsed.get("machine")).containsOnlyKeys("imageVersion", "amiId", "instanceType");
+            assertThat((Map<String, Object>) parsed.get("cpu")).containsOnlyKeys("model", "arch", "cores", "threadsPerCore", "maxMhz");
+            assertThat((Map<String, Object>) parsed.get("memory")).containsOnlyKeys("totalKb", "swapTotalKb");
+            assertThat((Map<String, Object>) parsed.get("os")).containsOnlyKeys("version", "kernelRelease");
+            assertThat((Map<String, Object>) parsed.get("jvm")).containsOnlyKeys("version", "vendor", "vendorVersion", "name");
+            assertThat((Map<String, Object>) parsed.get("tools")).containsOnlyKeys("perf", "asyncProfiler");
+            assertThat((Map<String, Object>) parsed.get("tunables"))
+                .containsOnlyKeys("perfEventParanoid", "kptrRestrict", "transparentHugepages");
         }).doesNotThrowAnyException();
     }
 
@@ -394,7 +654,7 @@ class UserDataScriptBuilderTest {
     //
     // These three tags are captured as shell variables ON the instance, the same rule that
     // already governs imageVersion/instanceType — a result's tags must never be able to disagree
-    // with that same run's environment.json. `jdk` is derived from JVM_VERSION_RAW, the SAME
+    // with that same job's environment.json. `jdk` is derived from JVM_VERSION_RAW, the SAME
     // single `java -version` observation the manifest's escaped jvmVersion is built from, not a
     // second independent call.
 
@@ -429,12 +689,70 @@ class UserDataScriptBuilderTest {
 
         assertThat(script)
             .as("a tag with no manifest counterpart breaks the observed-values invariant")
-            .contains("\"cpuArch\": \"${CPU_ARCH}\"");
+            .contains("\"arch\": \"${CPU_ARCH}\"")
+            .contains("--tag \"cpuArch=${CPU_ARCH}\"");
     }
 
     @Test
     void manifestSchemaVersionIsBumpedForTheNewField() {
-        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION).isEqualTo(3);
+        assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION)
+            .as("4 added jvmVendor, jvmVendorVersion and jvmName; 5 renamed requestId to jobId; "
+                + "6 grouped the environment and dropped the job's identity, region and AWS CLI version")
+            .isEqualTo(6);
+    }
+
+    // ─── JVM vendor ──────────────────────────────────────────────────────────────
+    //
+    // An image extension may replace Corretto with another vendor's build of the same version, and
+    // the `java -version` banner names only the version. The vendor is observed once, recorded in
+    // the manifest, and tagged from the same variable.
+
+    @Test
+    void theManifestRecordsWhoBuiltTheJvm() {
+        assertThat(script())
+            .contains("\"vendor\": \"${JVM_VENDOR}\"")
+            .contains("\"vendorVersion\": \"${JVM_VENDOR_VERSION}\"")
+            .contains("\"name\": \"${JVM_NAME}\"")
+            .as("a vendor string can contain a double quote or backslash")
+            .contains("JVM_VENDOR=$(json_escape \"$JVM_VENDOR_RAW\")");
+    }
+
+    @Test
+    void theVendorTagIsTheObservedValue() {
+        String script = script();
+
+        assertThat(script.indexOf("--tag \"jvmVendor=${JVM_VENDOR_RAW}\""))
+            .as("tagged from the same capture the manifest uses, after it is made")
+            .isGreaterThan(script.indexOf("JVM_VENDOR_RAW=$("))
+            .isGreaterThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
+        assertThat(script.split("-XshowSettings:properties", -1))
+            .as("one JVM call for every property, not one per field")
+            .hasSize(2);
+    }
+
+    @Test
+    void jvmPropertiesArePickedOutByTheirExactKey() throws Exception {
+        String function = script().lines()
+            .filter(line -> line.strip().startsWith("jvm_prop()"))
+            .findFirst().orElseThrow().strip();
+        String props = """
+            Property settings:
+                java.vendor = Eclipse Adoptium
+                java.vendor.url = https://adoptium.net/
+                java.vendor.version = Temurin-25.0.4+7
+                java.vm.name = OpenJDK 64-Bit Server VM
+            openjdk version "25.0.4" 2026-07-15
+            """;
+        String probe = "JVM_PROPS=$(cat <<'P'\n" + props + "P\n)\n" + function + "\n"
+            + "printf '%s|%s|%s' \"$(jvm_prop java.vendor)\" \"$(jvm_prop java.vendor.version)\" \"$(jvm_prop java.vm.name)\"\n";
+
+        var process = new ProcessBuilder("bash", "-c", probe).redirectErrorStream(true).start();
+        String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+
+        assertThat(process.waitFor()).isZero();
+        assertThat(output)
+            .as("java.vendor must not match java.vendor.url or java.vendor.version")
+            .isEqualTo("Eclipse Adoptium|Temurin-25.0.4+7|OpenJDK 64-Bit Server VM");
     }
 
     @Test
@@ -633,19 +951,18 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * environment.json is written before the benchmark, so it is what a run that died early
-     * leaves behind — and it is what buys back the self-description the opaque run id gave up.
+     * The job's identity lives on its job item and tags; the manifest is the environment only, so
+     * `jobs diff` can compare every field without an exclusion list.
      */
     @Test
-    void theManifestIdentifiesARunThatStoredNothing() {
+    void theManifestCarriesNoJobIdentity() {
         String script = script(Map.of("project", "lynx-journal", "branch", "main"));
+        String manifest = script.substring(script.indexOf("cat > /app/environment.json"),
+            script.indexOf("\nMANIFEST\n", script.indexOf("cat > /app/environment.json")));
 
-        assertThat(script).contains("\"project\": \"${PROJECT}\"")
-            .contains("\"branch\": \"${BRANCH}\"")
-            .contains("\"requestId\": \"${REQUEST_ID}\"")
-            .contains("\"createdAt\": \"${CREATED_AT}\"");
-        assertThat(script).contains("PROJECT=$(json_escape")
-            .contains("BRANCH=$(json_escape");
+        assertThat(manifest).doesNotContain("\"project\"", "\"branch\"", "\"jobId\"", "\"createdAt\"",
+            "\"benchmarkType\"", "\"region\"", "\"awsCliVersion\"");
+        assertThat(script).doesNotContain("PROJECT_NAME", "BRANCH_NAME", "AWS_CLI_VERSION");
     }
 
     @Test
@@ -657,19 +974,19 @@ class UserDataScriptBuilderTest {
     }
 
     @Test
-    void theBenchmarkJarComesFromTheRunsOwnInputPrefix() {
+    void theBenchmarkJarComesFromTheJobsOwnInputPrefix() {
         String script = script();
 
         assertThat(script).contains(
-            "export BENCHMARK_JAR_S3_KEY='runs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar'");
+            "export BENCHMARK_JAR_S3_KEY='jobs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar'");
         assertThat(script).contains(
             "aws s3 cp \"s3://${S3_BUCKET}/${BENCHMARK_JAR_S3_KEY}\" /app/benchmark-under-test.jar");
-        assertThat(script).doesNotContain("/runs/${REQUEST_ID}/benchmark.jar");
+        assertThat(script).doesNotContain("/jobs/${JOB_ID}/benchmark.jar");
     }
 
     /**
      * The script is heredoc-heavy and nothing else parses it before cloud-init does, on a paid
-     * instance, after the watchdog has already started. A syntax error there costs a run and shows
+     * instance, after the watchdog has already started. A syntax error there costs a job and shows
      * up only in cloud-init-output.log.
      */
     @Test
@@ -697,9 +1014,9 @@ class UserDataScriptBuilderTest {
         Path marker = tempDir.resolve("PWNED");
         String hostile = "x';touch " + marker + ";'";
         String encoded = new UserDataScriptBuilder().build(
-            hostile, hostile, hostile, hostile, "runs/" + hostile + "/id", hostile,
-            "runs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
-            hostile, hostile, hostile, hostile, false,
+            hostile, hostile, hostile, hostile, "jobs/" + hostile + "/id", hostile,
+            "jobs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
+            hostile, hostile, hostile, hostile, hostile,
             List.of(hostile), Map.of("project", hostile, "branch", hostile));
         String script = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
         String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
@@ -713,7 +1030,7 @@ class UserDataScriptBuilderTest {
         assertThat(process.exitValue()).as("bash said: " + output).isZero();
         assertThat(Files.exists(marker)).as("an exported value must never run as shell").isFalse();
         assertThat(output.lines()).containsExactly(
-            "runs/" + hostile + "/id", "runs/" + hostile + "/id/input/benchmark.jar", hostile);
+            "jobs/" + hostile + "/id", "jobs/" + hostile + "/id/input/benchmark.jar", hostile);
     }
 
     /**

@@ -43,7 +43,7 @@ class ResultKeysTest {
     }
 
     /**
-     * The request-id index is queried by run id alone and need not be unique, so params stay out
+     * The job-id index is queried by job id alone and need not be unique, so params stay out
      * of it; the item's own params attribute tells the variants apart.
      */
     @Test
@@ -53,8 +53,8 @@ class ResultKeysTest {
     }
 
     /**
-     * The Mongo store this replaces keyed on (requestId, benchmarkName, benchmarkType) where
-     * benchmarkType is the JMH mode — so `-bm thrpt,avgt` in one run produces two results whose
+     * The Mongo store this replaces keyed on (jobId, benchmarkName, benchmarkType) where
+     * benchmarkType is the JMH mode — so `-bm thrpt,avgt` in one job produces two results whose
      * class+method are identical. Without mode in the key, those two rows are differentiated only
      * by a millisecond timestamp, and a same-millisecond collision silently overwrites one via
      * PutItem. Mode has to render as a field even when null, or the key would have a variable
@@ -64,7 +64,7 @@ class ResultKeysTest {
     void jmhSortKeyRendersNullModeAsAnEmptyFieldToKeepTheFieldCountFixed() {
         var original = StoredMeasurementFixtures.jmh();
         var withoutMode = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), null,
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
@@ -87,20 +87,20 @@ class ResultKeysTest {
     }
 
     @Test
-    void theRequestIdIndexIsKeyedOnRequestIdThenBenchmark() {
+    void theJobIdIndexIsKeyedOnJobIdThenBenchmark() {
         var m = StoredMeasurementFixtures.jmh();
 
-        assertThat(ResultKeys.requestIndexPartitionKey(m.requestId())).isEqualTo("jmh-20260817_220706");
+        assertThat(ResultKeys.jobIndexPartitionKey(m.jobId())).isEqualTo("jmh-20260817_220706");
         assertThat(ResultKeys.requestIndexSortKey(m))
             .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#thrpt");
     }
 
-    /** Two modes benchmarked in one run must not collapse onto one requestId-index GSI row. */
+    /** Two modes benchmarked in one job must not collapse onto one jobId-index GSI row. */
     @Test
     void theRequestIndexSortKeyRendersNullModeAsAnEmptyFieldToo() {
         var original = StoredMeasurementFixtures.jmh();
         var withoutMode = new StoredMeasurement(
-            original.project(), original.requestId(), original.createdAt(), original.kind(),
+            original.project(), original.jobId(), original.createdAt(), original.kind(),
             original.benchmarkClass(), original.benchmarkMethod(), null,
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
@@ -163,5 +163,44 @@ class ResultKeysTest {
         } finally {
             java.util.TimeZone.setDefault(original);
         }
+    }
+
+    @Test
+    void jobSortKeyIsTheFixedWidthTimestampThenTheJobId() {
+        assertThat(ResultKeys.jobSortKey(Instant.parse("2026-10-03T00:15:16.659Z"), "20261003T001516659Z-a3f9c21b"))
+            .isEqualTo("2026-10-03T00:15:16.659Z#20261003T001516659Z-a3f9c21b");
+    }
+
+    /**
+     * {@code baas run}'s CREATED_AT is {@code Instant.toString()}: six fractional digits on a
+     * microsecond clock, none at all on a whole second. The key must not inherit either width,
+     * or the shell and the CLI would address two different items.
+     */
+    @Test
+    void jobSortKeyHasThreeFractionalDigitsWhateverTheInstantPrecision() {
+        assertThat(ResultKeys.jobSortKey(Instant.parse("2026-10-03T00:15:16.659123Z"), "r"))
+            .isEqualTo("2026-10-03T00:15:16.659Z#r");
+        assertThat(ResultKeys.jobSortKey(Instant.parse("2026-10-03T00:15:16Z"), "r"))
+            .isEqualTo("2026-10-03T00:15:16.000Z#r");
+    }
+
+    @Test
+    void jobSortKeysOrderChronologically() {
+        var earlier = ResultKeys.jobSortKey(Instant.parse("2026-10-03T00:15:16Z"), "zzz");
+        var later = ResultKeys.jobSortKey(Instant.parse("2026-10-03T00:15:16.001Z"), "aaa");
+
+        assertThat(earlier).isLessThan(later);
+    }
+
+    @Test
+    void noMeasurementIndexSortKeyCanEqualTheJobItems() {
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jmh()))
+            .isNotEqualTo(ResultKeys.JOB_INDEX_SORT_KEY);
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jcstress()))
+            .isNotEqualTo(ResultKeys.JOB_INDEX_SORT_KEY);
+        assertThat(ResultKeys.requestIndexSortKey(StoredMeasurementFixtures.jmh()))
+            .as("a measurement's index sort key always carries a separator; JOB never does")
+            .contains(ResultKeys.SEPARATOR);
+        assertThat(ResultKeys.JOB_INDEX_SORT_KEY).doesNotContain(ResultKeys.SEPARATOR);
     }
 }

@@ -25,7 +25,7 @@ class CiTemplateTest {
 
     /**
      * A role-chained session is capped at 60 minutes by STS whatever MaxSessionDuration says,
-     * against a 7200 s default benchmark timeout — and the failure mode was a red job with a good
+     * against a 7200 s default benchmark timeout — and the failure mode was a red CI job with a good
      * measurement, an un-terminated instance and a full EC2 bill.
      */
     @Test
@@ -42,7 +42,7 @@ class CiTemplateTest {
 
     /**
      * The provider is account-global and the core stack's trust policy references its ARN, so it
-     * outlives any one stack: a delete that took it with it would break every installation
+     * outlives any one stack: a delete that took it with it would break every deployment
      * federating through it.
      */
     @Test
@@ -66,14 +66,14 @@ class CiTemplateTest {
 
     /**
      * The CI template and the IAM policy JSONs are test fixtures — only the core template is
-     * a runtime resource that {@code baas admin setup} reads out of the shipped JAR. Copying
+     * a runtime resource that {@code baas admin deployment setup} reads out of the shipped JAR. Copying
      * them into {@code src/main/resources} would leak the CI stack's definition into every
      * distributed artifact.
      */
     @Test
     void onlyTheCoreTemplateIsOnTheRuntimeClasspath() {
         assertThat(getClass().getResourceAsStream("/templates/cf-template-core.yaml"))
-            .as("baas admin setup reads this out of the JAR at runtime")
+            .as("baas admin deployment setup reads this out of the JAR at runtime")
             .isNotNull();
         assertThat(getClass().getResourceAsStream("/templates/cf-template-ci.yaml"))
             .as("the CI template is a fixture under /infra, never shipped under /templates")

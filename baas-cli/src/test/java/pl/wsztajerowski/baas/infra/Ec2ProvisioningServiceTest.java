@@ -18,11 +18,12 @@ class Ec2ProvisioningServiceTest {
     private static final class CapturingEc2 implements Ec2Client {
         RunInstancesRequest request;
         DescribeInstancesRequest describe;
+        DescribeInstancesResponse answer = DescribeInstancesResponse.builder().build();
 
         @Override
         public DescribeInstancesResponse describeInstances(DescribeInstancesRequest request) {
             this.describe = request;
-            return DescribeInstancesResponse.builder().build();
+            return answer;
         }
 
         @Override
@@ -53,29 +54,94 @@ class Ec2ProvisioningServiceTest {
         var ec2 = new CapturingEc2();
 
         new Ec2ProvisioningService(ec2).runInstance("ami-1", "c5.2xlarge", "subnet-1", "sg-1",
-            "baas-123456789012-profile-runner", "#!/bin/bash", "20261002T080250645Z-264f5dfb");
+            "baas-123456789012-profile-runner", "#!/bin/bash", "20261002T080250645Z-264f5dfb", "wiktor-dev");
 
         var tags = ec2.request.tagSpecifications().getFirst().tags();
         assertThat(tags).extracting(Tag::key)
-            .containsExactlyInAnyOrder("project", "baas-role", "baas-request-id");
+            .containsExactlyInAnyOrder("project", "baas-role", "baas-job-id", "baas-deployment");
+        assertThat(tags).filteredOn(tag -> tag.key().equals("baas-deployment"))
+            .extracting(Tag::value).containsExactly("wiktor-dev");
         assertThat(tags).extracting(Tag::key).doesNotHaveDuplicates();
-        assertThat(tags).filteredOn(tag -> tag.key().equals("baas-request-id"))
+        assertThat(tags).filteredOn(tag -> tag.key().equals("baas-job-id"))
             .extracting(Tag::value).containsExactly("20261002T080250645Z-264f5dfb");
+    }
+
+    /** A retried launch after a lost response returns the first instance rather than starting a second (R7). */
+    @Test
+    void theLaunchIsIdempotentOnTheJobId() {
+        var ec2 = new CapturingEc2();
+
+        new Ec2ProvisioningService(ec2).runInstance("ami-1", "c5.2xlarge", "subnet-1", "sg-1",
+            "baas-123456789012-profile-runner", "#!/bin/bash", "20261002T080250645Z-264f5dfb", "wiktor-dev");
+
+        assertThat(ec2.request.clientToken()).isEqualTo("20261002T080250645Z-264f5dfb");
     }
 
     /**
      * W2: teardown's live-runner gate. A runner launched seconds earlier is still `pending`, and
-     * deleting the stack then pulls its role, subnet and image out from under it.
+     * deleting the stack then pulls its role, subnet and image out from under it. Scoped to the
+     * deployment (U36): another deployment's runner in the same region neither blocks a teardown
+     * nor appears in `jobs list`.
      */
     @Test
     void theTeardownGateCountsBootingRunnersAsLive() {
         var ec2 = new CapturingEc2();
 
-        new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances();
+        new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances("wiktor-dev");
 
         assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
             .containsExactlyInAnyOrder(
                 org.assertj.core.groups.Tuple.tuple("tag:baas-role", java.util.List.of("benchmark-runner")),
+                org.assertj.core.groups.Tuple.tuple("tag:baas-deployment", java.util.List.of("wiktor-dev")),
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
+    }
+
+    /** Teardown and `baas jobs list` name runs from the tag, with no read of the results table. */
+    @Test
+    void eachLiveRunnerCarriesItsJobIdFromTheTag() {
+        var ec2 = new CapturingEc2();
+        ec2.answer = DescribeInstancesResponse.builder().reservations(r -> r.instances(
+            Instance.builder().instanceId("i-1").state(s -> s.name("running"))
+                .tags(Tag.builder().key("baas-job-id").value("20261003T000000000Z-a3f9c21b").build()).build(),
+            Instance.builder().instanceId("i-2").state(s -> s.name("pending")).build())).build();
+
+        assertThat(new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances("baas-123456789012")).containsExactly(
+            new Ec2ProvisioningService.LiveRunner("i-1", "running", "20261003T000000000Z-a3f9c21b"),
+            new Ec2ProvisioningService.LiveRunner("i-2", "pending", null));
+    }
+
+    @Test
+    void aJobsLiveInstanceIsFoundByItsJobIdTag() {
+        var ec2 = new CapturingEc2();
+        ec2.answer = DescribeInstancesResponse.builder()
+            .reservations(r -> r.instances(Instance.builder().instanceId("i-9").build())).build();
+
+        assertThat(new Ec2ProvisioningService(ec2, "wiktor-dev").findLive("run-1")).contains("i-9");
+        assertThat(ec2.describe.filters()).extracting(Filter::name, Filter::values)
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple("tag:baas-job-id", java.util.List.of("run-1")),
+                org.assertj.core.groups.Tuple.tuple("tag:baas-deployment", java.util.List.of("wiktor-dev")),
+                org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
+    }
+
+    /** R6: a job's instance is never looked up across deployments, not even by omission. */
+    @Test
+    void aJobsInstanceIsNotLookedUpWithoutADeployment() {
+        var ec2 = new CapturingEc2();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> new Ec2ProvisioningService(ec2).findLive("run-1"))
+            .isInstanceOf(IllegalStateException.class);
+        assertThat(ec2.describe).isNull();
+    }
+
+    /** An instance type newer than the SDK's enum must reach EC2 as typed, not as 'null'. */
+    @Test
+    void anInstanceTypeTheSdkDoesNotKnowIsSentAsTyped() {
+        var ec2 = new CapturingEc2();
+
+        new Ec2ProvisioningService(ec2).runInstance("ami-1", "z99.future-large", "subnet-1", "sg-1",
+            "profile", "#!/bin/bash", "run-1", "baas-123456789012");
+
+        assertThat(ec2.request.instanceTypeAsString()).isEqualTo("z99.future-large");
     }
 }

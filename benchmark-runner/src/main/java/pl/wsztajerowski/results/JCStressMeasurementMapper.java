@@ -9,21 +9,21 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * One measurement per JCStress run, not per test. JCStress names only non-passing tests — passing
+ * One measurement per JCStress job, not per test. JCStress names only non-passing tests — passing
  * ones are counted, never named — so per-test items would cover failures only, and the full result
- * files are already in S3 under the run's result path.
+ * files are already in S3 under the job's result path.
  */
 public final class JCStressMeasurementMapper {
 
     private JCStressMeasurementMapper() {}
 
     public static StoredMeasurement toMeasurement(
-        JCStressResult result, String project, String requestId, Instant createdAt,
+        JCStressResult result, String project, String jobId, Instant createdAt,
         Map<String, String> tags, String resultPath, String environmentJsonKey) {
 
         return new StoredMeasurement(
             project,
-            requestId,
+            jobId,
             createdAt,
             MeasurementKind.JCSTRESS,
             null, null, null, Map.of(), null, null, null,

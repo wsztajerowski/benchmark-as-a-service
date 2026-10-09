@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
+import pl.wsztajerowski.baas.infra.BucketProbe;
 
 import java.util.Map;
 
@@ -37,7 +38,7 @@ class SetupCommandTest {
 
     /**
      * Deleting WorkflowRole moves the federated trust onto BaasCliOperatorRole, which the core
-     * stack owns — so setting and revoking it is something `baas admin setup` has to be able to
+     * stack owns — so setting and revoking it is something `baas admin deployment setup` has to be able to
      * express. This reverses the requirement the three options used to be rejected under.
      */
     @Test
@@ -52,7 +53,7 @@ class SetupCommandTest {
     }
 
     /**
-     * One installation serving two repositories is otherwise a template migration. The patterns
+     * One deployment serving two repositories is otherwise a template migration. The patterns
      * are composed here because CloudFormation cannot iterate a list.
      */
     @Test
@@ -84,9 +85,9 @@ class SetupCommandTest {
      * The create path cannot use {@code UsePreviousValue} — CloudFormation rejects it for a
      * parameter with no previous value — so it must send explicit values. It used to send all
      * three <em>empty</em> unconditionally, which silently discarded the federation options the
-     * invocation named: `baas admin setup --github-org ... --oidc-provider-arn ...` reported
+     * invocation named: `baas admin deployment setup --github-org ... --oidc-provider-arn ...` reported
      * success against a fresh stack and deployed a role CI could not assume. Found by pointing CI
-     * at a freshly created installation.
+     * at a freshly created deployment.
      */
     @Test
     void aCreateCarriesTheFederationOptionsItWasGiven() {
@@ -164,17 +165,28 @@ class SetupCommandTest {
             .noneMatch(name -> name.contains("oidc"));
     }
 
-    // ─── Installation naming ─────────────────────────────────────────────────────
+    // ─── Deployment naming ─────────────────────────────────────────────────────
 
     @Test
-    void theInstallationIsNamedAfterTheAccountAlone() {
+    void theDeploymentIsNamedAfterTheAccountAlone() {
         assertThat(SetupCommand.computePrefix("123456789012")).isEqualTo("baas-123456789012");
+    }
+
+    /** With nothing configured the name is derived; a named or the only deployment is used verbatim. */
+    @Test
+    void setupDerivesTheNameOnlyWhenNoneIsGiven() {
+        var none = new pl.wsztajerowski.baas.config.BaasConfig();
+        var named = new pl.wsztajerowski.baas.config.BaasConfig();
+        named.setPrefix("wiktor-dev");
+
+        assertThat(SetupCommand.deploymentName(none, "123456789012")).isEqualTo("baas-123456789012");
+        assertThat(SetupCommand.deploymentName(named, "123456789012")).isEqualTo("wiktor-dev");
     }
 
     /**
      * The point of the change: the identity holding the credentials must not reach the name. An
      * IAM user, an SSO session and a role-chained session on one account all address the same
-     * installation.
+     * deployment.
      */
     @Test
     void theCallerIdentityNeverReachesThePrefix() {
@@ -183,7 +195,7 @@ class SetupCommandTest {
     }
 
     @Test
-    void differentAccountsAreDifferentInstallations() {
+    void differentAccountsAreDifferentDeployments() {
         assertThat(SetupCommand.computePrefix("123456789012"))
             .isNotEqualTo(SetupCommand.computePrefix("210987654321"));
     }
@@ -196,22 +208,19 @@ class SetupCommandTest {
     }
 
     /**
-     * There is exactly one installation per account and the CLI cannot be told otherwise. A second
-     * installation — the one a BaaS developer wants for scratch work — is created by deploying the
-     * core template by hand with a different {@code ResourceNamePrefix}, and adopted with
-     * {@code baas config sync --name}. See infra/README.md. Keeping that out of the CLI is what
-     * stops "which installation am I on?" becoming a question a user of BaaS ever has to ask.
+     * A deployment is named only by the global {@code --deployment}. Setup has no option of its own
+     * for it, so no second spelling can disagree with the one every other command reads.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"--mode", "--prefix", "--name", "--installation"})
-    void theInstallationCannotBeSelectedOnTheCommandLine(String rejected) {
+    @ValueSource(strings = {"--mode", "--prefix", "--name"})
+    void setupHasNoNamingOptionOfItsOwn(String rejected) {
         CommandLine cmd = new CommandLine(new SetupCommand());
 
         assertThatThrownBy(() -> cmd.parseArgs(rejected, "dev"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
-    // ─── Networking is immutable once the installation exists ───────────────────
+    // ─── Networking is immutable once the deployment exists ───────────────────
 
     @Test
     void namingNoNetworkingOptionsSubmitsNoNetworkingParameters() {
@@ -232,7 +241,7 @@ class SetupCommandTest {
 
     /**
      * The failure this closes: {@code SetupCommand} used to send these four unconditionally, so a
-     * teammate's plain {@code baas admin setup} against a shared installation deployed with
+     * teammate's plain {@code baas admin deployment setup} against a shared deployment set up with
      * {@code --use-existing-vpc} submitted {@code UseExistingVpc=false} and rebuilt the networking
      * underneath everyone.
      */
@@ -280,7 +289,7 @@ class SetupCommandTest {
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
-    /** Onboarding steps are true only of a stack this run created (U17). */
+    /** Onboarding steps are true only of a stack this job created (U17). */
     @Test
     void anUpdateDoesNotClaimTheOperatorRoleWasJustCreated() {
         String arn = "arn:aws:iam::123456789012:role/baas-123456789012-role-operator";
@@ -290,6 +299,107 @@ class SetupCommandTest {
             .doesNotContain("created", "Nobody can assume", "build-image");
         assertThat(SetupCommand.nextSteps(true, arn, "baas-123456789012"))
             .contains("BaasCliOperatorRole created: " + arn, "Nobody can assume it yet",
-                "baas admin build-image", "/baas-123456789012/runner/ami-id");
+                "baas admin image build", "/baas-123456789012/runner/ami-id");
+    }
+
+    // ─── an existing bucket blocking a create (U23) ──────────────────────────────
+
+    /** The account's deployment is elsewhere: deleting its bucket is exactly the wrong advice. */
+    @Test
+    void aBucketInAnotherRegionNamesThatRegionAndNeverAdvisesDeletingIt() {
+        String message = SetupCommand.bucketBlocksSetup("baas-123456789012", "baas-123456789012",
+            "eu-central-1", "us-east-1");
+
+        assertThat(message)
+            .contains("lives in eu-central-1, not us-east-1")
+            .contains("baas admin deployment setup --region eu-central-1")
+            .doesNotContain("rb")
+            .doesNotContain("--force");
+    }
+
+
+    // ─── a taken bucket or table name, refused before a create (R16) ──────────────
+
+    @Test
+    void aLeftoverBucketInTheRegionIsNamedWithItsRemoval() {
+        var message = SetupCommand.nameConflict(new BucketProbe.Reachable("us-east-1"), false,
+            "baas-development", "us-east-1");
+
+        assertThat(message).hasValueSatisfying(m -> assertThat(m)
+            .contains("Bucket baas-development already exists in us-east-1")
+            .contains("aws s3 rb s3://baas-development --force")
+            .contains("may hold earlier results")
+            .contains("Nothing was deployed"));
+    }
+
+    @Test
+    void anotherAccountsBucketAsksForAnotherName() {
+        var message = SetupCommand.nameConflict(new BucketProbe.Forbidden("us-west-2"), false,
+            "wiktor-dev", "us-east-1");
+
+        assertThat(message).hasValueSatisfying(m -> assertThat(m)
+            .contains("taken by another AWS account")
+            .contains("baas --deployment <name> admin deployment setup")
+            .doesNotContain("rb ")
+            .doesNotContain("lives in"));
+    }
+
+    @Test
+    void aLeftoverTableIsNamedWithItsRemoval() {
+        var message = SetupCommand.nameConflict(new BucketProbe.Absent(), true, "baas-development", "us-east-1");
+
+        assertThat(message).hasValueSatisfying(m -> assertThat(m)
+            .contains("Table baas-development-results already exists in us-east-1")
+            .contains("aws dynamodb delete-table --table-name baas-development-results --region us-east-1"));
+    }
+
+    @Test
+    void freeNamesRaiseNoConflict() {
+        assertThat(SetupCommand.nameConflict(new BucketProbe.Absent(), false, "d", "us-east-1")).isEmpty();
+    }
+
+    /** A bucket elsewhere is the early check's to report: the deployment lives there. */
+    @Test
+    void aReachableBucketInAnotherRegionIsNotACreateConflict() {
+        assertThat(SetupCommand.nameConflict(new BucketProbe.Reachable("eu-central-1"), false, "d", "us-east-1"))
+            .isEmpty();
+    }
+
+    // ─── U34: networking ids belong to --use-existing-vpc ────────────────────────
+
+    @Test
+    void networkingIdsWithoutTheFlagAreRefusedNotIgnored() {
+        assertThatThrownBy(parsed("--vpc-id", "vpc-1")::validateNetworkingOptions)
+            .isInstanceOf(CommandLine.ParameterException.class)
+            .hasMessageContaining("--use-existing-vpc");
+    }
+
+    @Test
+    void theFlagStillNeedsAllThreeIds() {
+        assertThatThrownBy(parsed("--use-existing-vpc", "--vpc-id", "vpc-1")::validateNetworkingOptions)
+            .isInstanceOf(CommandLine.ParameterException.class);
+        assertThatCode(parsed("--use-existing-vpc", "--vpc-id", "v", "--subnet-id", "s", "--sg-id", "g")
+            ::validateNetworkingOptions).doesNotThrowAnyException();
+        assertThatCode(parsed()::validateNetworkingOptions).doesNotThrowAnyException();
+    }
+
+    // ─── The deployer policy is a step of setup ──────────────────────────────────
+
+    @Test
+    void missingRightsPrintThePolicyAsTheOnlyPayloadAndExitOne() {
+        var out = new java.io.StringWriter();
+        var command = new SetupCommand();
+        new CommandLine(command).setOut(new java.io.PrintWriter(out, true));
+
+        Integer exit = command.refusalForMissingRights(java.util.List.of("cloudformation:CreateStack"),
+            "{\"Version\":\"2012-10-17\"}", "123456789012", "eu-central-1", "baas-123456789012");
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(out.toString().strip()).isEqualTo("{\"Version\":\"2012-10-17\"}");
+    }
+
+    @Test
+    void sufficientOrUncheckableRightsCarryOn() {
+        assertThat(new SetupCommand().refusalForMissingRights(java.util.List.of(), "{}", "1", "r", "d")).isNull();
     }
 }

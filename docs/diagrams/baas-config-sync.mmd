@@ -1,26 +1,35 @@
 sequenceDiagram
     actor User as Operator or CI job
     participant CS as ConfigSyncSubcommand
-    participant CFG as config file<br/>(~/.baas/config.yaml or --config-path)
+    participant CFG as deployment files<br/>(~/.baas/deployments/*.yaml)
+    participant S3 as AWS S3
     participant CF as AWS CloudFormation
 
-    Note over User,CF: baas config sync --name <prefix> -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>--name is required although derivable: a bare sync would adopt whatever<br/>installation the active credentials imply.
-    User->>CS: baas [--config-path f] config sync --name baas-123456789012
-    CS->>CFG: loadOrEmpty() -- a missing file is an empty config
-    Note over CS: region = aws.region from the file, else AWS_REGION, else eu-central-1.<br/>Resolved, never stored: a sync with no region in the file writes none,<br/>so a CI job keeps following its own AWS_REGION.
+    Note over User,CF: baas --deployment <prefix> config sync -- operator credentials suffice<br/>(OperatorRole holds cloudformation:DescribeStacks on its own stack only).<br/>Never derived: with nothing configured the name is required, or a bare sync would adopt<br/>whatever deployment the active credentials imply. With exactly one configured, a bare sync re-syncs it.
+    User->>CS: baas --deployment baas-123456789012 config sync
+    CS->>CFG: loadForSync() -- migrates a flat config.yaml first
+    alt no --deployment, and none or 2+ configured
+        CS-->>User: name the deployment (the configured ones listed) -- exit 2, nothing written
+    end
+    Note over CS: the named deployment's file, or a new one -- or the only configured one
     opt no aws.operatorProfile and no ambient credentials
         CS-->>User: warn: using the default credential chain
     end
-    CS->>CF: DescribeStacks(<prefix>) with operator credentials
+    CS->>S3: HeadBucket(<prefix>) from any region -- the file's, AWS_REGION or the default
+    Note over CS,S3: bucket names are global: a wrong-region request answers 301/400<br/>with x-amz-bucket-region, and a 404 means no bucket (U22)
+    alt no bucket
+        CS-->>User: "No deployment named ... no bucket of that name" -- exit 1, file untouched
+    end
+    CS->>CF: DescribeStacks(<prefix>) in the bucket's region, operator credentials
     alt stack absent
         CF-->>CS: does not exist
-        CS-->>User: "No installation named ..." + how to list / create -- exit 1, file untouched
+        CS-->>User: a bucket but no stack -- nothing to adopt -- exit 1, file untouched
     else stack present
         CF-->>CS: outputs
         opt no ResultsTableName output
             CS-->>User: warn: stack predates the results table
         end
-        Note over CS: Outputs are read to prove existence only -- nothing is copied.<br/>Bucket, table, profile, pointer are derived from the prefix --<br/>subnet + security group are resolved per run.
-        CS->>CFG: set prefix, save
-        CS-->>User: Adopted <prefix> -- bucket, table -- exit 0
+        Note over CS: Outputs are read to prove existence only -- nothing is copied.<br/>Bucket, table, profile, pointer are derived from the prefix --<br/>subnet + security group are resolved per job.
+        CS->>CFG: save deployments/<prefix>.yaml -- prefix AND aws.region (the deployment's)
+        CS-->>User: Adopted <prefix> in <region> -- bucket, table -- exit 0
     end

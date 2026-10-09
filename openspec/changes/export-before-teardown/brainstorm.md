@@ -233,3 +233,12 @@ through the rollback. Teardown then leaves it, and the next setup's pre-check re
 only `aws dynamodb delete-table` clears it. Decided: no separate fix — this change closes it. Its
 spec should carry the scenario *rolled-back first create → teardown → setup succeeds*, whichever
 teardown shape the proposal settles on.
+
+## Note from `run-status-in-dynamodb` (2026-10-02)
+
+That change, first in the queue, adds **run items** to the results table: one per run at
+`pk = RUN`, `sk = <createdAt>#<runId>`, `gsi1pk = <runId>`, `gsi1sk = RUN`. The table is then no
+longer measurements only. The export's `table.jsonl` carries them verbatim, which is the point of
+exporting the wire shape. Any counting, verification or import step that assumes every item is a
+measurement must allow for them. An import into a fresh installation restores them as-is: they are
+history, and their non-terminal statuses resolve as vanished.

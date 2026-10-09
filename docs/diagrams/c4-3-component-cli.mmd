@@ -2,14 +2,16 @@ C4Component
     title baas CLI — Components (level 3)
 
     Container_Boundary(cli, "baas-cli.jar") {
-        Component(app, "BaasApp + LoggingMixin", "picocli root", "--config-path (inherited), -v pre-scan, failure reporting")
+        Component(app, "BaasApp + LoggingMixin", "picocli root", "--deployment (inherited), -v pre-scan, failure reporting")
 
-        Component(adminCmds, "admin commands", "SetupCommand, BuildImageCommand, ImageCommand, TeardownCommand, DeployerPolicyCommand", "Deployer credentials (aws.profile)")
+        Component(adminCmds, "admin commands", "SetupCommand, BuildImageCommand, ImageCommand, TeardownCommand, DeployerPolicyCommand", "Deployer credentials (aws.deployerProfile)")
         Component(configCmds, "config commands", "ConfigSet / ConfigShow / ConfigSync", "Local file; sync proves the stack exists")
-        Component(runCmd, "RunCommand", "picocli", "Preconditions, run naming, upload, launch, poll, JSON summary, shutdown hook")
+        Component(runCmd, "RunCommand", "picocli", "Preconditions, job naming, upload, launch, poll, JSON summary, shutdown hook")
         Component(queryCmds, "read commands", "ResultsCommand, DownloadCommand, EnvDiffSubcommand", "Operator credentials, read-only")
+        Component(jobsCmds, "jobs commands", "JobsListSubcommand, JobsTerminateSubcommand", "Operator credentials; list reads, terminate cancels and terminates")
+        Component(jobs, "jobs package", "JobSession, DynamoDbJobRecorder, JobListing, JobTermination", "Job item writes, the one stop path, poll outcomes, vanished resolution")
 
-        Component(cfg, "ConfigService / BaasConfig", "Jackson YAML", "Stores prefix; derives bucket, table, profile, pointer names")
+        Component(cfg, "ConfigService / BaasConfig", "Jackson YAML", "One file per deployment, selection by --deployment; DeploymentNames composes every resource name")
         Component(infra, "infra services", "CloudFormationService, Ec2ProvisioningService, ImageBuilderService, S3UploadService, SsmService, ResultsTableService", "Thin AWS SDK wrappers")
         Component(render, "Renderers", "RunnerImageRenderer, DeployerPolicyRenderer, UserDataScriptBuilder", "Turn bundled templates into stack parameters, IAM JSON, user-data")
         Component(jar, "RunnerJarResolver", "HTTP + SHA-256", "Seeds releases/<v>/benchmark-runner.jar once, from GitHub Releases")
@@ -18,20 +20,24 @@ C4Component
     }
 
     Container_Boundary(model, "baas-model.jar (shared with the runner)") {
-        Component(keys, "RunId, RunLayout, ResultKeys, TagKeys, MeasurementItemMapper", "plain Java", "The only builders of S3 prefixes, DynamoDB keys and the tag vocabulary")
+        Component(keys, "JobId, JobLayout, ResultKeys, TagKeys, MeasurementItemMapper, JobItemMapper, JobStatus", "plain Java", "The only builders of S3 prefixes, DynamoDB keys and the tag vocabulary")
     }
 
     Rel(app, adminCmds, "dispatches")
     Rel(app, configCmds, "dispatches")
     Rel(app, runCmd, "dispatches")
     Rel(app, queryCmds, "dispatches")
+    Rel(app, jobsCmds, "dispatches")
+    Rel(runCmd, jobs, "reserve, launch, poll, stop")
+    Rel(jobsCmds, jobs, "list, terminate")
+    Rel(jobs, keys, "job keys, status vocabulary")
     Rel(adminCmds, render, "uses")
     Rel(adminCmds, infra, "uses")
     Rel(runCmd, render, "user-data")
     Rel(runCmd, jar, "pinned runner")
     Rel(runCmd, infra, "uses")
-    Rel(runCmd, results, "post-run table")
-    Rel(runCmd, keys, "run id, prefix, reserved tags")
+    Rel(runCmd, results, "post-job table")
+    Rel(runCmd, keys, "job id, prefix, reserved tags")
     Rel(queryCmds, results, "uses")
     Rel(results, keys, "key decoding")
     Rel(configCmds, cfg, "read/write")

@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.commands;
 
 import java.nio.file.Path;
-import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.BaasApp;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
@@ -19,7 +18,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Which project {@code baas results} reads when none is named. Every case stops before a partition
+ * Which project {@code baas results query} reads when none is named. Every case stops before a partition
  * is queried, so a stand-in listing is the only AWS-shaped thing involved.
  */
 class ResultsProjectSelectionTest {
@@ -38,8 +37,8 @@ class ResultsProjectSelectionTest {
         };
     }
 
-    private ResultsCommand command(boolean interactive, String answer, String... args) {
-        var command = new ResultsCommand();
+    private ResultsQuerySubcommand command(boolean interactive, String answer, String... args) {
+        var command = new ResultsQuerySubcommand();
         new CommandLine(command).parseArgs(args);
         command.console = Console.withFlags(new PrintWriter(screen), interactive, false);
         command.answerReader = () -> answer;
@@ -120,21 +119,21 @@ class ResultsProjectSelectionTest {
         assertThat(command(true, null, "--project", "p", "--all-projects").call()).isEqualTo(2);
     }
 
-    /** One run is narrower than any project; a mismatched project would be ignored silently. */
+    /** One job is narrower than any project; a mismatched project would be ignored silently. */
     @Test
-    void aRunLookupCannotBeCombinedWithAProject() throws Exception {
-        assertThat(command(true, null, "--request-id", "r", "--project", "p").call()).isEqualTo(2);
+    void aJobLookupCannotBeCombinedWithAProject() throws Exception {
+        assertThat(command(true, null, "--job-id", "r", "--project", "p").call()).isEqualTo(2);
     }
 
     @Test
-    void aRunLookupCannotBeCombinedWithEveryProject() throws Exception {
-        assertThat(command(true, null, "--request-id", "r", "--all-projects").call()).isEqualTo(2);
+    void aJobLookupCannotBeCombinedWithEveryProject() throws Exception {
+        assertThat(command(true, null, "--job-id", "r", "--all-projects").call()).isEqualTo(2);
     }
 
     @Test
     void theRemovedOptionsAreUnknown() {
         for (String option : new String[]{"--living-branches", "--all", "--results-table"}) {
-            var parser = new CommandLine(new ResultsCommand());
+            var parser = new CommandLine(new ResultsQuerySubcommand());
 
             org.assertj.core.api.Assertions.assertThatThrownBy(() -> parser.parseArgs(option, "x"))
                 .as(option)
@@ -151,10 +150,9 @@ class ResultsProjectSelectionTest {
      */
     @Test
     void underWatchTheProjectIsChosenBeforeTheAlternateScreen(@TempDir Path dir) {
-        Path config = dir.resolve("c.yaml");
         var stored = new BaasConfig();
         stored.setPrefix("baas-123456789012");
-        ConfigService.at(config).save(stored);
+        pl.wsztajerowski.baas.TestDeployments.save(dir, stored);
 
         var screen = new StringWriter();
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
@@ -162,10 +160,10 @@ class ResultsProjectSelectionTest {
             @Override
             @SuppressWarnings("unchecked")
             public <K> K create(Class<K> cls) throws Exception {
-                if (cls != ResultsCommand.class) {
+                if (cls != ResultsQuerySubcommand.class) {
                     return defaults.create(cls);
                 }
-                var command = new ResultsCommand() {
+                var command = new ResultsQuerySubcommand() {
                     @Override
                     ResultsQueryService openResults(BaasConfig c, String table) {
                         return new ResultsQueryService(null, table) {
@@ -187,19 +185,19 @@ class ResultsProjectSelectionTest {
             }
         };
 
-        new CommandLine(new BaasApp(), factory)
+        new CommandLine(new BaasApp(dir), factory)
             .setErr(new PrintWriter(new StringWriter()))
-            .execute("--config-path", config.toString(), "results", "--watch");
+            .execute("query", "--watch");
 
         String out = screen.toString();
         assertThat(out).contains("Choose a project").contains("\u001b[?1049h");
         assertThat(out.indexOf("Choose a project")).isLessThan(out.indexOf("\u001b[?1049h"));
     }
 
-    /** Refused before the configuration is read, so no installation or credentials are needed. */
+    /** Refused before the configuration is read, so no deployment or credentials are needed. */
     @Test
     void anUnknownFormatIsRefusedRatherThanReadAsTheTable() {
-        int exit = new CommandLine(new ResultsCommand()).execute("--project", "p", "--format", "xml");
+        int exit = new CommandLine(new ResultsQuerySubcommand()).execute("--project", "p", "--format", "xml");
 
         assertThat(exit).isEqualTo(2);
     }

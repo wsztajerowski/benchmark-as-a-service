@@ -47,15 +47,6 @@ public class SsmService {
             .build());
     }
 
-    public void putSecureParameter(String name, String value) {
-        ssm.putParameter(PutParameterRequest.builder()
-            .name(name)
-            .value(value)
-            .type(ParameterType.SECURE_STRING)
-            .overwrite(true)
-            .build());
-    }
-
     public void deleteParameter(String name) {
         try {
             ssm.deleteParameter(DeleteParameterRequest.builder().name(name).build());

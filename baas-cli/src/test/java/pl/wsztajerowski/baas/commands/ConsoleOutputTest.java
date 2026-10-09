@@ -5,6 +5,7 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.results.EnvironmentManifest.Difference;
+import pl.wsztajerowski.baas.results.PackagesDiff;
 import pl.wsztajerowski.baas.results.ResultRow;
 
 import java.io.ByteArrayOutputStream;
@@ -43,8 +44,8 @@ class ConsoleOutputTest {
         }
     }
 
-    private static ResultRow row(String requestId, String imageVersion) {
-        return new ResultRow(requestId, "com.example.B.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
+    private static ResultRow row(String jobId, String imageVersion) {
+        return new ResultRow(jobId, "com.example.B.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
             "2026-08-20T17:44:32.812Z", Map.of("imageVersion", imageVersion, "instanceType", "c5.2xlarge"));
     }
 
@@ -54,9 +55,9 @@ class ConsoleOutputTest {
     void jsonAndCsvStayPlainEvenWhenColourIsOn() throws Exception {
         for (String method : List.of("printJson", "printCsv")) {
             var out = new StringWriter();
-            var command = new ResultsCommand();
+            var command = new ResultsQuerySubcommand();
             command.console = Console.withFlags(new PrintWriter(out), true, true);
-            Method print = ResultsCommand.class.getDeclaredMethod(method, List.class);
+            Method print = ResultsQuerySubcommand.class.getDeclaredMethod(method, List.class);
             print.setAccessible(true);
             print.invoke(command, List.of(row("r1", "1.0.0")));
 
@@ -65,13 +66,13 @@ class ConsoleOutputTest {
     }
 
     @Test
-    void theRunSummaryStaysPlainEvenWhenColourIsOn() {
+    void theJobSummaryStaysPlainEvenWhenColourIsOn() {
         var out = new StringWriter();
         var command = new RunCommand();
         command.format = "json";
         command.console = Console.withFlags(new PrintWriter(out), true, true);
 
-        command.printRunSummary(0);
+        command.printJobSummary(0);
 
         assertThat(out.toString()).startsWith("{").doesNotContain(ESC);
     }
@@ -85,27 +86,35 @@ class ConsoleOutputTest {
         assertThat(out.toString()).doesNotContain(ESC);
     }
 
-    // --- env diff --------------------------------------------------------------------------
+    // --- jobs diff -------------------------------------------------------------------------
 
-    private static String diff(boolean colour) {
-        var command = new EnvDiffSubcommand();
-        command.resultPathA = "runs/p/20260724T120000000Z-a3f9c21b";
-        command.resultPathB = "runs/p/20260811T093000000Z-b7e4d0f2";
-        Map<String, Difference> differences = new LinkedHashMap<>();
-        differences.put("jdk", new Difference("25.0.3", "25.0.4"));
-        differences.put("perf", new Difference("", "6.1"));
+    private static String diff(boolean colour, PackagesDiff packages) {
+        var command = new JobsDiffSubcommand();
+        command.jobA = "20260724T120000000Z-a3f9c21b";
+        command.jobB = "20260811T093000000Z-b7e4d0f2";
+        Map<String, Map<String, Difference>> differences = new LinkedHashMap<>();
+        Map<String, Difference> jvm = new LinkedHashMap<>();
+        jvm.put("version", new Difference("25.0.3", "25.0.4"));
+        differences.put("jvm", jvm);
+        differences.put("tools", Map.of("perf", new Difference("", "6.1")));
         var out = new StringWriter();
-        command.printDiff(Console.withFlags(new PrintWriter(out), colour, colour), differences);
+        command.printDiff(Console.withFlags(new PrintWriter(out), colour, colour), differences, packages);
         return out.toString();
     }
 
+    private static String diff(boolean colour) {
+        return diff(colour, null);
+    }
+
     @Test
-    void thePlainDiffIsByteIdenticalToTheOldPrintf() {
-        String fmt = "%-24s %-34s %-34s%n";
-        String expected = String.format(fmt, "FIELD", "…ns/p/20260724T120000000Z-a3f9c21b", "…ns/p/20260811T093000000Z-b7e4d0f2")
-            + "-".repeat(94) + System.lineSeparator()
-            + String.format(fmt, "jdk", "25.0.3", "25.0.4")
-            + String.format(fmt, "perf", "(absent)", "6.1");
+    void thePlainDiffNamesTheGroupsThenListsTheFields() {
+        String fmt = "%-10s %-18s %-30s %-30s%n";
+        String expected = "Differs in: jvm, tools" + System.lineSeparator()
+            + System.lineSeparator()
+            + String.format(fmt, "GROUP", "FIELD", "20260724T120000000Z-a3f9c21b", "20260811T093000000Z-b7e4d0f2")
+            + "-".repeat(91) + System.lineSeparator()
+            + String.format(fmt, "jvm", "version", "25.0.3", "25.0.4")
+            + String.format(fmt, "tools", "perf", "(absent)", "6.1");
 
         assertThat(diff(false)).isEqualTo(expected);
     }
@@ -118,12 +127,34 @@ class ConsoleOutputTest {
         assertThat(coloured.replaceAll(ESC + "\\[[0-9;]*m", "")).isEqualTo(diff(false));
     }
 
+    @Test
+    void identicalEnvironmentsSaySo() {
+        var command = new JobsDiffSubcommand();
+        var out = new StringWriter();
+        command.printDiff(Console.plain(new PrintWriter(out, true)), Map.of(), null);
+
+        assertThat(out.toString()).startsWith("No differences. Both jobs measured on the same environment.");
+    }
+
+    @Test
+    void packagesAreAGroupWhenTheAmisDiffer() {
+        var packages = PackagesDiff.of("openssl-libs-3.0.8-1.amzn2023.0.14.x86_64\n",
+            "openssl-libs-3.0.8-1.amzn2023.0.16.x86_64\nzstd-libs-1.5.5-1.amzn2023.0.2.x86_64\n");
+
+        String out = diff(false, packages);
+
+        assertThat(out).startsWith("Differs in: jvm, tools, packages")
+            .contains("Packages (AMIs differ): 1 changed · 1 added · 0 removed")
+            .contains("changed  openssl-libs  3.0.8-1.amzn2023.0.14 → 3.0.8-1.amzn2023.0.16")
+            .contains("added    zstd-libs 1.5.5-1.amzn2023.0.2");
+    }
+
     // --- --watch ---------------------------------------------------------------------------
 
     /** Surefire has no console, so this is the redirected case: refused before any config or AWS. */
     @Test
     void watchIsRefusedWithoutATerminal() {
-        var captured = run("results", "--watch", "--project", "p");
+        var captured = run("query", "--watch", "--project", "p");
 
         assertThat(captured.exitCode()).isEqualTo(2);
         assertThat(captured.err()).contains("--watch needs an interactive terminal");
@@ -132,7 +163,7 @@ class ConsoleOutputTest {
 
     @Test
     void watchIsRefusedForAMachineFormat() {
-        var captured = run("results", "--watch", "--format", "json", "--project", "p");
+        var captured = run("query", "--watch", "--format", "json", "--project", "p");
 
         assertThat(captured.exitCode()).isEqualTo(2);
         assertThat(captured.err()).contains("--watch applies to the table only");
@@ -143,7 +174,7 @@ class ConsoleOutputTest {
     void aWatchFrameCarriesRowWarningsBelowTheTableInsteadOfLoggingThem() {
         var out = new StringWriter();
         var err = new ByteArrayOutputStream();
-        var command = new ResultsCommand();
+        var command = new ResultsQuerySubcommand();
         command.console = Console.withFlags(new PrintWriter(out), true, false);
         PrintStream originalErr = System.err;
         try {
@@ -169,7 +200,7 @@ class ConsoleOutputTest {
     @Test
     void watchDrawsOnTheAlternateScreenAndLeavesTheLastFrameBehind() {
         var out = new StringWriter();
-        var command = new ResultsCommand();
+        var command = new ResultsQuerySubcommand();
         command.console = Console.withFlags(new PrintWriter(out), true, false);
 
         command.enterWatch();
@@ -222,7 +253,7 @@ class ConsoleOutputTest {
     // --- status line text ------------------------------------------------------------------
 
     @Test
-    void theStatusTextFitsEightyColumnsForAMaximalRun() {
+    void theStatusTextFitsEightyColumnsForAMaximalJob() {
         String text = RunCommand.statusText("shutting-down", 99 * 3600 + 59 * 60 + 59, "i-0123456789abcdef0");
 
         assertThat(text).isEqualTo("shutting-down · 99h 59m 59s elapsed · i-0123456789abcdef0");

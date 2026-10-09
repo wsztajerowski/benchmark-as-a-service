@@ -18,7 +18,7 @@ class OperatorProfileTest {
     @Test
     void resolvesTheOperatorProfileWhenSet() {
         var aws = new BaasConfig.AwsConfig();
-        aws.setProfile("baas-deployer");
+        aws.setDeployerProfile("baas-deployer");
         aws.setOperatorProfile("baas-operator");
 
         assertThat(aws.resolveOperatorProfile()).isEqualTo("baas-operator");
@@ -27,7 +27,7 @@ class OperatorProfileTest {
     @Test
     void neverFallsBackToTheDeployerProfile() {
         var aws = new BaasConfig.AwsConfig();
-        aws.setProfile("baas-deployer");
+        aws.setDeployerProfile("baas-deployer");
 
         assertThat(aws.resolveOperatorProfile())
             .as("falling back to the deployer profile is exactly the privilege leak this field exists to close")
@@ -49,11 +49,11 @@ class OperatorProfileTest {
     @Test
     void warnsWhenNoOperatorProfileIsConfigured() {
         BaasConfig config = new BaasConfig();
-        config.getAws().setProfile("baas-deployer");
+        config.getAws().setDeployerProfile("baas-deployer");
 
         assertThat(RunCommand.operatorCredentialsWarning(config))
             .hasValueSatisfying(warning ->
-                assertThat(warning).contains("baas config set --operator-profile"));
+                assertThat(warning).contains("baas config set --operator-aws-profile"));
     }
 
     @Test

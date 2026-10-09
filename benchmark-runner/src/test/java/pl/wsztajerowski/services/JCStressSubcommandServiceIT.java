@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.MongoDbTestHelpers;
 import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.entities.jcstress.JCStressTest;
 import pl.wsztajerowski.entities.MongoMeasurementDocument;
 import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
@@ -97,7 +96,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         //
         // JCStressSubcommandService passes commonOptions.createdAt() into the mapper — one line
         // that would compile and pass every other assertion here if it were reverted to
-        // Instant.now(), silently breaking the one-instant-per-run property for every run whose
+        // Instant.now(), silently breaking the one-instant-per-job property for every job whose
         // launcher and instance clocks differ. JmhStoreIntegrationIT pins the same line for the
         // three JMH-flavoured services; this is the fourth.
         //

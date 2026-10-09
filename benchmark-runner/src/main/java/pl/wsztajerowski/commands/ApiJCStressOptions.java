@@ -11,7 +11,7 @@ import java.nio.file.Path;
 @Command
 public class ApiJCStressOptions {
 
-    @Option(names = {"-c", "--number-of-cpu"}, description = "Number of CPUs to use. Defaults to all CPUs in the system. Reducing the number of CPUs limits the amount of resources (including memory) the run is using.")
+    @Option(names = {"-c", "--number-of-cpu"}, description = "Number of CPUs to use. Defaults to all CPUs in the system. Reducing the number of CPUs limits the amount of resources (including memory) the job is using.")
     Integer cpuNumber;
     @Option(names = {"-f", "--forks-per-test"}, description = "Should fork each test N times. \"0\" to run in the embedded mode with occasional forking.")
     Integer forks;
@@ -35,6 +35,9 @@ public class ApiJCStressOptions {
     Integer strideCount;
     @Option(names = "-strideSize", description = "Internal stride size. Larger value decreases the synchronization overhead, but also reduces the number of collisions.")
     Integer strideSize;
+    // Long form only: -m is --mongo-connection-string on every runner subcommand.
+    @Option(names = "--mode", description = "JCStress job mode, passed to JCStress as -m (e.g. sanity, quick, default, tough, stress). Omitted: JCStress's own default.")
+    String mode;
     @Option(names = {"--process-output"}, description = "Write tests process output to a given file. (default: ${DEFAULT-VALUE})")
     Path processOutput = FileUtils.getWorkingDirectory().resolve("jcstress-output.txt");
     @CommandLine.Parameters(index = "0", description = "Test name regex", arity = "0..1")
@@ -53,6 +56,7 @@ public class ApiJCStressOptions {
             preTouchHeap,
             strideCount,
             strideSize,
+            mode,
             testNameRegex,
             processOutput);
     }
