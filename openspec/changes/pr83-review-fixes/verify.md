@@ -24,3 +24,7 @@
 ## 4. User-data
 
 - 4.1: both `kill $WATCHDOG_PID` lines and the then-unused `WATCHDOG_PID` are gone, and all three `terminate-instances` calls end in `|| shutdown -h now`. `UserDataScriptBuilderTest` has 62 green tests: the watchdog executed with a failing stub ends in `shutdown -h now`; the refused-`running` path executed with every call refused ends in terminate then shutdown; `bash -n`; and `aLargeJobStaysWellUnderTheUserDataLimit`.
+
+## 5. Launch
+
+- 5.1: `RunInstances` carries `.clientToken(jobId)` (`Ec2ProvisioningServiceTest.theLaunchIsIdempotentOnTheJobId`).

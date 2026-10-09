@@ -66,6 +66,17 @@ class Ec2ProvisioningServiceTest {
             .extracting(Tag::value).containsExactly("20261002T080250645Z-264f5dfb");
     }
 
+    /** A retried launch after a lost response returns the first instance rather than starting a second (R7). */
+    @Test
+    void theLaunchIsIdempotentOnTheJobId() {
+        var ec2 = new CapturingEc2();
+
+        new Ec2ProvisioningService(ec2).runInstance("ami-1", "c5.2xlarge", "subnet-1", "sg-1",
+            "baas-123456789012-profile-runner", "#!/bin/bash", "20261002T080250645Z-264f5dfb", "wiktor-dev");
+
+        assertThat(ec2.request.clientToken()).isEqualTo("20261002T080250645Z-264f5dfb");
+    }
+
     /**
      * W2: teardown's live-runner gate. A runner launched seconds earlier is still `pending`, and
      * deleting the stack then pulls its role, subnet and image out from under it. Scoped to the

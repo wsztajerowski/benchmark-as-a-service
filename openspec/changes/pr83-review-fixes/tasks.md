@@ -59,7 +59,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 5. Launch: one instance per job (R7)
 
-- [ ] 5.1 Pass `.clientToken(jobId)` on `RunInstances`. Verify with the request-shape test in
+- [x] 5.1 Pass `.clientToken(jobId)` on `RunInstances`. Verify with the request-shape test in
   `Ec2ProvisioningServiceTest`, which asserts the token equals the job id.
 
 ## 6. Job termination (R15 guard, R10, R6, R8, R14)
