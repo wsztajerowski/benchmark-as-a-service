@@ -64,7 +64,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 6. Job termination (R15 guard, R10, R6, R8, R14)
 
-- [ ] 6.1 R15: one helper in `DynamoDbJobRecorder` generates the `NOT_TERMINAL` text and its values from
+- [x] 6.1 R15: one helper in `DynamoDbJobRecorder` generates the `NOT_TERMINAL` text and its values from
   `JobStatus.EXACT_TERMINAL` and `FAILED_PREFIX`. `Update.request` and
   `UserDataScriptBuilder.guardValues()` use it. Verify with tests: the guard values cover exactly
   `EXACT_TERMINAL` plus the prefix, and `DynamoDbJobRecorderIT` still refuses every terminal status.

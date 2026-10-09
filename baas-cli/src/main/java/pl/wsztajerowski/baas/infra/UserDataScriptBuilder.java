@@ -346,12 +346,7 @@ public class UserDataScriptBuilder {
      * the shell's guard reads the same terminal set the CLI's does — from {@link JobStatus}.
      */
     static String guardValues() {
-        return Stream.of(
-                Map.entry(":completed", JobStatus.COMPLETED),
-                Map.entry(":timedOut", JobStatus.TIMED_OUT),
-                Map.entry(":cancelled", JobStatus.CANCELLED),
-                Map.entry(":launchFailed", JobStatus.LAUNCH_FAILED),
-                Map.entry(":failedPrefix", JobStatus.FAILED_PREFIX))
+        return DynamoDbJobRecorder.NOT_TERMINAL_VALUES.entrySet().stream()
             .map(e -> "\"" + e.getKey() + "\":{\"S\":\"" + e.getValue() + "\"}")
             .collect(java.util.stream.Collectors.joining(","));
     }
