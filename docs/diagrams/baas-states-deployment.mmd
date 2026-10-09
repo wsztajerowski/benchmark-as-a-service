@@ -5,8 +5,10 @@ stateDiagram-v2
     [*] --> Empty
     Empty --> Authorised: [outside] attach rendered deployer policy
     Authorised --> Deployed: admin deployment setup (any region, parent AMI resolved there)
+    Authorised --> Authorised: admin deployment setup refused — bucket or table name taken<br/>(a leftover, or another account's bucket), nothing created
     Authorised --> RolledBack: admin deployment setup, create fails
-    RolledBack --> Empty: admin deployment teardown
+    RolledBack --> Deployed: admin deployment setup (deletes the empty stack, creates it again)
+    RolledBack --> Empty: admin deployment teardown, once a configuration file exists
     Deployed --> Ready: admin image build
     Deployed --> Deployed: admin deployment setup (update)
     Ready --> Ready: admin image build [--extension] (rebuild in place)<br/>admin deployment setup (update, image carried forward)

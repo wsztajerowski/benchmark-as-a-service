@@ -8,40 +8,41 @@ sequenceDiagram
     rect rgb(240, 248, 255)
         Note over User,DDB: baas jobs list [--limit 20] [--in-flight] [--project p] [--tag k=v]... [--format table|json|csv]
         User->>RL: baas jobs list --in-flight
-        RL->>EC2: describeInstances(tag baas-role=benchmark-runner, state=pending|running)
+        RL->>EC2: describeInstances(tag baas-role=benchmark-runner, baas-deployment=prefix, state=pending|running)
         EC2-->>RL: live instances, each with its baas-job-id tag
         Note over RL: ONE call, bounded by what is running -- not by how many jobs vanished
         loop pages of 100, newest first, until --limit rows match
             RL->>DDB: Query pk = JOB, ScanIndexForward=false
             DDB-->>RL: job items
         end
-        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its job id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written).<br/>Nothing is hidden: exclude_from_results runs are listed, with their source.
+        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its job id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written),<br/>but only once the job is 5 min old: a younger one keeps its stored status (R12).<br/>Nothing is hidden: exclude_from_results runs are listed, with their source.
         RL-->>User: JOB_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE | STARTED | ELAPSED<br/>or "No jobs in flight." -- exit 0
     end
 
     rect rgb(255, 245, 235)
         Note over User,DDB: baas jobs terminate <jobId> [--yes]
         User->>RT: baas jobs terminate 20261003T070025527Z-5bc8461b
-        RT->>DDB: Query jobId-index (gsi1pk = jobId, gsi1sk = JOB)
-        alt no job item
-            RT->>EC2: describeInstances by the job-id tag (a job from a CLI before job items)
-            alt no live instance either
-                RT-->>User: "No job found", exit 1
-            else live instance
-                Note over RT: confirm, then terminateInstances -- nothing to record
-                RT-->>User: "Terminated instance ... which has no job item", exit 0
-            end
+        RT->>DDB: Query jobId-index (gsi1pk = jobId, gsi1sk = JOB), then GetItem by its key, strongly consistent
+        alt no job item in this deployment
+            RT-->>User: "No job found", exit 1 -- nothing is terminated (R6)
         end
-        RT->>EC2: describeInstances(instanceId), else by the job-id tag
+        RT->>EC2: describeInstances(instanceId), else by the job-id tag AND baas-deployment
         alt terminal status and no live instance
             RT-->>User: "already ended", exit 0 -- nothing changed
+        else completed, failed:n or timed-out with a live instance
+            RT-->>User: "already ended, terminates itself", exit 0 -- left to upload its boot log (R10)
         end
         Note over RT: confirm: a terminal prompts [y/N], --yes skips,<br/>no terminal and no --yes refuses
+        Note over RT,EC2: JobStop -- the same step as JobSession.stop (R8)
         RT->>DDB: UpdateItem status cancelled (5 s timeout, never over a terminal status)
-        RT->>EC2: terminateInstances(liveInstance) -- even when the item was already terminal
-        alt termination fails
-            RT-->>User: error naming the instance, exit 1
-        else
-            RT-->>User: terminated, exit 0
+        alt refused, and a strong re-read shows completed, failed:n or timed-out
+            RT-->>User: "already ended, terminates itself", exit 0 -- the instance won the race
+        else written, refused over cancelled, or the write failed
+            RT->>EC2: terminateInstances(liveInstance)
+            alt termination fails
+                RT-->>User: error naming the instance, exit 1
+            else
+                RT-->>User: terminated, exit 0
+            end
         end
     end

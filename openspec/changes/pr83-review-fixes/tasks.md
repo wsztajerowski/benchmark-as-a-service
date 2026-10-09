@@ -125,7 +125,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 11. Documentation
 
-- [ ] 11.1 CLAUDE.md, *Three termination layers* and the user-data invariants:
+- [x] 11.1 CLAUDE.md, *Three termination layers* and the user-data invariants:
   - `JobSession.stop` is shared through the new stop step;
   - a refused write leaves the instance alone for `completed`, `failed:<n>` and `timed-out`;
   - the watchdog is never killed;
@@ -134,8 +134,8 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
   *Job items*: `vanished` applies only after the 5-minute grace. Add a line under *Other rules* on
   setup's fixed-name pre-check and why it exists despite `Delete` policies. Verify by re-reading the
   edited paragraphs against the code.
-- [ ] 11.2 Delete U31 from `docs/review/open-findings.md`. Verify by grepping for `U31`.
-- [ ] 11.3 Update the affected Mermaid sources:
+- [x] 11.2 Delete U31 from `docs/review/open-findings.md`. Verify by grepping for `U31`.
+- [x] 11.3 Update the affected Mermaid sources:
   - `baas-setup.mmd`: name pre-check, `ROLLBACK_COMPLETE` recovery;
   - `baas-teardown.mmd`: missing bucket;
   - `baas-jobs.mmd`: terminate without the branch for a job with no item, the shared stop step;
@@ -144,7 +144,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
   - `baas-states-deployment.mmd`: `ROLLBACK_COMPLETE` → setup.
 
   Render each with `mmdc` into the scratchpad and look at the PNG before committing.
-- [ ] 11.4 R4/R5: the docs commit carries the release note as a `BREAKING CHANGE:` footer (text in
+- [x] 11.4 R4/R5: the docs commit carries the release note as a `BREAKING CHANGE:` footer (text in
   design.md), then a `---` line, then the trailers. No line of any other commit body in this change
   opens with the keyword. Verify with `git log -1 --format=%B`, checking the footer and the separator.
 

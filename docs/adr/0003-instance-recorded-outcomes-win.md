@@ -58,3 +58,12 @@ fixture, when the termination layers change.
 
 - A slow `RunInstances` response or a late operator no longer turns a good run red in CI.
 - U30 and U38 remain unit-tested only: both windows are seconds long and cannot be produced on demand.
+
+## Amendment (2026-10-09, `pr83-review-fixes`)
+
+Point 2 no longer holds for `timed-out`. It has exactly two writers: the launching CLI's poll cap,
+which terminates through its own stop, and the instance's watchdog, which uploads the boot log and
+terminates itself. So a `timed-out` the CLI reads, or meets as the reason its write was refused,
+leaves the instance alone, like `completed` and `failed:<n>`. The predicate is now
+`JobStatus.endsItself`, and `baas jobs terminate` reaches it through the same `JobStop` as
+`JobSession.stop`. Only `cancelled` makes the CLI terminate a live instance it did not stop itself.
