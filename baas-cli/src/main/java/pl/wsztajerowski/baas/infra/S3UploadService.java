@@ -124,14 +124,6 @@ public class S3UploadService {
     }
 
     /**
-     * The stack declares {@code DeletionPolicy: Retain} on the bucket, so CloudFormation
-     * never removes it — teardown has to do it explicitly when asked.
-     */
-    public void deleteBucket(String bucket) {
-        s3.deleteBucket(r -> r.bucket(bucket));
-    }
-
-    /**
      * Bucket names are global, so a retained bucket blocks a stack that wants to recreate it.
      * A 403 counts as existing: the name is taken either way, which is all the caller needs
      * to know, and treating it as absent would send them into a create that cannot succeed.

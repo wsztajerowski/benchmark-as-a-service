@@ -114,6 +114,12 @@ class RunnerImageExtensionTest {
             .matches("[0-9a-f]{8}");
     }
 
+    /** The label is the first eight hex characters of SHA-256, pinned to an independent computation. */
+    @Test
+    void theHashIsTheLeadingEightHexOfSha256() {
+        assertThat(RunnerImageExtension.hash("abc\n")).isEqualTo("ba7816bf");
+    }
+
     @Test
     void anyOtherEditChangesTheHash() {
         assertThat(RunnerImageExtension.hash(EXTENSION.replace("bpftrace", "bcc")))
