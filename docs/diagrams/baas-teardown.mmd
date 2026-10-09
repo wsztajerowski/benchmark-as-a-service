@@ -41,7 +41,9 @@ sequenceDiagram
 
     Note over TD,S3: CloudFormation will not delete a non-empty bucket, so it is emptied first
     TD->>S3: list every object version and delete marker, delete them in batches
-    alt emptying fails
+    alt bucket does not exist
+        Note over TD,S3: NoSuchBucket counts as already empty -- removed by hand, or never created (R2)
+    else emptying fails
         TD-->>User: error naming the bucket -- exit 1, the stack is NOT deleted
     end
 

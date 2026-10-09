@@ -1,9 +1,11 @@
 %% One job: the job item's status. Writers: C = baas run, H = its shutdown hook,
 %% T = baas jobs terminate (any operator), I = the instance's user-data, W = the instance's watchdog.
 %% Every write after the reservation is a conditional UpdateItem that never replaces a terminal status.
-%% completed and failed:<n> are written only by I: no CLI path terminates or overrides them (ADR 0003).
-%% Never stored, computed by readers: vanished (non-terminal, no live tagged instance — jobs list and
-%% the poll), status-lost (as vanished but measurements exist — the poll only). baas run --format json
+%% completed and failed:<n> are written only by I, and a timed-out the CLI did not write only by W: after
+%% any of them no CLI path terminates the instance, which ships its log and ends itself (ADR 0003, amended).
+%% Only cancelled makes a CLI terminate a live instance it did not stop itself.
+%% Never stored, computed by readers: vanished (non-terminal, no live tagged instance, created at least
+%% 5 min ago — jobs list and the poll), status-lost (as vanished but measurements exist — the poll only). baas run --format json
 %% reports the status it ended with as jobStatus.
 stateDiagram-v2
     direction TB

@@ -150,17 +150,25 @@ The watchdog is the only one that survives a deadlocked JVM.
    the bound is computed; it is also the CLI's poll cap. The watchdog records `timed-out` before
    its log upload, through `job_status` — which is why that function is defined *before* the
    watchdog forks: a subshell sees only the functions defined before it, and `bash -n` would not
-   notice the difference
+   notice the difference. **Nothing kills the watchdog**, the script's own end included: it used to
+   be killed just before `terminate-instances`, so a failed terminate left nothing able to end the
+   instance, while a watchdog left running only writes a refused status. Every self-terminate,
+   the watchdog's too, ends `|| shutdown -h now`. That relies on the launch's
+   `ShutdownBehavior=TERMINATE`, and needs no API call, permission or instance id
 2. Process `timeout` around `java -jar benchmark-runner.jar`
 3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C, registered *before* `RunInstances` so an
    interrupt mid-launch can look the instance up by its `baas-job-id` tag. That lookup can
    miss — the instance may not exist yet, and `DescribeInstances` lags — so the instance covers it:
    its `running` write is refused over the recorded `cancelled`, and a refused `running` means it
    ships its boot log and terminates without starting the benchmark. It, the poll cap
-   (`timed-out`) and `baas jobs terminate` share `JobSession.stop`: record why under a 5 s timeout,
-   then terminate whatever the write did — unless the write was refused because the instance had
-   already recorded `completed`/`failed:<n>`, when it is mid-upload and terminates itself. A status
-   write never holds a termination back
+   (`timed-out`) and `baas jobs terminate` share one stop step (`JobStop`): record why under a 5 s
+   timeout, then terminate whatever the write did — unless the write was refused because the job had
+   already reached a status after which the instance ends itself (`JobStatus.endsItself`:
+   `completed`, `failed:<n>`, or a `timed-out` its watchdog wrote), when it is mid-upload and
+   terminates itself. So the only stored status for which the CLI terminates a live instance it did
+   not stop itself is `cancelled`. A status write never holds a termination back. `RunInstances`
+   carries the job id as its client token, so an SDK retry cannot start a second, untracked
+   instance
 
 **The runner image (`infra/runner-image.yaml`, `baas admin image build`)**
 
@@ -282,6 +290,15 @@ The watchdog is the only one that survives a deadlocked JVM.
   flight. Observed: removing the 27017 rule also touched the description, and the id moved. Change
   the rules without touching the description unless you intend the replacement. Its text still says
   "443/80" for exactly this reason, and `theRunnerSecurityGroupDescriptionIsNeverEdited` pins it.
+- **Setup checks the stack's fixed names before every create, despite `DeletionPolicy: Delete`.**
+  The bucket is named `<prefix>` and the table `<prefix>-results`, so a taken name fails the whole
+  create into `ROLLBACK_COMPLETE`. Leftovers still happen: a pre-`Delete` teardown, a bucket made by
+  hand, or another account owning the globally unique bucket name. Setup names the leftover and the
+  command that removes it; it never deletes one. `BucketProbe` asks a redirect again in the region
+  it names, because from elsewhere another account's bucket answers 301 like your own, and only its
+  own region answers 403. A stack in `ROLLBACK_COMPLETE` holds nothing, so setup deletes and
+  recreates it rather than pointing at a teardown that cannot run: no configuration file was ever
+  written for it.
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.
@@ -315,7 +332,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   and rebuilt the networking underneath everyone. Carrying them forward silently would close the
   hole while discarding a flag the operator typed; refusing names both values instead.
 - **Each deployment is one file, `~/.baas/deployments/<name>.yaml`, storing credential *profile
-  names*, region, `prefix` and preferences — nothing else, and no secret.** The credentials themselves
+  names*, region, `prefix` and preferences — nothing else, and no secret.** A file whose `prefix` is not its own name is refused on read: a copied file would otherwise aim
+  every command, teardown included, at the deployment it was copied from. The credentials themselves
   stay in `~/.aws`. One file per deployment, not one file with a map: an older CLI's save drops keys
   it does not know, so a map would vanish the first time an older CLI ran `config set`. The flat
   `~/.baas/config.yaml` of earlier releases is moved there on first look and removed; an older CLI
@@ -719,8 +737,10 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
   built (`JOB_SORT_KEY`). The shell never rebuilds the key from `CREATED_AT`, which is
   `Instant.toString()` and varies in width. Its guard expression is the CLI's own
   (`DynamoDbJobRecorder.NOT_TERMINAL`), exported verbatim.
-- **`vanished` is never stored**: a non-terminal status whose instance is not pending or running.
-  `baas jobs list` decides that from one `DescribeInstances` of the live runners and writes nothing.
+- **`vanished` is never stored**: a non-terminal status whose instance is not pending or running,
+  once the job is older than `JobListing.VANISH_GRACE` (5 min). Before that, a job is still
+  launching or not yet visible to `DescribeInstances`, and shows its stored status. `baas jobs
+  list` decides from one `DescribeInstances` of the live runners and writes nothing.
 - **Every measurement reader excludes job items**: both Scans filter `begins_with(pk, RESULT#)`, the
   index query filters `attribute_exists(kind)` — a filter on `gsi1sk` is refused, it is a key
   attribute — and `MeasurementItemMapper.fromItem` throws on anything else, so a reader that forgets

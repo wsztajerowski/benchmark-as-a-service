@@ -33,7 +33,7 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 | N3 | A failed run-item reservation strands the uploaded `input/` | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | Low | open, by hand |
 | U8 | `runner.sourceRepo` can only be set by editing YAML | Info | open |
-| U14, U31 | Informational, see the last section | Info | — |
+| U14 | Informational, see the last section | Info | — |
 
 ## Queued as OpenSpec changes
 
@@ -171,6 +171,4 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
 - **U14.** After a teardown and setup, the AWS CLI (not `baas`) fails with `InvalidClientTokenId` on
   the operator profile until its cached session in `~/.aws/cli/cache` expires: the role was
   recreated with a new id. The SDK does not read that cache.
-- **U31.** `baas jobs list` shows a job as `vanished` for the few seconds between its reservation and
-  `DescribeInstances` seeing its tagged instance, and `--in-flight` hides it then. Nothing is written.
 

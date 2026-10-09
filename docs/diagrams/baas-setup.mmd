@@ -5,6 +5,7 @@ sequenceDiagram
     participant STS as AWS STS
     participant IAM as AWS IAM
     participant S3 as AWS S3
+    participant DDB as AWS DynamoDB
     participant CFSvc as CloudFormationService
     participant CF as AWS CloudFormation
     participant FS as Local Filesystem
@@ -19,9 +20,9 @@ sequenceDiagram
     SC->>STS: sts.getCallerIdentity()
     STS-->>SC: account id
     Note over SC: prefix = D, the only configured one, else "baas-" + accountId<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results" (DeploymentNames)<br/>Nothing about the CALLER reaches the name -- a second<br/>deployment exists only because its name was typed.
-    SC->>S3: headBucket(bucketName) -- bucketRegion?
-    Note over SC,S3: global: a wrong-region request answers 301/400 with x-amz-bucket-region,<br/>and 404 = no bucket. Needs only s3:ListBucket on the prefix bucket
-    alt bucket in ANOTHER region
+    SC->>S3: BucketProbe -- headBucket(bucketName) here, then again in the region a redirect names
+    Note over SC,S3: absent (404) / reachable in region X (200) / forbidden (403).<br/>From another region, ANY account's bucket answers 301 -- only its own<br/>region tells the caller's bucket (200) from another account's (403)
+    alt reachable in ANOTHER region
         SC-->>User: the deployment lives there -- setup --region <it>, exit 1, no delete advice (U23)
     end
     Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second deployment
@@ -32,22 +33,28 @@ sequenceDiagram
     SC->>FS: load /templates/cf-template-core.yaml from the classpath
     FS-->>SC: template body
 
-    SC->>CF: describeStacks(stackName) -- exists?
-    alt stack exists (update)
+    SC->>CF: describeStacks(stackName) -- status?
+    alt stack absent, or ROLLBACK_COMPLETE (create)
+        SC->>DDB: describeTable(prefix-results) -- exists?
+        alt bucket reachable HERE, bucket forbidden, or table exists
+            SC-->>User: name the leftover and its removal (aws s3 rb / aws dynamodb delete-table),<br/>or for another account's bucket ask for another --deployment.<br/>Exit 1 -- nothing created, nothing deleted, a rolled-back stack left as it is (R16)
+        end
+        opt status ROLLBACK_COMPLETE
+            Note over SC: a failed first create: no resources, no config file written
+            SC->>CFSvc: deleteStack(stack) -- waits for DELETE_COMPLETE, then the create below (R1)
+        end
+    end
+    alt stack exists and updatable (update)
         Note over SC: networking params sent only if this invocation named them,<br/>and refused if they differ from the deployed values.<br/>Federation params carried forward unless named or revoked.
         Note over SC: image parameters: only those the deployed stack lacks.<br/>Base, parent and extension are carried forward, so a plain<br/>setup never reverts an image or drops an extension
         SC->>CFSvc: updateStackParameters(stack, template, changed params)
-        alt status ROLLBACK_COMPLETE
-            CFSvc-->>User: refuse -- delete it first with<br/>baas admin deployment teardown --deployment X --yes
-        else updatable
-            CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
-            alt nothing changed
-                CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
-            else changes applied
-                CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
-            end
+        CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
+        alt nothing changed
+            CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
+        else changes applied
+            CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
         end
-    else stack absent (create)
+    else create
         Note over SC: every image parameter is planned (parent resolved by<br/>DescribeImages in this region), never left at a template placeholder
         SC->>CFSvc: createStack(stack, template, explicit params incl. federation or empty)
         CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)

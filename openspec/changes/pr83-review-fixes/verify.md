@@ -56,3 +56,10 @@
 ## 10. Dead code
 
 - 10.1: removed `S3UploadService.deleteBucket` (and its IT case `removesTheBucketItselfNotJustItsContents`; `detectsWhetherABucketNameIsTaken` now deletes through the client, and its Javadoc names `config sync` as its reader) and `JobListing.SHOWN_STATUSES`. `RunnerImageExtension.hash` now runs on `RunnerJarResolver.sha256Hex`, and a new literal pin, `theHashIsTheLeadingEightHexOfSha256` ("abc" → `ba7816bf`, computed independently with Python), shows the output is unchanged. `grep` finds no remaining reference.
+
+## 11. Documentation
+
+- 11.1: CLAUDE.md. *Three termination layers*: nothing kills the watchdog, the `|| shutdown -h now` fallback, `JobStop`/`endsItself`, only `cancelled` terminates, and the client token. *Job items*: the `vanished` grace. *Other rules*: setup's name pre-check and the `ROLLBACK_COMPLETE` recovery. *Each deployment is one file*: a mismatched prefix is refused. ADR 0003 gets an amendment for `timed-out` rather than an edit, since ADRs are records.
+- 11.2: U31 deleted from `docs/review/open-findings.md` (its entry and its row in the index table).
+- 11.3: `baas-setup`, `baas-teardown`, `baas-jobs`, `baas-run`, `baas-states-job` and `baas-states-deployment` `.mmd` updated. Each was rendered with `mmdc` into the scratchpad and looked at. The first render of `baas-jobs` failed on an extra `end` left by the edit, which was fixed and re-rendered.
+- 11.4: release note carried by the docs commit's footer (below).
