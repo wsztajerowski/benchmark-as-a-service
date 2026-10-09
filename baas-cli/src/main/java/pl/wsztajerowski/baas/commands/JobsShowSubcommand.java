@@ -23,6 +23,7 @@ import pl.wsztajerowski.baas.results.EnvironmentManifest;
 
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -125,7 +126,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
             if (!job.isTerminal()) {
                 sources.liveInstance(jobId).ifPresent(instance -> live.put(jobId, instance));
             }
-            JobListing.Row row = JobListing.resolve(job, live);
+            JobListing.Row row = JobListing.resolve(job, live, Instant.now());
             String path = trimmed(job.resultPath());
             Optional<String> manifestJson = sources.manifest(path);
             Optional<EnvironmentManifest> manifest = manifestJson.map(json -> EnvironmentManifest.parse(jobId, json));

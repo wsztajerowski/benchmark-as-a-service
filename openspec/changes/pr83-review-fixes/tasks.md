@@ -91,7 +91,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 7. Listing: the vanished grace window (R12)
 
-- [ ] 7.1 `JobListing.resolve` and `filter` take the current instant. A non-terminal job younger than
+- [x] 7.1 `JobListing.resolve` and `filter` take the current instant. A non-terminal job younger than
   the named 5-minute constant keeps its stored status with no live instance. `jobs list`, `jobs show`
   and `--in-flight` pass the instant. Verify with `JobListingTest`: a 10-second-old `launching` job
   without an instance is shown as `launching` and counts as in flight; a 6-minute-old one is `vanished`.

@@ -37,3 +37,7 @@
 - 6.4: `JobStop` is the one step: bounded write → on refusal a strong re-read → `LEFT_ALONE` if `endsItself`, else terminate. `JobSession.stop` and `JobTermination` both use it. `JobTermination` resolves the id through the index, then reads the item strongly. New tests: `anInstanceThatCompletesBeforeTheCancelIsLeftToTerminateItself` (the review's race) and `aJobTheWatchdogTimedOutIsLeftToTerminateItself`.
 - 6.5: `terminateUnrecorded` is deleted (`anIdWithNoItemTerminatesNothing`).
 - 6.6: every end in `JobSession` goes through `end()` under the session's lock, and a late `stop()` returns the recorded status (`twoStopsAtOnceRecordAndTerminateOnce`, `stopIsANoOpOnceTheJobEnded`).
+
+## 7. Listing
+
+- 7.1: `JobListing.VANISH_GRACE` = 5 min. `resolve` and `filter` take `now`, and `jobs list` and `jobs show` pass `Instant.now()`. Tests: `aJobYoungerThanTheGraceKeepsItsStoredStatus` (10 s old `launching`, shown and in flight) and `aJobOlderThanTheGraceWithNoInstanceVanished` (6 min). The existing tests pass `LATER`, a day after creation.
