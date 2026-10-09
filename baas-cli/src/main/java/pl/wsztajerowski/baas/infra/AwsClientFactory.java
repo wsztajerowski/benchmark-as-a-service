@@ -30,6 +30,11 @@ public class AwsClientFactory {
 
     public S3Client s3() { return build(S3Client.builder()); }
 
+    /** An S3 client for another region, under the same credentials: a bucket answers only from its own. */
+    public S3Client s3In(String otherRegion) {
+        return new AwsClientFactory(otherRegion, profile).s3();
+    }
+
     public DynamoDbClient dynamoDb() { return build(DynamoDbClient.builder()); }
 
     /**

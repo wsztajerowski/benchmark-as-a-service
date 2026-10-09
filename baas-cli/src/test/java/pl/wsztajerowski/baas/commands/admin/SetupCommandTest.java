@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
+import pl.wsztajerowski.baas.infra.BucketProbe;
 
 import java.util.Map;
 
@@ -316,6 +317,53 @@ class SetupCommandTest {
             .doesNotContain("--force");
     }
 
+
+    // ─── a taken bucket or table name, refused before a create (R16) ──────────────
+
+    @Test
+    void aLeftoverBucketInTheRegionIsNamedWithItsRemoval() {
+        var message = SetupCommand.nameConflict(new BucketProbe.Reachable("us-east-1"), false,
+            "baas-development", "us-east-1");
+
+        assertThat(message).hasValueSatisfying(m -> assertThat(m)
+            .contains("Bucket baas-development already exists in us-east-1")
+            .contains("aws s3 rb s3://baas-development --force")
+            .contains("may hold earlier results")
+            .contains("Nothing was deployed"));
+    }
+
+    @Test
+    void anotherAccountsBucketAsksForAnotherName() {
+        var message = SetupCommand.nameConflict(new BucketProbe.Forbidden("us-west-2"), false,
+            "wiktor-dev", "us-east-1");
+
+        assertThat(message).hasValueSatisfying(m -> assertThat(m)
+            .contains("taken by another AWS account")
+            .contains("baas --deployment <name> admin deployment setup")
+            .doesNotContain("rb ")
+            .doesNotContain("lives in"));
+    }
+
+    @Test
+    void aLeftoverTableIsNamedWithItsRemoval() {
+        var message = SetupCommand.nameConflict(new BucketProbe.Absent(), true, "baas-development", "us-east-1");
+
+        assertThat(message).hasValueSatisfying(m -> assertThat(m)
+            .contains("Table baas-development-results already exists in us-east-1")
+            .contains("aws dynamodb delete-table --table-name baas-development-results --region us-east-1"));
+    }
+
+    @Test
+    void freeNamesRaiseNoConflict() {
+        assertThat(SetupCommand.nameConflict(new BucketProbe.Absent(), false, "d", "us-east-1")).isEmpty();
+    }
+
+    /** A bucket elsewhere is the early check's to report: the deployment lives there. */
+    @Test
+    void aReachableBucketInAnotherRegionIsNotACreateConflict() {
+        assertThat(SetupCommand.nameConflict(new BucketProbe.Reachable("eu-central-1"), false, "d", "us-east-1"))
+            .isEmpty();
+    }
 
     // ─── U34: networking ids belong to --use-existing-vpc ────────────────────────
 

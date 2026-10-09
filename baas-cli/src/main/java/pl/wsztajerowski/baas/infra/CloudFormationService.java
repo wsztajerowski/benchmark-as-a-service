@@ -121,7 +121,8 @@ public class CloudFormationService {
         if (stack.stackStatus() == StackStatus.ROLLBACK_COMPLETE) {
             throw new IllegalStateException(
                 "Stack '" + stack.stackName() + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
-                "Delete it first with: baas admin deployment teardown --deployment " + stack.stackName() + " --yes");
+                "Re-run setup, which deletes it and creates it again: baas --deployment " + stack.stackName()
+                + " admin deployment setup");
         }
     }
 
@@ -204,6 +205,11 @@ public class CloudFormationService {
                     software.amazon.awssdk.services.cloudformation.model.Parameter::parameterKey,
                     p -> p.parameterValue() == null ? "" : p.parameterValue())))
             .orElseGet(Map::of);
+    }
+
+    /** The stack's status, or empty when there is no such stack. */
+    public Optional<StackStatus> stackStatus(String stackName) {
+        return describeStack(stackName).map(Stack::stackStatus);
     }
 
     public boolean stackExists(String stackName) {

@@ -60,7 +60,15 @@ class CloudFormationServiceTest {
             .updateStackParameters("baas-123456789012", "{}", Map.of("RunnerImageVersion", "1.0.0")))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("ROLLBACK_COMPLETE")
-            .hasMessageContaining("baas admin deployment teardown --deployment baas-123456789012");
+            .hasMessageContaining("baas --deployment baas-123456789012 admin deployment setup")
+            .hasMessageNotContaining("teardown");
         assertThat(cf.updateSubmitted).isFalse();
+    }
+
+    /** Setup reads the status to tell a rolled-back create, which it recovers, from a live stack. */
+    @Test
+    void theStatusOfAStackIsReported() {
+        assertThat(new CloudFormationService(new FakeCloudFormation(StackStatus.ROLLBACK_COMPLETE))
+            .stackStatus("baas-123456789012")).contains(StackStatus.ROLLBACK_COMPLETE);
     }
 }
