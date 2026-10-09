@@ -41,6 +41,19 @@ class ResultsQueryPipelineTest {
     private record Run(int exit, String out, String err) {}
 
     private Run query(String... args) {
+        List<String> line = new ArrayList<>(List.of("query", "--project", "p", "--format", "json"));
+        line.addAll(List.of(args));
+        return execute(line);
+    }
+
+    /** A lookup of one job, whose thirty measurements are the same thirty rows. */
+    private Run queryJob(String... args) {
+        List<String> line = new ArrayList<>(List.of("query", "--job-id", "job-x", "--format", "json"));
+        line.addAll(List.of(args));
+        return execute(line);
+    }
+
+    private Run execute(List<String> line) {
         var stored = new BaasConfig();
         stored.setPrefix("baas-123456789012");
         pl.wsztajerowski.baas.TestDeployments.save(dir, stored);
@@ -64,6 +77,11 @@ class ResultsQueryPipelineTest {
                             }
 
                             @Override
+                            public List<ResultRow> queryByJobId(String id) {
+                                return thirtyDays();
+                            }
+
+                            @Override
                             public void close() {
                             }
                         };
@@ -74,9 +92,6 @@ class ResultsQueryPipelineTest {
             }
         };
         var err = new StringWriter();
-        List<String> line = new ArrayList<>(List.of("query", "--project", "p",
-            "--format", "json"));
-        line.addAll(List.of(args));
         int exit = new CommandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
             .execute(line.toArray(String[]::new));
         return new Run(exit, out.toString(), err.toString());
@@ -98,6 +113,21 @@ class ResultsQueryPipelineTest {
         assertThat(run.exit()).as(run.err()).isZero();
         List<String> ids = jobIds(run.out());
         assertThat(ids).hasSize(20).startsWith("job-30", "job-29").endsWith("job-11");
+    }
+
+    /** R11: a job lookup is the whole job, unless a limit is asked for. */
+    @Test
+    void aJobLookupReturnsEveryMeasurementByDefault() {
+        var run = queryJob();
+
+        assertThat(run.exit()).as(run.err()).isZero();
+        assertThat(jobIds(run.out())).hasSize(30);
+        assertThat(run.err()).doesNotContain("Reporting");
+    }
+
+    @Test
+    void anExplicitLimitStillBoundsAJobLookup() {
+        assertThat(jobIds(queryJob("--limit", "5").out())).hasSize(5);
     }
 
     @Test

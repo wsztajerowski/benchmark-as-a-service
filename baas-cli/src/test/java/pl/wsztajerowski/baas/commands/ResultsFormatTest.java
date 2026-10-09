@@ -84,6 +84,26 @@ class ResultsFormatTest {
         assertThat(parsed.get(0).get("score").asDouble()).isEqualTo(1000.0);
     }
 
+    /** R9: an unknown score is an empty cell, never a number, and the column count holds. */
+    @Test
+    void anUnknownScoreIsAnEmptyCsvCell() throws Exception {
+        var lines = render("csv", List.of(row(Double.NaN, Double.NaN))).strip().lines().toList();
+        String[] header = lines.getFirst().split(",", -1);
+        String[] cells = lines.get(1).split(",", -1);
+
+        assertThat(cells).hasSameSizeAs(header);
+        assertThat(cells[java.util.Arrays.asList(header).indexOf("score")]).isEmpty();
+        assertThat(cells[java.util.Arrays.asList(header).indexOf("scoreError")]).isEmpty();
+        assertThat(lines.get(1)).doesNotContain("NaN");
+    }
+
+    @Test
+    void anUnknownScoreIsJsonNull() throws Exception {
+        var parsed = new ObjectMapper().readTree(render("json", List.of(row(Double.NaN, Double.NaN))));
+
+        assertThat(parsed.get(0).get("score").isNull()).isTrue();
+    }
+
     @Test
     void csvKeepsOneColumnPerFieldUnderACommaDecimalLocale() throws Exception {
         Locale.setDefault(Locale.forLanguageTag("pl-PL"));

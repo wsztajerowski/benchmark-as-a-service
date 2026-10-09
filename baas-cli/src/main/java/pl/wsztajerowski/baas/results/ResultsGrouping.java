@@ -87,6 +87,11 @@ public final class ResultsGrouping {
             default -> created;
         };
         Comparator<ResultRow> order = ascending ? primary : primary.reversed();
+        if ("score".equals(field)) {
+            // An unknown score is last whichever way the scores run: comparingDouble puts NaN above
+            // everything, which would head the descending default with rows that measured nothing.
+            order = Comparator.comparing((ResultRow row) -> !Double.isFinite(row.score())).thenComparing(order);
+        }
         return rows.stream()
             .sorted(order.thenComparing(created.reversed())
                 .thenComparing(row -> row.jobId() == null ? "" : row.jobId())

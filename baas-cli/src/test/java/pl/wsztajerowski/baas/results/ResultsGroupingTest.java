@@ -78,6 +78,30 @@ class ResultsGroupingTest {
             .extracting(ResultRow::score).containsExactly(1.0, 3.0, 2.0);
     }
 
+    /** R9: an absent score is unknown, not zero, so it can never win a lower-is-better group. */
+    @Test
+    void aScoreTheItemDoesNotCarryNeverWinsALowerIsBetterGroup() {
+        var missing = ResultRow.from(new pl.wsztajerowski.baas.model.StoredMeasurement(
+            "p", "job-missing", java.time.Instant.parse("2026-08-19T09:00:00Z"),
+            pl.wsztajerowski.baas.model.MeasurementKind.values()[0], "com.example.Bench", "run", "avgt",
+            Map.of(), null, null, "ns/op", Map.of(), null, Map.of("branch", "main"), null, null, null, null));
+
+        assertThat(missing.score()).isNaN();
+        assertThat(missing.scoreError()).isNaN();
+        assertThat(ResultsGrouping.bestPerGroup(List.of(missing, inMode("avgt", 9.0, "b")), ResultsFilters.BRANCH))
+            .singleElement().extracting(ResultRow::score).isEqualTo(9.0);
+    }
+
+    @Test
+    void anUnknownScoreSortsLastInBothDirections() {
+        var rows = List.of(inMode("thrpt", 1.0, "a"), inMode("thrpt", Double.NaN, "b"), inMode("thrpt", 2.0, "c"));
+
+        assertThat(ResultsGrouping.sorted(rows, "score", false)).extracting(ResultRow::score)
+            .containsExactly(2.0, 1.0, Double.NaN);
+        assertThat(ResultsGrouping.sorted(rows, "score", true)).extracting(ResultRow::score)
+            .containsExactly(1.0, 2.0, Double.NaN);
+    }
+
     @Test
     void sortingByScoreIsDescendingUnlessAscending() {
         var rows = List.of(inMode("thrpt", 1.0, "a"), inMode("thrpt", 3.0, "b"), inMode("thrpt", 2.0, "c"));

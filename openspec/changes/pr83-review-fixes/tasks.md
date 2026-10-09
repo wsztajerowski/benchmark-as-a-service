@@ -98,16 +98,16 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 ## 8. Results query (R9, R11)
 
-- [ ] 8.1 R9: `ResultRow.from` maps an absent `score` or `scoreError` to `NaN`. Verify with a
+- [x] 8.1 R9: `ResultRow.from` maps an absent `score` or `scoreError` to `NaN`. Verify with a
   `ResultsGroupingTest` case: an `avgt` group with a missing score and a 9 ns/op score keeps 9 ns/op.
-- [ ] 8.2 R9: CSV prints an empty cell for a non-finite score or error, keeping `Locale.ROOT` for finite
+- [x] 8.2 R9: CSV prints an empty cell for a non-finite score or error, keeping `Locale.ROOT` for finite
   ones. `--sort-by score` puts non-finite values last in both directions. Verify with tests on
   `printCsv` and `ResultsGrouping.sorted`, ascending and descending.
-- [ ] 8.3 R11: `--limit` becomes nullable. The effective limit is the given value, else none under
+- [x] 8.3 R11: `--limit` becomes nullable. The effective limit is the given value, else none under
   `--job-id`, else 20, and `--help` says so. Verify with tests: a 48-row job lookup returns 48 with no
   cut note, `--job-id … --limit 5` returns 5 and reports 5 of 48, and a project query still defaults
   to 20.
-- [ ] 8.4 If 1.5 found an assertion that reads `score` as a number, adjust it. Otherwise mark this
+- [x] 8.4 If 1.5 found an assertion that reads `score` as a number, adjust it. Otherwise mark this
   not needed, with the reason.
 
 ## 9. Configuration: a file names its own deployment (R13)

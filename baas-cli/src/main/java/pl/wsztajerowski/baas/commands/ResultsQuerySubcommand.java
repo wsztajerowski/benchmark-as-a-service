@@ -104,8 +104,22 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     int offset;
 
     @Option(names = "--limit", paramLabel = "<n>",
-        description = "Report at most this many rows (default 20; 0 for no limit).")
-    int limit = 20;
+        description = "Report at most this many rows (default 20, or no limit with --job-id; 0 for no limit).")
+    Integer limit;
+
+    /** The default cut, for sweeps of a project or of every project. */
+    static final int DEFAULT_LIMIT = 20;
+
+    /**
+     * The limit in force: the one given, else none for a job lookup — a job's measurements are a
+     * bounded set, and {@code baas run} points at exactly this lookup — else {@link #DEFAULT_LIMIT}.
+     */
+    int effectiveLimit() {
+        if (limit != null) {
+            return limit;
+        }
+        return jobId != null ? 0 : DEFAULT_LIMIT;
+    }
 
     @Option(names = "--format", description = "Output format: table (default), json, csv.", defaultValue = "table")
     String format;
@@ -134,8 +148,8 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             return 2;
         }
 
-        if (limit < 0 || offset < 0) {
-            logger.error("--limit and --offset must not be negative; got {} and {}.", limit, offset);
+        if (effectiveLimit() < 0 || offset < 0) {
+            logger.error("--limit and --offset must not be negative; got {} and {}.", effectiveLimit(), offset);
             return 2;
         }
         if (!ResultsGrouping.SORT_FIELDS.contains(sortBy)) {
@@ -234,6 +248,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         rows = ResultsGrouping.sorted(rows, sortBy, ascending);
         int total = rows.size();
         rows = rows.stream().skip(offset).toList();
+        int limit = effectiveLimit();
         if (limit > 0 && rows.size() > limit) {
             rows = rows.subList(0, limit);
         }
@@ -399,9 +414,9 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         for (ResultRow r : rows) {
             // Locale.ROOT for the same reason as printJson — a comma decimal separator turns one
             // CSV column into two.
-            out.printf("%s,%s,%s,%s,%.6f,%.6f,%s,%s,%s,%s,%s,%s%n",
+            out.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
                 r.jobId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
-                r.score(), r.scoreError(), r.scoreUnit(), r.createdAt(),
+                csvNumber(r.score()), csvNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
                 r.imageVersion() != null ? r.imageVersion() : "",
                 r.instanceType() != null ? r.instanceType() : "",
                 csvField(csvTags(r.tags())), csvField(csvTags(r.params())));
@@ -455,6 +470,11 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     /** A missing tag is JSON null, not the string "null" — the two mean different things here. */
     private static String jsonOrNull(String value) {
         return value != null ? "\"" + value + "\"" : "null";
+    }
+
+    /** An unknown value is an empty cell, CSV's form of JSON's {@code null}; never a number. */
+    static String csvNumber(double value) {
+        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "";
     }
 
     /**
