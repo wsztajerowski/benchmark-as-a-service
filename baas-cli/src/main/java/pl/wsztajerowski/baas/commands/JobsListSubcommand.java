@@ -168,10 +168,11 @@ public class JobsListSubcommand implements Callable<Integer> {
             }
         }
         List<JobListing.Row> rows;
+        Instant now = Instant.now();
         try (var dynamoDb = factory.dynamoDb()) {
             rows = new DynamoDbJobRecorder(dynamoDb, config.resultsTable())
-                .newestFirst(JobListing.filter(project, tags, excludeTags, inFlight, live), Integer.MAX_VALUE).stream()
-                .map(job -> JobListing.resolve(job, live))
+                .newestFirst(JobListing.filter(project, tags, excludeTags, inFlight, live, now), Integer.MAX_VALUE).stream()
+                .map(job -> JobListing.resolve(job, live, now))
                 .toList();
         }
         return page(rows, note);
