@@ -472,7 +472,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
 - **`e2e-cloud-test.yml` drives `baas run` end to end, and it is the only thing that does.** Two
   `ubuntu-latest` CI jobs, each launching its own instance: `benchmark` runs `jmh-with-async` against
-  `fake-jmh-benchmarks` on the real runner AMI, so a bad bake fails CI rather than surviving it;
+  `fake-jmh-benchmarks` on the real runner AMI, so a bad bake fails CI rather than surviving it —
+  though it asserts only that a flame graph *file* exists, and its `flamegraph,jfr` flags yield
+  empty graphs (finding E1);
   `jcstress` runs `fake-stress-tests` in JCStress sanity mode (`-- --mode sanity`) and asserts the
   stored item's shape only, never pass/fail counts — the fixture's `TestWithForbiddenResults` races
   nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
