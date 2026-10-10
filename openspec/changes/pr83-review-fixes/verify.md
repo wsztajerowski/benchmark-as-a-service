@@ -72,7 +72,7 @@
   | # | Check | Result |
   |---|---|---|
   | L1 | R13: a copy of `baas-development.yaml` saved as `wiktor-copy.yaml`; `--deployment wiktor-copy admin deployment teardown --yes` and `config list` | Both refused naming the file, both prefixes and the fix; exit 1; `baas-development` stayed `CREATE_COMPLETE`; copy removed |
-  | L2 | R16 leftover bucket/table refusal and R2 missing-bucket teardown on `baas-development` | **Not run.** The teardown that must come first was denied by the session's permission classifier. Left for the user (W4) |
+  | L2 | R16 leftover bucket/table refusal and R2 missing-bucket teardown on `baas-development` | **Not run that night.** The teardown that must come first was denied by the session's permission classifier (W4). Run on 2026-10-10 with the released 7.0.0, except the missing-bucket teardown: see *Full end-to-end test* below |
   | J1 | Normal JMH run; `jobs list` polled during launch; instance attributes | `completed`, exit 0; listing showed `launching` (no instance) then `launched`, never `vanished` (R12); `ClientToken` = job id and shutdown behaviour `terminate` (R7); instance `terminated`, boot log uploaded (R3 normal path) |
   | J2 | 25-variant `@Param` sweep, `avgt` (scratch JAR, not committed) | `results query --job-id` → 25 rows, no cut note; `--limit 5` → 5 with "Reporting 5 of 25"; single-iteration `scoreError` an empty CSV cell (R11, R9) |
   | J3 | `jobs terminate --yes` from a second process while running | `Terminated instance …`, exit 0; the polling `baas run` reported `cancelled`, exit 1; instance `shutting-down` (R8) |
@@ -121,14 +121,14 @@
 
 - **W1:** the order inside `SetupCommand.deploy` (check names → delete a rolled-back stack → create), and "an update does not check its own names", have no unit test, because `deploy()` builds its AWS clients itself. Nor were they run live (W4). Recommendation: give `deploy()` an injectable seam like `TeardownCommand.removeDeployment`, or run L2 below.
 - **W2:** "A missing bucket does not block teardown" is proven at `deleteAllObjects` (IT), not through `TeardownCommand`, which is all AWS. Covered by L2 once it runs.
-- **W3** (predates this change): `avgt` results default to `s/op`, so a nanosecond-scale score prints as `0.000000` at the fixed 6 decimals in JSON and CSV (live J2). It is a real measurement shown as zero. Recommendation: format by significant digits, or note `-tu ns` in the docs. Not this change's scope.
-- **W4:** live check L2 was not run. Tearing down `baas-development` (the step before both R16 refusals and the R2 missing-bucket teardown) was denied by this session's permission classifier. To run by hand:
+- **W3** (predates this change; **moved to `docs/review/open-findings.md` as `pr83/W3`** on 2026-10-10): `avgt` results default to `s/op`, so a nanosecond-scale score prints as `0.000000` at the fixed 6 decimals in JSON and CSV (live J2). It is a real measurement shown as zero. Recommendation: format by significant digits, or note `-tu ns` in the docs. Not this change's scope.
+- **W4:** live check L2 was not run. **Steps 1, 2, 3 and 5 ran on 2026-10-10 and passed** (*Full end-to-end test* below). Step 4, the teardown with the bucket already removed, is still open; it needs one more teardown, setup and image build of `baas-development`. Tearing down `baas-development` (the step before both R16 refusals and the R2 missing-bucket teardown) was denied by this session's permission classifier. To run by hand:
   1. `baas --deployment baas-development admin deployment teardown --yes`
   2. `aws s3 mb s3://baas-development --region us-east-1`, then `baas --deployment baas-development admin deployment setup`: expect the leftover-bucket refusal and no stack. Then `aws s3 rb s3://baas-development`.
   3. Repeat step 2 with `aws dynamodb create-table --table-name baas-development-results …`: expect the leftover-table refusal. Then delete the table.
   4. `setup`, then `aws s3 rb s3://baas-development` (empty), then `teardown --yes`: expect exit 0 and the stack and file gone.
   5. `setup` and `admin image build` to restore it.
-- **W5** (predates this change): a JCStress row's `mode` is the string `"null"`: the literal text in CSV (live J7) and `"mode":"null"` in JSON (post-release round 5). Recommendation: an empty CSV cell and a JSON `null`, matching R9's treatment of the score.
+- **W5** (predates this change; **moved to `docs/review/open-findings.md` as `pr83/W5`** on 2026-10-10): a JCStress row's `mode` is the string `"null"`: the literal text in CSV (live J7) and `"mode":"null"` in JSON (post-release round 5). Recommendation: an empty CSV cell and a JSON `null`, matching R9's treatment of the score.
 - **W6:** same-region cross-deployment scoping (R6) is proven by unit tests only. Live J4 crossed regions, because no second deployment exists in either region (QUEUE's deferred two-deployments-in-one-region check covers it).
 - **W7:** "An undeletable object still stops teardown" has no test that forces a `DeleteObjects` error; the path (`IllegalStateException` → exit 1 before `deleteStack`) is unchanged code. Recommendation: a fake `S3Client` returning an error entry.
 
@@ -147,3 +147,52 @@ PR #83 was merge-committed into `main` (`b1772a0`); release run 37998298652 publ
 | 3 | JCStress on `baas-development`, which seeds the release runner into the second deployment; `jmh-with-prof` launched with the wrong type name, then with `-prof gc` | JCStress `completed`. The bad type was refused before launch. `-prof` is not a runner option (it is `-pr`): `failed:2`, boot log uploaded, instance terminated |
 | 4 | `jmh-with-prof -pr gc` and `jmh-with-async` (flamegraph) at once | Both `completed`; the `--in-flight` listing ran as they finished (inconclusive, settled in round 5) |
 | 5 | Long job on `baas-381492019823`: `jobs list --in-flight`, `jobs show`, then Ctrl+C | Listed as `running` with elapsed time; `cancelled`, exit 130, instance `shutting-down`; afterwards no live runner in either region; `--best-per type` across the rounds' rows correct |
+
+## Full end-to-end test (v7.0.0, 2026-10-10 07:44–08:17 CEST)
+
+Requested by the user: teardown and re-setup of a deployment, a real image build, benchmarks and
+stress tests on it, the async flame graphs and `jobs download`, a re-run with `jobs diff`, and every
+step that needs something besides the `baas` CLI. The CLI was the **published 7.0.0**, installed by
+the release's own `install.sh` into a scratch `BAAS_SHARE`/`BAAS_BIN`; the fixtures were rebuilt from
+the tag's sources (unchanged since `v7.0.0`). Deployment: `baas-development` (us-east-1).
+`baas-381492019823` (CI's) was not touched. 5 paid jobs and 1 image build.
+
+Before the teardown: `~/.baas` copied aside (restored state verified byte-identical with `diff -r`
+at the end, then the copy deleted). The deployment's results and the table's 46 items were saved with
+the AWS CLI (U2: no `baas` command exports).
+
+| # | Step | Result |
+|---|---|---|
+| T1 | `admin deployment teardown --yes` | Exit 0, 72 s. Warned that everything is lost; emptied the bucket, deleted the stack, retired the AMI and snapshot, deleted the pointer and the deployment file. Checked afterwards with the AWS CLI: stack, bucket, table, SSM pointer, AMI, snapshot, Image Builder components, recipes and images, the runner and operator roles, the runner instance profile: all gone; no live instance |
+| T2 | W4 step 2: `aws s3 mb s3://baas-development`, then setup | Refused, exit 1: "Bucket baas-development already exists in us-east-1 with no deployment stack… `aws s3 rb s3://baas-development --force`. Nothing was deployed." No stack was created |
+| T3 | W4 step 3: a hand-made `baas-development-results` table, then setup | Refused, exit 1, naming the table and `aws dynamodb delete-table … --region us-east-1`; nothing deployed. Table removed by hand |
+| T4 | `admin deployment setup --region us-east-1 --deployer-aws-profile baas-admin` | Exit 0, 3 min 42 s; configuration file written without `operatorProfile` (E3). Its printed `baas config set --operator-aws-profile` was refused as printed, because two deployments are configured (E2); with `--deployment` it worked |
+| T5 | AWS CLI on the operator profile right after setup | `InvalidClientTokenId` from a cached session of the deleted role; `baas` on the same profile worked. Deleting that one `~/.aws/cli/cache` file fixed it (U14) |
+| T6 | `baas run` before any image | Refused before any upload: "No runner image is published…  Build one: baas admin image build" (bare hint, E2) |
+| T7 | `admin image build` | Exit 0, 14 min 18 s, `ami-0b27fe7c2b003ce8a`, base 1.3.0, no extension. Compared with the image the teardown retired (`ami-0bde83fa6b83a0727`, from the saved `environment.json`): same kernel, JDK, async-profiler and tunables, and `packages.txt` identical, so the rebuild is reproducible |
+| J1 (A) | `jmh-with-async` `Incrementing_Synchronized -f 1 -wi 2 -i 3 --async-event=wall --async-output-type=flamegraph,jfr --async-additional-param threads=true`, c5.2xlarge, in parallel with J2 | `completed`, exit 0, 10,632,008 ops/s ± 4,648,904. Seeded `releases/7.0.0` from the release; J2's CLI seeded it a second time concurrently (S14). **Flame graphs empty** (E1); JFR has 344,047 samples |
+| J2 | `jcstress -- --mode sanity` | `completed`, exit 0, 1 row: score `null`/`NaN`, `"mode":"null"` (pr83/W5) |
+| J3 (B) | J1 again: the re-run | `completed`, 11,509,355 ops/s ± 2,045,909, +8 % on A and inside A's 99.9 % CI [5.98 M, 15.28 M] (3 iterations). Flame graphs empty again |
+| J4 (C) | J1 on `--instance-type c6i.2xlarge` | `completed`, 6,694,444 ops/s. Flame graphs empty again |
+| J5 | J1 with `--async-output-type=flamegraph` only, `exclude_from_results=true` | `completed`. Both graphs full: 399 frames, per-thread `jmh-worker` roots, `incrementUsingSynchronized` present, no "filtered out" line. This isolates E1 to `jfr` combined with `flamegraph` |
+| D1 | `jobs diff A B` (re-run) | `Differs in: memory`, `totalKb` 15882372 vs 15882380 only (jobs-command/W1) |
+| D2 | `jobs diff A C` (c5 vs c6i) | `machine.instanceType`, `cpu.model` (8124M vs 8375C), `memory.totalKb`; packages not compared (same AMI). Columns misalign on the CPU model (E5) |
+| D3 | `jobs diff A A`, `A JCStress`, `A <unknown id>` | "No differences."; `memory` only; "No job found…", exit 1 |
+| D4 | Every diff cross-checked against a field-by-field comparison of the downloaded `environment.json` files (22 fields each) | Identical sets of differences in every pair |
+| Q1 | `jobs download` for A, B, C, J2 and J5 | 9, 9, 9, 7 and 8 artifacts: result JSON, `environment.json`, process output, `packages.txt`, boot log, `input/`, profiler directory |
+| Q2 | `jobs show A` | Status, instance, tags, all seven environment groups, artifact list correct |
+| Q3 | `results query --project`, `--best-per instanceType`, `--tag run=B --format csv`, `--job-id -v`; `jobs list`, `--in-flight` | Correct rows and order; best-per kept one row per instance type plus the untagged JCStress bucket; CSV and JSON use `.` while the table shows `,` on this pl-PL machine (E4). `--in-flight` showed `launching` (no instance) and `launched` during the launch |
+| Z1 | After the last job | No live instance tagged `baas-deployment=baas-development`; every job's instance `terminated`, by itself |
+
+**Steps outside the `baas` CLI**, as the user asked to have listed:
+1. Saving data before a teardown: `aws s3 sync` and `aws dynamodb scan` (U2).
+2. Removing a leftover bucket or table that setup refuses: `aws s3 rb`, `aws dynamodb delete-table`.
+   By design, and the refusal names the command.
+3. Clearing the AWS CLI's cached session for the recreated operator role (U14). Only the AWS CLI
+   needs it.
+4. Remembering which operator profile the deployment used, since teardown forgets it (E3). The
+   `~/.aws/config` profile itself survives and needs no change.
+
+Findings filed or updated in `docs/review/open-findings.md`: E1–E6 new; S14, U2, U14 updated with
+what was seen; jobs-command/W1, pr83/W3 and pr83/W5 moved there.
+
