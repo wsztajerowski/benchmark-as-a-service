@@ -39,7 +39,7 @@
   poll so the existing *job item recorded the outcome* step and every later assertion run unchanged.
   Leave the `jcstress` job attached and `cancel-in-progress: false`. Verify: `actionlint` (if
   installed) and a read-through of every step that consumes `steps.run.outputs`.
-- [ ] 3.2 **Manual:** CI on the PR — both `Benchmark on EC2 via baas run` (detached) and
+- [x] 3.2 **Manual:** CI on the PR — both `Benchmark on EC2 via baas run` (detached) and
   `JCStress on EC2 via baas run` (attached) pass. Record the run ids in `verify.md`.
 
 ## 4. Documentation
@@ -59,7 +59,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 **Manual, live, on the `baas run` path** (no automated test covers it), on
+- [x] 5.1 **Manual, live, on the `baas run` path** (no automated test covers it), on
   `baas-381492019823`:
   - `baas run --detach --format json` on `fake-jmh-benchmarks`: exit 0, `status`/`jobStatus`
     `launched`, the CLI gone within seconds of the launch; `baas jobs show` reads `launched` or
@@ -76,6 +76,6 @@
   running one.
 - [x] 5.3 Second-deployment check: not applicable — no change to `infra/`, IAM or the runner image.
   Record that in `verify.md`.
-- [ ] 5.4 Run `/opsx:verify` and record the result in `verify.md` in the change directory: the
+- [x] 5.4 Run `/opsx:verify` and record the result in `verify.md` in the change directory: the
   requirement → code → test → gap table, open warnings as W1, W2…, and any deviation from the design
   or these tasks.
