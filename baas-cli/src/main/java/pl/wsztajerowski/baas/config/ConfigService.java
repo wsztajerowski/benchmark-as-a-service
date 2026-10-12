@@ -21,23 +21,19 @@ import java.util.stream.Stream;
 
 /**
  * This machine's deployments: one file per deployment, {@code <root>/deployments/<name>.yaml}, where
- * the name is the deployment's prefix and {@code <root>} is {@code ~/.baas}.
+ * {@code <root>} is {@code ~/.baas}. The deployment's name is the file's name and nothing else: the
+ * file does not record it, so a copy under another name can never aim at the original.
  *
  * <p>No file records a default deployment. When {@code --deployment} is absent, the only configured
- * deployment is used; with two or more the command must name one, and with none only setup proceeds,
- * deriving the name from the account. Nothing else selects a deployment — no environment variable, no
+ * deployment is used; with two or more the command must name one. With none, setup derives the name
+ * from the account and a day-to-day command takes it from an operator-role session
+ * ({@code OperatorSession}); anything else fails. Nothing else selects a deployment — no environment variable, no
  * stored pointer, no switch command — so what a command hits is always visible on its command line
  * or unambiguous on the machine.
  *
  * <p>One file per deployment rather than one file with a map: an older CLI's save drops the keys it
  * does not know, so a map of deployments in a shared file would vanish the first time an older CLI
  * ran {@code config set}. An older CLI never opens these files at all.
- *
- * <p>The flat {@code ~/.baas/config.yaml} of earlier releases is moved into {@code deployments/} the
- * first time any command looks, overwriting a deployment file of the same name: the flat file can
- * only be the newer, written by an older CLI after a previous migration. An older CLI run afterwards
- * finds no flat file and reports that nothing is configured — loudly, never against the wrong
- * deployment.
  *
  * <p>An unknown key is warned about and skipped, never fatal. Files written by older releases still
  * carry retired keys, so failing would break every upgrade; staying silent hid both a typo'd key and
@@ -49,7 +45,6 @@ public class ConfigService {
     private static final Logger logger = LoggerFactory.getLogger(ConfigService.class);
 
     static final String DEPLOYMENTS_DIR = "deployments";
-    static final String FLAT_FILE = "config.yaml";
     static final String SUFFIX = ".yaml";
 
     private static final ObjectMapper YAML = new ObjectMapper(
@@ -77,13 +72,17 @@ public class ConfigService {
         return root;
     }
 
+    /** The deployment {@code --deployment} named, if any. */
+    public Optional<String> named() {
+        return named;
+    }
+
     public Path fileOf(String deployment) {
         return root.resolve(DEPLOYMENTS_DIR).resolve(deployment + SUFFIX);
     }
 
-    /** The configured deployments' names, sorted. Migrates a flat file first. */
+    /** The configured deployments' names, sorted. */
     public List<String> deployments() {
-        migrateFlatFile();
         Path dir = root.resolve(DEPLOYMENTS_DIR);
         if (!Files.isDirectory(dir)) {
             return List.of();
@@ -170,7 +169,7 @@ public class ConfigService {
         return fresh;
     }
 
-    /** Writes the deployment's own file, named by its prefix. */
+    /** Writes the deployment's own file, named for the deployment. */
     public void save(BaasConfig config) {
         write(fileOf(config.requirePrefix()), config);
     }
@@ -185,7 +184,7 @@ public class ConfigService {
     }
 
     /** Why a command cannot run with no deployment configured. */
-    static String noneConfigured() {
+    public static String noneConfigured() {
         return """
             No deployment is configured on this machine.
               Adopt one:  baas --deployment <name> config sync
@@ -203,53 +202,11 @@ public class ConfigService {
             .formatted(name, which, name);
     }
 
-    /**
-     * Moves an earlier release's flat {@code config.yaml} to its deployment's file and removes it. A
-     * flat file with no {@code prefix} configures no deployment, so it is left alone and ignored.
-     */
-    void migrateFlatFile() {
-        Path flat = root.resolve(FLAT_FILE);
-        if (!Files.isRegularFile(flat)) {
-            return;
-        }
-        BaasConfig config = readLogged(flat);
-        String prefix = config.getPrefix();
-        if (prefix == null || prefix.isBlank()) {
-            return;
-        }
-        Path target = fileOf(prefix.strip());
-        write(target, config);
-        try {
-            Files.delete(flat);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to remove " + flat + " after moving it to " + target
-                + ": " + e.getMessage(), e);
-        }
-        logger.info("Moved {} to {} (one file per deployment now)", flat, target);
-    }
-
-    /**
-     * A deployment's file, which must name that deployment. A file copied to another name still
-     * carries the original's prefix, and every command builds its stack, bucket and table from the
-     * prefix — so a teardown of the copy would tear down the original. Refused before any AWS call.
-     * A file with no prefix (written by hand) takes its name.
-     */
+    /** A deployment's file, named for the deployment it configures. */
     private BaasConfig readDeployment(String name) {
-        Path file = fileOf(name);
-        BaasConfig config = readLogged(file);
-        String prefix = config.getPrefix();
-        if (prefix == null || prefix.isBlank()) {
-            config.setPrefix(name);
-        } else if (!prefix.equals(name)) {
-            throw new DeploymentSelectionException(mismatch(file, name, prefix));
-        }
+        BaasConfig config = readLogged(fileOf(name));
+        config.setPrefix(name);
         return config;
-    }
-
-    static String mismatch(Path file, String name, String prefix) {
-        return ("%s is the file of deployment '%s' but records prefix '%s', which names another deployment. "
-            + "Nothing was done.%n  Rename the file to %s.yaml, or correct prefix to '%s'.")
-            .formatted(file, name, prefix, prefix, name);
     }
 
     private BaasConfig readLogged(Path path) {

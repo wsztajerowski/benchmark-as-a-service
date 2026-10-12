@@ -36,7 +36,9 @@ class UnknownConfigKeyTest {
 
         assertThat(read.unknownKeys()).containsExactly(
             "aws.operatorProfil", "aws.coreStackName", "ec2.wallClockHardKillSeconds", "ec2.retired");
-        assertThat(read.config().getPrefix()).isEqualTo("baas-123456789012");
+        assertThat(read.config().getPrefix())
+            .as("an old file's prefix is ignored, never reported and never read: the name is the file's")
+            .isNull();
         assertThat(read.config().getAws().getRegion()).isEqualTo("eu-west-1");
     }
 

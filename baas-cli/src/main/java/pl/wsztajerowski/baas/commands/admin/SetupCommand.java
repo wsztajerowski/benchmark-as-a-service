@@ -138,7 +138,7 @@ public class SetupCommand implements Callable<Integer> {
         String resolvedRegion = config.getAws().resolveRegion();
         config.getAws().setRegion(resolvedRegion);
 
-        var factory = new AwsClientFactory(resolvedRegion, config.getAws().getDeployerProfile());
+        var factory = new AwsClientFactory(resolvedRegion, AwsClientFactory.profile(config.getAws().getDeployerProfile()));
 
         String callerArn;
         String accountId;
@@ -436,17 +436,16 @@ public class SetupCommand implements Callable<Integer> {
         // rather than letting the first job be where the user finds out.
         return """
             BaasCliOperatorRole created: %s
-            Nobody can assume it yet. Two one-time steps:
-              1. Grant sts:AssumeRole on this ARN to the IAM user who runs benchmarks,
-                 and add a ~/.aws/config profile with role_arn + source_profile. See infra/README.md.
-              2. Point the CLI at that profile:
-                   baas config set --operator-aws-profile <profile-name>
-                 Until you do, `baas run` uses the default credential chain, not this role.
+            Your deployer credentials already run day-to-day commands as this role: the CLI assumes
+            it from them. A teammate needs two steps, and no role_arn profile:
+              1. Grant their identity sts:AssumeRole on this ARN. See infra/README.md.
+              2. On their machine:
+                   baas --deployment %s config sync --operator-aws-profile <their-profile>
             Next: build the runner image.
                   baas admin image build
                 Takes ~15 minutes and publishes an AMI to /%s/runner/ami-id.
                 `baas run` fails until it exists — there is no boot-time install path."""
-            .formatted(operatorRoleArn.isEmpty() ? "(no OperatorRoleArn output)" : operatorRoleArn, prefix);
+            .formatted(operatorRoleArn.isEmpty() ? "(no OperatorRoleArn output)" : operatorRoleArn, prefix, prefix);
     }
 
     /**

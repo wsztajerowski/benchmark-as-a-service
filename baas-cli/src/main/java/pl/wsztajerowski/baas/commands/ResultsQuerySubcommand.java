@@ -15,6 +15,7 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsFilters;
 import pl.wsztajerowski.baas.results.ResultsGrouping;
@@ -50,6 +51,16 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     @Spec CommandSpec spec;
+
+    /** Which deployment, as its operator role; opened by {@link #call()}. */
+    private OperatorSession session;
+
+    OperatorSession session() {
+        if (session == null) {
+            session = OperatorSession.of(BaasApp.configService(spec));
+        }
+        return session;
+    }
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
@@ -178,8 +189,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             return 2;
         }
 
-        BaasConfig config = configService().load();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
+        BaasConfig config = session().config();
 
         String tableName;
         try {
@@ -217,8 +227,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     /** The query service for the configured table. Overridden by tests, which have no table. */
     ResultsQueryService openResults(BaasConfig config, String tableName) {
-        var factory = new AwsClientFactory(
-            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
+        var factory = session().factory();
         return new ResultsQueryService(factory.dynamoDb(), tableName);
     }
 

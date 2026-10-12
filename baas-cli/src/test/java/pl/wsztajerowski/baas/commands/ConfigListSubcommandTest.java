@@ -95,13 +95,6 @@ class ConfigListSubcommandTest {
         assertThat(list("--format", "json").out().strip()).isEqualTo("[\n]");
     }
 
-    @Test
-    void aFlatConfigurationIsMigratedAndListed() throws Exception {
-        Files.writeString(dir.resolve("config.yaml"), "prefix: \"baas-123456789012\"\n");
-
-        assertThat(list().out()).contains("baas-123456789012");
-        assertThat(dir.resolve("config.yaml")).doesNotExist();
-    }
 
     @Test
     void listHasNoTopLevelAlias() {

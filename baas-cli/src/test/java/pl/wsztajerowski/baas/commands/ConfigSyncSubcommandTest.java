@@ -7,6 +7,12 @@ import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.OperatorSession;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.services.sts.model.StsException;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -126,11 +132,36 @@ class ConfigSyncSubcommandTest {
         assertThat(load("baas-123456789012-dev").getAws().getRegion()).isEqualTo("us-east-1");
     }
 
+    /** Spec: sync stores the operator profile it was given, once that profile has proved it can assume the role. */
+    @Test
+    void theOperatorProfileIsStoredOnceItWorks() {
+        int exit = run(deployment("us-east-1", Map.of("ResultsTableName", "t")),
+            "--deployment", "baas-123456789012", "config", "sync", "--operator-aws-profile", "my-sso");
+
+        assertThat(exit).isZero();
+        assertThat(load("baas-123456789012").getAws().getOperatorProfile()).isEqualTo("my-sso");
+        assertThat(load("baas-123456789012").getAws().getRegion()).isEqualTo("us-east-1");
+    }
+
+    /** Spec: sync refuses credentials that cannot operate the deployment, and writes no file. */
+    @Test
+    void credentialsThatCannotAssumeTheRoleWriteNothing() {
+        int exit = run(deployment("us-east-1", Map.of("ResultsTableName", "t"), false),
+            "--deployment", "baas-123456789012", "config", "sync", "--operator-aws-profile", "other");
+
+        assertThat(exit).isNotZero();
+        assertThat(service().fileOf("baas-123456789012")).doesNotExist();
+    }
+
     private int sync(CommandLine.IFactory factory, String... options) {
         String[] args = new String[options.length + 2];
         System.arraycopy(options, 0, args, 0, options.length);
         args[options.length] = "config";
         args[options.length + 1] = "sync";
+        return run(factory, args);
+    }
+
+    private int run(CommandLine.IFactory factory, String... args) {
         return new CommandLine(new BaasApp(dir), factory)
             .setOut(new PrintWriter(new StringWriter()))
             .setErr(new PrintWriter(new StringWriter()))
@@ -147,6 +178,15 @@ class ConfigSyncSubcommandTest {
 
     /** A bucket in {@code bucketRegion} (none when null) and a stack there with {@code outputs}. */
     private static CommandLine.IFactory deployment(String bucketRegion, Map<String, String> outputs) {
+        return deployment(bucketRegion, outputs, true);
+    }
+
+    /**
+     * As above, with credentials that may ({@code canAssume}) or may not assume the operator role.
+     * The caller is an IAM user, so every sync takes path C.
+     */
+    private static CommandLine.IFactory deployment(String bucketRegion, Map<String, String> outputs,
+                                                   boolean canAssume) {
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
         return new CommandLine.IFactory() {
             @Override
@@ -155,13 +195,28 @@ class ConfigSyncSubcommandTest {
                 if (cls == ConfigSyncSubcommand.class) {
                     return (K) new ConfigSyncSubcommand() {
                         @Override
-                        Optional<String> bucketRegion(BaasConfig config) {
-                            return Optional.ofNullable(bucketRegion);
+                        OperatorSession.Aws aws() {
+                            return new OperatorSession.Aws() {
+                                public OperatorSession.Caller callerIdentity(AwsCredentialsProvider source, String region) {
+                                    return new OperatorSession.Caller("arn:aws:iam::123456789012:user/someone", "123456789012");
+                                }
+
+                                public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn) {
+                                    if (!canAssume) {
+                                        throw StsException.builder().message("not authorized to perform sts:AssumeRole").build();
+                                    }
+                                    return StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIA", "secret"));
+                                }
+
+                                public Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String from) {
+                                    return Optional.ofNullable(bucketRegion);
+                                }
+                            };
                         }
 
                         @Override
-                        Map<String, String> stackOutputs(BaasConfig config, String region) {
-                            return region.equals(bucketRegion) ? outputs : Map.of();
+                        Map<String, String> stackOutputs(AwsClientFactory factory, String stack) {
+                            return factory.region().equals(bucketRegion) ? outputs : Map.of();
                         }
                     };
                 }

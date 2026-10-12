@@ -13,6 +13,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 
@@ -50,6 +51,16 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    /** Which deployment, as its operator role; opened by {@link #call()}. */
+    private OperatorSession session;
+
+    OperatorSession session() {
+        if (session == null) {
+            session = OperatorSession.of(BaasApp.configService(spec));
+        }
+        return session;
+    }
+
     private ConfigService configService() {
         return BaasApp.configService(spec);
     }
@@ -61,8 +72,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
             logger.error("{} Nothing was downloaded.", notAJobId);
             return 2;
         }
-        BaasConfig config = configService().load();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
+        BaasConfig config = session().config();
 
         String bucket;
         try {
@@ -72,8 +82,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
             return 1;
         }
 
-        var factory = new AwsClientFactory(
-            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
+        var factory = session().factory();
 
         // No separate table check: config.bucket() above has already required the deployment,
         // which is the only thing config.resultsTable() could fail on.

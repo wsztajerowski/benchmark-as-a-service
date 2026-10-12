@@ -18,6 +18,9 @@
         <maven.compiler.compilerArgs></maven.compiler.compilerArgs>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- The repository whose releases the CLI seeds its runner JAR from. A release passes its own
+             (-Dbaas.sourceRepo=$GITHUB_REPOSITORY), so a fork's CLI fetches the fork's runner. -->
+        <baas.sourceRepo>wsztajerowski/benchmark-as-a-service</baas.sourceRepo>
         <!-- plugin versions -->
         <maven-test-plugins.version>3.6.0</maven-test-plugins.version>
         <maven-compiler-plugin.version>3.14.1</maven-compiler-plugin.version>

@@ -41,13 +41,9 @@ class JobsDiffCommandTest {
         config.getAws().setDeployerProfile("baas-deployer");
         config.getAws().setOperatorProfile("baas-operator");
 
-        assertThat(config.getAws().resolveOperatorProfile())
-            .as("JobsDiffSubcommand builds its S3 client from this accessor")
+        assertThat(config.getAws().operatorSourceProfile())
+            .as("JobsDiffSubcommand's operator session takes its source from this accessor")
             .isEqualTo("baas-operator");
-
-        assertThat(RunCommand.operatorCredentialsWarning(config))
-            .as("and shares run/results' warning when no operator profile is set")
-            .isEmpty();
     }
 
     @Test
