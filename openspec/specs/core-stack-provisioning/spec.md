@@ -44,7 +44,7 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 - **THEN** the request succeeds (the policy's resource ARN matches the bucket's actual name)
 
 ### Requirement: baas admin deployment setup is self-sufficient
-`baas admin deployment setup` SHALL accept `--region` and `--deployer-aws-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, render the deployer policy for that deployment and check the caller's rights against it, deploy or update the core stack, and write the result to that deployment's configuration file. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`.
+`baas admin deployment setup` SHALL accept `--region` and `--deployer-aws-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, render the deployer policy for that deployment and check the caller's rights against it, deploy or update the core stack, and write the result to that deployment's configuration file. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`. When the deployment's stack is in `ROLLBACK_COMPLETE` — a first create that failed and rolled back, which leaves no resources and cannot be updated — setup SHALL delete that stack, wait for the deletion to complete, and then create the stack as for a new deployment. It SHALL NOT direct the user to `teardown` for that state.
 
 #### Scenario: First run with no prior config
 - **WHEN** `baas admin deployment setup` runs and no deployment is configured
@@ -57,6 +57,10 @@ No `baas` command SHALL create, update, delete, or read the CI stack (`cf-templa
 #### Scenario: The deployer profile option is renamed
 - **WHEN** `baas admin deployment setup --aws-profile baas-admin` is invoked
 - **THEN** picocli reports an unknown option error, and `--deployer-aws-profile baas-admin` is accepted and stored as `aws.deployerProfile`
+
+#### Scenario: A failed first create is recovered by re-running setup
+- **WHEN** a first `baas admin deployment setup` failed, leaving the stack in `ROLLBACK_COMPLETE` and no configuration file, and setup is run again
+- **THEN** setup deletes the rolled-back stack, creates the stack anew, and writes the deployment's configuration file, without the user running any other command
 
 ### Requirement: Teardown safety gates
 `baas admin deployment teardown` SHALL abort if any EC2 instance tagged `baas-role=benchmark-runner` and
@@ -94,7 +98,7 @@ and results table, with every job and measurement in them, will be deleted and c
   is not an option
 
 ### Requirement: Bucket emptying handles object versions
-`S3UploadService.deleteAllObjects` SHALL delete every object version and delete marker, not only current versions. This SHALL remain true after versioning is suspended, because versions written before suspension persist until a lifecycle rule reaps them.
+`S3UploadService.deleteAllObjects` SHALL delete every object version and delete marker, not only current versions. This SHALL remain true after versioning is suspended, because versions written before suspension persist until a lifecycle rule reaps them. A bucket that does not exist SHALL count as already empty, so that teardown proceeds to delete the stack; any other failure to empty the bucket SHALL stop the teardown before the stack is deleted.
 
 #### Scenario: Versioned bucket is fully emptied
 - **WHEN** `deleteAllObjects` runs against a bucket whose keys have multiple versions
@@ -103,6 +107,14 @@ and results table, with every job and measurement in them, will be deleted and c
 #### Scenario: Suspension does not remove the need to walk versions
 - **WHEN** `deleteAllObjects` runs against a bucket whose versioning is suspended but which still holds versions written earlier
 - **THEN** those earlier versions and any delete markers are deleted
+
+#### Scenario: A missing bucket does not block teardown
+- **WHEN** `baas admin deployment teardown --yes` runs for a deployment whose bucket no longer exists
+- **THEN** the teardown deletes the stack, retires the image and removes the configuration file, and exits zero
+
+#### Scenario: An undeletable object still stops teardown
+- **WHEN** an object in an existing bucket cannot be deleted
+- **THEN** teardown exits non-zero and the stack is not deleted
 
 ### Requirement: Deployer policy is created out-of-band, before the core stack exists
 `BaasCliDeployerPolicy` (matching `infra/deployer-policy.json`) SHALL cover: CloudFormation stack lifecycle (create, update, delete, describe, change-set operations), VPC/EC2 networking create/delete/describe — including `ec2:DescribeInstances`, needed by `baas admin deployment teardown`'s active-job safety gate — IAM role/instance-profile create (covers both `RunnerRole` and `OperatorRole`, since both are the same resource type), S3 bucket create, and the DynamoDB table lifecycle actions. `baas admin deployment setup`/`baas admin deployment teardown` SHALL require `BaasCliDeployerPolicy`. This policy SHALL be attached by hand, before the first successful `baas admin deployment setup` — whose first run prints it when it is missing — and the core stack SHALL NOT create it, since CloudFormation cannot grant permission to create CloudFormation stacks.
@@ -680,8 +692,7 @@ of the deployment in the account, and SHALL report no retained resource.
 
 #### Scenario: A later setup starts clean
 - **WHEN** the same deployment is set up again after a teardown
-- **THEN** setup creates the bucket and the table anew, and no pre-check for a leftover bucket or table
-  exists
+- **THEN** setup creates the bucket and the table anew, and its check that their names are free passes
 
 ### Requirement: The working bucket never expires job artifacts
 `S3MainBucket` SHALL declare lifecycle rules expiring noncurrent versions, reaping orphaned delete
@@ -785,3 +796,37 @@ SHALL fail as an unknown deployment.
 #### Scenario: An unknown name is reported as unknown, not invalid
 - **WHEN** `baas --deployment Foo results query` runs and no deployment `Foo` is configured
 - **THEN** the command exits non-zero naming the deployments that are configured, and issues no AWS call
+
+### Requirement: Setup checks the stack's fixed names are free before creating it
+The core stack creates a bucket named `<prefix>` and a table named `<prefix>-results`; if either name is
+taken, the whole create rolls back. Before creating the stack — for a new deployment, and before
+recovering a stack in `ROLLBACK_COMPLETE` — `baas admin deployment setup` SHALL check both names, and
+SHALL refuse, creating and deleting nothing, exit non-zero, and name the cause and the remedy, when:
+a bucket of that name exists in the deployment's region and is accessible to the caller (a leftover of an
+earlier deployment: remove it with `aws s3 rb s3://<prefix> --force`, after saving anything it holds); a
+bucket of that name is owned by another account (choose another name with `--deployment`); or a table of
+that name exists in the region (a leftover: remove it with `aws dynamodb delete-table --table-name
+<prefix>-results`). The early bucket-region lookup SHALL treat only a bucket the caller can reach as the
+deployment's own, so that another account's bucket is never reported as this deployment living in
+another region. An update of an existing stack SHALL NOT run these checks: its bucket and table are its
+own.
+
+#### Scenario: A leftover bucket is named before anything is created
+- **WHEN** `baas admin deployment setup` creates a deployment whose bucket name already exists in its region with no stack of that name
+- **THEN** setup exits non-zero naming the bucket and `aws s3 rb s3://<prefix> --force`, and no stack is created
+
+#### Scenario: A leftover table is named before anything is created
+- **WHEN** `baas admin deployment setup` creates a deployment whose table `<prefix>-results` already exists
+- **THEN** setup exits non-zero naming the table and `aws dynamodb delete-table`, and no stack is created
+
+#### Scenario: A name taken by another account
+- **WHEN** `baas --deployment wiktor-dev admin deployment setup` runs and a bucket named `wiktor-dev` belongs to another account
+- **THEN** setup exits non-zero saying the name is taken by another account and to choose another with `--deployment`, does not say the deployment lives in another region, and creates nothing
+
+#### Scenario: A rolled-back stack with a leftover is not deleted
+- **WHEN** the stack is in `ROLLBACK_COMPLETE` because its bucket name was taken, and setup is run again
+- **THEN** setup refuses naming the bucket, and the rolled-back stack is left in place
+
+#### Scenario: An update does not check its own names
+- **WHEN** `baas admin deployment setup` runs against a deployment whose stack exists and is updatable
+- **THEN** the existing bucket and table do not block it

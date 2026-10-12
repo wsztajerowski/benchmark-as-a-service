@@ -152,7 +152,7 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
 
 - [x] 12.1 Run the full reactor `mvn verify` green, with `ASYNC_PATH` exported. Record the test count
   in `verify.md`.
-- [ ] 12.2 **Manual, live, on a second deployment** (`infra/README.md`, *A second deployment*). The
+- [x] 12.2 **Manual, live, on a second deployment** (`infra/README.md`, *A second deployment*). The
   deployer policy for the name is printed by setup.
   - R16: create a bucket named `<name>` by hand, run `baas --deployment <name> admin deployment setup`,
     and expect the leftover refusal with no stack created. Remove the bucket.
@@ -162,6 +162,9 @@ the commit bodies. Run `mvn verify` from the reactor root after each group. Neve
     stack gone and the file gone.
 
   Record each in `verify.md`.
+  **Partly deferred (2026-10-12, by the user):** the leftover-bucket refusal ran (verify.md T2, T3); the
+  another-account refusal and the missing-bucket teardown moved to `QUEUE.md` *Deferred checks*, to run
+  with the next change touching setup or teardown.
 - [x] 12.3 **Manual:** the `baas run` path is covered by no automated test. CI's two e2e jobs on PR #83
   must pass: they exercise user-data's success path with the new self-termination, plus R7's client
   token. Record the run ids in `verify.md`.
