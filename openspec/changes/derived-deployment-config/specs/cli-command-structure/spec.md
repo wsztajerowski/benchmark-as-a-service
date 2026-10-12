@@ -50,11 +50,12 @@ to a concrete deployment SHALL be that option: `teardown --stack-name`, `config 
 `--config-path` SHALL NOT exist. The option SHALL never be positional. When the option is absent, a
 command SHALL use the only configured deployment if exactly one is configured, and SHALL fail listing
 the configured names, with the hint `→ choose one: baas config list`, if two or more are. When none is
-configured and the option is absent, a command other than `baas admin deployment setup` and
-`baas config sync` SHALL take the deployment's name from its credentials when they are an assumed role
-named `<name>-role-operator`, and SHALL otherwise fail reporting that no deployment is configured;
-`baas admin deployment setup` derives the name from the account, and `baas config sync` requires the
-option. A name that is not configured SHALL fail naming the configured deployments when at least one
+configured and the option is absent, a day-to-day command that reaches AWS (`run` and every `jobs`
+and `results` command) SHALL take the deployment's name from its credentials when they are an assumed
+role named `<name>-role-operator`, and SHALL otherwise fail reporting that no deployment is
+configured; `baas admin deployment setup` derives the name from the account, `baas config sync`
+requires the option, and every other command — the local `config show`/`config set` and the
+deployer's `baas admin` commands — fails reporting that no deployment is configured. A name that is not configured SHALL fail naming the configured deployments when at least one
 is configured, except in `baas admin deployment setup` and `baas config sync`, which create its
 configuration. No environment variable and no stored setting SHALL select a deployment. No command
 SHALL accept a per-invocation override of the results table or the working bucket.
