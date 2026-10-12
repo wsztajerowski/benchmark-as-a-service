@@ -86,12 +86,14 @@ jobs:
           # mid-poll would end the follow-up loop below and fail a job that is still running,
           # leaving the shell watchdog to terminate it — a red job with a good measurement.
           role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
+          # Only the credential exchange needs a region; the CLI addresses the deployment in the
+          # region its bucket is in.
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 9000
           role-session-name: GitHubActions
 
-      - name: Sync configuration from the deployed core stack
-        run: $BAAS config sync --deployment "${{ vars.CORE_STACK_NAME }}"
+      # No `config sync` and no deployment name: with no configuration file, `baas` takes the
+      # deployment from the operator role this job federated into (<name>-role-operator).
 
       # --runner-jar is mandatory, not a convenience: a reactor build's version is
       # 0.0.0-semantically-released, which names no release, so `baas run` refuses to resolve a
@@ -298,12 +300,14 @@ jobs:
         with:
           # Same federation and session length as the job above, for the same reasons.
           role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
+          # Only the credential exchange needs a region; the CLI addresses the deployment in the
+          # region its bucket is in.
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 9000
           role-session-name: GitHubActions
 
-      - name: Sync configuration from the deployed core stack
-        run: $BAAS config sync --deployment "${{ vars.CORE_STACK_NAME }}"
+      # No `config sync` and no deployment name: with no configuration file, `baas` takes the
+      # deployment from the operator role this job federated into (<name>-role-operator).
 
       # --mode is the runner's, forwarded to JCStress as -m: on the runner -m is the MongoDB
       # connection string. --runner-jar and exclude_from_results as in the job above.
