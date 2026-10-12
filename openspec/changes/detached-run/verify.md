@@ -5,7 +5,7 @@
 | Task | Finding |
 |---|---|
 | 1.1 | `BaasApp.main` ends in `System.exit(commandLine(app)….execute(args))`, and `System.exit` runs every registered shutdown hook. The hook (`RunCommand` l.462) calls `stop(CANCELLED)` whenever `!session.ended()`, and a confirmed launch does not end the session. So a detached return without the flag cancels and terminates the job it launched: DR1 holds exactly as design.md *Context* states it. |
-| 1.2 | `baas jobs show <id> --format json` exits 0 for any job it finds (1 for none, 2 for a malformed id). Its object carries `status` — `JobListing.resolve`'s, so never `vanished` within `VANISH_GRACE` of creation — and `storedStatus`. The CI loop stops when `status` is terminal by `JobStatus.isTerminal` (`completed`, `timed-out`, `cancelled`, `launch-failed`, `failed:<n>`) or is `vanished`. |
+| 1.2 | `baas jobs show <id> --format json` exits 0 for any job it finds (1 for none, 2 for a malformed id). Its object nests the job under `job` — `{"job":{…,"status","storedStatus",…},"environment":…,"artifacts":…}` — so the resolved status is `.job.status` (`JobListing.resolve`'s, never `vanished` within `VANISH_GRACE` of creation). **Corrected 2026-10-12:** this row first said the object carries `status` at the top level, read from the inner `jobJson` string alone; see W1. The CI loop stops when `status` is terminal by `JobStatus.isTerminal` (`completed`, `timed-out`, `cancelled`, `launch-failed`, `failed:<n>`) or is `vanished`. |
 | 1.3 | ADR 0007 is free (0001–0006 exist). The poll is drawn in `baas-run.mmd` and `baas-ci-e2e.mmd`. `baas-states-job.mmd` gains no state or transition, but its header comments name the hook (H) and what `--format json` reports, so they gain one comment line each (no rendered change). The C4 views (`c4-2-container`, `c4-3-component-cli`, `c4-4-deployment`) say "launch / poll" in general terms and stay accurate. |
 
 ## 2.6 — full reactor build (2026-10-12)
@@ -30,3 +30,13 @@
   exactly what an attached one does, so no comparison was run.
 - **Second deployment (5.3):** no change to `infra/`, IAM or the runner image. The CLI's new path
   uses only writes `OperatorRole` already holds.
+
+## Warnings
+
+- **W1 — the first CI follow-up loop read `.status`, which `jobs show` does not have at the top level**
+  (found 2026-10-12 on PR #85's first E2E run, run 38255555596). Task 1.2 recorded the wrong shape, so
+  the loop read `null` forever: the job itself `completed` (`20261012T132551853Z-ce92709a`, instance
+  terminated) while the CI step kept polling toward its 7515 s bound. Fixed: the loop reads
+  `.job.status` and fails at once when a successful lookup carries none. Verified by running the
+  corrected loop body against that completed job (ends `completed`). The detach itself was not at
+  fault.
