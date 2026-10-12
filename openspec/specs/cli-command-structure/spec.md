@@ -200,7 +200,10 @@ output, carrying at least the job identifier, the project, the job's S3 result p
 process exit code and the launched instance's identifier. The object SHALL be written on the failure
 path as well as on success — a failed job is precisely when its identifier is needed — and the command
 SHALL still exit non-zero when the job failed. Diagnostics SHALL remain on the logger so that standard
-output holds the object alone.
+output holds the object alone. For a `--detach` launch the object SHALL be written once the launch is
+confirmed, with the outcome `launched` and the job item's status at that moment — `launched`, or
+`launching` when the launch could not be recorded — and exit code zero; it SHALL NOT report
+`completed` for a job that has not run.
 
 #### Scenario: The summary is machine-readable
 - **WHEN** `baas run --format json jmh -- MyBenchmark` completes and its standard output is piped to a
@@ -212,6 +215,16 @@ output holds the object alone.
 - **WHEN** a job launched with `--format json` fails
 - **THEN** the summary object is written with a failed outcome and the job's exit code, and the command
   exits non-zero
+
+#### Scenario: A detached launch reports launched
+- **WHEN** `baas run --detach --format json jmh -- MyBenchmark` returns after a confirmed launch
+- **THEN** the object carries the outcome `launched`, the job status `launched` (or `launching`), the
+  job identifier and the instance identifier, and the exit code is zero
+
+#### Scenario: A detached launch that fails reports failed
+- **WHEN** `baas run --detach --format json` cannot launch the instance, or finds the job cancelled
+  while launching
+- **THEN** the object carries a failed outcome and the command exits non-zero
 
 #### Scenario: Diagnostics do not corrupt the object
 - **WHEN** `baas run -v --format json` is redirected to a file
