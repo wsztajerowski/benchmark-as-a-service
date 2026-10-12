@@ -159,11 +159,11 @@ That is the only way today, and the scan's JSON cannot be loaded back into a new
 
 ### `detached-run` — DR1, DR4
 
-Not yet in `QUEUE.md`: a stub change, explored on 2026-10-05, that comes after `jcstress-e2e` and
-`jobs-command`. Its full exploration, with every decision, is
-[`openspec/changes/detached-run/exploration.md`](../../openspec/changes/detached-run/exploration.md).
+First in `QUEUE.md` (2026-10-12) and proposed: [`openspec/changes/detached-run/`](../../openspec/changes/detached-run/design.md).
+Its design supersedes the 2026-10-05
+[`exploration.md`](../../openspec/changes/detached-run/exploration.md) where the two disagree.
 
-**DR1.** The shutdown hook is registered before `RunInstances` (`RunCommand` l.443), and it calls
+**DR1.** The shutdown hook is registered before `RunInstances` (`RunCommand` l.462), and it calls
 `session.stop(CANCELLED)` whenever the session has not ended. A detached `run` returning after
 `confirmLaunched` would therefore cancel and terminate its own instance at JVM exit. **Decided:**
 keep the hook armed through the launch, then disarm it. An ADR amends CLAUDE.md's
