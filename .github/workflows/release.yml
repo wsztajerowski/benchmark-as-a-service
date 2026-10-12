@@ -54,6 +54,10 @@ jobs:
       - name: Install dependencies
         run: npm install --no-save semantic-release@25.0.9 @semantic-release/commit-analyzer@13.0.1 @semantic-release/exec@7.1.0 @semantic-release/github@12.0.10 @semantic-release/release-notes-generator@14.1.1 conventional-changelog-conventionalcommits@9.3.1
 
+      # $GITHUB_REPOSITORY is expanded by this step's bash, inside the double-quoted echo, so the
+      # releasing repository is baked into release.config.js before @semantic-release/exec, which
+      # would read ${...} as its own template, sees it. A fork's release thereby names the fork as
+      # the CLI's runner source (baas.sourceRepo). publishCmd re-packages, so it carries it too.
       - name: Generate release configuration
         run: |
           echo "module.exports = {
@@ -76,8 +80,8 @@ jobs:
               [
                 '@semantic-release/exec',
                 {
-                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version} && mvn --batch-mode -DskipTests package && sha256sum benchmark-runner/target/benchmark-runner.jar | cut -d\" \" -f1 > benchmark-runner/target/benchmark-runner.jar.sha256 && sha256sum baas-cli/target/baas-cli.jar | cut -d\" \" -f1 > baas-cli/target/baas-cli.jar.sha256 && sed -i \"s/^BAAS_VERSION_DEFAULT=.*/BAAS_VERSION_DEFAULT=\${nextRelease.version}/\" scripts/install.sh',
-                  'publishCmd': 'mvn --batch-mode deploy -DskipTests'
+                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version} && mvn --batch-mode -DskipTests -Dbaas.sourceRepo=$GITHUB_REPOSITORY package && sha256sum benchmark-runner/target/benchmark-runner.jar | cut -d\" \" -f1 > benchmark-runner/target/benchmark-runner.jar.sha256 && sha256sum baas-cli/target/baas-cli.jar | cut -d\" \" -f1 > baas-cli/target/baas-cli.jar.sha256 && sed -i \"s/^BAAS_VERSION_DEFAULT=.*/BAAS_VERSION_DEFAULT=\${nextRelease.version}/\" scripts/install.sh',
+                  'publishCmd': 'mvn --batch-mode deploy -DskipTests -Dbaas.sourceRepo=$GITHUB_REPOSITORY'
                 }
               ]
             ],
