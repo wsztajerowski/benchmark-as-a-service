@@ -141,22 +141,22 @@ Live checks use the reactor JAR against `baas-development` (`java -jar baas-cli/
 
 ## 10. Manual verification on a second deployment (IAM change)
 
-- [ ] 10.1 **Manual.** On a second deployment (`infra/README.md`, *A second deployment*): setup with
+- [x] 10.1 **Manual.** On a second deployment (`infra/README.md`, *A second deployment*): setup with
   `--deployer-aws-profile baas-admin` and the new policy attached customer-managed; `admin image
   build`; with no `aws.operatorProfile` set, `baas --deployment <name> run jmh` on `fake-jmh-benchmarks`
   completes (path C from the deployer); `jobs list`, `results query --job-id` succeed; teardown.
   Record each step's outcome in `verify.md`.
-- [ ] 10.2 **Manual.** On the same deployment before teardown: a teammate-style source (`lynx`) via
+- [x] 10.2 **Manual.** On the same deployment before teardown: a teammate-style source (`lynx`) via
   `config sync --operator-aws-profile lynx` writes only that key, and `run` works; a profile that may
   not assume the role is refused by sync with no file written; credentials of the *default*
   deployment's operator role against `--deployment <name>` are refused (path B). Record in `verify.md`.
-- [ ] 10.3 **Manual.** An attached `baas run` longer than one hour from a chained source (a `fake-jmh-benchmarks`
+- [x] 10.3 **Manual.** An attached `baas run` longer than one hour from a chained source (a `fake-jmh-benchmarks`
   run with enough iterations and iteration time, `-i`/`-r`, to exceed an hour, and `--timeout` raised
   to match) completes and the CLI, not the watchdog,
   terminates the instance. Record the duration and the terminating layer in `verify.md`.
 
 ## 11. Verify
 
-- [ ] 11.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
+- [x] 11.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a
   requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation
   from design or tasks.
