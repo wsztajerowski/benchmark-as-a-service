@@ -115,3 +115,56 @@ The last row is the expected state until the rebuilt deployment's policy (with
 | T5 | Deployer as operator (no `operatorProfile`; the fallback, path C) | attached `run jmh` (`Incrementing_Synchronized -f 1 -wi 1 -i 1 -r 1s`), job `20261012T220953183Z-f400626f` | `completed`, exit 0: every call made as `baas-development-role-operator`, assumed from `baas-admin` |
 | T8 | CI-style: no file, `AWS_PROFILE` = an operator-role session for `baas-development`, `AWS_REGION=eu-central-1` | detached `run jcstress -- --mode sanity`, then `jobs show` every 15 s | name taken from the role, region `us-east-1` found from the bucket; `launched` → `completed`; nothing written to the home |
 | T9 | Mixed | teammate (`lynx`) reads the deployer's T5 result (`results query --job-id`) and CI's T8 job (`jobs show`); CI-style session launches a detached 10-minute job; teammate `jobs terminate --yes`; deployer and CI-style session `jobs show` it | all reads succeed across identities; terminate stopped the instance; both other identities see `cancelled`. (Without `--yes` and no terminal, terminate refused and changed nothing — existing behaviour) |
+| T7 | Deployer as operator (fallback, path C), attached | `run --timeout 5400 jmh -- Incrementing_Synchronized -f 1 -wi 0 -i 1 -r 3900s`, job `20261012T220926912Z-7b2cd4a7`, 22:09:21 → 23:15:29 UTC | `completed`, exit 0, 1 measurement stored. The operator session (STS default, one hour, issued ~22:09) outlived by six minutes: 257 polls with no credential error and the result query after the hour succeeded, so the provider renewed mid-run. Instance terminated 23:15:16 UTC by itself on completion (`completed` ends itself), ~30 min before its watchdog bound — neither the watchdog nor the CLI had to act |
+
+Ten tests in all (T1–T10). The rebuilt `baas-development` is kept as the development deployment, so
+task 10.1's closing teardown was not repeated — T1 exercised teardown on the old deployment instead.
+No chained (SSO) source exists on this machine, so T7 renews an IAM-user-sourced session; the
+renewal mechanism is the same (1.2), the one-hour chained cap itself was not reproduced.
+
+
+## /opsx:verify (2026-10-13)
+
+32/33 tasks complete. The open one, 8.2 (delete the `CORE_STACK_NAME` variable), is post-merge by
+design and stays open until `next-release` reaches `main`.
+
+| Requirement (delta) | Code | Test / evidence | Gap |
+|---|---|---|---|
+| cli: Resource names derived or resolved, not cached | `BaasConfig` (name `@JsonIgnore`, field-only serialisation) | `BaasConfigYamlTest.theNameIsNeverWritten`, `namesTheCompositionRuleFixesAreNotStored`; T2/T4 file contents | — |
+| cli: Each deployment has one file, named by the deployment | `ConfigService.readDeployment` | `ConfigServiceTest.aSavedFileDoesNotRecordTheName`, `aCopiedFileTakesItsNewName`; `TeardownConfigFileTest`; T1 | — |
+| cli: The region resolves from the file, then the environment | `OperatorSession.region`, `ConfigSyncSubcommand` | `OperatorSessionTest.theFilesRegionIsUsedWithNoLookup`, `withNoFileTheRegionIsTheBucketsNotTheEnvironments`, `withNoFileAMissingBucketIsNoDeployment`; T8 | — |
+| cli: Named by `--deployment`, or by its operator role when none is configured | `OperatorSession.config` | `OperatorSessionTest.withNothingConfigured*`, `withADeploymentConfiguredTheRoleSelectsNothing`; `ConfigServiceTest` selection tests; T8, T10 | W1 (fixed) |
+| cli: A configuration file never records the CLI's own defaults | `BaasConfig` nullable fields + `EmptySection` filter | `BaasConfigYamlTest.aConfigurationWithNothingSetWritesNothing`, `anUnsetPreferenceReadsAsTheDefault`, `onlyASetValueIsWritten`; `ConfigShowSubcommandTest.marksDefaults…` | — |
+| cli: REMOVED flat migration, copied-file refusal, old naming rule | `ConfigService` | `ConfigServiceTest.aStrayFlatFileIsNeitherReadNorRemoved` | — |
+| core: Operator identity (setup's closing text) | `SetupCommand.nextSteps` | `SetupCommandTest.anUpdateDoesNotClaimTheOperatorRoleWasJustCreated`; T2 output | — |
+| core: Day-to-day commands resolve operator credentials | `OperatorSession`, `AwsClientFactory.deferred`, all `jobs`/`results`/`run` commands | `OperatorSessionTest` (A/B/C, `aFailedAssumptionStopsBeforeAnyClientIsBuilt`, source precedence); live A/B/C (read-only table), T5, T7 | W3 |
+| core: Operators bootstrap config without the deployer's machine | `ConfigSyncSubcommand` | `ConfigSyncSubcommandTest` (incl. `theOperatorProfileIsStoredOnceItWorks`, `credentialsThatCannotAssumeTheRoleWriteNothing`); T4, T6 | — |
+| core: The deployer may assume its own operator role | `infra/deployer-policy.json` `AssumeOwnOperatorRole` | `DeployerPolicyTest.theDeployerMayAssumeOnlyItsOwnOperatorRole`, budget test; T5 | — |
+| ci: Self-test names project/branch/commit (no config file) | `e2e-cloud-test.yml` | T10 (run 38312732086) | — |
+| ci: CI names its deployment only through the operator role | `e2e-cloud-test.yml` | grep (no `config sync`, `--deployment`, `CORE_STACK_NAME`); T10 | — |
+| runner-jar: Source repository is a property of the release build | `baas-build.properties`, `BaasVersion.sourceRepo`, `release.yml` | `RunnerJarResolverTest.theBuildNamesTheUpstreamRepositoryByDefault`, `theRejectionNamesTheBuildPropertyNotAConfigurationKey`; filtering and release-config simulation (7.1, 7.3) | W2 (fixed) |
+
+### Warnings
+
+- **W1 — fixed.** The naming requirement said every command except setup and sync takes the name
+  from an operator role; the code does it for the AWS-reaching day-to-day commands only, while
+  `config show`/`config set` and the `baas admin` commands still report that nothing is configured —
+  the right behaviour for local and deployer commands. The delta spec now says exactly that.
+- **W2 — fixed.** design.md described `runner.sourceRepo` as a manifest attribute; it is a filtered
+  build property. design.md now records the property and the manifest as the dropped alternative.
+- **W3 — open, accepted.** "Admin commands use the deployer as is" has no dedicated test; the four
+  admin commands were checked by reading (they never touch `OperatorSession`). A regression would
+  show as an admin command refusing with an operator-role error, not as a privilege leak.
+- **W4 — open, accepted.** The one-hour *chained* session cap is not reproduced: this machine has only
+  IAM-user sources. Renewal itself is proven (1.2, T7).
+
+### Deviations from design or tasks
+
+- 7.1 build property instead of a manifest attribute (W2).
+- 10.1's closing teardown not repeated: the rebuilt `baas-development` is kept as the dev deployment;
+  T1 exercised teardown on the old one.
+- The user attached `AssumeOwnOperatorRole` to `baas-admin-wiktor` as a separate inline policy
+  covering both deployments; once each deployment's deployer policy is re-rendered by setup, that
+  standalone policy is redundant.
+
+No critical issue apart from the post-merge task 8.2. Ready to archive after the merge and 8.2.

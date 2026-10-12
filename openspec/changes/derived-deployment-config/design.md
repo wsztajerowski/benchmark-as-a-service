@@ -146,13 +146,20 @@ overrides it anyway — and `instanceType` is a result tag, so mixing is visible
 operator-policy grant, an admin verb and a call per command); a separate machine-wide preferences file
 for `git.resolveProject` (rejected by the user: a second file kind for one key).
 
-### `runner.sourceRepo` is a manifest attribute of the released JAR
+### `runner.sourceRepo` is a build property of the CLI
 
-The shade plugin's `manifestEntries` gains `Baas-Source-Repo: ${baas.sourceRepo}`, with the property
-defaulting to `wsztajerowski/benchmark-as-a-service` in the parent POM. `release.yml`'s `prepareCmd`
-passes `-Dbaas.sourceRepo=${GITHUB_REPOSITORY}` to its `package`. A reactor build carries the default
-but never reads it: with no released version `baas run` refuses without `--runner-jar`, and with it the
-resolver is skipped. This closes U8 by removing the setting rather than adding a `config set` option.
+`baas-cli`'s Maven-filtered `baas-build.properties` gains `runner.sourceRepo=${baas.sourceRepo}`, with
+the property defaulting to `wsztajerowski/benchmark-as-a-service` in the parent POM, and
+`BaasVersion.sourceRepo()` reads it. `release.yml` passes `-Dbaas.sourceRepo=$GITHUB_REPOSITORY` to both
+`prepareCmd`'s `package` and `publishCmd`'s `deploy` (which re-packages); bash expands the variable when
+it writes `release.config.js`, so `@semantic-release/exec` never sees it as a template. A reactor build
+carries the default but never reads it: with no released version `baas run` refuses without
+`--runner-jar`, and with it the resolver is skipped. This closes U8 by removing the setting rather than
+adding a `config set` option.
+
+*Alternative, first planned:* a `Baas-Source-Repo` manifest attribute. Dropped at implementation — the
+filtered properties file already exists for `RunnerImageRenderer`, reads the same in tests and in the
+shaded JAR, and needs no manifest lookup that could pick another JAR's manifest off the classpath.
 
 ### `config sync` verifies and writes; it copies nothing
 
