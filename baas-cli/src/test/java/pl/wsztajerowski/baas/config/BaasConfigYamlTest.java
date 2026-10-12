@@ -28,7 +28,7 @@ class BaasConfigYamlTest {
 
         String written = yaml.writeValueAsString(config);
 
-        assertThat(written).contains("prefix: \"baas-123456789012\"");
+        assertThat(written).doesNotContain("prefix:").doesNotContain("baas-123456789012");
         assertThat(written).doesNotContain("coreStackName:");
         assertThat(written).doesNotContain("stackName:");
     }
@@ -86,37 +86,48 @@ class BaasConfigYamlTest {
         assertThat(config.getPrefix()).isNull();
         assertThatThrownBy(config::resultsTable)
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("baas config sync --deployment");
+            .hasMessageContaining("config sync");
     }
 
+    /** The name is the file's name; recorded inside, a copy of the file could disagree with it. */
     @Test
-    void roundTripsThePrefix() throws Exception {
+    void theNameIsNeverWritten() throws Exception {
         BaasConfig original = new BaasConfig();
         original.setPrefix("baas-123456789012-dev");
 
         BaasConfig readBack = yaml.readValue(yaml.writeValueAsString(original), BaasConfig.class);
 
-        assertThat(readBack.getPrefix()).isEqualTo("baas-123456789012-dev");
+        assertThat(readBack.getPrefix()).isNull();
     }
 
-    /**
-     * The runner's source repository used to be a string baked into the user-data shell script
-     * (finding A7), so a fork could not point the CLI at its own releases.
-     */
+    /** Spec: a configuration file never records the CLI's own defaults. */
     @Test
-    void defaultsTheRunnerSourceRepositoryToUpstream() {
-        assertThat(new BaasConfig().getRunner().getSourceRepo())
-            .isEqualTo("wsztajerowski/benchmark-as-a-service");
+    void aConfigurationWithNothingSetWritesNothing() throws Exception {
+        assertThat(yaml.writeValueAsString(new BaasConfig()).strip()).isEqualTo("{}");
+    }
+
+    /** A changed default reaches a machine whose file was written before the change. */
+    @Test
+    void anUnsetPreferenceReadsAsTheDefault() throws Exception {
+        BaasConfig config = yaml.readValue("aws:\n  region: \"eu-central-1\"\n", BaasConfig.class);
+
+        assertThat(config.getEc2().getDefaultInstanceType()).isEqualTo(BaasConfig.Ec2Config.DEFAULT_INSTANCE_TYPE);
+        assertThat(config.getEc2().getBenchmarkTimeoutSeconds())
+            .isEqualTo(BaasConfig.Ec2Config.DEFAULT_BENCHMARK_TIMEOUT_SECONDS);
+        assertThat(config.getEc2().getWatchdogMarginSeconds()).isEqualTo(BaasConfig.DEFAULT_WATCHDOG_MARGIN_SECONDS);
+        assertThat(config.getGit().isResolveProject()).isFalse();
     }
 
     @Test
-    void roundTripsAnOverriddenRunnerSourceRepository() throws Exception {
-        BaasConfig original = new BaasConfig();
-        original.getRunner().setSourceRepo("acme/baas-fork");
+    void onlyASetValueIsWritten() throws Exception {
+        BaasConfig config = new BaasConfig();
+        config.getEc2().setBenchmarkTimeoutSeconds(10800);
 
-        BaasConfig readBack = yaml.readValue(yaml.writeValueAsString(original), BaasConfig.class);
+        String written = yaml.writeValueAsString(config);
 
-        assertThat(readBack.getRunner().getSourceRepo()).isEqualTo("acme/baas-fork");
+        assertThat(written).contains("benchmarkTimeoutSeconds: 10800")
+            .doesNotContain("defaultInstanceType").doesNotContain("watchdogMarginSeconds")
+            .doesNotContain("git:").doesNotContain("aws:").doesNotContain("runner:");
     }
 
     /** Off by default: git is consulted only when the operator opts in. */
@@ -144,7 +155,6 @@ class BaasConfigYamlTest {
     @Test
     void aLeftoverAbsoluteWallClockKeyIsIgnored() throws Exception {
         BaasConfig config = yaml.readValue("""
-            prefix: "baas-123456789012"
             ec2:
               benchmarkTimeoutSeconds: 10000
               wallClockHardKillSeconds: 7500

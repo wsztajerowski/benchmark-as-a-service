@@ -124,6 +124,12 @@
       ]
     },
     {
+      "Sid": "AssumeOwnOperatorRole",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:role/${PREFIX}-role-operator"
+    },
+    {
       "Sid": "IAM",
       "Effect": "Allow",
       "Action": [

@@ -18,6 +18,7 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.infra.ImageBuilderService;
@@ -86,6 +87,16 @@ public class RunCommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     @Spec CommandSpec spec;
+
+    /** Which deployment, as its operator role; opened by {@link #call()}. */
+    private OperatorSession operatorSession;
+
+    OperatorSession operatorSession() {
+        if (operatorSession == null) {
+            operatorSession = OperatorSession.of(configService());
+        }
+        return operatorSession;
+    }
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
@@ -161,14 +172,6 @@ public class RunCommand implements Callable<Integer> {
             + "baas jobs show <jobId>, stop it with baas jobs terminate <jobId>.")
     boolean detach;
 
-    /**
-     * `run`/`results`/`config show` are meant to run under BaasCliOperatorRole. When no
-     * operator profile is configured they fall through to the default credential chain
-     * rather than reusing `aws.deployerProfile`, which holds deployer credentials.
-     */
-    public static Optional<String> operatorCredentialsWarning(BaasConfig config) {
-        return operatorCredentialsWarning(config, System.getenv());
-    }
 
     /**
      * The runner subnet and security group, read from the deployment's stack outputs.
@@ -197,39 +200,6 @@ public class RunCommand implements Callable<Integer> {
                     + "existing deployment with `baas config sync --deployment <prefix>`.");
         }
         return outputs;
-    }
-
-    /**
-     * Package-private overload taking the environment explicitly, so a test does not read the real
-     * one.
-     *
-     * <p>Silent when credentials already arrive from the environment. The warning's own advice —
-     * {@code baas config set --operator-aws-profile} — is not merely redundant there but wrong: in
-     * continuous integration the credentials come from an OIDC federation the job performed, and
-     * there is no profile to name. Falling through to the default credential chain is what the
-     * method's own contract calls correct in that case, so warning about it trained the reader to
-     * ignore a warning that still matters on a laptop.
-     */
-    static Optional<String> operatorCredentialsWarning(BaasConfig config, Map<String, String> environment) {
-        if (config.getAws().getOperatorProfile() != null || hasAmbientCredentials(environment)) {
-            return Optional.empty();
-        }
-        return Optional.of(
-            "No aws.operatorProfile configured — using the default AWS credential chain. "
-                + "Set one with: baas config set --operator-aws-profile <profile-name>");
-    }
-
-    /**
-     * Whether the default credential chain will find credentials without consulting a profile:
-     * explicit keys, a web identity (what {@code configure-aws-credentials} sets up for OIDC),
-     * container credentials, or a profile already named in the environment.
-     */
-    private static boolean hasAmbientCredentials(Map<String, String> environment) {
-        return isTruthy(environment.get("AWS_ACCESS_KEY_ID"))
-            || isTruthy(environment.get("AWS_WEB_IDENTITY_TOKEN_FILE"))
-            || isTruthy(environment.get("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI"))
-            || isTruthy(environment.get("AWS_CONTAINER_CREDENTIALS_FULL_URI"))
-            || isTruthy(environment.get("AWS_PROFILE"));
     }
 
     /**
@@ -338,7 +308,7 @@ public class RunCommand implements Callable<Integer> {
             return 1;
         }
 
-        BaasConfig config = configService().load();
+        BaasConfig config = operatorSession().config();
 
         // Resolved before any AWS call — the runner-image lookup and the S3 upload both come later
         // in this method, and neither should run for a request that is going to fail anyway because
@@ -362,9 +332,7 @@ public class RunCommand implements Callable<Integer> {
         logger.debug("Resolved job parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedProject, benchmarkParams);
 
-        operatorCredentialsWarning(config).ifPresent(logger::warn);
-        var factory = new AwsClientFactory(
-            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
+        var factory = operatorSession().factory();
 
         // 1. The JAR is named, never derived. Checked before the image lookup and before any
         //    upload, like every other precondition this command has.
@@ -389,7 +357,7 @@ public class RunCommand implements Callable<Integer> {
                           Build one:  baas admin image build
                         Nothing was launched — the runner boots from a purpose-built AMI and \
                         there is no boot-time install path.""",
-                    config.getAws().resolveRegion());
+                    factory.region());
                 return 1;
             }
             runnerImage = resolved.get();
@@ -436,7 +404,7 @@ public class RunCommand implements Callable<Integer> {
         } else {
             try (var s3 = factory.s3()) {
                 runnerJarS3Key = RunnerJarResolver.resolve(s3, config.bucket(),
-                    BaasVersion.current(), config.getRunner().getSourceRepo());
+                    BaasVersion.current(), BaasVersion.sourceRepo());
             }
             // Which runner build a job executed is the first thing anyone comparing two results
             // asks, so it is reported on every job — not only on the one that seeded the slot.
@@ -449,7 +417,7 @@ public class RunCommand implements Callable<Integer> {
         JobItem job = new JobItem(jobId, resolvedProject, jobInstant, resultPath, resolvedInstanceType,
             JobStatus.LAUNCHING, null, null, runnerTags, null);
         String userData = new UserDataScriptBuilder().build(
-            config.getAws().resolveRegion(), config.bucket(),
+            factory.region(), config.bucket(),
             benchmarkType, jobId, resultPath, createdAt, benchmarkJarKey,
             resolvedTimeout, resolvedWallClock,
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
@@ -842,7 +810,7 @@ public class RunCommand implements Callable<Integer> {
 
     /**
      * Package-private overload taking the environment explicitly, for the same testability reason
-     * as {@link #operatorCredentialsWarning(BaasConfig, Map)} — {@code source} is derived from it, and a test that read the
+     * as every other environment-dependent decision here — {@code source} is derived from it, and a test that read the
      * real environment would say {@code local} on a laptop and {@code ci} in CI.
      */
     Map<String, String> buildRunnerTags(String benchmarkType, String project, Map<String, String> environment) {

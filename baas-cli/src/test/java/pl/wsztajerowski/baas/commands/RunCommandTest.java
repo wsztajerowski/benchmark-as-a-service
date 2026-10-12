@@ -109,7 +109,7 @@ class RunCommandTest {
 
         assertThatThrownBy(() -> RunCommand.resolveResultsTable(config))
             .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("baas config sync --deployment")
+            .hasMessageContaining("baas --deployment <name> config sync")
             .hasMessageNotContaining("--no-database");
     }
 
@@ -191,43 +191,6 @@ class RunCommandTest {
 
         assertThat(command.buildRunnerTags("jmh", "lynx-journal"))
             .containsEntry("branch", "main");
-    }
-
-    // ─── operator credentials warning ────────────────────────────────────────────
-
-    /**
-     * On a laptop with no operator profile the warning is the whole point: `run`/`results` are
-     * meant to run under BaasCliOperatorRole, and falling through to `aws.deployerProfile` would silently
-     * use deployer credentials.
-     */
-    @Test
-    void warnsOnALaptopWithNoOperatorProfileAndNoAmbientCredentials() {
-        assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(), Map.of()))
-            .get().asString().contains("--operator-aws-profile");
-    }
-
-    /**
-     * In continuous integration the credentials come from an OIDC federation the job already
-     * performed, so there is no profile to name and the warning's advice is wrong rather than
-     * merely redundant — and a warning that is wrong where it always fires is one people learn to
-     * ignore where it matters.
-     */
-    @Test
-    void staysSilentWhenCredentialsComeFromTheEnvironment() {
-        assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(),
-            Map.of("AWS_ACCESS_KEY_ID", "ASIA...", "AWS_SESSION_TOKEN", "...")))
-            .isEmpty();
-        assertThat(RunCommand.operatorCredentialsWarning(new BaasConfig(),
-            Map.of("AWS_WEB_IDENTITY_TOKEN_FILE", "/tmp/token", "AWS_ROLE_ARN", "arn:...")))
-            .isEmpty();
-    }
-
-    @Test
-    void staysSilentWhenAnOperatorProfileIsConfigured() {
-        var config = new BaasConfig();
-        config.getAws().setOperatorProfile("baas-operator");
-
-        assertThat(RunCommand.operatorCredentialsWarning(config, Map.of())).isEmpty();
     }
 
     // ─── source: the trigger tag (2.1, 2.2) ─────────────────────────────────────

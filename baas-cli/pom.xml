@@ -141,12 +141,29 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- A command built outside a BaasApp tree reads ~/.baas, and any read migrates a
-                         flat config.yaml there - moving the developer's real file. Unit tests get a
-                         home of their own, which also keeps ~/.aws credentials out of them. -->
+                    <!-- A command built outside a BaasApp tree reads ~/.baas, so unit tests get a home
+                         of their own, which also keeps ~/.aws credentials out of them. -->
                     <systemPropertyVariables>
                         <user.home>${project.build.directory}/test-home</user.home>
                     </systemPropertyVariables>
+                    <!-- With no deployment configured, a day-to-day command identifies its caller to
+                         learn the deployment from an operator role. A developer's shell credentials
+                         must not turn that into a real STS call from a unit test, and the instance
+                         metadata lookup would only add seconds on a machine with none. -->
+                    <excludedEnvironmentVariables>
+                        <excludedEnvironmentVariable>AWS_PROFILE</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_DEFAULT_PROFILE</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_ACCESS_KEY_ID</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_SECRET_ACCESS_KEY</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_SESSION_TOKEN</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_WEB_IDENTITY_TOKEN_FILE</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_ROLE_ARN</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_CONTAINER_CREDENTIALS_RELATIVE_URI</excludedEnvironmentVariable>
+                        <excludedEnvironmentVariable>AWS_CONTAINER_CREDENTIALS_FULL_URI</excludedEnvironmentVariable>
+                    </excludedEnvironmentVariables>
+                    <environmentVariables>
+                        <AWS_EC2_METADATA_DISABLED>true</AWS_EC2_METADATA_DISABLED>
+                    </environmentVariables>
                 </configuration>
             </plugin>
             <plugin>

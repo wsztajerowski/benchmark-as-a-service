@@ -71,15 +71,21 @@ class RunnerJarResolverTest {
     }
 
     /**
-     * The message is the only place the CLI tells a user where this setting lives, so it has to
-     * name the key that exists: the config is a top-level {@code runner:} block, not a field on
-     * {@code aws:}. Setting the key the old message named would have changed nothing.
+     * The repository is fixed when the CLI is built, so the rejection names the build property and
+     * no configuration key: there is none left to set.
      */
     @Test
-    void theRejectionNamesTheConfigurationKeyThatActuallyExists() {
+    void theRejectionNamesTheBuildPropertyNotAConfigurationKey() {
         assertThatThrownBy(() -> RunnerJarResolver.assetUrl(null, "1.4.2", "benchmark-runner.jar"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("runner.sourceRepo")
-            .hasMessageNotContaining("aws.runnerSourceRepo");
+            .hasMessageContaining("-Dbaas.sourceRepo")
+            .hasMessageNotContaining("config.yaml")
+            .hasMessageNotContaining("runner.sourceRepo");
+    }
+
+    @Test
+    void theBuildNamesTheUpstreamRepositoryByDefault() {
+        assertThat(pl.wsztajerowski.baas.BaasVersion.sourceRepo())
+            .isEqualTo("wsztajerowski/benchmark-as-a-service");
     }
 }

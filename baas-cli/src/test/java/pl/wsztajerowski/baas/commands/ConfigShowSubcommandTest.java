@@ -38,4 +38,23 @@ class ConfigShowSubcommandTest {
             .contains("watchdogMarginSeconds:    120")
             .doesNotContain("wallClockHardKillSeconds");
     }
+
+    /** Defaults are not in the file, and show says which values are defaults; no copied values remain. */
+    @Test
+    void marksDefaultsAndShowsNoCopiedValues() {
+        BaasConfig config = new BaasConfig();
+        config.setPrefix("wiktor-dev");
+        config.getAws().setDeployerProfile("baas-admin");
+        config.getEc2().setBenchmarkTimeoutSeconds(10800);
+
+        String shown = ConfigShowSubcommand.render(config, Path.of("wiktor-dev.yaml"));
+
+        assertThat(shown)
+            .contains("benchmarkTimeoutSeconds:  10800\n")
+            .contains("watchdogMarginSeconds:    300  (default)")
+            .contains("the deployer profile is the source")
+            .contains("assumes wiktor-dev-role-operator")
+            .doesNotContain("sourceRepo")
+            .doesNotContain("prefix:");
+    }
 }

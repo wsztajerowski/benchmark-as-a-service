@@ -298,8 +298,10 @@ class SetupCommandTest {
             .contains("is deployed", arn)
             .doesNotContain("created", "Nobody can assume", "build-image");
         assertThat(SetupCommand.nextSteps(true, arn, "baas-123456789012"))
-            .contains("BaasCliOperatorRole created: " + arn, "Nobody can assume it yet",
-                "baas admin image build", "/baas-123456789012/runner/ami-id");
+            .contains("BaasCliOperatorRole created: " + arn, "Your deployer credentials already run",
+                "baas --deployment baas-123456789012 config sync --operator-aws-profile",
+                "baas admin image build", "/baas-123456789012/runner/ami-id")
+            .doesNotContain("source_profile", "Nobody can assume");
     }
 
     // ─── an existing bucket blocking a create (U23) ──────────────────────────────

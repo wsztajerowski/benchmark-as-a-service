@@ -16,6 +16,7 @@ import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
@@ -61,6 +62,16 @@ public class JobsListSubcommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     @Spec CommandSpec spec;
+
+    /** Which deployment, as its operator role; opened by {@link #call()}. */
+    private OperatorSession session;
+
+    OperatorSession session() {
+        if (session == null) {
+            session = OperatorSession.of(BaasApp.configService(spec));
+        }
+        return session;
+    }
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
@@ -127,9 +138,8 @@ public class JobsListSubcommand implements Callable<Integer> {
             logger.error("{}", watchRefusal);
             return 2;
         }
-        BaasConfig config = BaasApp.configService(spec).load();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
+        BaasConfig config = session().config();
+        var factory = session().factory();
 
         if (watch) {
             // Notes go into the frame: logged, they would repeat every refresh and scroll it away.
