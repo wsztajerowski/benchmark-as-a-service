@@ -62,12 +62,12 @@ sequenceDiagram
     end
 
     SC->>CF: describeStacks() -- OperatorRoleArn output, to print only
-    SC->>FS: ConfigService.save() -- deployments/<prefix>.yaml: prefix, aws.deployerProfile, resolved aws.region
+    SC->>FS: ConfigService.save() -- deployments/<prefix>.yaml: aws.deployerProfile, resolved aws.region (the name is the file's)
     SC->>FS: write ~/.baas/runner-image-extension.yaml (beside deployments/, never in it), only if absent
     Note over SC,FS: nothing derivable or resolvable is stored
 
     alt created
-        SC-->>User: BaasCliOperatorRole created -- nobody can assume it yet.<br/>1. grant sts:AssumeRole + add a ~/.aws/config profile (see infra/README.md)<br/>2. baas config set --operator-aws-profile NAME<br/>Next: baas admin image build (~15 min)
+        SC-->>User: BaasCliOperatorRole created -- your deployer credentials already operate it.<br/>A teammate: 1. grant sts:AssumeRole (see infra/README.md)<br/>2. baas --deployment <prefix> config sync --operator-aws-profile NAME<br/>Next: baas admin image build (~15 min)
     else updated
         SC-->>User: "Deployment <prefix> is deployed. Operator role: <arn>"
     end

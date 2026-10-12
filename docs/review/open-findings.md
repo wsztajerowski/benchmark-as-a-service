@@ -49,7 +49,6 @@ decides what to pick up next.
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | S | Low | open |
 | E2 | Next-step hints omit `--deployment`, so with two deployments every one fails as printed | S | Low | open |
-| E3 | Teardown deletes the stored operator profile, and setup's text then reads as a first-time grant | XS | Low | open |
 | pr83/W5 | A JCStress row's `mode` is the string `"null"` in CSV and JSON | XS | Low | open |
 | pr83/W3 | `avgt` scores in `s/op` print as `0.000000` in JSON and CSV | S | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
@@ -65,7 +64,6 @@ decides what to pick up next.
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | L | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | XS | Low | `retire-mongodb` |
-| U8 | `runner.sourceRepo` can only be set by editing YAML | XS | Info | open |
 
 ### Informational
 
@@ -188,27 +186,15 @@ benchmark starts or render the other formats from the JFR afterwards (async-prof
 With two deployments configured, every command refuses without `--deployment`. Yet the hints the
 CLI prints for the next step are bare, so each one fails exactly as printed:
 
-- setup's closing text: `baas config set --operator-aws-profile <profile-name>` and
-  `baas admin image build` (`SetupCommand.java:437-449`);
-- the no-image refusal: `Build one:  baas admin image build` (`RunCommand.java:362-363`), which also
+- setup's closing text: `baas admin image build` (`SetupCommand.java:445`; its teammate step
+  already carries `--deployment` since `derived-deployment-config`);
+- the no-image refusal: `Build one:  baas admin image build` (`RunCommand.java:357`), which also
   says "for this account (us-east-1)" where a deployment is meant;
-- the end of a run: `baas results query --job-id …` (`RunCommand.java:845`, and `:587` on failure);
-- `RunCommand.java:206` and `ConfigShowSubcommand.java:59` (operator profile not set).
+- the end of a run: `baas results query --job-id …` (`RunCommand.java:878`, and `:620` on failure).
 
 Seen live on 2026-10-10: setup's printed `config set` was refused with "2 deployments are configured".
 **Proposed:** one helper that renders a hint with `--deployment <name>` whenever more than one
 deployment is configured (or always, which is simpler and never wrong), used at each site.
-
-### E3 — teardown drops the operator profile, and setup reads as a first-time grant · Should · XS
-
-Teardown deletes `~/.baas/deployments/<name>.yaml`, and with it `aws.operatorProfile`. After a
-re-setup, setup prints "Nobody can assume it yet. Two one-time steps: Grant sts:AssumeRole …",
-although an existing `~/.aws/config` profile for the recreated role (same name, same ARN) works at
-once (verified 2026-10-10). The only step really needed is `config set --operator-aws-profile`, and
-nothing reminds the user which profile was in use. **Proposed:** teardown names the operator profile
-it is discarding and the `baas --deployment <name> config set --operator-aws-profile <profile>` that
-restores it after a re-setup. Setup's text then says the IAM step is needed only if no such profile
-exists yet.
 
 ### pr83/W5 — a JCStress row's `mode` is the string `"null"` · Should · XS
 
@@ -284,11 +270,6 @@ views and between machines. **Decide:** keep the locale on purpose (and say so i
 `JobsDiffSubcommand` builds a fixed-width `Table` (91 columns). A value wider than its column, such as
 `Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz`, pushes the next column right instead of being
 clipped or wrapping, so that row no longer lines up with the header. Seen 2026-10-10 on c5 vs c6i.
-
-### U8 — `runner.sourceRepo` can only be set by editing YAML · Could · XS
-
-`RunnerJarResolver` names it in its error message as the thing to change, but `config set` has no
-option for it. A fork that releases its own runner edits `~/.baas/config.yaml` by hand.
 
 ## Informational
 

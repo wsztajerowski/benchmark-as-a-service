@@ -26,8 +26,8 @@ sequenceDiagram
         Adm->>CLI: baas admin deployment setup [--region] [--deployer-aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
         CLI->>AWS: bucket-region check, then the policy step (SimulatePrincipalPolicy)
         CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
-        CLI->>CFG: write prefix, aws.deployerProfile, aws.region
-        CLI-->>Adm: OperatorRole ARN + "Nobody can assume it yet" + next: build-image
+        CLI->>CFG: write aws.deployerProfile, aws.region (the name is the file's)
+        CLI-->>Adm: OperatorRole ARN + "your deployer credentials already operate it" + next: build-image
         Adm->>CLI: baas admin image build
         CLI->>AWS: preflight version, UpdateStack (image params), StartImagePipelineExecution
         CLI->>AWS: wait (~15 min), tag AMI, PutParameter /<prefix>/runner/ami-id, retire previous AMI
@@ -37,12 +37,12 @@ sequenceDiagram
 
     rect rgb(255, 250, 235)
         Note over IA,AWS: 2. Onboard an operator machine
-        Op->>AWS: [grant sts:AssumeRole on <prefix>-role-operator -- add role_arn profile to ~/.aws/config]
-        Op->>CLI: baas --deployment baas-<accountId> config sync
-        CLI->>AWS: DescribeStacks (proves it exists)
-        CLI->>CFG: write prefix
-        Op->>CLI: baas config set --operator-aws-profile p [--region] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--git-resolve-project]
-        CLI->>CFG: write
+        IA->>AWS: [grant the benchmark author sts:AssumeRole on <prefix>-role-operator -- no role_arn profile]
+        Op->>CLI: baas --deployment baas-<accountId> config sync --operator-aws-profile p
+        CLI->>AWS: GetCallerIdentity, AssumeRole <prefix>-role-operator, HeadBucket, DescribeStacks
+        CLI->>CFG: write aws.region + aws.operatorProfile (no name, no defaults)
+        Op->>CLI: baas config set [--instance-type] [--timeout] [--watchdog-margin] [--git-resolve-project]
+        CLI->>CFG: write only what was set
     end
 
     rect rgb(255, 240, 240)

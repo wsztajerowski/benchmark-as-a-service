@@ -16,7 +16,7 @@ sequenceDiagram
         RC->>Sub: git rev-parse --path-format=absolute --git-common-dir (in the JAR's directory)
         Sub-->>RC: repo root -> project name, or "not a git repository"
     end
-    Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project and nothing derived -> exit 1 naming --project.<br/>No deployment in config -> exit 1 naming `baas config sync`.<br/>No option discards measurements: every job records its status<br/>in the results table, so every job needs one.<br/>branch/commit are never derived: only --tag supplies them.<br/>watchdog bound = timeout + margin (margin >= 60).
+    Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project and nothing derived -> exit 1 naming --project.<br/>No deployment in config and no operator-role session -> exit 1 naming `baas config sync`<br/>(with no file, the caller is identified first: an operator role names the deployment).<br/>No option discards measurements: every job records its status<br/>in the results table, so every job needs one.<br/>branch/commit are never derived: only --tag supplies them.<br/>watchdog bound = timeout + margin (margin >= 60).
     Note over RC: the --benchmark-jar option is required, and checked for existence here --<br/>before the runner-image lookup and before any upload.<br/>Missing -> exit 1 naming --benchmark-jar. Nothing is built.
     RC->>SSM: ssm.getParameter(/<prefix>/runner/ami-id)
     SSM-->>RC: amiId, or ParameterNotFound
