@@ -165,7 +165,14 @@ jobs:
           status=""
           while :; do
             if json=$($BAAS jobs show "$job_id" --format json); then
-              status=$(jq -r '.status' <<<"$json")
+              # The job sits under "job", beside "environment" and "artifacts". A lookup that
+              # succeeded without a status is a format this loop cannot read: fail now, rather
+              # than poll a value that will never change until the bound.
+              status=$(jq -r '.job.status // empty' <<<"$json")
+              if [ -z "$status" ]; then
+                echo "::error::baas jobs show returned no .job.status:"; echo "$json" | head -c 600
+                exit 1
+              fi
               case "$status" in
                 completed|timed-out|cancelled|launch-failed|failed:*|vanished) break ;;
               esac
