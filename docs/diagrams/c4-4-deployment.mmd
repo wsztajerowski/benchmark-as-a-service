@@ -2,11 +2,11 @@ C4Deployment
     title BaaS — Deployment
 
     Deployment_Node(laptop, "Developer laptop", "macOS / Linux, JDK 25") {
-        Container(cliL, "baas CLI", "installed by scripts/install.sh", "~/.baas/deployments/*.yaml; deployer + operator profiles in ~/.aws/config")
+        Container(cliL, "baas CLI", "installed by scripts/install.sh", "~/.baas/deployments/*.yaml; source profiles in ~/.aws/config, the CLI assumes the operator role")
     }
 
     Deployment_Node(ghHosted, "GitHub-hosted runner", "ubuntu-latest") {
-        Container(cliCi, "baas CLI", "reactor build", "Fresh config per job via config sync; OIDC credentials, no profile")
+        Container(cliCi, "baas CLI", "reactor build", "No config file and no sync: the OIDC session is the operator role, which names the deployment")
     }
 
     Deployment_Node(iam, "AWS IAM (account-global)", "") {
