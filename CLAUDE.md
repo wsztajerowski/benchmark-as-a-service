@@ -168,7 +168,10 @@ The watchdog is the only one that survives a deadlocked JVM.
    terminates itself. So the only stored status for which the CLI terminates a live instance it did
    not stop itself is `cancelled`. A status write never holds a termination back. `RunInstances`
    carries the job id as its client token, so an SDK retry cannot start a second, untracked
-   instance
+   instance. **`--detach` disarms the hook once the launch is confirmed** (ADR 0007): it fires on
+   every JVM exit, not only on Ctrl+C, so left armed it would cancel the job the CLI had just
+   returned from. A detached job's third layer is `baas jobs terminate`; until the confirmation, an
+   interrupt cancels it like an attached one
 
 **The runner image (`infra/runner-image.yaml`, `baas admin image build`)**
 

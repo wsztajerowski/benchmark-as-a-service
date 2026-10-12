@@ -3,6 +3,11 @@
 Stub change: this is a pre-proposal exploration, not an OpenSpec artifact. It was written as
 `docs/analysis/fire-and-forget-run-analysis.md` and moved here on 2026-10-05.
 
+> **Superseded where they disagree by [`design.md`](design.md) (2026-10-12).** This file predates the
+> run→job rename, `jobs-command` and the PR #83 fixes: read `runs …`/`Run…` as `jobs …`/`Job…`,
+> `runStatus` as `jobStatus`, and every line number as stale. It is kept as the record of how each
+> decision was reached.
+
 Status: **exploration complete (2026-10-05)**; no OpenSpec change yet. Three changes follow from it,
 in this order: `jcstress-e2e`, `runs-command` (already queued), then `detached-run`. The
 failure-notification recipe (§8) is a suggestion, written only once `detached-run` works.
