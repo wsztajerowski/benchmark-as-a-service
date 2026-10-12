@@ -4,10 +4,10 @@ flowchart TD
     A0([empty account]) -->|"[outside] attach the policy<br/>← baas admin deployment setup prints it when missing"| A1[deployer authorised]
     A1 -->|"baas admin deployment setup [--region] [federation flags]<br/>the only place a region is chosen"| A2[stack deployed, no image]
     A2 -->|"baas admin image build [--extension f] (~15 min)"| A3[deployment ready]
-    A3 -->|"[outside] grant sts:AssumeRole + ~/.aws profile"| O1
+    A3 -->|"[outside] grant a teammate sts:AssumeRole (no role_arn profile)"| O0
     subgraph op [operator machine]
-        O0([no config]) -->|"baas config sync --deployment P<br/>finds the region from the bucket"| O1[adopted]
-        O1 -->|"baas config set --operator-aws-profile p<br/>(or ambient: OIDC, AWS_PROFILE)"| O2[operator]
+        O0([no config]) -->|"baas --deployment P config sync --operator-aws-profile p<br/>proves p assumes the operator role, finds the region"| O2[operator]
+        O0 -->|"CI: no file, no sync -- the operator role names P"| O2
     end
     O2 -->|"baas run --benchmark-jar J --project X TYPE -- …"| R1{{one job}}
     R1 -->|"baas jobs list / jobs terminate ID"| R1

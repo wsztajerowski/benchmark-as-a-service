@@ -189,7 +189,8 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > values the job's own `environment.json` records, so the two can never disagree.
 
 > **A job with nowhere to record itself fails before it costs anything.** If no deployment is
-> configured, `baas run` stops before any upload — before any AWS call at all — and tells you to run
+> configured and its credentials are not a deployment's operator role, `baas run` stops before any
+> upload — its only AWS call is asking who the credentials belong to — and tells you to run
 > `baas config sync`. There is no option to discard measurements: every job records its status in
 > the results table, so a job without one could not be seen.
 
@@ -362,9 +363,11 @@ Two roles, deliberately separate:
 | Deployer | `infra/deployer-policy.json` | `baas admin deployment setup` / `baas admin image build` / `baas admin deployment teardown` |
 | Operator | `infra/operator-policy.json` (role created by the stack) | `baas run` / `baas results query` |
 
-`aws.operatorProfile` in a deployment's file does **not** fall back to `aws.deployerProfile`. That's
-intentional: the fallback would silently hand everyday commands deploy-level rights.
-[`infra/README.md`](infra/README.md) covers the assume-role setup.
+Everyday commands always run as the operator role: the CLI assumes it from the credentials you give
+it — `aws.operatorProfile`, else the deployer profile, else the default chain — so deployer rights
+never reach them, and nobody writes a `role_arn` profile. An admin needs nothing more; a teammate
+needs `sts:AssumeRole` on the role and `baas --deployment <name> config sync --operator-aws-profile
+<profile>`. [`infra/README.md`](infra/README.md) covers the details.
 
 ## Modules
 
@@ -463,7 +466,9 @@ the reusable workflow, the contract is now *install the CLI* — see [Install](#
 | `release.yml` | push to `main` | semantic-release → GitHub Release → GitHub Packages |
 
 Variables (no secrets — a role ARN is not sensitive, and nothing else is left to hold):
-`OPERATOR_ROLE_ARN` (core stack output `OperatorRoleArn`), `CORE_STACK_NAME`, `AWS_REGION`.
+`OPERATOR_ROLE_ARN` (core stack output `OperatorRoleArn`) and `AWS_REGION` (for the credential
+exchange only). CI names no deployment and runs no `config sync`: the CLI takes the deployment from
+the operator role and the region from its bucket.
 
 `e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its
 `pull_request` trigger is path-filtered and there is no schedule. It tags its own measurements

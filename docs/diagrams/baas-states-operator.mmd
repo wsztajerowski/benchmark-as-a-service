@@ -1,10 +1,12 @@
 %% One deployment's configuration on one operator machine (~/.baas/deployments/<name>.yaml).
-%% The name is given once (or derived by setup on a machine with none) and the region is found from the bucket.
+%% The name is the file's, given once (or derived by setup on a machine with none); the region is found from the bucket.
+%% A CI job never has a file: it takes the deployment from its operator role (see baas-ci-e2e).
 stateDiagram-v2
     direction TB
     [*] --> NoConfig
-    NoConfig --> Adopted: --deployment P config sync<br/>(writes deployments/P.yaml: prefix + region)<br/>or admin deployment setup
-    Adopted --> Operator: config set --operator-aws-profile<br/>(or ambient creds)
+    NoConfig --> Operator: --deployment P config sync --operator-aws-profile p<br/>(proves p assumes P-role-operator, then writes region + profile)<br/>or admin deployment setup (the deployer profile is the source)
+    NoConfig --> Adopted: --deployment P config sync<br/>(no profile: the default chain is the source)
+    Adopted --> Operator: config set --operator-aws-profile
     Operator --> Operator: config set (preferences)
     Operator --> [*]: admin deployment teardown here<br/>(deletes deployments/P.yaml)
     Operator --> Orphaned: [elsewhere] admin deployment teardown

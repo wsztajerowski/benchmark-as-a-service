@@ -305,10 +305,17 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.
-- **`aws.operatorProfile` must not fall back to `aws.deployerProfile`.** That field holds deployer
-  credentials; the fallback would silently hand day-to-day commands elevated rights. Don't
-  "helpfully" add it. (It was `aws.profile`, and `--aws-profile`, until `multiple-deployments`; the
-  old key is still read and is rewritten on the next save.)
+- **Day-to-day commands always run as `<name>-role-operator`; any credentials, the deployer's
+  included, are only the source of that assumption, and a failed assumption stops the command.**
+  `OperatorSession` takes the source from `aws.operatorProfile`, else `aws.deployerProfile`, else the
+  default chain, identifies the caller, and then uses an operator-role session for this deployment as
+  is, refuses another deployment's operator role, or assumes the role itself. The deployer fallback
+  is safe only because nothing but `GetCallerIdentity` and `AssumeRole` is ever called with the
+  source — so never let an error path carry on with it (`aFailedAssumptionStopsBeforeAnyClientIsBuilt`
+  pins that). It replaced *operatorProfile must not fall back to deployerProfile*, which guarded the
+  same rights when the profile *was* the identity. `baas admin` uses the deployer source as is and
+  never assumes the operator role; the deployer policy grants `sts:AssumeRole` on its own operator
+  role only, so an admin needs no operator setup at all.
 - **Every resource name is `<prefix>` or `<prefix>-<type>-<name>`, and the prefix is the deployment's
   name, verbatim.** One rule, no exceptions: `ResourceNamePrefix` is the whole name stem and knowing
   it predicts every name (`<prefix>` stack and bucket, `<prefix>-results`, `<prefix>-role-runner`,
@@ -335,12 +342,17 @@ The watchdog is the only one that survives a deadlocked JVM.
   and rebuilt the networking underneath everyone. Carrying them forward silently would close the
   hole while discarding a flag the operator typed; refusing names both values instead.
 - **Each deployment is one file, `~/.baas/deployments/<name>.yaml`, storing credential *profile
-  names*, region, `prefix` and preferences — nothing else, and no secret.** A file whose `prefix` is not its own name is refused on read: a copied file would otherwise aim
-  every command, teardown included, at the deployment it was copied from. The credentials themselves
-  stay in `~/.aws`. One file per deployment, not one file with a map: an older CLI's save drops keys
-  it does not know, so a map would vanish the first time an older CLI ran `config set`. The flat
-  `~/.baas/config.yaml` of earlier releases is moved there on first look and removed; an older CLI
-  then finds nothing and says so, loudly, rather than addressing any deployment. `~/.baas` is not
+  names*, preferences and the region — each preference only once set, and no secret.** The name is
+  the file's name and is not written inside it, so a copy under another name configures that other
+  name and can never aim at the original. Defaults are supplied when read, never written, so a
+  changed default reaches every machine. The region is the one fact about AWS kept: it cannot be
+  derived without a call and does not change while the deployment exists. `runner.sourceRepo` is
+  gone — the build carries it (`baas.sourceRepo`, set by the release to the releasing repository).
+  The credentials themselves stay in `~/.aws`. One file per deployment, not one file with a map: an
+  older CLI's save drops keys it does not know, so a map would vanish the first time an older CLI
+  ran `config set`. There is no migration — not of the flat `config.yaml` of earlier releases, nor
+  of files carrying a `prefix`: the test deployments were rebuilt (`derived-deployment-config`), and
+  a stray old key is warned about and ignored. `~/.baas` is not
   relocatable — no option, no environment variable; tests pass a root to `new BaasApp(root)`, and
   surefire gives unit tests their own `user.home` so none can touch a developer's real `~/.baas`.
   The bucket, results table and runner instance profile are *derived* from the prefix; the runner
@@ -352,8 +364,11 @@ The watchdog is the only one that survives a deadlocked JVM.
   nothing but `config show`; the latter printed `4.0` regardless of what the AMI held.
 - **Absent `--deployment` means "the only one", never a guess.** With exactly one deployment
   configured a command uses it; with two or more every command — teardown included — refuses,
-  listing them and hinting `baas config list`; with none only setup proceeds, deriving
-  `baas-<accountId>`. Nothing else selects a deployment: no `BAAS_DEPLOYMENT`, no stored default, no
+  listing them and hinting `baas config list`; with none, setup derives `baas-<accountId>` and a
+  day-to-day command takes the name from an operator-role session (`<name>-role-operator`, the CI
+  path) and otherwise refuses. That role is created by the stack, cannot move, and can only operate
+  the deployment it names, which is why it does not reopen A10 (ADR 0006's amendment); with any file
+  present it never selects, it can only be refused. Nothing else selects a deployment: no `BAAS_DEPLOYMENT`, no stored default, no
   `config use` — each is invisible state that changes what a command hits. A developer with a
   second deployment reaches it through an alias that carries the flag. `--config-path` is gone for
   the same reason. Teardown deletes the deployment's file, the last one included.
@@ -361,15 +376,17 @@ The watchdog is the only one that survives a deadlocked JVM.
   must be named: a bare sync on a machine with no local state would adopt whatever deployment the
   active credentials imply — in CI, a wrong role or a leftover `AWS_PROFILE` binds the machine to
   another account's deployment and fails later, after provisioning. With exactly one configured, a
-  bare sync re-syncs that one. Setup derives and prints; sync adopts what it is told. A deployment
+  bare sync re-verifies that one. Setup derives and prints; sync adopts what it is told, proving
+  first that the credentials reach the operator role (`--operator-aws-profile` is checked, then stored). CI does not sync at all. A deployment
   is named only by the global `--deployment`, never by a per-command `--results-table` or
   `--bucket`, which are gone: an override of one resource could aim a command at one deployment's
   table while its configuration named another.
 - **The region is chosen once, by `baas admin deployment setup --region`, and never typed again.** `config sync`
   finds it: the bucket carries the prefix's name, bucket names are global, and `HeadBucket` from any
   region answers a wrong-region request with 301/400 carrying `x-amz-bucket-region` (a 404 is no
-  bucket) — under the `s3:ListBucket` the operator already holds. Sync stores the region, CI
-  included, so a CI job follows the deployment rather than its `AWS_REGION`. There is no
+  bucket) — under the `s3:ListBucket` the operator already holds. Setup and sync store the region;
+  a machine with no file (CI) looks it up once per invocation, so a CI job follows the deployment
+  rather than its `AWS_REGION`, whose only job is the credential exchange. There is no
   `config set --region`: set by hand it aimed a machine at a region with no deployment, and `run`
   then advised building an image there. Moving a deployment is a rebuild in the new region, after
   which every machine re-runs the same `config sync --deployment`.
@@ -589,7 +606,7 @@ because the CLI renders them at runtime.
 IAM group, capped at 5120 non-whitespace characters, *shared across every inline policy on that
 group* — nothing else is currently attached to it, so the reserve below the cap is precautionary
 rather than protecting a known consumer. A customer-managed policy gets 6144 to itself. The
-rendered document sits at 4105 non-whitespace characters, and a
+rendered document sits at 4370 non-whitespace characters, and a
 `renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4608. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
 `imagebuilder:Get*`, `dynamodb:Describe*`) rather than enumerated — naming every action
 CloudFormation's bucket read handler needs is what pushed it over. `Create` is deliberately *not*
@@ -616,13 +633,12 @@ policy can call IAM directly. Don't try to make it one.
 GHA values whose origin isn't obvious from the workflow files. All are plain `vars.`, no secrets:
 a role ARN is not sensitive, and nothing else is left to hold. `WORKFLOW_ROLE_ARN`,
 `RUNNER_ROLE_NAME`, `GHA_EC2_PAT`, `SUBNET_ID`, `SECURITY_GROUP_ID` and `RESOURCE_NAME_PREFIX` are
-deleted along with the workflows that read them.
+deleted along with the workflows that read them, and `CORE_STACK_NAME` with CI's `config sync`.
 
 | Name | Source |
 |---|---|
 | `OPERATOR_ROLE_ARN` | Core stack output `OperatorRoleArn` — the role CI federates into directly |
-| `CORE_STACK_NAME` | The deployment `baas admin deployment setup` printed (e.g. `baas-381492019823`); passed to `baas config sync --deployment` |
-| `AWS_REGION` | The deployment's region |
+| `AWS_REGION` | Any region, for the credential exchange only — the CLI finds the deployment's region from its bucket. CI names no deployment: the CLI takes it from the operator role |
 
 ## S3 result layout
 

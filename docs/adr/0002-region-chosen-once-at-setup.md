@@ -60,3 +60,12 @@ runner subnet are all regional. Three earlier states got this wrong in different
 - `config sync --name` of a name whose bucket exists in *another* account (the namespace is global)
   finds a region, then no stack, and reports a retained bucket. The name is the one `baas admin
   setup` printed, so this needs a typo that happens to hit someone else's bucket.
+
+## Amendment — a machine with no file looks the region up (2026-10-12, `derived-deployment-config`)
+
+CI no longer runs `config sync`, so it holds no file and no stored region. A day-to-day command on a
+machine with no file finds the region from the deployment's bucket, once per invocation, by the same
+`HeadBucket` lookup sync uses. Every machine with a file keeps the stored region: it cannot be derived
+without a call and does not change while the deployment exists, so storing it remembers an answer
+rather than copying a source. A lookup on every command was considered and rejected — it protected
+against nothing and cost one or two round trips per command. The decision above stands unchanged.

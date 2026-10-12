@@ -1,7 +1,7 @@
 # ADR 0006 — An account may hold more than one deployment, each named explicitly
 
 - **Status:** Accepted — implemented in `multiple-deployments`, verified live 2026-10-07; the same-region check is deferred
-  (`openspec/changes/QUEUE.md`)
+  (`openspec/changes/QUEUE.md`). **Amended** 2026-10-12 by `derived-deployment-config` (below)
 - **Date accepted:** 2026-10-07
 - **Supersedes:** the "exactly one deployment per account, and the CLI cannot be told otherwise" rule
   (finding A10's fix, `443291f`)
@@ -76,3 +76,19 @@ user, never by state they cannot see.
   verified by hand on a second deployment (`openspec/config.yaml`, tasks rule).
 - A runner launched by a CLI from before the tag is invisible to the scoped queries. The window lasts
   one benchmark timeout, and the watchdog still ends that runner.
+
+## Amendment — an operator-role session names its deployment (2026-10-12)
+
+Decision 2 said nothing derives a name from the caller. `derived-deployment-config` makes one narrow
+exception: on a machine with **no deployment configured** and no `--deployment`, a day-to-day command
+whose credentials are the assumed role `<name>-role-operator` uses `<name>`. That is the CI path: the
+workflow federates into the operator role and names nothing else.
+
+A10's harm does not follow. A10 derived a name from a *human's* principal, which moved when a
+permission set changed and silently created a second deployment. An operator role is created by the
+deployment's own stack; its name cannot move without a new deployment, it can only operate the
+deployment it names, and deriving from it creates nothing. With any file configured the role never
+selects — it can only be refused, when it belongs to a different deployment than the one selected,
+which also catches the mismatch that used to surface only as the first `AccessDenied`. Setup still
+derives only from the account, and `config sync` still requires the name, because it binds a machine.
+

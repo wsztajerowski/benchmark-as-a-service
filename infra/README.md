@@ -287,59 +287,55 @@ aws iam put-user-policy \
   --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":"sts:AssumeRole","Resource":"OPERATOR_ROLE_ARN_FROM_SETUP_OUTPUT"}]}'
 ```
 
-Then the operator adds a profile that assumes it — no `baas-cli` code changes needed, since
-the AWS SDK's credential chain resolves `role_arn`/`source_profile` profiles transparently:
+Nobody writes a `role_arn` profile: the CLI assumes the role itself. Every command outside
+`baas admin` takes *source* credentials — `aws.operatorProfile`, else `aws.deployerProfile`, else the
+default chain — identifies the caller, and then:
 
-```ini
-# ~/.aws/config
-[profile baas-operator]
-role_arn = OPERATOR_ROLE_ARN_FROM_SETUP_OUTPUT
-source_profile = YOUR_OPERATOR_IAM_USER_PROFILE
-region = eu-central-1
-```
+- uses the session as is when it already **is** `<name>-role-operator` (CI, or an old `role_arn`
+  profile);
+- refuses when it is **another** deployment's operator role;
+- otherwise assumes `arn:aws:iam::<account>:role/<name>-role-operator`, renewing it for as long as
+  the command runs. A failed assumption stops the command; it never carries on with the source.
 
-Finally, point the CLI at that profile — **this step is required**. Without it,
-`baas run`/`baas results query`/`baas config` fall through to the default AWS credential chain
-rather than assuming the operator role:
+So the admin's machine needs nothing more: the deployer policy grants `sts:AssumeRole` on its own
+operator role, and with no operator profile set the deployer profile is the source. A teammate needs
+the grant above on their own identity, and one command on their machine.
 
-```bash
-baas config set --operator-aws-profile baas-operator
-```
-
-Each deployment's file, `~/.baas/deployments/<name>.yaml`, keeps the two identities separate:
+Each deployment's file, `~/.baas/deployments/<name>.yaml`, keeps the two sources separate:
 
 ```yaml
 aws:
-  deployerProfile: baas-deployer  # baas admin …
-  operatorProfile: baas-operator  # baas run / baas results query / baas jobs / baas config
+  deployerProfile: baas-deployer  # baas admin …, used as is
+  operatorProfile: my-sso         # source for everything else; the operator role is assumed from it
 ```
 
-`aws.operatorProfile` deliberately does **not** fall back to `aws.deployerProfile`. `baas admin
-deployment setup --deployer-aws-profile` writes the deployer profile there, and silently reusing it
-would give every benchmark job `iam:CreateRole` and `cloudformation:*` — the exact standing
-privilege the operator role exists to avoid. (The key was `aws.profile`, and the option
-`--aws-profile`, before `multiple-deployments`; an old file is read and rewritten with the new key.)
+Falling back to the deployer profile is safe because the source is only ever the input to that
+assumption: no other call is made with it, so deployer rights never reach a day-to-day command.
 
 If you are setting up on a machine that never ran `baas admin deployment setup` — the usual case when
 the deployer and the operator are different people — adopt the deployment instead of copying its
 file by hand:
 
 ```bash
-baas --deployment baas-123456789012 config sync
+baas --deployment baas-123456789012 config sync --operator-aws-profile my-sso
 ```
+
+Sync checks that the profile can assume the operator role, that the bucket and the stack exist, and
+only then writes the file — with the profile and the region, and nothing else.
 
 With nothing configured, the name is required even though the prefix *is* derivable from the
 account, because a bare sync on a machine with no local state would adopt whichever deployment the
 active credentials imply. In CI — a wrong federated role, or a leftover `AWS_PROFILE` — that binds
 the machine to another account's deployment and fails much later, after something has been
 provisioned. `baas admin deployment setup` prints the name; `config sync` adopts it. With exactly
-one deployment configured, a bare `baas config sync` re-syncs it.
+one deployment configured, a bare `baas config sync` re-verifies it. CI never syncs: it holds no
+file, and the CLI takes the deployment from the operator role the job federated into.
 
 `baas config list` shows what this machine is configured for — each deployment with its region and
 both profiles — from the files alone, with no AWS call.
 
 Sync also finds the deployment's region — from its bucket, whose name is global — and stores it,
-so a machine never needs a region typed. The region is chosen once, by `baas admin deployment setup --region`;
+so a machine never needs a region typed; a machine with no file looks it up on each command. The region is chosen once, by `baas admin deployment setup --region`;
 there is no `config set --region`.
 
 Every `baas admin deployment setup` run prints (and the stack outputs as `OperatorRoleArn`) this role's
@@ -402,24 +398,18 @@ Three things worth knowing:
   it, for a dev deployment as for the account's own. While it exists it costs one AMI snapshot
   (~$0.20/month for 30 GB).
 
-## Client configuration beyond credentials — `runner.sourceRepo`
+## The runner source repository is the build's, not configuration
 
-Each deployment's file carries one setting that is neither a credential nor a stack output:
+The GitHub repository the version-pinned runner JAR is downloaded from is fixed when the CLI is
+built: the Maven property `baas.sourceRepo`, defaulting to `wsztajerowski/benchmark-as-a-service` and
+set by `release.yml` to the releasing repository (`$GITHUB_REPOSITORY`). A fork's release therefore
+fetches the fork's runner, and no setting can pair one build's CLI with another build's runner. It is
+read **only** when `releases/<version>/benchmark-runner.jar` is not yet seeded in the bucket, and an
+unreleased build never reads it (it needs `--runner-jar`).
 
-```yaml
-runner:
-  sourceRepo: wsztajerowski/benchmark-as-a-service   # default
-```
-
-It names the GitHub repository the version-pinned runner JAR is downloaded from, and it is read
-**only** when `releases/<version>/benchmark-runner.jar` is not yet seeded in the bucket. After the
-first job of a given CLI version the object exists, is never overwritten, and the setting goes
-unread until the next version bump — so changing it does not repoint jobs already pinned.
-
-It is configuration rather than a constant in the user-data script so that a fork can point at its
-own releases. Note that the *instance* never contacts GitHub: the CLI does the download on the
-laptop, verifies the asset against the `.sha256` published by the same release build, and uploads
-it. A mismatch uploads nothing and launches nothing.
+The *instance* never contacts GitHub: the CLI does the download on the laptop, verifies the asset
+against the `.sha256` published by the same release build, and uploads it. A mismatch uploads
+nothing and launches nothing.
 
 ## MongoDB Atlas connectivity — removed
 
