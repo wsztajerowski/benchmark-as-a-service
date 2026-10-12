@@ -51,6 +51,10 @@ jobs:
       # mechanism.
       BENCHMARK_TYPE: jmh-with-async
       BENCHMARK_CLASS: Incrementing_Synchronized
+      # The deployment defaults, named so the detached job's follow-up loop knows the bound at
+      # which the job's watchdog ends it: timeout + margin.
+      BENCHMARK_TIMEOUT: 7200
+      WATCHDOG_MARGIN: 300
       BAAS: java -jar baas-cli/target/baas-cli.jar
       # Named, never derived: `baas run` consults git for none of these unless git.resolveProject
       # is enabled, and this job deliberately leaves it off. The PR's head commit, not the merge
@@ -79,8 +83,8 @@ jobs:
           # Federates straight into the operator role. No intermediate role: a role-chained
           # session is capped at 60 minutes by STS whatever MaxSessionDuration says, and this run
           # can last up to the 7500 s watchdog bound (timeout + margin). A session expiring
-          # mid-poll would kill the polling AND the CLI's shutdown hook, leaving the shell watchdog
-          # to terminate — a red job with a good measurement and a full EC2 bill.
+          # mid-poll would end the follow-up loop below and fail a job that is still running,
+          # leaving the shell watchdog to terminate it — a red job with a good measurement.
           role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 9000
@@ -97,7 +101,12 @@ jobs:
       # --tag exclude_from_results=true because this measures fixture code and carries no
       # analytical meaning. It stays visible to `--job-id`, which is a request for one named
       # job rather than a query over the project's history.
-      - name: Run the benchmark on EC2
+      #
+      # --detach: the CLI returns once the launch is confirmed and the instance ends the job alone,
+      # which is the path a consumer uses to stop holding a runner for the whole benchmark. The
+      # next step follows the job to its end, so a detached exit that cancelled the job, or a job
+      # that never ends, fails CI. The JCStress job below stays attached and covers the poll.
+      - name: Launch the benchmark on EC2, detached
         id: run
         run: |
           set -o pipefail
@@ -107,7 +116,10 @@ jobs:
           # job id with it, and the boot-log step below would have nothing to download.
           status=0
           $BAAS run "$BENCHMARK_TYPE" \
+            --detach \
             --format json \
+            --timeout "$BENCHMARK_TIMEOUT" \
+            --watchdog-margin "$WATCHDOG_MARGIN" \
             --project "$PROJECT" \
             --tag branch="$RUN_BRANCH" \
             --tag commit="$RUN_COMMIT" \
@@ -124,7 +136,6 @@ jobs:
             echo "job_id=$job_id"
             echo "result_path=$(jq -r '.resultPath // empty' summary.json)"
             echo "project=$(jq -r '.project // empty' summary.json)"
-            echo "job_status=$(jq -r '.jobStatus // empty' summary.json)"
           } >> "$GITHUB_OUTPUT"
           # An unparseable summary must fail here, naming itself. Without this the empty id flows
           # into `baas results query --job-id ""`, which fails in DynamoDB as "The AttributeValue for
@@ -135,7 +146,38 @@ jobs:
             echo "--- captured stdout ---"; cat summary.json
             exit 1
           fi
+          # A detached exit 0 says the job was launched, never that it completed.
+          if [ "$status" -eq 0 ] && [ "$(jq -r '.status' summary.json)" != "launched" ]; then
+            echo "::error::a detached launch reported '$(jq -r '.status' summary.json)', expected launched"
+            exit 1
+          fi
           exit "$status"
+
+      # Polled by id until a terminal status, or vanished. Bounded by the job's watchdog bound plus
+      # one poll: past it the watchdog has ended the job, so a status still in flight is a failure
+      # to report rather than to wait out. A failed lookup is retried, not fatal — one network
+      # blip must not fail a benchmark that is still running.
+      - name: Follow the detached job to its end
+        id: follow
+        run: |
+          job_id="${{ steps.run.outputs.job_id }}"
+          deadline=$(( $(date +%s) + BENCHMARK_TIMEOUT + WATCHDOG_MARGIN + 15 ))
+          status=""
+          while :; do
+            if json=$($BAAS jobs show "$job_id" --format json); then
+              status=$(jq -r '.status' <<<"$json")
+              case "$status" in
+                completed|timed-out|cancelled|launch-failed|failed:*|vanished) break ;;
+              esac
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::job $job_id is still '$status' past its watchdog bound"
+              break
+            fi
+            sleep 15
+          done
+          echo "Job $job_id ended: $status"
+          echo "job_status=$status" >> "$GITHUB_OUTPUT"
 
       # Every assertion below is expressed against a value this job supplied or received. The
       # previous self-test asserted tags.source == "gha-e2e-test" while the jobs were tagged
@@ -189,12 +231,11 @@ jobs:
           find ./artifacts -name '*.jfr' | grep -q . || {
             echo "no JFR recording produced"; exit 1; }
 
-      # The outcome as recorded on the job item: the summary's jobStatus is the item's status as
-      # the poll ended, so it needs no second lookup by id.
+      # The outcome as recorded on the job item, as the follow-up loop last read it.
       - name: The job item recorded the outcome
         run: |
-          test "${{ steps.run.outputs.job_status }}" = "completed" || {
-            echo "::error::job item status is '${{ steps.run.outputs.job_status }}', expected completed"; exit 1; }
+          test "${{ steps.follow.outputs.job_status }}" = "completed" || {
+            echo "::error::job item status is '${{ steps.follow.outputs.job_status }}', expected completed"; exit 1; }
 
       - name: Publish the job's artifacts
         if: always()

@@ -9,7 +9,7 @@ sequenceDiagram
     participant DDB as DynamoDB results table
     participant GH as GitHub Releases (laptop only)
 
-    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--tag k=v] [--format json] [--config-path]
+    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--tag k=v] [--format json] [--detach] [--config-path]
     Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() -- deployments/D.yaml for --deployment D, else the only one configured
     Note over RC: an unreleased CLI (0.0.0-semantically-released) names no<br/>release to pin the runner JAR to, so it exits 1 naming<br/>--runner-jar -- before any upload. baas run builds nothing.
     opt no --project and git.resolveProject enabled
@@ -52,6 +52,10 @@ sequenceDiagram
     EC2-->>RC: instanceId
     RC->>DDB: UpdateItem status launched + instanceId -- only while still launching (best effort)
     Note over RC: refused because the job is already terminal (cancelled while launching)<br/>-> terminate the instance just launched, exit 1
+    opt --detach (ADR 0007)
+        Note over RC: launch confirmed -> set the detached flag: from here the shutdown hook<br/>leaves the job alone. NO poll -- everything below is the attached run.<br/>The instance ends the job itself: completed / failed:N, or timed-out from its watchdog.<br/>Follow it: baas jobs show jobId -- stop it: baas jobs terminate jobId
+        RC-->>User: exit 0 -- with --format json: status launched,<br/>jobStatus launched (or launching if that write was lost)
+    end
     loop poll every 15 seconds
         RC->>DDB: GetItem(pk=JOB, sk) ConsistentRead
         DDB-->>RC: launched, running, or a terminal status

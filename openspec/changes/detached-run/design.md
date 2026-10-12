@@ -104,8 +104,9 @@ CLAUDE.md's *Three termination layers* gets one sentence under layer 3. The watc
 
 The `benchmark` job runs `baas run --detach --format json`, asserts `status == launched`, then polls
 `baas jobs show <id> --format json` every 15 s until `status` is terminal or `vanished`, bounded by
-the job's watchdog bound (timeout plus margin, read from the deployment defaults the CI job already
-uses) plus one poll. It then fails unless the status is `completed`; every later assertion runs
+the job's watchdog bound plus one poll. The CI job names its timeout and margin explicitly
+(`--timeout 7200 --watchdog-margin 300`, the deployment defaults it ran with before), because
+`baas config show` has no machine-readable output to read them from. It then fails unless the status is `completed`; every later assertion runs
 unchanged. The JCStress job keeps the attached poll covered (Q6, 2026-10-05).
 
 `cancel-in-progress` stays `false`. The detached CI job still polls inside the same GitHub job, so the
