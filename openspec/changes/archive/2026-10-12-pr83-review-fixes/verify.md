@@ -136,6 +136,8 @@
 
 No critical defect in the implementation. One task is still open: 12.2, blocked on a permission only the user can grant (W4). The change is ready to merge once CI is green. It should not be archived until W4's live steps have run.
 
+**Archived 2026-10-12 with W4 deferred, by the user's decision.** 12.2's leftover-bucket refusal ran on 2026-10-10 (T2, T3). The other two checks, the another-account refusal and the missing-bucket teardown (W4 step 4), were to run on a new second deployment `baas-dev` rather than tearing down `baas-development`. Its setup stopped at the preflight (exit 1, nothing created): `baas-admin-wiktor` holds only `baas-development`'s policy, and `baas-dev`'s needs attaching customer-managed by an IAM admin. Both checks are a row in `QUEUE.md` *Deferred checks*, to run with the next change touching setup or teardown. W1, W2 and W4 stay open until then.
+
 ## Post-release sanity check (v7.0.0, 2026-10-10 00:30–00:45 CEST)
 
 PR #83 was merge-committed into `main` (`b1772a0`); release run 37998298652 published **v7.0.0**. Its generated notes carried the leaked `Co-Authored-By`/`Claude-Session` trailers of three older commits, plus the pre-rename `--deployer-profile`. The release description was corrected with `gh release edit` (original kept locally); no commit was changed. Rounds used the published installer and CLI, installed into a scratch `BAAS_SHARE`/`BAAS_BIN`. 6 paid jobs.
