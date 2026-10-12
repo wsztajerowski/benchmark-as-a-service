@@ -100,7 +100,14 @@ public class RunCommand implements Callable<Integer> {
      * The job's lifecycle once it has been named — reserve, launch, poll, stop. Volatile because
      * the shutdown hook reads it from another thread.
      */
-    private volatile JobSession session;
+    volatile JobSession session;
+
+    /**
+     * Set once a {@code --detach} launch is confirmed: from then on the job ends on its instance
+     * alone, and the shutdown hook must not cancel it. Volatile for the same reason as
+     * {@link #session}.
+     */
+    volatile boolean detached;
 
     @Parameters(index = "0", paramLabel = "<type>",
         description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
@@ -147,6 +154,12 @@ public class RunCommand implements Callable<Integer> {
             + "standard output — on the failure path too, which is when the job id is most "
             + "needed — while diagnostics stay on standard error.")
     String format;
+
+    @Option(names = "--detach",
+        description = "Return once the instance is launched instead of waiting for the job to end. "
+            + "The job then ends on its instance alone, bounded by its watchdog: follow it with "
+            + "baas jobs show <jobId>, stop it with baas jobs terminate <jobId>.")
+    boolean detach;
 
     /**
      * `run`/`results`/`config show` are meant to run under BaasCliOperatorRole. When no
@@ -262,28 +275,41 @@ public class RunCommand implements Callable<Integer> {
             // carries nulls; a consumer still gets one parseable object saying it failed rather
             // than empty output it has to special-case.
             if (jsonSummary()) {
-                var ended = session;
-                if (ended != null) {
-                    summaryJobStatus = ended.endStatus();
-                }
+                recordEndStatus();
                 printJobSummary(exitCode);
             }
-            hints(exitCode);
+            hints(exitCode, logger::info);
+        }
+    }
+
+    /**
+     * The summary's {@code jobStatus}: the status the job ended with. A detached job has not ended —
+     * {@link #afterLaunch} recorded what the item said at the launch, and the session's empty end
+     * status must not overwrite it.
+     */
+    void recordEndStatus() {
+        var ended = session;
+        if (ended != null && !detached) {
+            summaryJobStatus = ended.endStatus();
         }
     }
 
     /** Where to look next, once a job exists; interactive terminals only (see {@link Hints}). */
-    private void hints(int exitCode) {
+    void hints(int exitCode, Consumer<String> sink) {
         // In the finally: a command built outside picocli (a unit test) has no spec to print through,
         // and a hint must never replace the outcome being reported.
         if (summaryJobId == null || (console == null && spec == null)) {
             return;
         }
-        if (exitCode == 0) {
-            Hints.show(console(), logger, "measurements", "baas query --job-id " + summaryJobId,
+        if (exitCode == 0 && detached) {
+            // Nothing has been measured yet: the job is followed, not queried.
+            Hints.show(console(), sink, "follow it", "baas jobs show " + summaryJobId,
+                "stop it", "baas jobs terminate " + summaryJobId);
+        } else if (exitCode == 0) {
+            Hints.show(console(), sink, "measurements", "baas query --job-id " + summaryJobId,
                 "artifacts", "baas jobs download " + summaryJobId);
         } else {
-            Hints.show(console(), logger, "what happened", "baas jobs show " + summaryJobId,
+            Hints.show(console(), sink, "what happened", "baas jobs show " + summaryJobId,
                 "boot log", "baas jobs download " + summaryJobId);
         }
     }
@@ -459,19 +485,7 @@ public class RunCommand implements Callable<Integer> {
         //    instance terminates itself, and the watchdog backs it up; terminating it from here as
         //    well would cut off its final cloud-init-output.log upload. This layer is for a CLI
         //    that stops while the job is still in flight.
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            // Cleared first, or the termination message would be drawn over by the status line.
-            var line = statusLine;
-            if (line != null) {
-                line.close();
-            }
-            var active = session;
-            if (active != null && !active.ended()) {
-                active.stop(JobStatus.CANCELLED);
-            } else if (active != null) {
-                logger.debug("Job ended; instance {} terminates itself.", active.instanceId());
-            }
-        }));
+        Runtime.getRuntime().addShutdownHook(new Thread(this::onShutdown));
 
         // 8. Launch. It carries only the fixed tags (see Ec2ProvisioningService#instanceTags):
         //    every caller --tag, and the observed imageVersion/instanceType, reach the stored
@@ -494,12 +508,63 @@ public class RunCommand implements Callable<Integer> {
         summaryInstanceId = instanceId;
         logger.info("Instance launched: {}", instanceId);
         logger.info("Job ID: {}", jobId);
-        if (current.confirmLaunched(instanceId) == JobSession.Confirmation.CANCELLED_WHILE_LAUNCHING) {
-            return 1;
+        Integer exitBeforePolling = afterLaunch(current, current.confirmLaunched(instanceId));
+        if (exitBeforePolling != null) {
+            return exitBeforePolling;
         }
 
         // 9. Poll
         return poll(factory, config, current, resolvedWallClock);
+    }
+
+    /**
+     * The shutdown hook's body. Armed through the launch, so an interrupt while {@code RunInstances}
+     * is in flight cancels a detached job too; once a detached launch is confirmed the job is the
+     * instance's alone, and {@code baas jobs terminate} is what stops it (ADR 0007).
+     */
+    void onShutdown() {
+        // Cleared first, or the termination message would be drawn over by the status line.
+        var line = statusLine;
+        if (line != null) {
+            line.close();
+        }
+        var active = session;
+        if (active == null) {
+            return;
+        }
+        if (detached) {
+            logger.debug("Job {} is detached; instance {} ends it.", active.job().jobId(), active.instanceId());
+        } else if (!active.ended()) {
+            active.stop(JobStatus.CANCELLED);
+        } else {
+            logger.debug("Job ended; instance {} terminates itself.", active.instanceId());
+        }
+    }
+
+    /**
+     * What follows a launch: exit 1 when the job was cancelled while launching; under
+     * {@code --detach}, exit 0 with the status the item holds; {@code null} to go on polling.
+     *
+     * <p>A detached job reports {@code launched}, or {@code launching} when that write was lost and
+     * the instance records itself once it boots. A launch confirmed by a refusal — the instance got
+     * to {@code running} first — still reports {@code launched}: {@code baas jobs show} is where the
+     * current status is read, and a re-read here would be stale a second later anyway.
+     */
+    Integer afterLaunch(JobSession current, JobSession.Confirmation confirmation) {
+        if (confirmation == JobSession.Confirmation.CANCELLED_WHILE_LAUNCHING) {
+            return 1;
+        }
+        if (!detach) {
+            return null;
+        }
+        summaryJobStatus = confirmation == JobSession.Confirmation.CONFIRMED
+            ? JobStatus.LAUNCHED : JobStatus.LAUNCHING;
+        // From here the hook leaves the job alone. A Ctrl+C that lands before this line still cancels
+        // it, which is what an interrupt during a launch means.
+        detached = true;
+        logger.info("Job {} detached; it ends on instance {}. Follow it: baas jobs show {}",
+            current.job().jobId(), current.instanceId(), current.job().jobId());
+        return 0;
     }
 
     /** Bounds the status write that precedes a termination; see AwsClientFactory#dynamoDb(Duration). */
@@ -857,7 +922,9 @@ public class RunCommand implements Callable<Integer> {
      * {@code baas run --format json | jq} is not corrupted by a timestamped log line — including
      * under {@code -v}.
      *
-     * <p>{@code status} is the command's own verdict, kept for existing consumers; {@code jobStatus}
+     * <p>{@code status} is the command's own verdict, kept for existing consumers — {@code launched}
+     * for a confirmed {@code --detach}, which has not run yet and so cannot be {@code completed};
+     * {@code jobStatus}
      * is what the job item says — {@code timed-out}, {@code cancelled}, {@code failed:<n>} and the
      * rest — or {@code vanished}/{@code status-lost}, or {@code null} before a job was recorded.
      *
@@ -874,7 +941,7 @@ public class RunCommand implements Callable<Integer> {
             "{\"jobId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
                 + "\"jobStatus\":%s,\"exitCode\":%d,\"instanceId\":%s}%n",
             jsonString(summaryJobId), jsonString(summaryProject), jsonString(summaryResultPath),
-            exitCode == 0 ? "completed" : "failed", jsonString(summaryJobStatus), exitCode,
+            exitCode != 0 ? "failed" : detached ? "launched" : "completed", jsonString(summaryJobStatus), exitCode,
             jsonString(summaryInstanceId));
     }
 

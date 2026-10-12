@@ -14,10 +14,17 @@ sequenceDiagram
     Job->>CLI: config sync --deployment vars.CORE_STACK_NAME
     Note over Job,CLI: sync finds the deployment's region from its bucket and stores it,<br/>so the job follows the deployment whatever vars.AWS_REGION says
     CLI->>AWS: DescribeStacks
-    Job->>CLI: run jmh-with-async --format json --project <repo><br/>--tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
-    CLI->>AWS: upload, launch, poll (see baas-run.mmd)
-    CLI-->>Job: one JSON object on stdout, success or failure
-    Job->>Job: GITHUB_OUTPUT run_id, result_path, project, job_status
+    Job->>CLI: run jmh-with-async --detach --format json --timeout 7200 --watchdog-margin 300<br/>--project <repo> --tag branch --tag commit --tag exclude_from_results=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
+    CLI->>AWS: upload, launch, confirm -- NO poll (see baas-run.mmd, opt --detach)
+    CLI-->>Job: one JSON object on stdout, status launched, exit 0 -- the CLI is gone
+    Job->>Job: GITHUB_OUTPUT job_id, result_path, project -- asserts status launched
+    loop every 15 s until a terminal status or vanished, at most timeout + margin + 15 s
+        Job->>CLI: jobs show <id> --format json (a failed lookup is retried)
+        CLI->>AWS: GetItem + DescribeInstances
+        CLI-->>Job: status
+        Note over CLI,AWS: meanwhile the instance ends the job alone -- completed or failed:N,<br/>or timed-out from its watchdog
+    end
+    Job->>Job: GITHUB_OUTPUT job_status, the last status read
     Job->>CLI: results --job-id <id> --format json
     Note over Job: asserts imageVersion, instanceType, project, branch, commit, source=ci
     Job->>CLI: results --project <repo> --best-per commit --format json
@@ -25,7 +32,7 @@ sequenceDiagram
     Job->>CLI: results --project <repo> --show-excluded --format json
     Note over Job: asserts it is present
     Job->>CLI: download <run_id> -o ./artifacts
-    Note over Job: asserts environment.json, jmh-result.json, no legacy run-status object, output, flamegraph, JFR, and the summary jobStatus reads completed (the job item, as polled)
+    Note over Job: asserts environment.json, jmh-result.json, no legacy run-status object, output, flamegraph, JFR, and the followed job_status reads completed
     opt failure and a result_path was reported
         Job->>CLI: download <result_path> -o ./failed (by PATH: a failed job has no index entry)
         Job->>Job: print cloud-init-output.log

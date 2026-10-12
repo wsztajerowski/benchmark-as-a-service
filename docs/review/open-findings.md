@@ -37,7 +37,6 @@ decides what to pick up next.
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
 | E1 | `--async-output-type flamegraph,jfr`, which CI uses, writes empty flame graphs; CI checks only that an `.html` exists | S | Med | open |
-| DR1 | `run --detach` with today's shutdown hook would cancel and terminate the job it just launched | M | High if shipped naively | `detached-run` |
 
 ### Should
 
@@ -66,7 +65,6 @@ decides what to pick up next.
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | L | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | XS | Low | `retire-mongodb` |
-| DR4 | The archived non-goal rejecting `--detach` cites a reason job items removed | XS | Info | `detached-run` |
 | U8 | `runner.sourceRepo` can only be set by editing YAML | XS | Info | open |
 
 ### Informational
@@ -156,23 +154,6 @@ teardown took `aws s3 sync s3://baas-development … --exclude 'releases/*' --ex
 and `aws dynamodb scan --table-name baas-development-results` (46 items) under the operator profile.
 That is the only way today, and the scan's JSON cannot be loaded back into a new deployment by any
 `baas` command. Teardown's warning was accurate: everything was gone afterwards.
-
-### `detached-run` — DR1, DR4
-
-First in `QUEUE.md` (2026-10-12) and proposed: [`openspec/changes/detached-run/`](../../openspec/changes/detached-run/design.md).
-Its design supersedes the 2026-10-05
-[`exploration.md`](../../openspec/changes/detached-run/exploration.md) where the two disagree.
-
-**DR1.** The shutdown hook is registered before `RunInstances` (`RunCommand` l.462), and it calls
-`session.stop(CANCELLED)` whenever the session has not ended. A detached `run` returning after
-`confirmLaunched` would therefore cancel and terminate its own instance at JVM exit. **Decided:**
-keep the hook armed through the launch, then disarm it. An ADR amends CLAUDE.md's
-three-termination-layers rule: for a detached job, `baas jobs terminate` replaces the CLI's Ctrl+C
-layer.
-
-**DR4.** The archived `run-status-in-dynamodb` design lists `--detach`/`attach` as a non-goal,
-"rejected in the usage analysis §5", whose reason (it would need discovery by tag) the job items
-removed. The `detached-run` ADR supersedes it explicitly.
 
 ## Open, not scheduled
 
