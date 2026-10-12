@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
@@ -12,8 +13,9 @@ import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
-import pl.wsztajerowski.baas.infra.S3UploadService;
+import pl.wsztajerowski.baas.infra.OperatorSession;
 
+import java.util.Map;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -27,18 +29,10 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
 
     @Mixin LoggingMixin loggingMixin;
 
-    /**
-     * The deployment being adopted: the global {@code --deployment}, or the only one configured.
-     * Never derived from the caller's account, although it could be.
-     *
-     * <p>A bare {@code baas config sync} on a machine with no local state would adopt whatever
-     * deployment the currently active credentials imply. In CI that is the worst place for an
-     * implicit choice: a workflow federating into an unexpected role, or a leftover
-     * {@code AWS_PROFILE}, would bind the machine to another account's deployment and fail later,
-     * after provisioning, somewhere unrelated. So with nothing configured the name is required;
-     * with exactly one configured, a bare sync re-syncs that one.
-     */
-    String name;
+    @Option(names = "--operator-aws-profile",
+        description = "AWS CLI profile to take credentials from; the CLI assumes the deployment's "
+            + "operator role from it. Checked before it is stored.")
+    String operatorProfile;
 
     @Spec CommandSpec spec;
 
@@ -46,27 +40,28 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         return BaasApp.configService(spec);
     }
 
-    /**
-     * The region the deployment's bucket lives in, empty when there is no such bucket. The bucket
-     * is named by the prefix and bucket names are global, so this answers from a client in any
-     * region. Overridden by tests, which have no bucket.
-     */
-    java.util.Optional<String> bucketRegion(BaasConfig config) {
-        var factory = new AwsClientFactory(
-            config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
-        try (var s3 = factory.s3()) {
-            return new S3UploadService(s3).bucketRegion(name);
-        }
+    /** The AWS calls behind the session. Overridden by tests, which have no AWS. */
+    OperatorSession.Aws aws() {
+        return OperatorSession.REAL;
     }
 
-    /** The named stack's outputs in that region, empty when it does not exist. Overridden by tests. */
-    java.util.Map<String, String> stackOutputs(BaasConfig config, String region) {
-        var factory = new AwsClientFactory(region, config.getAws().resolveOperatorProfile());
+    /** The named stack's outputs, empty when it does not exist. Overridden by tests. */
+    Map<String, String> stackOutputs(AwsClientFactory factory, String stack) {
         try (var cf = factory.cloudFormation()) {
-            return new CloudFormationService(cf).getStackOutputs(name);
+            return new CloudFormationService(cf).getStackOutputs(stack);
         }
     }
 
+    /**
+     * Adopts the deployment {@code --deployment} names, or re-verifies the only one configured.
+     * Never derived — not from the account and not from the credentials — although it could be: a
+     * bare sync on a machine with no local state would bind it to whatever deployment the active
+     * credentials imply. So with nothing configured the name is required.
+     *
+     * <p>Nothing is copied from AWS except the region, which cannot be derived and never changes;
+     * everything else is derived from the name or resolved when used. The checks run before anything
+     * is written, so a sync that fails leaves the machine as it was.
+     */
     @Override
     public Integer call() {
         BaasConfig config;
@@ -76,42 +71,37 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             logger.error(e.getMessage());
             return 2;
         }
-        name = config.requirePrefix();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
+        String name = config.requirePrefix();
+        String recordedRegion = config.getAws().getRegion();
+        if (operatorProfile != null) {
+            config.getAws().setOperatorProfile(operatorProfile);
+        }
 
-        // The region is the deployment's, chosen once by `baas admin deployment setup`, so it is found
-        // rather than asked for: the bucket carries the prefix's name, names are global, and S3
-        // says where it lives. A machine re-pointed at a rebuilt deployment is re-adopted by this
-        // same command, and CI follows the deployment rather than whatever AWS_REGION it set.
-        var region = bucketRegion(config);
-        if (region.isEmpty()) {
-            logger.error("""
-                    No deployment named '{}' in this account: there is no bucket of that name.
-                      The name is the one `baas admin deployment setup` printed, e.g. baas-123456789012.
-                      Or create one: baas admin deployment setup""", name);
+        // The region is found again rather than trusted from the file: sync is what re-points a
+        // machine at a deployment rebuilt elsewhere. The session proves the credentials reach the
+        // operator role before the bucket is asked, under that role.
+        config.getAws().setRegion(null);
+        var factory = OperatorSession.adopting(config, aws(), System.getenv()).factory();
+        String region;
+        try {
+            region = factory.region();
+        } catch (RuntimeException e) {
+            config.getAws().setRegion(recordedRegion);
+            logger.error(e.getMessage());
             return 1;
         }
 
         // The stack is read to prove the deployment exists, not to harvest values from it.
-        // Everything the CLI needs is either derived from the prefix or resolved from this same
-        // stack at the moment it is used, so copying outputs into the file would only create a
-        // second, staler source of truth.
-        var outputs = stackOutputs(config, region.get());
+        var outputs = stackOutputs(factory, config.stackName());
         if (outputs.isEmpty()) {
             logger.error("""
                     No deployment named '{}': its bucket is in {}, but no stack of that name is.
-                      A teardown retains the bucket. Create the deployment again: \
-                baas admin deployment setup --region {}""",
-                name, region.get(), region.get());
+                      Create the deployment again: baas admin deployment setup --region {}""",
+                name, region, region);
             return 1;
         }
-        if (!outputs.containsKey("ResultsTableName")) {
-            logger.warn("Stack '{}' reports no ResultsTableName output — it may predate this "
-                + "version of the core template. `baas results query` will fail until it is updated.", name);
-        }
 
-        config.setPrefix(name);
-        config.getAws().setRegion(region.get());
+        config.getAws().setRegion(region);
         configService().save(config);
 
         logger.info("""
@@ -119,7 +109,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
               Config: {}
               Bucket: {}
               Table:  {}""",
-            name, region.get(), configService().fileOf(name), config.bucket(), config.resultsTable());
+            name, region, configService().fileOf(name), config.bucket(), config.resultsTable());
         return 0;
     }
 }

@@ -46,6 +46,18 @@ public record DeploymentNames(String prefix) {
 
     public String operatorRole() { return prefix + OPERATOR_ROLE_SUFFIX; }
 
+    /**
+     * The deployment an operator role belongs to — the inverse of {@link #operatorRole()} — or empty
+     * for a role name that is not {@code <name>-role-operator}.
+     */
+    public static java.util.Optional<String> ofOperatorRole(String roleName) {
+        if (roleName == null || !roleName.endsWith(OPERATOR_ROLE_SUFFIX)
+            || roleName.length() == OPERATOR_ROLE_SUFFIX.length()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(roleName.substring(0, roleName.length() - OPERATOR_ROLE_SUFFIX.length()));
+    }
+
     public String imageBuildRole() { return prefix + IMAGE_BUILD_ROLE_SUFFIX; }
 
     public String runnerInstanceProfile() { return prefix + "-profile-runner"; }

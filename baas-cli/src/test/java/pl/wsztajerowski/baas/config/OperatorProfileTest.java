@@ -5,7 +5,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;
 import com.fasterxml.jackson.dataformat.yaml.YAMLGenerator;
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.commands.RunCommand;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -16,22 +15,29 @@ class OperatorProfileTest {
         .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
 
     @Test
-    void resolvesTheOperatorProfileWhenSet() {
+    void theOperatorProfileIsTheSourceWhenSet() {
         var aws = new BaasConfig.AwsConfig();
         aws.setDeployerProfile("baas-deployer");
         aws.setOperatorProfile("baas-operator");
 
-        assertThat(aws.resolveOperatorProfile()).isEqualTo("baas-operator");
+        assertThat(aws.operatorSourceProfile()).isEqualTo("baas-operator");
     }
 
+    /**
+     * The fallback the old rule forbade. It is safe now: the source only ever assumes the operator
+     * role, so deployer rights never reach a day-to-day command (OperatorSessionTest pins that).
+     */
     @Test
-    void neverFallsBackToTheDeployerProfile() {
+    void theDeployerProfileIsTheSourceWhenNoOperatorProfileIsSet() {
         var aws = new BaasConfig.AwsConfig();
         aws.setDeployerProfile("baas-deployer");
 
-        assertThat(aws.resolveOperatorProfile())
-            .as("falling back to the deployer profile is exactly the privilege leak this field exists to close")
-            .isNull();
+        assertThat(aws.operatorSourceProfile()).isEqualTo("baas-deployer");
+    }
+
+    @Test
+    void withNeitherTheSourceIsTheDefaultChain() {
+        assertThat(new BaasConfig.AwsConfig().operatorSourceProfile()).isNull();
     }
 
     @Test
@@ -44,23 +50,5 @@ class OperatorProfileTest {
 
         assertThat(written).contains("operatorProfile: \"baas-operator\"");
         assertThat(readBack.getAws().getOperatorProfile()).isEqualTo("baas-operator");
-    }
-
-    @Test
-    void warnsWhenNoOperatorProfileIsConfigured() {
-        BaasConfig config = new BaasConfig();
-        config.getAws().setDeployerProfile("baas-deployer");
-
-        assertThat(RunCommand.operatorCredentialsWarning(config))
-            .hasValueSatisfying(warning ->
-                assertThat(warning).contains("baas config set --operator-aws-profile"));
-    }
-
-    @Test
-    void staysQuietWhenAnOperatorProfileIsConfigured() {
-        BaasConfig config = new BaasConfig();
-        config.getAws().setOperatorProfile("baas-operator");
-
-        assertThat(RunCommand.operatorCredentialsWarning(config)).isEmpty();
     }
 }

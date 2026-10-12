@@ -19,6 +19,25 @@ public final class BaasVersion {
         return version == null || version.isBlank() ? PLACEHOLDER : version;
     }
 
+    /**
+     * The repository whose releases this build seeds its runner JAR from: set when the CLI is built
+     * ({@code baas.sourceRepo}, the releasing repository in a release), never configured. A fork's
+     * release therefore fetches the fork's runner, and no stale setting can pair one build's CLI with
+     * another build's runner.
+     */
+    public static String sourceRepo() {
+        try (var in = BaasVersion.class.getResourceAsStream("/baas-build.properties")) {
+            if (in == null) {
+                throw new IllegalStateException("/baas-build.properties is not on the classpath");
+            }
+            var properties = new java.util.Properties();
+            properties.load(in);
+            return properties.getProperty("runner.sourceRepo", "").strip();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
     public static boolean isReleased() {
         return isReleased(current());
     }

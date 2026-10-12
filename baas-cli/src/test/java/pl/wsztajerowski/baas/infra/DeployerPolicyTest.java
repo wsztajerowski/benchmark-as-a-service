@@ -297,6 +297,25 @@ class DeployerPolicyTest {
             .isLessThanOrEqualTo(4608);
     }
 
+    /**
+     * Day-to-day commands fall back to the deployer profile as their source and assume the operator
+     * role from it, so the deployer must be allowed that one role — its own deployment's, nothing else.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theDeployerMayAssumeOnlyItsOwnOperatorRole() {
+        var policy = InfraFixtures.deployerPolicy();
+
+        var assumable = ((java.util.List<Map<String, Object>>) policy.get("Statement")).stream()
+            .filter(statement -> java.util.List.of(statement.get("Action")).toString().contains("sts:"))
+            .map(statement -> statement.get("Resource"))
+            .toList();
+
+        assertThat(assumable).containsExactly(
+            "arn:aws:iam::" + InfraFixtures.ACCOUNT_ID + ":role/" + InfraFixtures.PREFIX + "-role-operator");
+        assertThat(InfraFixtures.grants(policy, "sts:AssumeRole")).isTrue();
+    }
+
     @Test
     void theDeployerCanManageTheResultsTableLifecycle() {
         var policy = InfraFixtures.deployerPolicy();

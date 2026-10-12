@@ -51,8 +51,8 @@ class ImageCommandsTest {
         assertThat(aws.getDeployerProfile())
             .as("`baas admin image build` builds its clients from this field")
             .isEqualTo("baas-deployer");
-        assertThat(aws.resolveOperatorProfile())
-            .as("and never from this one, which cannot reach imagebuilder or the pointer")
+        assertThat(aws.operatorSourceProfile())
+            .as("and never from this one, which only ever assumes the operator role")
             .isEqualTo("baas-operator");
     }
 

@@ -13,6 +13,7 @@ import pl.wsztajerowski.baas.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
+import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
 import pl.wsztajerowski.baas.jobs.JobTermination;
@@ -36,6 +37,16 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    /** Which deployment, as its operator role; opened by {@link #call()}. */
+    private OperatorSession session;
+
+    OperatorSession session() {
+        if (session == null) {
+            session = OperatorSession.of(BaasApp.configService(spec));
+        }
+        return session;
+    }
+
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
 
@@ -50,9 +61,8 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        BaasConfig config = BaasApp.configService(spec).load();
-        RunCommand.operatorCredentialsWarning(config).ifPresent(logger::warn);
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), config.getAws().resolveOperatorProfile());
+        BaasConfig config = session().config();
+        var factory = session().factory();
         try (var dynamoDb = factory.dynamoDb();
              var quickDynamoDb = factory.dynamoDb(RunCommand.STOP_WRITE_TIMEOUT);
              var ec2 = factory.ec2()) {

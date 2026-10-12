@@ -19,7 +19,7 @@ public final class TestDeployments {
     private TestDeployments() {
     }
 
-    /** {@code <root>/deployments/<name>.yaml} with the given YAML body, which should set {@code prefix}. */
+    /** {@code <root>/deployments/<name>.yaml} with the given YAML body; the name is the file's. */
     public static Path writeRaw(Path root, String name, String yaml) throws IOException {
         Path file = root.resolve("deployments").resolve(name + ".yaml");
         Files.createDirectories(file.getParent());
@@ -27,9 +27,9 @@ public final class TestDeployments {
         return file;
     }
 
-    /** A minimal deployment: its prefix and region. */
+    /** A minimal deployment: its region. */
     public static Path write(Path root, String name) throws IOException {
-        return writeRaw(root, name, "prefix: \"%s\"\naws:\n  region: \"eu-central-1\"\n".formatted(name));
+        return writeRaw(root, name, "aws:\n  region: \"eu-central-1\"\n");
     }
 
     /** Saves a configuration as its own deployment's file, the way the CLI does. */

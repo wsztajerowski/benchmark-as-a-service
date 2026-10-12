@@ -45,22 +45,27 @@ public class ConfigShowSubcommand implements Callable<Integer> {
     /** Split out from {@link #call()} so what it reports is testable without capturing standard output. */
     static String render(BaasConfig config, java.nio.file.Path configFile) {
         // Accumulated and written in one piece, so the columns line up whatever writes it.
+        BaasConfig.AwsConfig aws = config.getAws();
+        BaasConfig.Ec2Config ec2 = config.getEc2();
         return new StringBuilder()
             .append("Config file: ").append(configFile).append('\n')
-            .append("prefix:      ").append(config.getPrefix()).append('\n')
+            .append("deployment:  ").append(config.getPrefix()).append("  (the file's name)\n")
             .append("aws:\n")
-            .append("  deployerProfile:          ").append(config.getAws().getDeployerProfile())
-            .append("  (baas admin)\n")
-            // Unset here is not cosmetic — it means run/results/config fall through to the default
-            // credential chain instead of assuming the operator role, so say what to do about it.
+            .append("  deployerProfile:          ").append(orUnset(aws.getDeployerProfile()))
+            .append("  (baas admin, used as is)\n")
+            // Whatever the source, day-to-day commands run as the operator role: the source only
+            // decides whose credentials assume it.
             .append("  operatorProfile:          ")
-            .append(config.getAws().getOperatorProfile() != null
-                ? config.getAws().getOperatorProfile() + "  (run/results/config)"
-                : "<not set> — run: baas config set --operator-aws-profile <name>").append('\n')
-            .append("  region:                   ").append(config.getAws().resolveRegion())
-            .append(config.getAws().getRegion() != null ? "" : "  (not in the file: AWS_REGION, else the default)")
-            .append('\n')
-            .append("derived from prefix (not stored):\n")
+            .append(aws.getOperatorProfile() != null
+                ? aws.getOperatorProfile()
+                : aws.getDeployerProfile() != null
+                    ? "<not set> — the deployer profile is the source"
+                    : "<not set> — the default credential chain is the source")
+            .append("  (assumes ").append(deployment(config, c -> c.names().operatorRole())).append(")\n")
+            .append("  region:                   ").append(aws.hasRegion()
+                ? aws.getRegion()
+                : "<not recorded> — found from the bucket on each command").append('\n')
+            .append("derived from the name (not stored):\n")
             .append("  stack:                    ").append(deployment(config, BaasConfig::stackName)).append('\n')
             .append("  bucket:                   ").append(deployment(config, BaasConfig::bucket)).append('\n')
             .append("  resultsTable:             ").append(deployment(config, BaasConfig::resultsTable)).append('\n')
@@ -69,14 +74,25 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             // subnetId and securityGroupId are deliberately absent: they are resolved from the
             // stack on every job, so there is no local value to report and none to go stale.
             .append("ec2:\n")
-            .append("  defaultInstanceType:      ").append(config.getEc2().getDefaultInstanceType()).append('\n')
-            .append("  benchmarkTimeoutSeconds:  ").append(config.getEc2().getBenchmarkTimeoutSeconds()).append('\n')
-            .append("  watchdogMarginSeconds:    ").append(config.getEc2().getWatchdogMarginSeconds()).append('\n')
+            .append("  defaultInstanceType:      ").append(ec2.getDefaultInstanceType())
+            .append(defaultMark(ec2.isDefaultInstanceTypeSet())).append('\n')
+            .append("  benchmarkTimeoutSeconds:  ").append(ec2.getBenchmarkTimeoutSeconds())
+            .append(defaultMark(ec2.isBenchmarkTimeoutSecondsSet())).append('\n')
+            .append("  watchdogMarginSeconds:    ").append(ec2.getWatchdogMarginSeconds())
+            .append(defaultMark(ec2.isWatchdogMarginSecondsSet())).append('\n')
             .append("git:\n")
-            .append("  resolveProject:           ").append(config.getGit().isResolveProject()).append('\n')
-            .append("runner:\n")
-            .append("  sourceRepo:               ").append(config.getRunner().getSourceRepo()).append('\n')
+            .append("  resolveProject:           ").append(config.getGit().isResolveProject())
+            .append(defaultMark(config.getGit().isResolveProjectSet())).append('\n')
             .toString();
+    }
+
+    /** Defaults are not in the file, so a later release's default reaches this machine. */
+    private static String defaultMark(boolean set) {
+        return set ? "" : "  (default)";
+    }
+
+    private static String orUnset(String value) {
+        return value != null ? value : "<not set>";
     }
 
     /**

@@ -80,8 +80,8 @@ public final class RunnerJarResolver {
     static String assetUrl(String sourceRepo, String version, String assetName) {
         if (sourceRepo == null || sourceRepo.isBlank()) {
             throw new IllegalArgumentException(
-                "No runner source repository configured, so there is no release to pin to. "
-                    + "Set runner.sourceRepo in ~/.baas/config.yaml.");
+                "This build names no runner source repository, so there is no release to pin to. "
+                    + "Build the CLI with -Dbaas.sourceRepo=<owner>/<repository>.");
         }
         return "https://github.com/" + sourceRepo.strip() + "/releases/download/v" + version
             + "/" + assetName;

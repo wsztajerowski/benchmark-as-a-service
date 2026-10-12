@@ -58,26 +58,25 @@ class ConfigServiceTest {
         assertThat(unnamed().deployments()).containsExactly("baas-123456789012");
     }
 
-    // ─── A file names its own deployment (R13) ───────────────────────────────────
+    // ─── The file's name is the deployment's name ────────────────────────────────
 
+    /** Spec: each deployment has one configuration file, named by the deployment. */
     @Test
-    void aCopiedFileIsRefusedByEveryWayIntoIt() throws Exception {
+    void aSavedFileDoesNotRecordTheName() throws Exception {
+        configure("wiktor-dev");
+
+        assertThat(Files.readString(root.resolve("deployments").resolve("wiktor-dev.yaml")))
+            .doesNotContain("prefix").doesNotContain("wiktor-dev");
+    }
+
+    /** A copy under another name configures that other deployment: it carries no name to aim back with. */
+    @Test
+    void aCopiedFileTakesItsNewName() throws Exception {
         configure("baas-123456789012");
         Path deployments = root.resolve("deployments");
         Files.copy(deployments.resolve("baas-123456789012.yaml"), deployments.resolve("wiktor-dev.yaml"));
 
-        for (var read : java.util.List.<Runnable>of(
-                () -> named("wiktor-dev").load(),
-                () -> named("wiktor-dev").loadForSetup(),
-                () -> named("wiktor-dev").loadForSync())) {
-            assertThatThrownBy(read::run)
-                .isInstanceOf(DeploymentSelectionException.class)
-                .hasMessageContaining("wiktor-dev.yaml")
-                .hasMessageContaining("'wiktor-dev'")
-                .hasMessageContaining("'baas-123456789012'")
-                .hasMessageContaining("Rename the file to baas-123456789012.yaml, or correct prefix to 'wiktor-dev'");
-        }
-        assertThat(named("baas-123456789012").load().getPrefix()).isEqualTo("baas-123456789012");
+        assertThat(named("wiktor-dev").load().getPrefix()).isEqualTo("wiktor-dev");
     }
 
     @Test
@@ -144,80 +143,16 @@ class ConfigServiceTest {
         assertThatThrownBy(() -> unnamed().loadForSync()).hasMessageContaining("2 deployments");
     }
 
-    // ─── Migration of the flat file ──────────────────────────────────────────────
+    // ─── No flat file ────────────────────────────────────────────────────────────
 
+    /** The flat file's migration is gone with the rebuild: a stray one is neither read nor removed. */
     @Test
-    void theFlatFileMovesToItsDeploymentsFileOnFirstLook() throws Exception {
-        Files.writeString(root.resolve("config.yaml"), """
-            prefix: "baas-123456789012"
-            aws:
-              operatorProfile: "baas-operator"
-              region: "eu-central-1"
-            """);
-
-        BaasConfig config = unnamed().load();
-
-        assertThat(config.getPrefix()).isEqualTo("baas-123456789012");
-        assertThat(config.getAws().getOperatorProfile()).isEqualTo("baas-operator");
-        assertThat(root.resolve("config.yaml")).doesNotExist();
-        assertThat(root.resolve("deployments").resolve("baas-123456789012.yaml")).exists();
-    }
-
-    /** The flat file can only be newer: an older CLI wrote it after an earlier migration. */
-    @Test
-    void theFlatFileOverwritesAnExistingDeploymentFile() throws Exception {
-        BaasConfig older = new BaasConfig();
-        older.setPrefix("baas-123456789012");
-        older.getEc2().setDefaultInstanceType("c5.large");
-        unnamed().save(older);
-        Files.writeString(root.resolve("config.yaml"), """
-            prefix: "baas-123456789012"
-            ec2:
-              defaultInstanceType: "c6i.4xlarge"
-            """);
-
-        assertThat(unnamed().load().getEc2().getDefaultInstanceType()).isEqualTo("c6i.4xlarge");
-        assertThat(root.resolve("config.yaml")).doesNotExist();
-    }
-
-    @Test
-    void theDeployerKeyIsRenamedInTheMove() throws Exception {
-        Files.writeString(root.resolve("config.yaml"), """
-            prefix: "baas-123456789012"
-            aws:
-              profile: "baas-admin"
-              operatorProfile: "baas-operator"
-            """);
-
-        BaasConfig config = unnamed().load();
-        String written = Files.readString(root.resolve("deployments").resolve("baas-123456789012.yaml"));
-
-        assertThat(config.getAws().getDeployerProfile()).isEqualTo("baas-admin");
-        assertThat(written).contains("deployerProfile: \"baas-admin\"", "operatorProfile: \"baas-operator\"")
-            .doesNotContain("  profile:");
-    }
-
-    /** A deployment file a reactor build wrote before the rename is read, and saved renamed. */
-    @Test
-    void aDeploymentFileStillCarryingTheOldKeyIsRenamedOnSave() throws Exception {
-        Path file = root.resolve("deployments").resolve("wiktor-dev.yaml");
-        Files.createDirectories(file.getParent());
-        Files.writeString(file, "prefix: \"wiktor-dev\"\naws:\n  profile: \"baas-admin\"\n");
-
-        BaasConfig config = unnamed().load();
-        assertThat(config.getAws().getDeployerProfile()).isEqualTo("baas-admin");
-        assertThat(ConfigService.read(file).unknownKeys()).as("the old key is an alias, not unknown").isEmpty();
-
-        unnamed().save(config);
-        assertThat(Files.readString(file)).contains("deployerProfile: \"baas-admin\"").doesNotContain("  profile:");
-    }
-
-    @Test
-    void aFlatFileWithoutAPrefixIsLeftAloneAndIgnored() throws Exception {
+    void aStrayFlatFileIsNeitherReadNorRemoved() throws Exception {
         Path flat = root.resolve("config.yaml");
-        Files.writeString(flat, "ec2:\n  defaultInstanceType: \"c5.large\"\n");
+        Files.writeString(flat, "prefix: \"baas-123456789012\"\naws:\n  region: \"eu-central-1\"\n");
 
         assertThat(unnamed().deployments()).isEmpty();
+        assertThatThrownBy(() -> unnamed().load()).isInstanceOf(DeploymentSelectionException.class);
         assertThat(flat).exists();
     }
 }
