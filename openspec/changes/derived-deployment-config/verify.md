@@ -100,3 +100,18 @@ Applied in 7.3.
 
 The last row is the expected state until the rebuilt deployment's policy (with
 `AssumeOwnOperatorRole`) is attached — task 10.1 checks the fallback succeeding.
+
+## Live combination tests (2026-10-12)
+
+| # | Who | What | Result |
+|---|---|---|---|
+| T10 | CI (OIDC → operator role, no file, no sync) | PR #86's `e2e-cloud-test.yml`, run 38312732086, against `baas-381492019823` | both jobs green: `Benchmark on EC2` launched `i-0cde401178d1963fc` detached and followed it to `completed`; `JCStress on EC2` launched `i-0fc90096652e92163` attached, `completed`. Closes task 8.1 |
+| T1 | Deployer (`baas-admin`, reactor JAR) | `--deployment baas-development admin deployment teardown --yes` on the old-format file | stack, bucket, table and image retired; only `baas-development.yaml` removed; `baas-381492019823.yaml` byte-identical (sha1 checked); the old file's `prefix` read silently, `runner` warned as unknown |
+
+| T2 | Deployer | `--deployment baas-development admin deployment setup --region us-east-1 --deployer-aws-profile baas-admin` (no file, the user's grant attached) | stack created; closing text says the deployer's credentials already operate the role and gives the teammate's `config sync --operator-aws-profile`; file holds only `deployerProfile: baas-admin` and `region: us-east-1` |
+| T4 | Teammate (`lynx`, IAM user), fresh home | `config sync --operator-aws-profile lynx` with `AWS_REGION=eu-central-1`, then `jobs list` | assumed the role (path C), found `us-east-1`, file holds only `operatorProfile: lynx` and `region`; `jobs list` reads the new table ("No jobs found.") |
+| T6 | Another deployment's operator role as the source | `config sync --operator-aws-profile baas-operator-381492019823` for `baas-development`, fresh home | refused (path B) naming both deployments; no file, no directory written |
+| T3 | Deployer | `admin image build` on the rebuilt deployment | image 1.3.0 published as `ami-02ecb592f67189e65` to `/baas-development/runner/ami-id`, ~13 min |
+| T5 | Deployer as operator (no `operatorProfile`; the fallback, path C) | attached `run jmh` (`Incrementing_Synchronized -f 1 -wi 1 -i 1 -r 1s`), job `20261012T220953183Z-f400626f` | `completed`, exit 0: every call made as `baas-development-role-operator`, assumed from `baas-admin` |
+| T8 | CI-style: no file, `AWS_PROFILE` = an operator-role session for `baas-development`, `AWS_REGION=eu-central-1` | detached `run jcstress -- --mode sanity`, then `jobs show` every 15 s | name taken from the role, region `us-east-1` found from the bucket; `launched` → `completed`; nothing written to the home |
+| T9 | Mixed | teammate (`lynx`) reads the deployer's T5 result (`results query --job-id`) and CI's T8 job (`jobs show`); CI-style session launches a detached 10-minute job; teammate `jobs terminate --yes`; deployer and CI-style session `jobs show` it | all reads succeed across identities; terminate stopped the instance; both other identities see `cancelled`. (Without `--yes` and no terminal, terminate refused and changed nothing — existing behaviour) |
