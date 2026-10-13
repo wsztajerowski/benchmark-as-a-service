@@ -46,18 +46,23 @@ names and pattern resource ARNs and evaluates them by policy matching. `ec2:Desc
 
 ### The probe list is the rendered policy's unconditioned statements, simulated as written
 
-`DeployerPreflight` parses the rendered JSON, keeps each `Allow` statement without a `Condition`,
-and issues one `SimulatePrincipalPolicy` per **action** of those statements, carrying that statement's
-`Resource` list verbatim. An action counts as denied when its overall decision is not `allowed`. The
-report keeps today's form, the denied action names, de-duplicated, so the error text and
-`refusalForMissingRights` are unchanged.
+`DeployerPreflight` parses the rendered JSON and keeps each `Allow` statement without a
+`Condition`. It asks `SimulatePrincipalPolicy` about each statement's plain actions in one call and
+its wildcard actions in a second, carrying the statement's `Resource` list verbatim. A call IAM still
+refuses as a mix is split in half and asked again, and a throttled call backs off and retries. An
+action counts as denied when its own overall decision is not `allowed`. The report keeps today's
+form, the denied action names, de-duplicated, so the error text and `refusalForMissingRights` are
+unchanged.
 
-Per action, and judged on the overall decision, because of task 1.1 (`verify.md`). One call with a
-statement's whole action list is rejected (`InvalidInput`: actions "require different authorization
-information"). Within one call, a resource whose type the action does not apply to is reported
-`implicitDeny` in the resource-specific results while the overall decision stays `allowed`; a real gap
-of the right type makes the overall decision a denial. That is about 56 calls for the nine
-statements, made sequentially.
+Why this shape, from tasks 1.1 and 9 (`verify.md`):
+- One call with a statement's whole action list is rejected for four of the nine statements
+  (`InvalidInput`: actions "require different authorization information"). For this policy the
+  line is exactly wildcard against plain.
+- Within one call, a resource whose type the action does not apply to is reported `implicitDeny`
+  in the resource-specific results while the overall decision stays `allowed`; a real gap of the
+  right type makes the overall decision a denial.
+- One call per action (56) took ~26 s, bounded by IAM's throttling of this API. Eight parallel
+  callers exhausted the SDK's retries and turned the check off. 13 calls take ~4–6 s.
 
 The question being asked is whether every statement of the rendered policy is effectively attached.
 Simulating each statement against its own resources answers that literally, and the spike shows the
@@ -121,10 +126,11 @@ stale (`BaasCliDeployerPolicy-alice`).
 `failureReport` already selects the current operation's root-cause events. It additionally reports
 whether any of them reads as a permission failure: the reason, lower-cased, contains `not
 authorized to perform`, `accessdenied`, `access denied` or `unauthorizedoperation`. These are the IAM,
-EC2 and S3 shapes CloudFormation relays from resource calls (task 1.2). Setup then appends what the SDK path appends: the rendered policy on standard output, or the
-file's path when `--policy-file` was given. `CloudFormationService` returns a small failure value
-(message plus that flag) instead of only an exception message, so `SetupCommand` decides what to
-print and the service prints nothing.
+EC2 and S3 shapes CloudFormation relays from resource calls (task 1.2). Setup then appends what the
+SDK path appends: the rendered policy on standard output, or the file's path when `--policy-file` was
+given. The failure is a `StackOperationException`, an `IllegalStateException` subtype carrying that
+flag, so every existing `catch` keeps working, and `SetupCommand` decides what to print while the
+service prints nothing.
 
 *Alternative:* print the policy on every stack failure. Rejected: most failures (a taken name, a quota,
 an Image Builder version clash) have nothing to do with the policy, and printing it would point the
@@ -196,8 +202,9 @@ still shows what it holds. `jobs show` and `environment.json` keep KiB.
 
 ## Risks / Trade-offs
 
-- [About 56 simulator calls instead of 8] → Setup runs once per deployment change; the calls are
-  unbilled, and the time they add is measured in the live check. A throttling error falls into the existing "cannot simulate" path (no
+- [13 simulator calls instead of 8, under IAM's throttling] → ~4–6 s live, unbilled. A throttled call
+  backs off and retries; one that stays throttled falls into "cannot check", the documented
+  fail-open stance of an affordance. A throttling error falls into the existing "cannot simulate" path (no
   check), which is the documented fail-open stance of an affordance.
 - [A broader attachment still passes] → Intended: the preflight asks whether the caller *can*, not
   whether it holds this exact document.
@@ -231,8 +238,8 @@ _None._
   2026-10-13 (Context).
 - **Does an update drop parameters the template no longer declares?** Only if they are not sent;
   setup sent every deployed key, so it now filters them (task 1.3, new decision).
-- **One call per statement?** No: mixed actions are rejected, and per-resource results flag type
-  mismatches. One call per action, judged on the overall decision (task 1.1).
+- **One call per statement?** Not as a whole: four statements reject the mix. Plain and wildcard
+  actions apart, judged per action on its overall decision, 13 calls (tasks 1.1 and 9).
 - **Should `--policy-file` write and continue, or render only?** Write and continue (user,
   2026-10-10).
 - **How should the flag removal release?** As a feature release (user, 2026-10-13).

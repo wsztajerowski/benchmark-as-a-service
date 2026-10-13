@@ -104,30 +104,30 @@
   - per-deployment policy names and `--policy-file` in the attach and upgrade steps;
   - remove the existing-VPC text.
 - [x] 8.3 `docs/review/open-findings.md`: delete jobs-command/W1's entry and its index row.
-- [ ] 8.4 Release note: carry the four removed flags in the docs commit's body as a feature release,
+- [x] 8.4 Release note: carry the four removed flags in the docs commit's body as a feature release,
   not a `!` and not a `BREAKING` footer (the semantic-release footer landmine). Verify the commit
   message parses as `feat`/`fix` only.
 
 ## 9. Live verification (manual)
 
-- [ ] 9.1 Manual, on `baas-development` (the second deployment): run `admin deployment setup` with this
+- [x] 9.1 Manual, on `baas-development` (the second deployment): run `admin deployment setup` with this
   build. Confirm in the stack events that the update removed the networking parameters and conditions
   and replaced no resource, and that the runner subnet and security-group IDs are unchanged.
-- [ ] 9.2 Manual: run setup with `--deployer-aws-profile lynx` (an identity without the deployer
+- [x] 9.2 Manual: run setup with `--deployer-aws-profile lynx` (an identity without the deployer
   policy) and `--policy-file p.json`. Expect exit 1, nothing created, `p.json` the rendered policy, and
   the administrator's commands naming `BaasCliDeployerPolicy-baas-development` and lynx's IAM user.
   If `lynx` may not simulate, the preflight is skipped and the first denied CloudFormation call
   reports instead, which lynx cannot get past either. Record which path ran.
-- [ ] 9.3 Manual: `admin image build`, one `baas run` (jmh, `fake-jmh-benchmarks`), and a re-run on
+- [x] 9.3 Manual: `admin image build`, one `baas run` (jmh, `fake-jmh-benchmarks`), and a re-run on
   the same instance type. Confirm `jobs diff` reports no `memory` difference (and only a real one
   if the CPU model moved, finding E6).
-- [ ] 9.4 Manual: `admin deployment teardown`, then setup again from scratch on `baas-development`, to
+- [x] 9.4 Manual: `admin deployment teardown`, then setup again from scratch on `baas-development`, to
   confirm that a create on the new template succeeds. Record 9.1–9.4 in `verify.md`.
-- [ ] 9.5 Manual: re-run setup on `baas-381492019823` (CI's deployment), checking as in 9.1, and
+- [x] 9.5 Manual: re-run setup on `baas-381492019823` (CI's deployment), checking as in 9.1, and
   confirm CI's e2e is green on the PR afterwards.
 
 ## 10. Verify
 
-- [ ] 10.1 Full reactor `mvn verify` with `ASYNC_PATH` exported, green.
-- [ ] 10.2 Run `/opsx:verify` and record the result in `verify.md`: the requirement → code → test →
+- [x] 10.1 Full reactor `mvn verify` with `ASYNC_PATH` exported, green.
+- [x] 10.2 Run `/opsx:verify` and record the result in `verify.md`: the requirement → code → test →
   gap table, open warnings as W1, W2…, and any deviation from design or tasks.
