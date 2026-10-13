@@ -23,7 +23,7 @@ sequenceDiagram
 
     rect rgb(240, 255, 240)
         Note over IA,AWS: 1. Install
-        Adm->>CLI: baas admin deployment setup [--region] [--deployer-aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]<br/>[--github-org --github-repo --oidc-provider-arn]
+        Adm->>CLI: baas admin deployment setup [--region] [--deployer-aws-profile]<br/>[--github-org --github-repo --oidc-provider-arn]
         CLI->>AWS: bucket-region check, then the policy step (SimulatePrincipalPolicy)
         CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
         CLI->>CFG: write aws.deployerProfile, aws.region (the name is the file's)

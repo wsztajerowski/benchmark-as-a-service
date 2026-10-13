@@ -58,7 +58,7 @@ If this is the first Image Builder pipeline in the account, the deploying identi
 aws cloudformation deploy \
   --profile YOUR_AWS_PROFILE \
   --template-file cf-template-core.yaml \
-  --deployment baas-core \
+  --stack-name baas-core \
   --capabilities CAPABILITY_NAMED_IAM \
   --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX
 ```
@@ -68,7 +68,7 @@ Retrieve the outputs needed by the CI stack:
 ```bash
 aws cloudformation describe-stacks \
   --profile YOUR_AWS_PROFILE \
-  --deployment baas-core \
+  --stack-name baas-core \
   --query 'Stacks[0].Outputs'
 ```
 
@@ -187,11 +187,11 @@ account, the region and the deployment prefix — `<prefix>` for the stack and b
 [`deployer-policy.json`](./deployer-policy.json) is therefore a *template* carrying
 `${ACCOUNT_ID}` / `${REGION}` / `${PREFIX}` placeholders, and must never be attached in that form.
 
-Note what changed: the prefix is `baas-<accountId>[-dev]`, so everyone on one account renders the
-*same* policy for the *same* deployment. It is no longer per-caller, and it was never a
-multi-tenancy boundary — the deployer policy is effectively account admin (see CLAUDE.md's
-accepted risks). What it still does is keep an account's `shared` and `dev` deployments apart,
-and keep one account out of another's.
+The prefix is the deployment's name — `baas-<accountId>` by default, or whatever
+`--deployment` named — so everyone on one account renders the *same* policy for the *same*
+deployment. It was never a multi-tenancy boundary — the deployer policy is effectively account
+admin (see CLAUDE.md's accepted risks). What it does is keep an account's deployments apart, and
+keep one account out of another's.
 
 It covers the table's **lifecycle only** — `CreateTable`, `DeleteTable`, `UpdateTable`,
 `Describe*`, tagging — and deliberately not its data. A deployer cannot read or write measurements
@@ -202,7 +202,7 @@ This one **cannot** be created by the core stack itself — you need deployer pe
 *before* the stack exists in order to create it, so CloudFormation can never be the thing
 that grants permission to create CloudFormation stacks.
 
-It has to be a **customer-managed policy**. The rendered document is ~3.9 KB with whitespace
+It has to be a **customer-managed policy**. The rendered document is ~4.4 KB with whitespace
 stripped, which is what IAM counts, and the limits are:
 
 | Attachment | Cap | Fits? |
@@ -213,7 +213,7 @@ stripped, which is what IAM counts, and the limits are:
 
 The inline case is the trap: the cap is a budget shared with whatever else is attached, so the
 policy can fit today and be rejected after an unrelated addition. A `DeployerPolicyTest` case holds
-the rendered size under 4096 to keep headroom, which is why several statements wildcard a whole
+the rendered size under 4608 to keep headroom, which is why several statements wildcard a whole
 verb class (`ec2:Describe*`, `s3:Get*`, `imagebuilder:Get*`) instead of enumerating actions.
 `Create` is deliberately not wildcarded — `imagebuilder:CreateImage` must stay excluded, and
 `s3:Put*` would grant `PutObject`.
@@ -229,36 +229,40 @@ Two grants look wrong and are not:
   statement so the stack-scoped `CloudFormation` grant stays scoped to one stack.
 
 ```bash
-# Setup renders the policy for the deployment it is about to create and, when the identity lacks
-# it, prints it on standard output and stops having created nothing. The region is baked into it,
-# so pass the one the deployment will live in.
-baas admin deployment setup --region eu-central-1 > policy.json
+# Setup renders the policy for the deployment it is about to create and writes it to the file
+# before checking the caller's rights. When rights fall short it stops having created nothing,
+# and prints the IAM administrator's commands below with the names filled in. The region is baked
+# into the policy, so pass the one the deployment will live in.
+baas --deployment DEPLOYMENT admin deployment setup --region eu-central-1 --policy-file policy.json
 
 # First time
-aws iam create-policy --policy-name BaasCliDeployerPolicy-alice \
+aws iam create-policy --policy-name BaasCliDeployerPolicy-DEPLOYMENT \
   --policy-document file://policy.json
-aws iam attach-user-policy --user-name alice \
-  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy-alice
+aws iam attach-user-policy --user-name YOUR_DEPLOYER_IAM_USER \
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy-DEPLOYMENT
 
-# After any change to the template — the attached policy does not track the file
+# After a CLI upgrade whose policy adds a statement — the attached policy does not track the CLI
 aws iam create-policy-version --set-as-default \
-  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy-alice \
+  --policy-arn arn:aws:iam::YOUR_ACCOUNT_ID:policy/BaasCliDeployerPolicy-DEPLOYMENT \
   --policy-document file://policy.json
 ```
 
-Give each identity its own policy name; a single shared `BaasCliDeployerPolicy` would have to be
-re-rendered every time a different person ran setup.
+One policy per deployment, named after it: everyone on the account renders the same document for
+the same deployment, and two deployments' documents do not fit IAM's shared inline budget.
+Without `--policy-file`, `setup > policy.json` still works: on a shortfall the policy is the only
+thing on standard output.
 
 If a permission is missing, `baas admin deployment setup` fails and prints the rendered policy rather than
-surfacing a bare `AccessDenied`. Treat that as a convenience, not a control: it is bypassable by
-calling IAM directly, and nothing stops a deployer from granting itself more. That is deliberate —
-this is an internal tool for development environments where the deployer is a trusted developer.
-The per-caller scoping is about keeping two developers out of each other's stacks, not about
-containing either of them.
+surfacing a bare `AccessDenied`. It checks every unconditioned statement of the policy it renders,
+so an attached policy that predates the CLI is caught before anything is created; a permission
+failure CloudFormation reports in the stack's events is handed over the same way. Treat that as a
+convenience, not a control: it is bypassable by calling IAM directly, and nothing stops a deployer
+from granting itself more. That is deliberate — this is an internal tool for development
+environments where the deployer is a trusted developer.
 
-Re-running the second command matters: nothing keeps the attached policy in sync with this
-repo, so a stack change that needs a new permission fails at deploy time with a bare
-`AccessDenied` until you publish a new policy version.
+Publishing a new policy version after a CLI upgrade matters: nothing keeps the attached policy in
+sync with the CLI. A day-to-day command run on the deployer's credentials that is refused
+`sts:AssumeRole` says the policy may predate the CLI (7.1 added `AssumeOwnOperatorRole`).
 
 ### `BaasCliOperatorRole` — standing, narrow, created *by* the core stack, assumed per-session
 
