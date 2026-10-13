@@ -66,19 +66,6 @@ leave nothing uploaded.
 - **WHEN** the published checksum for the version cannot be retrieved
 - **THEN** the command exits non-zero rather than proceeding unverified
 
-### Requirement: The runner source repository is configuration, not a hardcoded literal
-The repository the CLI fetches release assets from SHALL be a configuration value with a documented
-default, so that a fork can point at its own releases without editing code.
-
-#### Scenario: A fork can retarget the source
-- **WHEN** the configured source repository is changed
-- **THEN** the CLI fetches its release asset from that repository
-
-#### Scenario: A retrieval failure names what it tried
-- **WHEN** the release asset cannot be retrieved
-- **THEN** the error names the repository and version it attempted, rather than failing downstream
-  with an unrelated message
-
 ### Requirement: A CLI without a released version refuses to run without an explicit override
 When the CLI's own version is the unreleased placeholder, `baas run` SHALL fail unless an explicit
 runner JAR is supplied. The failure SHALL occur before the benchmark project is built and before any
@@ -132,3 +119,18 @@ version SHALL NOT be committed back to the repository, which SHALL retain the un
 #### Scenario: The repository keeps the unreleased placeholder
 - **WHEN** a release completes
 - **THEN** the installer in the repository still carries the unreleased placeholder version
+
+### Requirement: The runner source repository is a property of the release build
+The repository the CLI fetches release assets from SHALL be fixed when the CLI is built, defaulting to
+the upstream repository and set by the release to the repository that published it, so that a fork's
+release fetches its own runner without editing code. It SHALL NOT be read from any configuration file
+or option. A CLI without a released version never fetches a release asset, and so never uses it.
+
+#### Scenario: A fork's release fetches its own runner
+- **WHEN** a CLI released from repository `someone/baas-fork` seeds a missing runner slot
+- **THEN** it fetches the release asset from `someone/baas-fork`
+
+#### Scenario: A retrieval failure names what it tried
+- **WHEN** the release asset cannot be retrieved
+- **THEN** the error names the repository and version it attempted, and names no configuration
+  setting to change
