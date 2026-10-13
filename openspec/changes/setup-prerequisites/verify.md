@@ -108,7 +108,8 @@ Whole `baas-cli` unit suite: 832 tests, 0 failures.
 
 ## 9. Live verification (manual)
 
-CLI and runner from this branch's build at `1bd76f6`, copied aside before the reactor verify ran.
+CLI and runner from this branch's build: `1bd76f6` for 9.1–9.2b, `b28ed20` from 9.4 on, each copied
+aside before use.
 `baas-development` (us-east-1) unless stated.
 
 | # | Check | Result |
@@ -116,6 +117,20 @@ CLI and runner from this branch's build at `1bd76f6`, copied aside before the re
 | 9.1 | `admin deployment setup -v` on the existing stack, which still carries `UseExistingVpc`, `ExistingVpcId`, `ExistingSubnetId`, `ExistingSecurityGroupId` | Exit 0. `Simulated 56 action(s) …; denied: []`. The update sent only the declared parameters and CloudFormation answered "No updates are to be performed": removing parameters and conditions without touching a resource is no update to it, so nothing was replaced. Subnet `subnet-0b0af0585e518511a`, runner group `sg-091964ac0cf2601d0` and VPC `vpc-0b45f6c3f0c7b3f9e` unchanged. **The preflight took ~26 s** (56 sequential calls): see the parallel fix below |
 | 9.2 | setup with `--deployer-aws-profile lynx --policy-file p.json` | **Not the intended path.** `lynx` (`user/wsztajerowski_baas`) may not simulate (`Cannot simulate policies (AccessDenied)`, confirmed with `-v` in a scratch `user.home`). The update had nothing to change, so CloudFormation made no resource call that could be denied, and setup exited 0. It then saved `deployerProfile: lynx` in `~/.baas/deployments/baas-development.yaml`; the file was restored from the copy taken before the run and checked byte-identical. Recorded as W2 |
 | 9.2b | the shortfall path, live: `--deployment prtest-shortfall setup --region us-east-1 --deployer-aws-profile baas-admin --policy-file p3.json`, in a scratch `user.home` (baas-admin's policy covers its own deployments only) | Exit 1. stderr names the denied actions, then `Attach the deployer policy … written to …p3.json` and the filled-in `create-policy --policy-name BaasCliDeployerPolicy-prtest-shortfall`, `attach-user-policy --user-name baas-admin-wiktor` and `create-policy-version`. stdout is the 13-statement policy, byte-identical to `p3.json`. No deployment file written, nothing created (the preflight comes before any CloudFormation call) |
+
+| 9.4 | with the build at `b28ed20`: `admin deployment teardown --yes`, then `setup --region us-east-1 --deployer-aws-profile baas-admin` (the deployment held no jobs; its results, table and `~/.baas` backed up first) | Teardown exit 0, 70 s: bucket emptied, stack deleted, image `ami-0d7ec69cf6ed538c9` and snapshot retired, file removed. Setup exit 0, 3 min 44 s: `Simulated 56 action(s) in 13 call(s) …; denied: []`, `CREATE_COMPLETE` on the new template, which carries none of the four networking parameters; the file was written back with the same content as before |
+| 9.3 | `admin image build` (paid 1), then the same `jmh Incrementing_Synchronized -f 1 -wi 1 -i 2` twice in parallel on `c5.2xlarge` with this build's runner (paid 2 and 3) | Image 1.3.0 `ami-05f4851d3c30e3cb2` in 13 min 48 s; its own stack update was accepted ("already up to date") on the new template. Jobs `20261013T183232073Z-21ea4e88` and `20261013T183232065Z-2aac7065` `completed`, exit 0, instances terminated by themselves. `jobs diff`: "No differences. Both jobs measured on the same environment.", exit 0. Cross-checked against the downloaded `environment.json`s: all 22 fields identical, `memory.totalKb` included, so this pair did **not** exercise the MiB rounding, which rests on `EnvironmentManifestTest` (W3) |
+| 9.5 | `baas-381492019823` (CI's): `admin deployment setup -v` after 9.1–9.4 passed | Exit 0. `Simulated 56 action(s) in 13 call(s) …; denied: []`; the update was accepted ("already up to date"). Outputs (subnet, security group, VPC, operator role) and the three federation parameters are unchanged, and so is its deployment file. CI's e2e on the PR is the remaining check |
+
+Paid tests: 3 of the 5 allowed (one image build, two runs).
+
+- **W3:** the live re-run pair recorded identical memory, so the MiB normalisation is proven by unit
+  tests only (`memoryAFewKibApartIsNoDifference`, `aRealMemoryDifferenceIsShownInMib`). The 8 KiB case
+  it fixes was seen live on 2026-10-07 and 2026-10-10.
+- **W4:** a stack created before this change keeps its old template, `UseExistingVpc` included,
+  until an update that touches a resource: CloudFormation treats dropping parameters and conditions
+  alone as no change (9.1, 9.5). Harmless, since every update now sends only the declared
+  parameters, but `describe-stacks` still lists the four parameters on both live stacks for now.
 
 - **W2** (predates this change): with an identity that may not simulate, a re-setup whose update
   has nothing to change succeeds, because no resource call is made that could be denied, and it
@@ -134,3 +149,49 @@ ResultsTableLifecycle 7 + 1, S3WorkingBucketLifecycle 9 + 2, all accepted). A ca
 same is split in half, and a throttled call backs off and retries. Live, 56 actions in **13 calls,
 ~4–6 s**, with a denied set and a stdout identical to the one-call-per-action run (shortfall name),
 and nothing denied on `baas-development`.
+
+## 10. Verify
+
+- 10.1: full reactor `mvn clean verify`, `ASYNC_PATH` exported: BUILD SUCCESS (model 73, fixtures
+  44 + 18, runner 42 including `JmhWithAsyncProfilerSubcommandServiceIT`, not skipped; CLI 816).
+  After the call-count change (`b28ed20`), the `baas-cli` unit suite again: 819, 0 failures.
+- 10.2: `/opsx:verify`, below.
+
+## Verification report
+
+| Dimension | Status |
+|---|---|
+| Completeness | 29/29 tasks |
+| Correctness | 6/6 delta requirements implemented; 26/27 scenarios have a test or a live check (W1) |
+| Coherence | Design followed after four recorded deviations (below); `design.md` updated to match |
+
+### Requirement → code → test
+
+| Requirement (delta) | Code | Test / live | Gap |
+|---|---|---|---|
+| MODIFIED *Setup renders the deployer policy and stops when the caller lacks it* | `DeployerPreflight.simulate`/`probes`, `SetupCommand` (`--policy-file`, `writePolicyFile`, `handOverPolicy`, `administratorCommands`), `CloudFormationService.StackOperationException`/`isPermissionFailure` | `DeployerPreflightTest` (10), `SetupCommandTest` (41), `CloudFormationServiceTest` (6), `HelpAndHintsTest` (command gone); live 9.1, 9.2b, 9.4, 9.5 | W1 (stack-event hand-over through `call()`) |
+| MODIFIED *Day-to-day commands resolve operator credentials* (stale-policy hint) | `OperatorSession.stalePolicyHint` | `OperatorSessionTest` (15) | — |
+| ADDED *The image build and the runner use separate groups in the stack's own VPC* | `infra/cf-template-core.yaml` | `CoreTemplateTest.theImageBuildHasItsOwnSecurityGroupAndOnlyItKeepsPort80`, `noOperatorSuppliedNetworkingIsAccepted`, `theRunnerSecurityGroupDescriptionIsNeverEdited` | — |
+| REMOVED *The image build and the runner do not share a security group* | (replaced by the ADDED one) | as above | — |
+| REMOVED *VPC parameters are immutable once the deployment exists* | options, checks and template parameters deleted; `updateStackParameters` filters to declared keys | `SetupCommandTest.theExistingVpcOptionsAreGone`, `CloudFormationServiceTest.aDeployedParameterTheTemplateNoLongerDeclaresIsNotSent`, `theDeclaredParametersAreTheBundledTemplatesParameters`; live 9.1, 9.4, 9.5 | W4 |
+| MODIFIED *Two jobs' environments are compared group by group* (MiB) | `EnvironmentManifest.compared` | `EnvironmentManifestTest` (13); live 9.3 | W3 |
+
+### Deviations from design and tasks
+
+1. Simulation is per statement, plain actions and wildcard actions apart, with a halving fallback,
+   not per statement as designed nor per action as first corrected (tasks 1.1, 9; `design.md`
+   rewritten).
+2. Permission failures are matched in four shapes, not two (task 1.2).
+3. `updateStackParameters` carries forward only declared parameters, a decision added after task 1.3
+   showed the removal would otherwise break every existing stack's next update (task 6.4 added).
+4. The stack failure is an `IllegalStateException` subtype rather than a separate value.
+
+### Warnings
+
+W1–W4 above. None is critical. W2 (a no-op setup stores an identity that cannot deploy) and W4
+(old templates linger until a resource change) predate or follow from CloudFormation's behaviour,
+not from defects in this change.
+
+### Assessment
+
+No critical issues; four warnings recorded. Ready for review, and for archive once merged.
