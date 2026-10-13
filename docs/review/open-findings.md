@@ -42,9 +42,6 @@ decides what to pick up next.
 
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
-| S14 | `RunnerRole` can overwrite the pinned runner JAR every later job executes; the seed is a head-then-put race (seen live 2026-10-10) | S | Med | `narrow-bucket-grants` |
-| S7 | `RunnerRole`'s bucket-wide `s3:DeleteObject`/`PutObject` (table half already fixed) | S | Med | `narrow-bucket-grants` |
-| S15 | `OperatorRole`, and so every CI workflow, holds bucket-wide `s3:DeleteObject` that no command uses | S | Low | `narrow-bucket-grants` |
 | U2 | Nothing exports a deployment's data before a teardown, which now deletes everything | M | Low | `export-before-teardown` |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | S | Low | open |
@@ -61,6 +58,7 @@ decides what to pick up next.
 | E4 | The results table formats scores in the machine's locale (`10632008,341`) while JSON and CSV use `Locale.ROOT` | XS | Info | open |
 | E5 | `jobs diff` columns shift when a value is wider than its column (CPU model names) | XS | Info | open |
 | A4 | A store failure after the upload loses the measurement row | M | Med → reduced | open |
+| S7 | A runner can overwrite another job's objects under `jobs/*` | M | Med → reduced | open |
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | L | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | XS | Low | `retire-mongodb` |
@@ -81,40 +79,6 @@ describe product behaviour rather than a test gap, moved here so that this file 
 
 Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEUE.md). Each design
 below is what the proposal starts from.
-
-### `narrow-bucket-grants` — S14, S7, S15
-
-**S14.** `${prefix}-policy-runner-s3` grants `s3:PutObject` on `${ResourceNamePrefix}/*`, which
-includes `releases/<version>/benchmark-runner.jar`. CLAUDE.md rests the pinning argument on that
-object being "seeded once and never overwritten", but that holds only by CLI convention:
-`RunnerJarResolver.resolve` treats any object already present as trusted and never re-verifies it.
-So code in one benchmark JAR can replace the runner that **every later job of that version
-executes**, for as long as the version is in use. Versioning is `Suspended`, so the original cannot
-be recovered.
-
-**S7.** The runner executes an arbitrary user JAR under that same grant, which also carries
-`DeleteObject` bucket-wide. Its table access is already minimal — `PutItem`/`BatchWriteItem` on
-`RESULT#*` and `UpdateItem` on `JOB` only (`dynamodb-results-store`, `run-status-in-dynamodb`) —
-but `BatchWriteItem` still carries `DeleteRequest`s within `RESULT#`.
-
-**S15.** `${prefix}-policy-operator-s3` and `operator-policy.json` grant `s3:DeleteObject` on the
-whole bucket. Nothing under the operator role deletes an object (the only delete is teardown's
-`deleteAllObjects`, under deployer credentials). CI federates into this role on `pull_request`, so
-any same-repository branch's workflow can wipe every job's artifacts, unrecoverably.
-
-**Decided (2026-10-04), one small change, one `baas admin deployment setup` re-run per deployment:**
-1. The runner's S3 grant: `PutObject` and `GetObject` on `jobs/*`, `GetObject` on `releases/*`
-   (user-data's `aws s3 cp` of the runner), no `DeleteObject`. Pin it in `CoreTemplateTest`. What
-   remains of S7 is overwriting another job's objects under `jobs/*`, which has no per-job IAM scope.
-2. The seed itself becomes non-overwriting: `PutObject` with `If-None-Match: *` in
-   `RunnerJarResolver`, which also removes the head-then-put race between two first jobs of a new
-   version. A bucket-policy enforcement on `releases/*` is left out as extra mechanism.
-   **Seen live on 2026-10-10:** two `baas run` started in the same second on a freshly set-up
-   deployment both logged `Seeding runner JAR releases/7.0.0/benchmark-runner.jar` (08:10:13 and
-   08:10:21, the first upload still in progress), so the key was written twice. Harmless that time,
-   since both copies were checksum-verified against the same release asset, but the "seeded once"
-   rule held only by luck (`RunnerJarResolver.java:52-61`, `exists` then `putObject`).
-3. `s3:DeleteObject` leaves both operator documents; `OperatorPolicyDriftTest` keeps them in step.
 
 ### `retire-mongodb` — C4, A13
 
@@ -219,6 +183,17 @@ self-hosted runner, fork PRs cannot obtain an `id-token`, and the operator role 
 `environment:<name>` entry, put the E2E job behind an environment with required reviewers, and
 replace the bare `pull_request` trigger with a label gate. S16 showed how this compounds with any
 compromised step in a federated job.
+
+### S7 — a runner can overwrite another job's objects under `jobs/*` · Could · M · reduced
+
+Reduced by `narrow-bucket-grants` (2026-10-13): `RunnerRole` holds `PutObject`/`GetObject` on
+`jobs/*` and `GetObject` on `releases/*` only — no delete, no listing, no write to the pinned runner.
+What remains is that benchmark code can overwrite any job's objects under `jobs/*`, including its
+`jmh-result.json`, since IAM has no per-job scope for an instance profile. Versioning is `Suspended`,
+so an overwrite is unrecoverable. The same trust position as *Runners can terminate each other*
+(CLAUDE.md, Accepted risks): only an operator supplies a benchmark JAR. **Would need:** per-job
+credentials — e.g. the CLI vending a session-tagged role session to the instance — which is its own
+change.
 
 ### A4 — a store failure after the upload loses the measurement row · Could · M · reduced
 

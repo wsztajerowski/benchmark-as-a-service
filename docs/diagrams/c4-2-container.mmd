@@ -27,7 +27,7 @@ C4Container
     Rel(cli, bucket, "Uploads JARs, seeds releases/, downloads artifacts")
     Rel(cli, runner, "RunInstances, DescribeInstances, TerminateInstances (shutdown hook, poll cap, baas jobs terminate)")
     Rel(cli, table, "Query / Scan (results, download <jobId>); UpdateItem job items (run, jobs terminate); GetItem (poll)")
-    Rel(runner, bucket, "Fetches JARs; uploads output, environment.json, jmh-result.json")
+    Rel(runner, bucket, "Writes and reads jobs/*, only reads releases/*: uploads output, environment.json, jmh-result.json")
     Rel(runner, table, "PutItem per measurement (RESULT#); UpdateItem its own job item (JOB)")
     Rel(pipeline, bucket, "Build logs under image-builds/")
 

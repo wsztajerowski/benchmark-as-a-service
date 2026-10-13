@@ -271,8 +271,18 @@ The watchdog is the only one that survives a deadlocked JVM.
   network fetch reintroduces both the drift — two jobs a week apart executing different runner
   code — and the egress `private-runner-network` exists to remove.
 - **`releases/<version>/benchmark-runner.jar` is seeded once and never overwritten.** That
-  immutability is what the whole pinning argument rests on. A corrupted object therefore does not
-  self-repair: delete the key and the next job re-seeds it, checksum-verified.
+  immutability is what the whole pinning argument rests on, and two things hold it: the seed is a
+  `PutObject` with `If-None-Match: *`, so S3 refuses a second write — a 412 or 409 means another
+  launch got there first, and is not an error (two first jobs of 7.0.0 both wrote the key while it
+  was a head-then-put) — and `RunnerRole` can only *read* `releases/*`, so benchmark code cannot
+  replace the runner every later job of that version executes. A corrupted object therefore does
+  not self-repair: delete the key (deployer credentials — no other role can delete) and the next
+  job re-seeds it, checksum-verified.
+- **The runner's bucket grant is an allow-list: `PutObject`/`GetObject` on `jobs/*`,
+  `GetObject` on `releases/*`, and nothing else** — no delete, no listing, no other prefix. The
+  operator holds `PutObject`/`GetObject`/`ListBucket` and no delete either; teardown empties the
+  bucket under the deployer's rights. A new top-level prefix a runner must write to fails its first
+  job loudly until it is added (`CoreTemplateTest` pins both grants).
 - **Bucket versioning is `Suspended` and no lifecycle rule expires current objects under `jobs/`.**
   Both are load-bearing. The deleted `expire-uploaded-benchmark-jars` rule assumed everything under
   `jobs/` was re-creatable from source; results live there now, so restoring it is silent data loss
@@ -444,6 +454,10 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
   `benchmark-runner` keeps one, selectable by `--mongo-connection-string`, purely so the JAR still
   works standalone against a user's own MongoDB. BaaS itself never selects it.
+- **A runner's download of a missing key answers 403, not 404.** `RunnerRole` holds no
+  `s3:ListBucket`, and without it S3 will not say whether a key exists. The only such reads are
+  user-data's two `aws s3 cp` downloads of JARs the CLI wrote seconds earlier, so a 403 in
+  `cloud-init-output.log` there means the key is missing as often as it means a grant is.
 - **`ASYNC_PATH` gates async coverage.** `JmhWithAsyncProfilerSubcommandServiceIT` is annotated
   `@EnabledIfEnvironmentVariable(named = "ASYNC_PATH", ...)`, so a plain `mvn verify` **silently
   skips** the only test exercising async-profiler end to end. Export it before trusting a green
@@ -661,7 +675,7 @@ non-obvious entries:
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/async-output/` |
 | `input/` | The job's own inputs — `benchmark.jar`, and `runner.jar` only when `--runner-jar` overrode the pinned one. Inside the job prefix, so a consumer has one sub-prefix to skip rather than filenames to special-case |
-| `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the job tree. Seeded once by the CLI and never overwritten. `releases/`, not `runner/`, because a prefix one character from `jobs/` would need disambiguating in every listing |
+| `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the job tree. Seeded once by the CLI, with a conditional write, and never overwritten; runners can only read it. `releases/`, not `runner/`, because a prefix one character from `jobs/` would need disambiguating in every listing |
 | `image-builds/` | Image Builder build logs (written by the build instance, not by a job) |
 
 `environment.json` is the **observation**; `infra/runner-image.yaml` is the **declaration**. The
@@ -790,7 +804,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
 
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + margin` (300 s by default). Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
-| Runners can terminate each other | `RunnerRole`'s `ec2:TerminateInstances` is scoped by the shared `baas-role=benchmark-runner` tag, not to the calling instance, so code on one runner can kill every concurrent job. Accepted (2026-10-02): only an operator can supply a benchmark JAR, and `OperatorRole` already terminates any runner; the runner role's bucket and table writes are the larger exposure. The self-only scoping (`ec2:SourceInstanceARN`) was declined because a subtly wrong condition would silently disable self-termination *and* the watchdog, found only when a paid job hangs. Revisit if more than one team ever shares a deployment. |
+| Runners can terminate each other | `RunnerRole`'s `ec2:TerminateInstances` is scoped by the shared `baas-role=benchmark-runner` tag, not to the calling instance, so code on one runner can kill every concurrent job. Accepted (2026-10-02): only an operator can supply a benchmark JAR, and `OperatorRole` already terminates any runner; the runner role's remaining bucket and table writes are the larger exposure — it can overwrite another job's objects under `jobs/*` (finding S7), though no longer delete them or touch `releases/`. The self-only scoping (`ec2:SourceInstanceARN`) was declined because a subtly wrong condition would silently disable self-termination *and* the watchdog, found only when a paid job hangs. Revisit if more than one team ever shares a deployment. |
 | `OperatorRole` trusts the account root | The trust policy names `:root` with no condition, so any principal in the account whose identity policy allows `sts:AssumeRole` on `*` can become an operator. Accepted (2026-10-02): that is AWS's standard same-account delegation, and in practice such principals (admins, `PowerUserAccess`) already hold the EC2, S3 and DynamoDB rights the role grants. A `aws:PrincipalArn` allow-list was declined — every new teammate would need a deployer re-run, SSO role ARNs churn on re-provisioning (the A10 failure), and a wrong pattern locks every operator out. `sts:ExternalId` was declined as a same-account no-op. |
 | Re-measuring a historical environment | There is no command for it. A diff showing `jdk: 25.0.4 → 25.0.3` tells you the environment moved, but isolating whether it caused a score change means `git checkout <sha> -- infra/runner-image.yaml && baas admin image build`, which clobbers the current image. Accepted: the question actually asked is "did it change", which `environment.json` answers directly. Git is the archive; nothing in S3 duplicates it. |
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. Teardown retires the image, so a torn-down deployment costs nothing. |
