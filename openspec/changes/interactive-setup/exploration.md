@@ -3,8 +3,12 @@
 Explored 2026-10-10 → 2026-10-13 with the user, from the live end-to-end test of v7.0.0
 (`archive/2026-10-12-pr83-review-fixes/verify.md`, *Full end-to-end test*), re-grounded on `main` at
 v7.1.1. It builds on [`setup-prerequisites`](../archive/2026-10-13-setup-prerequisites/exploration.md): the derived
-preflight, `--policy-file`, and the removal of existing-VPC support land there first. Next step:
-`/opsx:propose interactive-setup`, after `setup-prerequisites` is proposed.
+preflight, `--policy-file`, and the removal of existing-VPC support land there first.
+
+**Status (2026-10-13):** every decision below is taken; nothing is waiting on the user.
+`setup-prerequisites` was merged into `next-release` (PR #94) and archived with its specs synced
+(`dd3cde1`). This change is #1 in `QUEUE.md`. **Next step: `/opsx:propose interactive-setup`**,
+which resolves the items under *Open for the proposal* one question at a time.
 
 ## Why
 
@@ -133,6 +137,49 @@ build`, which also says "account" where it means the deployment), `RunCommand`'s
 `ConfigShowSubcommand`. One helper renders a hint with `--deployment <name>`, either whenever more
 than one deployment is configured or always. Folded in here because step 10 prints most of them.
 
+## What `setup-prerequisites` settled, and what it means here
+
+Learned while implementing and verifying it (`archive/2026-10-13-setup-prerequisites/verify.md`).
+Each item is a fact the walkthrough builds on, not a new decision.
+
+- **Step 4's probe exists:** `DeployerPreflight.simulate(callerArn, renderedPolicy)` returns the
+  denied actions, or nothing when the caller may not simulate.
+  - It costs **13 `SimulatePrincipalPolicy` calls, ~4–6 s**, so an "Enter to re-check" loop costs
+    that per press.
+  - IAM throttles this API hard. One call per action took ~26 s, and eight parallel callers
+    exhausted the SDK's retries and silently turned the check off. **Never parallelise it, and
+    never re-probe in a tight loop**; re-check only on the user's keypress.
+  - A throttle that survives the retries reports "cannot check". The walkthrough must show that
+    as *not checked*, never as met.
+- **Step 4's hand-over exists:**
+  - `--policy-file` writes the policy, then setup carries on (write and continue).
+  - `SetupCommand.administratorCommands(account, deployment, callerArn, file)` renders the IAM
+    admin's commands under `BaasCliDeployerPolicy-<deployment>`: `create-policy`, then the attach
+    command for the caller's principal type (user, role, or an Identity Center note), and
+    `create-policy-version`.
+  - The walkthrough's step 4 should call these rather than re-render.
+- **Step 7 can tell a permission failure apart.** A failed stack operation throws
+  `CloudFormationService.StackOperationException`, whose `permissionFailure()` comes from the root-cause
+  events (IAM, EC2, S3 and `AccessDenied` shapes). That is the hook for "the policy is stale, here
+  it is" after a failed create or update, rather than a dead end.
+- **Updates carry forward only declared parameters** (`updateStackParameters`). Removing the OIDC
+  ARN parameter in D4 is therefore safe for existing stacks: no other handling is needed. Note
+  that CloudFormation treats an update that only drops parameters or conditions as "No updates are
+  to be performed" (W4). Both live stacks still list the old networking parameters, harmlessly.
+- **Step 3 has no networking question:** existing-VPC support is gone, and every deployment builds
+  its own VPC.
+- **W2 matters for step 1, and is not yet decided.** An identity that may not simulate, re-running
+  setup on a stack with nothing to change, "succeeds" because CloudFormation makes no resource call
+  that could be denied. Setup then stores that identity as `aws.deployerProfile`. Seen live with
+  `lynx`. In a walkthrough, the profile chosen in step 1 would be stored the same way. See *Open for
+  the proposal*.
+- **The test seam is missing (W1 there, and `pr83-review-fixes` W1).** `SetupCommand.call()` builds
+  its AWS clients inline, so nothing about its ordering is unit-testable. Steps as probes need an
+  injectable AWS seam, the way `OperatorSession.Aws` and `TeardownCommand.removeDeployment` do, or
+  the walkthrough's own logic stays untested. Prompts follow teardown's injectable `answerReader`,
+  and interactivity follows `Console.interactive()`.
+- **The deployer policy is still 4370 non-whitespace characters**, so D4's budget note stands.
+
 ## Rules the walkthrough keeps
 
 | Rule (CLAUDE.md, ADRs) | In the walkthrough |
@@ -160,9 +207,37 @@ than one deployment is configured or always. Folded in here because step 10 prin
 
 ## Open for the proposal
 
+Ask these one at a time (CLAUDE.md).
+
+- **W2:** store `--deployer-aws-profile` (or step 1's choice) only after a create or an applied
+  update, or only when the preflight could check; or keep storing it and warn when the check was
+  skipped.
+- **The AWS seam:** what interface lets steps be probed in tests: one `SetupAws` covering STS,
+  IAM simulation, S3 probe, DynamoDB, CloudFormation, SSM and Image Builder, or per-step ones.
 - An update run: the same steps, with only the changeable inputs asked (federation on/off and its
   repos; image rebuild), or all met and nothing asked unless a flag says otherwise.
 - Whether step 6 prints the equivalent `--non-interactive` command line (a wizard-era idea; useful
   for repeatability, but with B a re-run is itself the repeat).
 - Whether D7's helper adds `--deployment` always or only with ≥2 deployments.
 - The OIDC thumbprint spike and the policy budget (D4).
+
+## Working context for whoever picks this up
+
+- **Deployments** (both on `baas-admin` as deployer):
+  - `baas-development` (us-east-1) is the one to tear down and rebuild for live checks. It was
+    recreated on 2026-10-13 from the post-change template, image 1.3.0 `ami-05f4851d3c30e3cb2`, and
+    holds only `exclude_from_results` jobs.
+  - `baas-381492019823` (eu-central-1) is CI's and carries the GitHub federation. Update it only
+    after the same step has passed on `baas-development`.
+  - us-east-1 allows 16 vCPU, which is two `c5.2xlarge` at once.
+- **Identities:**
+  - `baas-admin` may simulate.
+  - `lynx` (`user/wsztajerowski_baas`, the teammate identity) may not simulate; it is the natural
+    "cannot check" case.
+  - `baas-admin` cannot attach IAM policies, so an IAM-admin step in a live check needs the user.
+- **Paid runs** (image builds and `baas run` jobs) need the user's budget each time.
+  `setup-prerequisites` used 3 of the 5 allowed.
+- **Live checks that touch `~/.baas`:** run them under a scratch `-Duser.home=…`, with
+  `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` pointing at the real `~/.aws`. A setup in the
+  real home rewrites the deployment file (it happened once with `lynx`; restored from a backup).
+
