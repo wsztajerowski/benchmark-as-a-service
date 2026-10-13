@@ -1,14 +1,15 @@
 package pl.wsztajerowski.baas.infra;
 
-import pl.wsztajerowski.baas.config.DeploymentNames;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.services.iam.IamClient;
 
-import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -23,6 +24,7 @@ import java.util.Set;
 public class DeployerPreflight {
 
     private static final Logger logger = LoggerFactory.getLogger(DeployerPreflight.class);
+    private static final ObjectMapper JSON = new ObjectMapper();
 
     /** Error codes the SDK uses for "you are not allowed to do this", across services. */
     private static final Set<String> ACCESS_DENIED_CODES =
@@ -47,34 +49,41 @@ public class DeployerPreflight {
     /**
      * Best-effort check that the deployer policy is attached, using {@code SimulatePrincipalPolicy}.
      *
-     * <p>Only unconditioned, resource-scoped actions are simulated. The EC2 statement carries an
-     * {@code aws:RequestedRegion} condition and is left out: the simulator has no such key in its
-     * request context, so it would report a denial that will not happen, and a false alarm here is
-     * worse than no check at all.
+     * <p>What is probed is derived from {@code renderedPolicy} itself (see {@link #probes}), so a
+     * statement added in a later release is checked in that release. A hand-kept list of
+     * "critical" actions used to stand here; three times a release added a statement it did not
+     * cover, and a stale policy passed: {@code dynamodb:CreateTable} (a stack update rolled back),
+     * {@code iam:UpdateRole} ({@code baas-3q7i7s65} left in UPDATE_ROLLBACK_FAILED) and, in 7.1,
+     * {@code sts:AssumeRole}, which let setup pass and then stopped every day-to-day command.
      *
-     * @return actions the simulator reported as denied; empty when it could not run at all
+     * <p>One call per action, judged on the action's overall decision. A call naming several
+     * actions is refused when they need different authorization information ({@code iam:Get*}
+     * beside {@code iam:CreateRole}), and the resource-specific results report {@code implicitDeny}
+     * for every resource whose type the action does not apply to, while the overall decision stays
+     * {@code allowed} (both found live, setup-prerequisites task 1.1).
+     *
+     * @return actions the simulator reported as denied, in policy order; empty when it could not
+     * run at all
      */
-    public List<String> simulateCriticalActions(String callerArn, String accountId,
-                                                String region, String prefix) {
+    public List<String> simulate(String callerArn, String renderedPolicy) {
         Optional<String> principal = resolvePrincipalArn(callerArn);
         if (principal.isEmpty()) {
             return List.of();
         }
 
-        Map<String, String> actionToResource = criticalActionsToResources(accountId, region, prefix);
-
+        List<Probe> probes = probes(renderedPolicy);
         try {
-            var denied = actionToResource.entrySet().stream()
-                .flatMap(entry -> iam.simulatePrincipalPolicy(request -> request
+            var denied = probes.stream()
+                .filter(probe -> iam.simulatePrincipalPolicy(request -> request
                         .policySourceArn(principal.get())
-                        .actionNames(entry.getKey())
-                        .resourceArns(entry.getValue()))
-                    .evaluationResults().stream())
-                .filter(result -> !"allowed".equals(result.evalDecisionAsString()))
-                .map(result -> result.evalActionName())
+                        .actionNames(probe.action())
+                        .resourceArns(probe.resources()))
+                    .evaluationResults().stream()
+                    .anyMatch(result -> !"allowed".equals(result.evalDecisionAsString())))
+                .map(Probe::action)
+                .distinct()
                 .toList();
-            logger.debug("Simulated {} action(s) for {}; denied: {}",
-                actionToResource.size(), principal.get(), denied);
+            logger.debug("Simulated {} action(s) for {}; denied: {}", probes.size(), principal.get(), denied);
             return denied;
         } catch (AwsServiceException e) {
             // A caller without iam:SimulatePrincipalPolicy simply gets no pre-check.
@@ -84,49 +93,44 @@ public class DeployerPreflight {
         }
     }
 
+    /** One simulated action, with every resource its statement names. */
+    record Probe(String sid, String action, List<String> resources) {
+    }
+
     /**
-     * The critical-action-to-resource map simulated above, extracted so it can be asserted on
-     * directly without an {@link IamClient} — every entry here has to stay unconditioned and
-     * resource-scoped, the shape {@code SimulatePrincipalPolicy} can actually answer.
+     * Every action of every {@code Allow} statement that carries no {@code Condition}, each with its
+     * statement's resources, verbatim — wildcard action names and pattern resources included, which
+     * the simulator matches as IAM does. Conditioned statements are left out: the simulator has no
+     * value for {@code aws:RequestedRegion} or {@code iam:AWSServiceName} in its request context, so
+     * it would report a denial that will not happen, and a false alarm here is worse than no check.
      */
-    static Map<String, String> criticalActionsToResources(String accountId, String region, String prefix) {
-        DeploymentNames names = DeploymentNames.of(prefix);
-        Map<String, String> actionToResource = new LinkedHashMap<>();
-        actionToResource.put("cloudformation:CreateStack",
-            "arn:aws:cloudformation:%s:%s:stack/%s/*".formatted(region, accountId, names.stack()));
-        actionToResource.put("s3:CreateBucket", "arn:aws:s3:::" + names.bucket());
-        // The runner AMI pointer, not the Mongo connection string this used to probe: since the
-        // cutover, setup writes no Mongo parameter and the table name travels in user-data. The
-        // AMI pointer is the one SSM write the deployer still performs (from `admin image build`),
-        // so probing it here still catches a stale attached policy before the long operation.
-        actionToResource.put("ssm:PutParameter",
-            "arn:aws:ssm:%s:%s:parameter%s".formatted(region, accountId, names.amiPointer()));
-        actionToResource.put("iam:GetRole",
-            "arn:aws:iam::%s:role/%s".formatted(accountId, names.runnerRole()));
-        actionToResource.put("iam:CreateRole",
-            "arn:aws:iam::%s:role/%s".formatted(accountId, names.operatorRole()));
-        // dynamodb:CreateTable is unconditioned and resource-scoped, same as the five above — a
-        // deployer running with a stale attached policy previously passed preflight only to have
-        // the real stack update fail partway on this action and roll back.
-        actionToResource.put("dynamodb:CreateTable",
-            "arn:aws:dynamodb:%s:%s:table/%s".formatted(region, accountId, names.resultsTable()));
-        // Same lesson, same shape, and it cost a stuck stack to learn twice. Deploying a core
-        // stack with federation parameters changes OperatorRole two ways, through two different
-        // IAM APIs, and BOTH grants are newer than any policy attached before they existed:
-        //
-        //   iam:UpdateAssumeRolePolicy  the federated trust statement
-        //   iam:UpdateRole              MaxSessionDuration
-        //
-        // Probing only the first is what left baas-3q7i7s65 in UPDATE_ROLLBACK_FAILED: preflight
-        // passed, the update failed partway on iam:UpdateRole, and then the *rollback* failed on
-        // the same action, because unwinding MaxSessionDuration needs it too. A stack in that
-        // state needs ContinueUpdateRollback and a human. Probe every action an update of this
-        // role actually issues, not just the one that motivated the change.
-        actionToResource.put("iam:UpdateAssumeRolePolicy",
-            "arn:aws:iam::%s:role/%s".formatted(accountId, names.operatorRole()));
-        actionToResource.put("iam:UpdateRole",
-            "arn:aws:iam::%s:role/%s".formatted(accountId, names.operatorRole()));
-        return actionToResource;
+    static List<Probe> probes(String renderedPolicy) {
+        JsonNode statements;
+        try {
+            statements = JSON.readTree(renderedPolicy).path("Statement");
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("The rendered deployer policy is not valid JSON", e);
+        }
+        List<Probe> probes = new ArrayList<>();
+        for (JsonNode statement : statements) {
+            if (!"Allow".equals(statement.path("Effect").asText()) || statement.has("Condition")) {
+                continue;
+            }
+            List<String> resources = strings(statement.path("Resource"));
+            for (String action : strings(statement.path("Action"))) {
+                probes.add(new Probe(statement.path("Sid").asText(), action, resources));
+            }
+        }
+        return probes;
+    }
+
+    private static List<String> strings(JsonNode node) {
+        if (node.isTextual()) {
+            return List.of(node.asText());
+        }
+        List<String> values = new ArrayList<>();
+        node.forEach(value -> values.add(value.asText()));
+        return values;
     }
 
     /**

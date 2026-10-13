@@ -55,7 +55,10 @@ class OperatorSessionTest {
             calls.add("AssumeRole " + roleArn);
             sources.add(source);
             if (!canAssume) {
-                throw StsException.builder().message("not authorized to perform sts:AssumeRole").build();
+                throw StsException.builder().message("not authorized to perform sts:AssumeRole")
+                    .awsErrorDetails(software.amazon.awssdk.awscore.exception.AwsErrorDetails.builder()
+                        .errorCode("AccessDenied").build())
+                    .build();
             }
             return assumed;
         }
@@ -140,6 +143,35 @@ class OperatorSessionTest {
         assertThat(aws.sources).allSatisfy(source ->
             assertThat(source).isInstanceOf(ProfileCredentialsProvider.class)
                 .asString().contains("baas-admin"));
+    }
+
+    /**
+     * 7.1 added AssumeOwnOperatorRole to the deployer policy; one attached before that lacks it,
+     * and setup's preflight passed it at the time. The denial says so, and how to get the new one.
+     */
+    @Test
+    void aDeployerDeniedTheAssumptionIsPointedAtAStalePolicy() throws Exception {
+        TestDeployments.writeRaw(dir, "wiktor-dev", "aws:\n  deployerProfile: \"baas-admin\"\n  region: \"us-east-1\"\n");
+        aws.canAssume = false;
+
+        assertThatThrownBy(() -> credentials(session(Optional.empty())))
+            .isInstanceOf(OperatorSession.OperatorRoleException.class)
+            .hasMessageContaining("profile baas-admin (aws.deployerProfile)")
+            .hasMessageContaining("may predate this CLI")
+            .hasMessageContaining("baas --deployment wiktor-dev admin deployment setup --policy-file wiktor-dev-deployer-policy.json");
+    }
+
+    /** A teammate's missing grant is their own, not the deployer policy's: no hint. */
+    @Test
+    void anOperatorProfileDeniedTheAssumptionGetsNoPolicyHint() throws Exception {
+        TestDeployments.writeRaw(dir, "wiktor-dev",
+            "aws:\n  deployerProfile: \"baas-admin\"\n  operatorProfile: \"teammate\"\n  region: \"us-east-1\"\n");
+        aws.canAssume = false;
+
+        assertThatThrownBy(() -> credentials(session(Optional.empty())))
+            .isInstanceOf(OperatorSession.OperatorRoleException.class)
+            .hasMessageContaining("teammate")
+            .hasMessageNotContaining("deployer policy");
     }
 
     @Test

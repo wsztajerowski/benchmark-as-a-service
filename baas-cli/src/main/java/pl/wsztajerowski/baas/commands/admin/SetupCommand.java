@@ -54,17 +54,11 @@ public class SetupCommand implements Callable<Integer> {
         description = "AWS CLI profile with the deployer policy; stored for every `baas admin` command.")
     String deployerProfile;
 
-    @Option(names = "--use-existing-vpc", description = "Skip VPC/networking creation and use provided IDs.")
-    boolean useExistingVpc;
-
-    @Option(names = "--vpc-id", description = "Existing VPC ID (required with --use-existing-vpc).")
-    String existingVpcId;
-
-    @Option(names = "--subnet-id", description = "Existing subnet ID (required with --use-existing-vpc).")
-    String existingSubnetId;
-
-    @Option(names = "--sg-id", description = "Existing security group ID (required with --use-existing-vpc).")
-    String existingSecurityGroupId;
+    @Option(names = "--policy-file",
+        description = "Also write the deployer policy rendered for this deployment to this file, "
+            + "then carry on as usual: deploy when the rights are there, stop having created "
+            + "nothing when they are not. The file is what an IAM administrator attaches.")
+    Path policyFile;
 
     // ─── GitHub OIDC federation ──────────────────────────────────────────────────
     //
@@ -108,7 +102,6 @@ public class SetupCommand implements Callable<Integer> {
     public Integer call() throws Exception {
         // Before anything is loaded, resolved or deployed.
         validateFederationOptions();
-        validateNetworkingOptions();
         // Before any AWS call, the policy step included: a name some composed resource cannot carry
         // would otherwise fail minutes into a deploy, or print a policy for a deployment that can
         // never exist. A derived name needs no check; baas-<12 digits> always passes.
@@ -175,11 +168,17 @@ public class SetupCommand implements Callable<Integer> {
         // rights fall short, the policy is the payload (stdout, so `setup > policy.json` hands it
         // over) and what is missing is the diagnostic (stderr).
         String policy = new DeployerPolicyRenderer().render(accountId, resolvedRegion, resolvedPrefix);
+        // Before the check's result is acted on, whatever it is: an administrator rendering a
+        // teammate's policy, and an upgrade whose failure only CloudFormation reports later, both
+        // need the file when the check passes.
+        if (policyFile != null && !writePolicyFile(policy)) {
+            return 1;
+        }
         List<String> denied;
         try (var iam = factory.iam()) {
-            denied = new DeployerPreflight(iam).simulateCriticalActions(callerArn, accountId, resolvedRegion, resolvedPrefix);
+            denied = new DeployerPreflight(iam).simulate(callerArn, policy);
         }
-        Integer refused = refusalForMissingRights(denied, policy, accountId, resolvedRegion, resolvedPrefix);
+        Integer refused = refusalForMissingRights(denied, policy, accountId, resolvedRegion, resolvedPrefix, callerArn);
         if (refused != null) {
             return refused;
         }
@@ -187,11 +186,16 @@ public class SetupCommand implements Callable<Integer> {
         try {
             return deploy(factory, config, resolvedPrefix, bucket);
         } catch (IllegalStateException e) {
-            // A refused precondition — the networking-immutability check most of all. It is an
-            // expected outcome, so it exits 1 with its own message rather than surfacing through
-            // the generic handler, which invites the reader to go looking for a stack trace.
+            // A refused precondition (a taken name) or a failed stack operation. Both are expected
+            // outcomes, so they exit 1 with their own message rather than surfacing through the
+            // generic handler, which invites the reader to go looking for a stack trace.
             // Must precede the RuntimeException catch below: IllegalStateException is one.
             logger.error(e.getMessage());
+            if (e instanceof CloudFormationService.StackOperationException failed && failed.permissionFailure()) {
+                // The same hand-over as an SDK-level denial below: CloudFormation makes the resource
+                // calls, so a stale policy most often fails here, in the stack's events.
+                handOverPolicy(policy, accountId, resolvedRegion, resolvedPrefix, callerArn);
+            }
             return 1;
         } catch (RuntimeException e) {
             if (!DeployerPreflight.isAccessDenied(e)) {
@@ -199,10 +203,9 @@ public class SetupCommand implements Callable<Integer> {
             }
             // The SDK names the action but never what to do about it. The rendered policy is the
             // answer, and it is deployment-specific — there is no generic version to link to.
-            logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs. "
-                + "Attach the policy printed on standard output (rendered for account {}, region {}, "
-                + "deployment {}), then re-run.", e.getMessage(), accountId, resolvedRegion, resolvedPrefix);
-            printPolicy(policy);
+            logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.",
+                e.getMessage());
+            handOverPolicy(policy, accountId, resolvedRegion, resolvedPrefix, callerArn);
             return 1;
         }
     }
@@ -213,15 +216,75 @@ public class SetupCommand implements Callable<Integer> {
      * since the preflight is a convenience, not a control.
      */
     Integer refusalForMissingRights(List<String> denied, String policy, String accountId, String region,
-                                    String deployment) {
+                                    String deployment, String callerArn) {
         if (denied.isEmpty()) {
             return null;
         }
-        logger.error("This identity cannot {}. Attach the policy printed on standard output (rendered for "
-            + "account {}, region {}, deployment {}), then re-run. Nothing was created.",
-            String.join(", ", denied), accountId, region, deployment);
-        printPolicy(policy);
+        logger.error("This identity cannot {}. Nothing was created.", String.join(", ", denied));
+        handOverPolicy(policy, accountId, region, deployment, callerArn);
         return 1;
+    }
+
+    /**
+     * Where the policy is (the file, when {@code --policy-file} named one, and standard output
+     * always, so {@code setup > policy.json} keeps working) and the commands an IAM administrator
+     * runs to attach it.
+     */
+    private void handOverPolicy(String policy, String accountId, String region, String deployment,
+                                String callerArn) {
+        String file = policyFile != null ? policyFile.toString() : "policy.json";
+        logger.error("Attach the deployer policy rendered for account {}, region {}, deployment {}, then re-run. "
+                + "It is printed on standard output{}.\n{}",
+            accountId, region, deployment,
+            policyFile != null ? " and written to " + policyFile : " (redirect it: > policy.json)",
+            administratorCommands(accountId, deployment, callerArn, file));
+        printPolicy(policy);
+    }
+
+    /**
+     * The IAM administrator's commands, filled in. Both the first attachment and the upgrade are
+     * given, because the deployer cannot read customer-managed policies to tell which applies.
+     * Customer-managed and named per deployment: two deployments' documents exceed the 5120
+     * characters IAM shares across every inline policy on a principal.
+     */
+    static String administratorCommands(String accountId, String deployment, String callerArn, String file) {
+        String name = "BaasCliDeployerPolicy-" + deployment;
+        String arn = "arn:aws:iam::" + accountId + ":policy/" + name;
+        return """
+              For an IAM administrator, first time:
+                aws iam create-policy --policy-name %s --policy-document file://%s
+                %s
+              To update an attached policy after a CLI upgrade:
+                aws iam create-policy-version --policy-arn %s --policy-document file://%s --set-as-default"""
+            .formatted(name, file, attachCommand(callerArn, arn), arn, file);
+    }
+
+    private static String attachCommand(String callerArn, String policyArn) {
+        String resource = callerArn.substring(callerArn.lastIndexOf(':') + 1);
+        if (resource.startsWith("user/")) {
+            String user = resource.substring(resource.lastIndexOf('/') + 1);
+            return "aws iam attach-user-policy --user-name " + user + " --policy-arn " + policyArn;
+        }
+        String role = resource.startsWith("assumed-role/")
+            ? resource.substring("assumed-role/".length()).split("/")[0]
+            : resource.substring(resource.lastIndexOf('/') + 1);
+        if (role.startsWith("AWSReservedSSO_")) {
+            return "(" + role + " belongs to IAM Identity Center: add " + policyArn
+                + " to its permission set instead of attaching it to the role)";
+        }
+        return "aws iam attach-role-policy --role-name " + role + " --policy-arn " + policyArn;
+    }
+
+    /** Writes {@code --policy-file}; {@code false}, with the reason logged, when it cannot. */
+    boolean writePolicyFile(String policy) {
+        try {
+            Files.writeString(policyFile, policy + System.lineSeparator());
+            logger.info("Deployer policy written to {}", policyFile);
+            return true;
+        } catch (IOException e) {
+            logger.error("Cannot write the deployer policy to {}: {}. Nothing was created.", policyFile, e.getMessage());
+            return false;
+        }
     }
 
     /** IAM JSON is payload: never styled, never prefixed, so it can be redirected into a file. */
@@ -236,10 +299,6 @@ public class SetupCommand implements Callable<Integer> {
 
         Map<String, String> params = new LinkedHashMap<>();
         params.put("ResourceNamePrefix", resolvedPrefix);
-        // Networking is sent only when this invocation names it. Sending it unconditionally is
-        // what let a plain `baas admin deployment setup` rebuild a shared deployment's networking; see
-        // networkingParameters().
-        params.putAll(networkingParameters());
 
         boolean created;
         try (var cf = factory.cloudFormation()) {
@@ -269,15 +328,9 @@ public class SetupCommand implements Callable<Integer> {
                 cloudFormation.deleteStack(resolvedPrefix);
             }
             if (!created) {
-                // Networking is fixed at creation. Checked before anything is submitted, so a
-                // refused update leaves the stack untouched rather than rolling back.
-                requireNetworkingUnchanged(
-                    networkingParameters(), cloudFormation.getStackParameters(resolvedPrefix));
-
                 // Only the parameters this command owns are sent; every other one — the three
                 // federation parameters above all — is carried forward with UsePreviousValue, so
-                // a setup run for an unrelated reason cannot silently revoke CI's access. Same
-                // mechanism, and the same failure, as the `UseExistingVpc` case its Javadoc names.
+                // a setup run for an unrelated reason cannot silently revoke CI's access.
                 params.putAll(federationParameters());
                 // The image is `baas admin image build`'s to change: everything it deployed —
                 // base, parent, extension — is carried forward, so a plain setup never reverts an
@@ -519,25 +572,6 @@ public class SetupCommand implements Callable<Integer> {
      * false — a setup that reports success and leaves CI with no access. Rejected outright, the
      * same stance {@code baas run} takes on a {@code --tag} for a reserved key.
      */
-    /**
-     * The networking ids mean something only with {@code --use-existing-vpc}. Without it a create
-     * built new networking and ignored them without a word, and an update refused them as
-     * "different networking" — so both halves of the pair are required together, the same stance
-     * {@link #validateFederationOptions()} takes on a partial federation set.
-     */
-    void validateNetworkingOptions() {
-        boolean anyId = existingVpcId != null || existingSubnetId != null || existingSecurityGroupId != null;
-        if (useExistingVpc && (existingVpcId == null || existingSubnetId == null || existingSecurityGroupId == null)) {
-            throw new ParameterException(spec.commandLine(),
-                "--use-existing-vpc requires --vpc-id, --subnet-id, and --sg-id. Nothing was deployed.");
-        }
-        if (!useExistingVpc && anyId) {
-            throw new ParameterException(spec.commandLine(),
-                "--vpc-id, --subnet-id and --sg-id apply only with --use-existing-vpc; without it setup "
-                    + "builds its own networking and would ignore them. Nothing was deployed.");
-        }
-    }
-
     void validateFederationOptions() {
         boolean anySetting = githubOrg != null || !githubRepos.isEmpty() || oidcProviderArn != null;
         if (revokeGithubOidc && anySetting) {
@@ -560,53 +594,6 @@ public class SetupCommand implements Callable<Integer> {
                     + ". A partial set deploys a trust condition that is always false, so the "
                     + "stack would report success while continuous integration has no access. "
                     + "Nothing was deployed.");
-        }
-    }
-
-    /** The four networking parameters, or empty when this invocation names none of them. */
-    Map<String, String> networkingParameters() {
-        if (!useExistingVpc && existingVpcId == null && existingSubnetId == null
-            && existingSecurityGroupId == null) {
-            return Map.of();
-        }
-        Map<String, String> networking = new LinkedHashMap<>();
-        networking.put("UseExistingVpc", Boolean.toString(useExistingVpc));
-        networking.put("ExistingVpcId", existingVpcId != null ? existingVpcId : "");
-        networking.put("ExistingSubnetId", existingSubnetId != null ? existingSubnetId : "");
-        networking.put("ExistingSecurityGroupId",
-            existingSecurityGroupId != null ? existingSecurityGroupId : "");
-        return networking;
-    }
-
-    /**
-     * Refuses an update that would move the deployment onto different networking.
-     *
-     * <p>Carrying the submitted values forward instead would close the same hole, but silently:
-     * the operator typed a flag and it would be discarded without a word. Refusing names the
-     * deployed value and the submitted one and submits nothing, so the operator can decide.
-     *
-     * <p>Replacing a subnet or security group under a running deployment moves resource ids that
-     * other machines' configuration and in-flight jobs are holding, which is why this is immutable
-     * rather than merely discouraged.
-     */
-    static void requireNetworkingUnchanged(Map<String, String> submitted,
-                                           Map<String, String> deployed) {
-        List<String> conflicts = submitted.entrySet().stream()
-            .filter(entry -> deployed.containsKey(entry.getKey()))
-            .filter(entry -> !entry.getValue().equals(deployed.get(entry.getKey())))
-            .map(entry -> "  %s: deployed %s, submitted %s".formatted(
-                entry.getKey(),
-                deployed.get(entry.getKey()).isEmpty() ? "(none)" : deployed.get(entry.getKey()),
-                entry.getValue().isEmpty() ? "(none)" : entry.getValue()))
-            .toList();
-        if (!conflicts.isEmpty()) {
-            throw new IllegalStateException("""
-                This deployment is already deployed against different networking.
-                %s
-                Networking is fixed when a deployment is created. Omit the networking options to
-                keep what is deployed, or tear down and recreate the deployment to change it.
-                Nothing was submitted."""
-                .formatted(String.join("\n", conflicts)));
         }
     }
 

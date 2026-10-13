@@ -10,23 +10,6 @@ Parameters:
       `baas admin deployment setup`; every resource name in this stack is derived from it.
     Type: String
     Default: "baas-000000000000"
-  UseExistingVpc:
-    Description: Set to 'true' to skip networking creation and use existing IDs.
-    Type: String
-    Default: "false"
-    AllowedValues: ["true", "false"]
-  ExistingVpcId:
-    Description: Existing VPC ID (used when UseExistingVpc=true).
-    Type: String
-    Default: ""
-  ExistingSubnetId:
-    Description: Existing subnet ID with outbound internet egress (used when UseExistingVpc=true).
-    Type: String
-    Default: ""
-  ExistingSecurityGroupId:
-    Description: Existing security group ID (used when UseExistingVpc=true).
-    Type: String
-    Default: ""
   # The runner image's parameters, planned by RunnerImageParameters. `baas admin image build`
   # submits all of them; `baas admin deployment setup` submits them on create and, on update, only those the
   # deployed stack lacks, carrying the rest forward — so a plain setup never reverts an image.
@@ -126,7 +109,6 @@ Parameters:
     Default: ""
 
 Conditions:
-  CreateNetworking: !Equals [!Ref UseExistingVpc, "false"]
   # All three are required together: a provider ARN with no repository would admit every
   # repository in the org, and an org with no provider has nothing to trust.
   FederateGitHub: !And
@@ -137,11 +119,10 @@ Conditions:
 
 Resources:
 
-  # ─── Networking (created only when UseExistingVpc=false) ─────────────────────
+  # ─── Networking ──────────────────────────────────────────────────────────────
 
   BaasVpc:
     Type: AWS::EC2::VPC
-    Condition: CreateNetworking
     Properties:
       CidrBlock: 10.0.0.0/16
       EnableDnsSupport: true
@@ -154,7 +135,6 @@ Resources:
 
   PublicSubnet:
     Type: AWS::EC2::Subnet
-    Condition: CreateNetworking
     Properties:
       VpcId: !Ref BaasVpc
       CidrBlock: 10.0.1.0/24
@@ -168,7 +148,6 @@ Resources:
 
   InternetGateway:
     Type: AWS::EC2::InternetGateway
-    Condition: CreateNetworking
     Properties:
       Tags:
         - Key: project
@@ -176,14 +155,12 @@ Resources:
 
   VpcGatewayAttachment:
     Type: AWS::EC2::VPCGatewayAttachment
-    Condition: CreateNetworking
     Properties:
       VpcId: !Ref BaasVpc
       InternetGatewayId: !Ref InternetGateway
 
   PublicRouteTable:
     Type: AWS::EC2::RouteTable
-    Condition: CreateNetworking
     Properties:
       VpcId: !Ref BaasVpc
       Tags:
@@ -192,7 +169,6 @@ Resources:
 
   DefaultRoute:
     Type: AWS::EC2::Route
-    Condition: CreateNetworking
     DependsOn: VpcGatewayAttachment
     Properties:
       RouteTableId: !Ref PublicRouteTable
@@ -201,14 +177,12 @@ Resources:
 
   PublicSubnetRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
-    Condition: CreateNetworking
     Properties:
       SubnetId: !Ref PublicSubnet
       RouteTableId: !Ref PublicRouteTable
 
   S3GatewayEndpoint:
     Type: AWS::EC2::VPCEndpoint
-    Condition: CreateNetworking
     Properties:
       VpcId: !Ref BaasVpc
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.s3'
@@ -216,13 +190,9 @@ Resources:
       RouteTableIds:
         - !Ref PublicRouteTable
 
-  # Free, unlike an interface endpoint (which bills hourly per AZ). Under
-  # UseExistingVpc=true this is skipped, same as S3GatewayEndpoint — the operator
-  # supplies their own networking and runner traffic to DynamoDB goes out via
-  # whatever route that networking already provides.
+  # Free, unlike an interface endpoint (which bills hourly per AZ).
   DynamoDbGatewayEndpoint:
     Type: AWS::EC2::VPCEndpoint
-    Condition: CreateNetworking
     Properties:
       VpcId: !Ref BaasVpc
       ServiceName: !Sub 'com.amazonaws.${AWS::Region}.dynamodb'
@@ -236,7 +206,6 @@ Resources:
   # replaces the group — a new id, and a replacement that fails while any runner holds the old one.
   RunnerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Condition: CreateNetworking
     Properties:
       GroupDescription: Benchmark runner security group. No inbound; outbound 443/80 only.
       VpcId: !Ref BaasVpc
@@ -255,11 +224,9 @@ Resources:
   # The image build instance's group, kept apart from the runner's because their needs are
   # opposite: the bake downloads packages (dnf, port 80 included) and async-profiler from GitHub,
   # the runner downloads nothing because the bake did. Sharing one group gave the runner the
-  # builder's internet egress. Created only with the stack's own networking — under
-  # --use-existing-vpc the operator supplied a group, and the build keeps using it.
+  # builder's internet egress.
   ImageBuildSecurityGroup:
     Type: AWS::EC2::SecurityGroup
-    Condition: CreateNetworking
     Properties:
       GroupDescription: Runner image build instances. No inbound; outbound 443/80 for package and tool downloads.
       VpcId: !Ref BaasVpc
@@ -577,9 +544,9 @@ Resources:
       # instance family it uses has no bearing on any benchmark score.
       InstanceTypes:
         - c5.large
-      SubnetId: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
+      SubnetId: !Ref PublicSubnet
       SecurityGroupIds:
-        - !If [CreateNetworking, !Ref ImageBuildSecurityGroup, !Ref ExistingSecurityGroupId]
+        - !Ref ImageBuildSecurityGroup
       TerminateInstanceOnFailure: true
       Logging:
         S3Logs:
@@ -828,8 +795,8 @@ Outputs:
   RunnerAmiParameterName:
     Value: !Sub /${ResourceNamePrefix}/runner/ami-id
   SubnetId:
-    Value: !If [CreateNetworking, !Ref PublicSubnet, !Ref ExistingSubnetId]
+    Value: !Ref PublicSubnet
   SecurityGroupId:
-    Value: !If [CreateNetworking, !Ref RunnerSecurityGroup, !Ref ExistingSecurityGroupId]
+    Value: !Ref RunnerSecurityGroup
   VpcId:
-    Value: !If [CreateNetworking, !Ref BaasVpc, !Ref ExistingVpcId]
+    Value: !Ref BaasVpc
