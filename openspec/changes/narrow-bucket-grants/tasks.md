@@ -21,10 +21,10 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 Update CLAUDE.md: the `releases/<version>/…` invariant says the seed is a conditional write and the runner cannot write `releases/`; S3 layout and IAM paragraphs reflect the narrowed grants; add the runner-has-no-`ListBucket` 403-not-404 note under *What isn't there*; verify by grep for `DeleteObject` and `seeded once` in CLAUDE.md
-- [ ] 4.2 In `docs/review/open-findings.md`, delete S14 and S15 (index rows and the `narrow-bucket-grants` design section), and reduce S7 to its remainder — another job's objects under `jobs/*` — with no change queued; verify every remaining citation of S14/S15 in `docs/` and `openspec/` either points at an archive or is removed
-- [ ] 4.3 Remove `narrow-bucket-grants` from `openspec/changes/QUEUE.md` (renumber the rest); verify the table reads in order
-- [ ] 4.4 If a diagram in `docs/diagrams/` shows the runner-JAR seed or the role grants, update it, render with `mmdc` to the scratchpad and look at the PNG; verify by `grep -l "releases/\|seed" docs/diagrams/*.mmd`
+- [x] 4.1 Update CLAUDE.md: the `releases/<version>/…` invariant says the seed is a conditional write and the runner cannot write `releases/`; S3 layout and IAM paragraphs reflect the narrowed grants; add the runner-has-no-`ListBucket` 403-not-404 note under *What isn't there*; verify by grep for `DeleteObject` and `seeded once` in CLAUDE.md
+- [x] 4.2 In `docs/review/open-findings.md`, delete S14 and S15 (index rows and the `narrow-bucket-grants` design section), and reduce S7 to its remainder — another job's objects under `jobs/*` — with no change queued; verify every remaining citation of S14/S15 in `docs/` and `openspec/` either points at an archive or is removed
+- [x] 4.3 Remove `narrow-bucket-grants` from `openspec/changes/QUEUE.md` (renumber the rest); verify the table reads in order
+- [x] 4.4 If a diagram in `docs/diagrams/` shows the runner-JAR seed or the role grants, update it, render with `mmdc` to the scratchpad and look at the PNG; verify by `grep -l "releases/\|seed" docs/diagrams/*.mmd`
 
 ## 5. Live verification (manual — no automated test covers the `baas run` path)
 

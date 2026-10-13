@@ -34,7 +34,12 @@ sequenceDiagram
         opt absent
             RC->>GH: GET releases/download/v<version>/benchmark-runner.jar + .sha256
             GH-->>RC: jar + published checksum
-            Note over RC: verify, then putObject. A mismatch uploads<br/>nothing and launches nothing. Never overwrites a<br/>present object, so a corrupt one needs deleting.
+            Note over RC: verify. A mismatch uploads nothing and launches nothing.
+            RC->>S3: putObject(releases/<version>/benchmark-runner.jar)<br/>If-None-Match: *
+            alt 412 or 409 -- another launch seeded it first
+                S3-->>RC: refused. Not an error: the existing object is used
+            end
+            Note over RC: Never overwrites a present object, so a corrupt<br/>one needs deleting, under deployer credentials.
         end
     end
     Note over RC: buildRunnerTags(): project, commit, branch, type, source + every --tag.<br/>A --tag naming a machine-observed key (imageVersion,<br/>instanceType, jdk, cpuModel, cpuArch, type) is REJECTED --<br/>those come from the instance, so a result's tags can never<br/>disagree with its own environment.json.<br/>source is derived (ci when CI/GITHUB_ACTIONS is set, else local)<br/>but NOT reserved: how a job was triggered is not observed on<br/>the instance, so --tag source=nightly wins instead of failing.

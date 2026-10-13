@@ -11,7 +11,7 @@ context: |
   Read before writing any artifact:
   - CLAUDE.md — *Invariants* (breaking one costs money or loses data) and *Accepted risks*
     (settled decisions; do not re-raise them as problems).
-  - docs/review/open-findings.md — open findings, cited by ID (S14, P11, U28…); docs/adr/ — decisions, incl. hardenings declined.
+  - docs/review/open-findings.md — open findings, cited by ID (S7, E1, N3…); docs/adr/ — decisions, incl. hardenings declined.
 
   Real AWS spend per run. The project's standing cost was zero until the runner AMI snapshot
   (~$0.20/mo), so any new standing cost is a change in kind and must be argued, not absorbed.
