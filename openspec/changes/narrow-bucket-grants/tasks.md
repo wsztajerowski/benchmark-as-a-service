@@ -2,16 +2,16 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm the AWS SDK in use (`awssdk.java.bom.version` 2.54.12) exposes `PutObjectRequest.ifNoneMatch` and maps a refused conditional put to an `S3Exception` with status 412 (and 409 for a concurrent conflict); verify by compiling a call and reading the SDK model. If either is missing, stop and revise design.md
-- [ ] 1.2 Confirm LocalStack 4.14.0 honours `If-None-Match: *` on `PutObject` (second put of an existing key answers 412, object unchanged); verify with a throwaway probe against the pinned container. Record the answer in design.md's risk on it — it decides whether 3.2 is a LocalStack IT or a stubbed unit test
-- [ ] 1.3 Re-confirm nothing under the runner role lists, deletes or writes outside `jobs/`: grep `UserDataScriptBuilder` and `benchmark-runner/src/main` for every `aws s3`/`s3Client` call and check each key against the design's Context table; verify that the runner's async-profiler and log uploads all resolve under the job's `RESULT_PATH`
-- [ ] 1.4 Confirm `aws s3 cp s3://… <local>` needs only `s3:GetObject` (no `ListBucket`) on AL2023's CLI; verify against the AWS CLI docs or a live call under a GetObject-only policy, and note the result in design.md
+- [x] 1.1 Confirm the AWS SDK in use (`awssdk.java.bom.version` 2.54.12) exposes `PutObjectRequest.ifNoneMatch` and maps a refused conditional put to an `S3Exception` with status 412 (and 409 for a concurrent conflict); verify by compiling a call and reading the SDK model. If either is missing, stop and revise design.md
+- [x] 1.2 Confirm LocalStack 4.14.0 honours `If-None-Match: *` on `PutObject` (second put of an existing key answers 412, object unchanged); verify with a throwaway probe against the pinned container. Record the answer in design.md's risk on it — it decides whether 3.2 is a LocalStack IT or a stubbed unit test
+- [x] 1.3 Re-confirm nothing under the runner role lists, deletes or writes outside `jobs/`: grep `UserDataScriptBuilder` and `benchmark-runner/src/main` for every `aws s3`/`s3Client` call and check each key against the design's Context table; verify that the runner's async-profiler and log uploads all resolve under the job's `RESULT_PATH`
+- [x] 1.4 Confirm `aws s3 cp s3://… <local>` needs only `s3:GetObject` (no `ListBucket`) on AL2023's CLI; verify against the AWS CLI docs or a live call under a GetObject-only policy, and note the result in design.md
 
 ## 2. Grants
 
-- [ ] 2.1 Narrow `${prefix}-policy-runner-s3` in `infra/cf-template-core.yaml` to `PutObject`+`GetObject` on `jobs/*` and `GetObject` on `releases/*`, without touching `RunnerSecurityGroup`'s `GroupDescription`; verify with new `CoreTemplateTest` cases pinning: no `DeleteObject`, no `ListBucket`, no bucket-level resource, no write outside `jobs/*` (these fail before the edit)
-- [ ] 2.2 Drop `s3:DeleteObject` from `${prefix}-policy-operator-s3` and from `infra/operator-policy.json`'s `S3WorkingBucketAccess`; verify with a `CoreTemplateTest` case pinning its absence and `OperatorPolicyDriftTest` still green
-- [ ] 2.3 Run `cfn-lint` (or the template's existing validation) over `cf-template-core.yaml` and the full `baas-cli` unit suite; verify both pass
+- [x] 2.1 Narrow `${prefix}-policy-runner-s3` in `infra/cf-template-core.yaml` to `PutObject`+`GetObject` on `jobs/*` and `GetObject` on `releases/*`, without touching `RunnerSecurityGroup`'s `GroupDescription`; verify with new `CoreTemplateTest` cases pinning: no `DeleteObject`, no `ListBucket`, no bucket-level resource, no write outside `jobs/*` (these fail before the edit)
+- [x] 2.2 Drop `s3:DeleteObject` from `${prefix}-policy-operator-s3` and from `infra/operator-policy.json`'s `S3WorkingBucketAccess`; verify with a `CoreTemplateTest` case pinning its absence and `OperatorPolicyDriftTest` still green
+- [x] 2.3 Run `aws cloudformation validate-template` (cfn-lint is not installed) over `cf-template-core.yaml` and the full `baas-cli` unit suite; verify both pass
 
 ## 3. Conditional seed
 

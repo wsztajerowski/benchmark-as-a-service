@@ -389,15 +389,17 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
+              # A job's own uploads and downloads. No delete and no listing: nothing on the
+              # instance does either, and it runs an arbitrary benchmark JAR.
               - Effect: Allow
                 Action:
                   - s3:PutObject
                   - s3:GetObject
-                  - s3:DeleteObject
-                  - s3:ListBucket
-                Resource:
-                  - !Sub 'arn:${AWS::Partition}:s3:::${ResourceNamePrefix}'
-                  - !Sub 'arn:${AWS::Partition}:s3:::${ResourceNamePrefix}/*'
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ResourceNamePrefix}/jobs/*'
+              # Read-only: every later job of a version executes the runner stored here.
+              - Effect: Allow
+                Action: s3:GetObject
+                Resource: !Sub 'arn:${AWS::Partition}:s3:::${ResourceNamePrefix}/releases/*'
         - PolicyName: !Sub ${ResourceNamePrefix}-policy-runner-ec2-terminate
           PolicyDocument:
             Version: "2012-10-17"
@@ -745,7 +747,6 @@ Resources:
                 Action:
                   - s3:PutObject
                   - s3:GetObject
-                  - s3:DeleteObject
                   - s3:ListBucket
                 Resource:
                   - !GetAtt S3MainBucket.Arn

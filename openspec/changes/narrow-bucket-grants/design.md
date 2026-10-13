@@ -99,10 +99,10 @@ recorded, diagnosable failed job.
 - [A deployment not re-set-up keeps the old grants] → Harmless: the new CLI's conditional put needs
   only `PutObject`, which both grant sets hold. The protection arrives with the next
   `baas admin deployment setup`, which the `feat`/`fix` commit body names so it reaches the release notes.
-- [LocalStack 4.14 may ignore `If-None-Match`] → The IT asserts the second write is refused and the
-  first object survives. If LocalStack does not honour the header, the IT fails rather than passing
-  vacuously, and the refusal handling is then covered by a unit test with a stubbed `S3Client`
-  throwing 412/409, with the real behaviour checked live (task in tasks.md).
+- [LocalStack 4.14 may ignore `If-None-Match`] → Resolved 2026-10-13 (task 1.2): probed against
+  `localstack/localstack:4.14.0`, a second `PUT` with `If-None-Match: *` answered `412
+  PreconditionFailed` and the first body survived. The seed is tested in a LocalStack IT; the 409 path,
+  which LocalStack cannot be made to produce on demand, gets a unit test with a stubbed `S3Client`.
 - [A grant too narrow surfaces only on a real instance] → The live check runs a JMH job with
   async-profiler (largest uploads, `logs/async-output/`) and a JCStress job on the re-set-up
   `baas-development` deployment before merge.
@@ -118,3 +118,15 @@ unchanged; only who may write where changes.
    no in-flight job affected beyond its role's next policy evaluation (an in-flight runner keeps
    writing under `jobs/`, which stays allowed).
 3. Rollback: re-run setup from the previous CLI release; the old template restores the old grants.
+
+## Resolved Questions
+
+- **Does the SDK carry the header?** Yes (task 1.1): `PutObjectRequest.ifNoneMatch` exists in 2.54.12.
+  No modelled exception exists for the refusal, so 412 and 409 arrive as a plain `S3Exception` and are
+  told apart by status code.
+- **Does anything under the runner role write outside `jobs/`?** No (task 1.3): user-data uploads only
+  under `${RESULT_PATH}`, and the runner JVM's every `saveFile` resolves under `--result-path` —
+  process output, `jmh-result.json`, `logs/`, and profiler artifacts via `profilerOutputPathFor`.
+- **Does `aws s3 cp` need `ListBucket` to download?** No (task 1.4): it issues `HeadObject` and
+  `GetObject`, both authorised as `s3:GetObject`. `ListBucket` only changes a missing key's answer from
+  403 to 404. Confirmed live by task 5.1.
