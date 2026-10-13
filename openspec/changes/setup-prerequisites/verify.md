@@ -105,3 +105,32 @@ Whole `baas-cli` unit suite: 832 tests, 0 failures.
   has no unit test, because `call()` builds its AWS clients itself (the same seam gap as
   `pr83-review-fixes` W1). Its parts are tested: `isPermissionFailure`, `StackOperationException` and
   `handOverPolicy` (via `refusalForMissingRights`).
+
+## 9. Live verification (manual)
+
+CLI and runner from this branch's build at `1bd76f6`, copied aside before the reactor verify ran.
+`baas-development` (us-east-1) unless stated.
+
+| # | Check | Result |
+|---|---|---|
+| 9.1 | `admin deployment setup -v` on the existing stack, which still carries `UseExistingVpc`, `ExistingVpcId`, `ExistingSubnetId`, `ExistingSecurityGroupId` | Exit 0. `Simulated 56 action(s) …; denied: []`. The update sent only the declared parameters and CloudFormation answered "No updates are to be performed": removing parameters and conditions without touching a resource is no update to it, so nothing was replaced. Subnet `subnet-0b0af0585e518511a`, runner group `sg-091964ac0cf2601d0` and VPC `vpc-0b45f6c3f0c7b3f9e` unchanged. **The preflight took ~26 s** (56 sequential calls): see the parallel fix below |
+| 9.2 | setup with `--deployer-aws-profile lynx --policy-file p.json` | **Not the intended path.** `lynx` (`user/wsztajerowski_baas`) may not simulate (`Cannot simulate policies (AccessDenied)`, confirmed with `-v` in a scratch `user.home`). The update had nothing to change, so CloudFormation made no resource call that could be denied, and setup exited 0. It then saved `deployerProfile: lynx` in `~/.baas/deployments/baas-development.yaml`; the file was restored from the copy taken before the run and checked byte-identical. Recorded as W2 |
+| 9.2b | the shortfall path, live: `--deployment prtest-shortfall setup --region us-east-1 --deployer-aws-profile baas-admin --policy-file p3.json`, in a scratch `user.home` (baas-admin's policy covers its own deployments only) | Exit 1. stderr names the denied actions, then `Attach the deployer policy … written to …p3.json` and the filled-in `create-policy --policy-name BaasCliDeployerPolicy-prtest-shortfall`, `attach-user-policy --user-name baas-admin-wiktor` and `create-policy-version`. stdout is the 13-statement policy, byte-identical to `p3.json`. No deployment file written, nothing created (the preflight comes before any CloudFormation call) |
+
+- **W2** (predates this change): with an identity that may not simulate, a re-setup whose update
+  has nothing to change succeeds, because no resource call is made that could be denied, and it
+  stores that identity as `aws.deployerProfile`. A later setup that does change something then fails
+  on the stack's first permission check. That failure is now handed over with the policy (task 4),
+  but the stored profile is still the wrong one. Candidate: store `--deployer-aws-profile` only after
+  a create or an applied update.
+
+**Deviation: fewer simulator calls, not parallel ones.** One call per action cost ~26 s per setup
+(9.1, 9.2b), and the bound is IAM's throttling of `SimulatePrincipalPolicy`, not latency: eight
+parallel callers exhausted the SDK's retries (`Cannot simulate policies (Throttling)`), which silently
+turned the check off, and four with per-call backoff were no faster. What helps is fewer calls. Each
+statement's actions now go in one call, its wildcard actions in a second, because IAM refused every
+mixed statement of this policy along exactly that line (spiked: ImageBuilder 8 + 2, IAM 14 + 2,
+ResultsTableLifecycle 7 + 1, S3WorkingBucketLifecycle 9 + 2, all accepted). A call refused all the
+same is split in half, and a throttled call backs off and retries. Live, 56 actions in **13 calls,
+~4–6 s**, with a denied set and a stdout identical to the one-call-per-action run (shortfall name),
+and nothing denied on `baas-development`.

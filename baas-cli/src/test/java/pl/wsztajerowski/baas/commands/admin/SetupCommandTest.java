@@ -428,10 +428,11 @@ class SetupCommandTest {
         @Override
         public software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyResponse simulatePrincipalPolicy(
             software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyRequest request) {
-            String action = request.actionNames().getFirst();
             return software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyResponse.builder()
-                .evaluationResults(software.amazon.awssdk.services.iam.model.EvaluationResult.builder()
-                    .evalActionName(action).evalDecision(action.equals(deniedAction) ? "implicitDeny" : "allowed").build())
+                .evaluationResults(request.actionNames().stream()
+                    .map(action -> software.amazon.awssdk.services.iam.model.EvaluationResult.builder()
+                        .evalActionName(action).evalDecision(action.equals(deniedAction) ? "implicitDeny" : "allowed").build())
+                    .toList())
                 .build();
         }
 

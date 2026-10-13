@@ -7,9 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.services.iam.IamClient;
+import software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyResponse;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
@@ -56,11 +59,15 @@ public class DeployerPreflight {
      * {@code iam:UpdateRole} ({@code baas-3q7i7s65} left in UPDATE_ROLLBACK_FAILED) and, in 7.1,
      * {@code sts:AssumeRole}, which let setup pass and then stopped every day-to-day command.
      *
-     * <p>One call per action, judged on the action's overall decision. A call naming several
-     * actions is refused when they need different authorization information ({@code iam:Get*}
-     * beside {@code iam:CreateRole}), and the resource-specific results report {@code implicitDeny}
-     * for every resource whose type the action does not apply to, while the overall decision stays
-     * {@code allowed} (both found live, setup-prerequisites task 1.1).
+     * <p>Each statement's actions go in one call with its resources, its wildcard actions in a second:
+     * IAM refuses one call whose actions "require different authorization information"
+     * ({@code iam:Get*} beside {@code iam:CreateRole}), and for this policy that line is exactly
+     * wildcard against plain. A call refused all the same is split in half and asked again. Each action is judged on its own
+     * overall decision: the resource-specific results report {@code implicitDeny} for every
+     * resource whose type the action does not apply to, while the overall decision stays
+     * {@code allowed} (both found live, setup-prerequisites task 1.1). One call per action took
+     * ~26 s live, bounded by IAM's throttling of this API rather than by latency, so fewer calls
+     * is what makes it fast, and a throttled call waits and asks again.
      *
      * @return actions the simulator reported as denied, in policy order; empty when it could not
      * run at all
@@ -72,24 +79,77 @@ public class DeployerPreflight {
         }
 
         List<Probe> probes = probes(renderedPolicy);
+        Map<String, List<Probe>> byStatement = new LinkedHashMap<>();
+        probes.forEach(probe -> byStatement.computeIfAbsent(probe.sid(), sid -> new ArrayList<>()).add(probe));
         try {
-            var denied = probes.stream()
-                .filter(probe -> iam.simulatePrincipalPolicy(request -> request
-                        .policySourceArn(principal.get())
-                        .actionNames(probe.action())
-                        .resourceArns(probe.resources()))
-                    .evaluationResults().stream()
-                    .anyMatch(result -> !"allowed".equals(result.evalDecisionAsString())))
-                .map(Probe::action)
-                .distinct()
-                .toList();
-            logger.debug("Simulated {} action(s) for {}; denied: {}", probes.size(), principal.get(), denied);
+            List<String> denied = new ArrayList<>();
+            int[] calls = {0};
+            for (List<Probe> statement : byStatement.values()) {
+                // Wildcard and plain actions apart: that is the line along which IAM refused every
+                // mixed statement of this policy, live (setup-prerequisites, 13 calls in all).
+                Map<Boolean, List<String>> byWildcard = new LinkedHashMap<>();
+                statement.forEach(probe -> byWildcard
+                    .computeIfAbsent(probe.action().contains("*"), wildcard -> new ArrayList<>())
+                    .add(probe.action()));
+                for (List<String> actions : byWildcard.values()) {
+                    for (String action : deniedAmong(principal.get(), actions, statement.getFirst().resources(), calls)) {
+                        if (!denied.contains(action)) {
+                            denied.add(action);
+                        }
+                    }
+                }
+            }
+            logger.debug("Simulated {} action(s) in {} call(s) for {}; denied: {}",
+                probes.size(), calls[0], principal.get(), denied);
             return denied;
         } catch (AwsServiceException e) {
             // A caller without iam:SimulatePrincipalPolicy simply gets no pre-check.
             logger.debug("Cannot simulate policies ({}) — relying on the real calls to fail instead.",
                 e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : e.getMessage());
             return List.of();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return List.of();
+        }
+    }
+
+    private static final int THROTTLED_ATTEMPTS = 6;
+
+    /** The denied ones among {@code actions}, splitting the call when IAM refuses the mix. */
+    private List<String> deniedAmong(String principal, List<String> actions, List<String> resources,
+                                     int[] calls) throws InterruptedException {
+        try {
+            calls[0]++;
+            return simulateWithRetry(principal, actions, resources).evaluationResults().stream()
+                .filter(result -> !"allowed".equals(result.evalDecisionAsString()))
+                .map(result -> result.evalActionName())
+                .toList();
+        } catch (AwsServiceException e) {
+            boolean mixed = e.awsErrorDetails() != null && "InvalidInput".equals(e.awsErrorDetails().errorCode());
+            if (!mixed || actions.size() == 1) {
+                throw e;
+            }
+            int half = actions.size() / 2;
+            List<String> denied = new ArrayList<>(deniedAmong(principal, actions.subList(0, half), resources, calls));
+            denied.addAll(deniedAmong(principal, actions.subList(half, actions.size()), resources, calls));
+            return denied;
+        }
+    }
+
+    private SimulatePrincipalPolicyResponse simulateWithRetry(String principal, List<String> actions,
+                                                              List<String> resources) throws InterruptedException {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return iam.simulatePrincipalPolicy(request -> request
+                    .policySourceArn(principal)
+                    .actionNames(actions)
+                    .resourceArns(resources));
+            } catch (AwsServiceException e) {
+                if (!e.isThrottlingException() || attempt == THROTTLED_ATTEMPTS) {
+                    throw e;
+                }
+                Thread.sleep(250L << attempt);
+            }
         }
     }
 
