@@ -111,4 +111,45 @@ class EnvironmentManifestTest {
 
         assertThat(EnvironmentManifest.diff(a, b).keySet()).containsExactly("machine", "os", "jvm");
     }
+
+    private static String withMemory(String totalKb) {
+        return BASE.replace("\"os\": {",
+            "\"memory\": { \"totalKb\": \"" + totalKb + "\", \"swapTotalKb\": \"0\" },\n  \"os\": {");
+    }
+
+    /** Two c5.2xlarge instances, seen on 2026-10-10: 8 KiB apart, the same environment. */
+    @Test
+    void memoryAFewKibApartIsNoDifference() {
+        var a = EnvironmentManifest.parse("a", withMemory("15882372"));
+        var b = EnvironmentManifest.parse("b", withMemory("15882380"));
+
+        assertThat(EnvironmentManifest.diff(a, b)).isEmpty();
+    }
+
+    /** c5.2xlarge against c6i.2xlarge: a real difference, shown in the unit it was compared in. */
+    @Test
+    void aRealMemoryDifferenceIsShownInMib() {
+        var a = EnvironmentManifest.parse("a", withMemory("15882372"));
+        var b = EnvironmentManifest.parse("b", withMemory("16085124"));
+
+        assertThat(EnvironmentManifest.diff(a, b)).containsOnlyKeys("memory");
+        assertThat(EnvironmentManifest.diff(a, b).get("memory"))
+            .containsEntry("totalKb", new EnvironmentManifest.Difference("15510 MiB", "15708 MiB"));
+    }
+
+    @Test
+    void aMemoryValueThatIsNotANumberIsComparedAsIs() {
+        var a = EnvironmentManifest.parse("a", withMemory("15882372"));
+        var b = EnvironmentManifest.parse("b", withMemory("unknown"));
+
+        assertThat(EnvironmentManifest.diff(a, b).get("memory"))
+            .containsEntry("totalKb", new EnvironmentManifest.Difference("15510 MiB", "unknown"));
+    }
+
+    /** The manifest is the observation and keeps what the instance recorded. */
+    @Test
+    void theManifestItselfKeepsKib() {
+        assertThat(EnvironmentManifest.parse("a", withMemory("15882372")).group("memory"))
+            .containsEntry("totalKb", "15882372");
+    }
 }
