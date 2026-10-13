@@ -35,7 +35,7 @@ sequenceDiagram
     end
 
     BIC->>CF: updateStack(core template, 8 image parameters)
-    Note over BIC,CF: only the image parameters are sent, and every other parameter is<br/>carried forward with UsePreviousValue, or a stack deployed with<br/>--use-existing-vpc would silently flip back to building a VPC.<br/>Without --extension the deployed extension is re-sent unchanged.
+    Note over BIC,CF: only the image parameters are sent, and every other parameter is<br/>carried forward with UsePreviousValue (those the template still declares),<br/>or the federation parameters would fall back to defaults and revoke CI.<br/>Without --extension the deployed extension is re-sent unchanged.
     CF-->>BIC: UPDATE_COMPLETE (or "no updates are to be performed")
     BIC->>CF: describeStacks -> RunnerImagePipelineArn
     CF-->>BIC: pipeline ARN (via !GetAtt .Arn, never !Ref)

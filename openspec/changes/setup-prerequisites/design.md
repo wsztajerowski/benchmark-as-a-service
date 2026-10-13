@@ -47,10 +47,17 @@ names and pattern resource ARNs and evaluates them by policy matching. `ec2:Desc
 ### The probe list is the rendered policy's unconditioned statements, simulated as written
 
 `DeployerPreflight` parses the rendered JSON, keeps each `Allow` statement without a `Condition`,
-and issues one `SimulatePrincipalPolicy` per statement, with that statement's `Action` list and
-`Resource` list verbatim. A pair counts as denied when its resource-specific decision (or, for a
-single resource, the action's decision) is not `allowed`. The report keeps today's form, the denied
-action names, de-duplicated, so the error text and `refusalForMissingRights` are unchanged.
+and issues one `SimulatePrincipalPolicy` per **action** of those statements, carrying that statement's
+`Resource` list verbatim. An action counts as denied when its overall decision is not `allowed`. The
+report keeps today's form, the denied action names, de-duplicated, so the error text and
+`refusalForMissingRights` are unchanged.
+
+Per action, and judged on the overall decision, because of task 1.1 (`verify.md`). One call with a
+statement's whole action list is rejected (`InvalidInput`: actions "require different authorization
+information"). Within one call, a resource whose type the action does not apply to is reported
+`implicitDeny` in the resource-specific results while the overall decision stays `allowed`; a real gap
+of the right type makes the overall decision a denial. That is about 56 calls for the nine
+statements, made sequentially.
 
 The question being asked is whether every statement of the rendered policy is effectively attached.
 Simulating each statement against its own resources answers that literally, and the spike shows the
@@ -112,9 +119,9 @@ stale (`BaasCliDeployerPolicy-alice`).
 ### A stack failure is a permission failure when its root-cause reason says so
 
 `failureReport` already selects the current operation's root-cause events. It additionally reports
-whether any of them reads as a permission failure: the reason contains `not authorized to perform`
-or the error code `AccessDenied`, the two shapes CloudFormation relays from IAM-checked resource
-calls. Setup then appends what the SDK path appends: the rendered policy on standard output, or the
+whether any of them reads as a permission failure: the reason, lower-cased, contains `not
+authorized to perform`, `accessdenied`, `access denied` or `unauthorizedoperation`. These are the IAM,
+EC2 and S3 shapes CloudFormation relays from resource calls (task 1.2). Setup then appends what the SDK path appends: the rendered policy on standard output, or the
 file's path when `--policy-file` was given. `CloudFormationService` returns a small failure value
 (message plus that flag) instead of only an exception message, so `SetupCommand` decides what to
 print and the service prints nothing.
@@ -143,8 +150,8 @@ unchanged: there the missing grant is the teammate's own, which the deployer pol
   - output names and logical IDs stay.
 
   A stack created with `UseExistingVpc=false` (both live ones) therefore sees an update that removes
-  parameters and conditions but no resource. CloudFormation drops parameters absent from the new
-  template on update, so no `UsePreviousValue` handling is needed.
+  parameters and conditions but no resource, provided setup stops sending the removed keys (next
+  decision).
 - `RunnerSecurityGroup`'s `GroupDescription` (it still says "443/80") is not touched.
 - **Specs:** the spec deltas remove *The image build and the runner do not share a security group*
   and re-add it under a new name without the existing-VPC case. OpenSpec refuses to drop a scenario
@@ -154,6 +161,24 @@ unchanged: there the missing grant is the teammate's own, which the deployer pol
 *Alternative:* keep the template parameters but drop the CLI flags. Rejected: dead template branches
 are what `CoreTemplateTest` would then have to keep pinning, and a hand-deployed stack could still
 reach them.
+
+### An update carries forward only the parameters the new template declares
+
+`updateStackParameters` builds its carried-forward set from the deployed stack's parameters. A
+deployed key the new template no longer declares (`UseExistingVpc` and the three `Existing*` keys,
+after this change) would be sent as `UsePreviousValue`, and CloudFormation refuses the whole update
+(`Parameters: [...] do not exist in the template`, task 1.3). The set becomes the deployed keys the
+new template declares, plus the changed ones. `CloudFormationService` reads the declared keys from
+the template body's top-level `Parameters:` block, the bundled template being the only one it ever
+submits. A test pins that read against the full YAML parse the template tests already use.
+
+Without this, the removal would break the first setup and the first `admin image build` on every
+existing deployment. With it, a later template that removes a parameter needs no special handling
+either.
+
+*Alternative:* `cloudformation:GetTemplateSummary`, which returns the declared parameters. Rejected:
+it adds an action to the deployer policy, which this change leaves unchanged, and it is one more call
+for something the CLI holds locally.
 
 ### `jobs diff` normalises the memory group before comparing
 
@@ -171,8 +196,8 @@ still shows what it holds. `jobs show` and `environment.json` keep KiB.
 
 ## Risks / Trade-offs
 
-- [Nine simulator calls instead of eight] → Setup runs once per deployment change; the calls are
-  unbilled and sub-second. A throttling error falls into the existing "cannot simulate" path (no
+- [About 56 simulator calls instead of 8] → Setup runs once per deployment change; the calls are
+  unbilled, and the time they add is measured in the live check. A throttling error falls into the existing "cannot simulate" path (no
   check), which is the documented fail-open stance of an affordance.
 - [A broader attachment still passes] → Intended: the preflight asks whether the caller *can*, not
   whether it holds this exact document.
@@ -204,6 +229,10 @@ _None._
 
 - **Does `SimulatePrincipalPolicy` accept wildcard actions and pattern resources?** Yes, spiked live
   2026-10-13 (Context).
+- **Does an update drop parameters the template no longer declares?** Only if they are not sent;
+  setup sent every deployed key, so it now filters them (task 1.3, new decision).
+- **One call per statement?** No: mixed actions are rejected, and per-resource results flag type
+  mismatches. One call per action, judged on the overall decision (task 1.1).
 - **Should `--policy-file` write and continue, or render only?** Write and continue (user,
   2026-10-10).
 - **How should the flag removal release?** As a feature release (user, 2026-10-13).

@@ -294,8 +294,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   now. 80 existed for `dnf`, which only the image bake runs, and the bake has its own
   `ImageBuildSecurityGroup` (443 + 80) — sharing one group handed the runner the builder's internet
   egress. `CoreTemplateTest` pins both absences rather than merely not testing for them — a security
-  group rule nobody can explain is one somebody restores. Under `--use-existing-vpc` both runner
-  and build use the operator's supplied group; no group is created in a foreign VPC.
+  group rule nobody can explain is one somebody restores. Every deployment uses the VPC its own
+  stack creates: existing-VPC support was removed in `setup-prerequisites`, no deployment used it.
 - **Editing `RunnerSecurityGroup`'s `GroupDescription` replaces the security group.** It is an
   immutable property, so CloudFormation deletes and recreates the resource and the group *id
   changes*. Anything holding the old id is then pointing at a group that no longer exists —
@@ -345,12 +345,12 @@ The watchdog is the only one that survives a deadlocked JVM.
   IAM's 64), `^[a-z][a-z0-9-]*[a-z0-9]$`, no `--`, not starting `aws`/`ssm` (SSM refuses the
   `/<prefix>/…` hierarchy) or `sthree-`/`amzn-s3-demo-`, not ending `-s3alias` — and checks nothing
   else; a name that looks like another account's default is the user's call.
-- **Networking is immutable once a deployment exists.** `--use-existing-vpc` and its three
-  companions are honoured on create; on update, `SetupCommand` compares them against the deployed
-  values and refuses a difference before submitting anything. They used to be sent unconditionally,
-  so on a shared deployment a teammate's plain `baas admin deployment setup` submitted `UseExistingVpc=false`
-  and rebuilt the networking underneath everyone. Carrying them forward silently would close the
-  hole while discarding a flag the operator typed; refusing names both values instead.
+- **An update carries forward only the parameters the new template declares.**
+  `updateStackParameters` sends every other deployed parameter as `UsePreviousValue` — which is how a
+  plain setup or an image build cannot revoke CI's federation — but CloudFormation refuses a whole
+  update naming a parameter the template no longer has. Every stack created before
+  `setup-prerequisites` still carries `UseExistingVpc` and its three companions, so without the filter
+  their first update after the removal fails. A removed template parameter needs no other handling.
 - **Each deployment is one file, `~/.baas/deployments/<name>.yaml`, storing credential *profile
   names*, preferences and the region — each preference only once set, and no secret.** The name is
   the file's name and is not written inside it, so a copy under another name configures that other
@@ -585,8 +585,8 @@ is no `cf-template-main.yaml` and no bootstrap stack.
   instance profile, `OperatorRole`, and the EC2 Image Builder resources (`Component`,
   `ImageRecipe`, `InfrastructureConfiguration`, `DistributionConfiguration`, `ImagePipeline`) plus
   the build-instance role. Deployed by `baas admin deployment setup`, bundled into the CLI as the
-  classpath resource `/templates/cf-template-core.yaml`. `UseExistingVpc` + `ExistingVpcId` /
-  `ExistingSubnetId` / `ExistingSecurityGroupId` reuse existing networking. Eight parameters
+  classpath resource `/templates/cf-template-core.yaml`. It always creates its own networking.
+  Eight parameters
   describe the runner image (`RunnerImageParameters.ALL`): the base, parent, extension and contract
   documents and their versions, and the label. Each component travels as a parameter value, so it
   must stay under CloudFormation's 4096-byte cap — unit-tested for base and contract, refused before
@@ -638,7 +638,20 @@ it names is prefix-exact, so two developers cannot reach each other's stack, buc
 parameter. Attaching the file as-is grants nothing. There is no command that prints it:
 `baas admin deployment setup` renders it for the deployment it is about to create — `--region`
 included, since the region is in seven of its ARNs and conditions — and, when the caller's rights
-fall short, prints it on standard output and stops having created nothing.
+fall short, prints it on standard output and stops having created nothing. `--policy-file` also
+writes it to a file before the check, whatever it finds, then setup carries on. It is attached as a
+customer-managed `BaasCliDeployerPolicy-<deployment>`, and setup prints the IAM administrator's
+filled-in commands whenever it reports missing rights, a permission failure in stack events
+included.
+
+**The preflight probes what the rendered policy grants, never a list kept beside it.** Every action of
+every `Allow` statement without a `Condition` is simulated with that statement's resources as written
+— the simulator accepts wildcard actions and pattern resources — one call per action, because one
+call mixing actions that need "different authorization information" is refused, and judged on the
+action's overall decision, because the per-resource results report `implicitDeny` for every resource
+type an action does not apply to. A hand-kept list let a stale policy pass three times
+(`dynamodb:CreateTable`, `iam:UpdateRole`, 7.1's `sts:AssumeRole`). Conditioned statements stay
+unprobed: the simulator has no `aws:RequestedRegion` or `iam:AWSServiceName` to evaluate.
 
 `baas admin deployment setup`'s preflight (opportunistic `SimulatePrincipalPolicy`, plus translating any
 `AccessDenied` into the rendered policy) is a **UX affordance, not a control** — anyone holding the

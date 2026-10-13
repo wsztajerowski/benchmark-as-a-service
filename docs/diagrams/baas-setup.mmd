@@ -11,9 +11,9 @@ sequenceDiagram
     participant FS as Local Filesystem
 
     Note over User,FS: baas admin deployment setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-aws-profile]<br/>[--use-existing-vpc --vpc-id --subnet-id --sg-id]
+    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-aws-profile]<br/>[--policy-file F] [--github-org --github-repo --oidc-provider-arn]
     picocli->>SC: parse and bind options into fields
-    Note over SC: validate federation and networking options before anything is loaded --<br/>a partial federation set, or --vpc-id/--subnet-id/--sg-id without<br/>--use-existing-vpc (or the flag without all three) -> exit 2 (U34)
+    Note over SC: validate federation options before anything is loaded --<br/>a partial federation set -> exit 2. There are no networking options:<br/>every deployment uses the VPC its own stack creates
     SC->>FS: ConfigService.load()
     FS-->>SC: loadForSetup() -- deployments/D.yaml (or a new one named D), else the only one,<br/>else empty: the name is derived below. Two or more and no D: refused. D validated first, before any AWS call
     Note over SC: apply --region / --deployer-aws-profile over config defaults
@@ -26,9 +26,16 @@ sequenceDiagram
         SC-->>User: the deployment lives there -- setup --region <it>, exit 1, no delete advice (U23)
     end
     Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second deployment
-    SC->>IAM: SimulatePrincipalPolicy(critical actions) -- opportunistic preflight
+    Note over SC: render the deployer policy for this account, region and deployment
+    opt --policy-file F
+        SC->>FS: write F -- before the check, whatever it finds. Unwritable -> exit 1, nothing created
+    end
+    loop every action of every Allow statement without a Condition
+        SC->>IAM: SimulatePrincipalPolicy(that action, its statement's resources as written)
+    end
+    Note over SC,IAM: opportunistic -- a caller that may not simulate gets no check.<br/>Judged on the action's overall decision (per-resource results flag type mismatches)
     alt denied
-        SC-->>User: stderr names the denied actions, STDOUT holds the rendered deployer<br/>policy (setup > policy.json hands it over) -- exit 1, nothing created
+        SC-->>User: stderr names the denied actions and the IAM admin's commands<br/>(create-policy, attach, create-policy-version, BaasCliDeployerPolicy-prefix).<br/>STDOUT holds the policy (setup > policy.json still works) -- exit 1, nothing created
     end
     SC->>FS: load /templates/cf-template-core.yaml from the classpath
     FS-->>SC: template body
@@ -45,10 +52,10 @@ sequenceDiagram
         end
     end
     alt stack exists and updatable (update)
-        Note over SC: networking params sent only if this invocation named them,<br/>and refused if they differ from the deployed values.<br/>Federation params carried forward unless named or revoked.
+        Note over SC: federation params carried forward unless named or revoked.
         Note over SC: image parameters: only those the deployed stack lacks.<br/>Base, parent and extension are carried forward, so a plain<br/>setup never reverts an image or drops an extension
         SC->>CFSvc: updateStackParameters(stack, template, changed params)
-        CFSvc->>CF: updateStack(named params + UsePreviousValue for the rest)
+        CFSvc->>CF: updateStack(named params + UsePreviousValue for every other deployed<br/>param the template still declares -- an undeclared one would refuse the update)
         alt nothing changed
             CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
         else changes applied
@@ -59,6 +66,14 @@ sequenceDiagram
         SC->>CFSvc: createStack(stack, template, explicit params incl. federation or empty)
         CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
         CFSvc->>CF: waiter.waitUntilStackCreateComplete()
+    end
+    opt the stack operation failed
+        CFSvc->>CF: describeStackEvents -- the current operation's root-cause events
+        alt a root cause is a denied permission
+            SC-->>User: the events, the policy on STDOUT (or the --policy-file path)<br/>and the IAM admin's commands -- exit 1
+        else any other cause
+            SC-->>User: the events only -- exit 1
+        end
     end
 
     SC->>CF: describeStacks() -- OperatorRoleArn output, to print only

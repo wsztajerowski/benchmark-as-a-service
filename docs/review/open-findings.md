@@ -54,7 +54,6 @@ decides what to pick up next.
 
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
-| jobs-command/W1 | `memory.totalKb` differs by a few KB between two instances of one type, so `jobs diff` never says "No differences" | S | Info | open, user's decision |
 | E4 | The results table formats scores in the machine's locale (`10632008,341`) while JSON and CSV use `Locale.ROOT` | XS | Info | open |
 | E5 | `jobs diff` columns shift when a value is wider than its column (CPU model names) | XS | Info | open |
 | A4 | A store failure after the upload loses the measurement row | M | Med → reduced | open |
@@ -223,14 +222,6 @@ which lists as `vanished` — arguably the better failure.
 replaced, still exists: the `baas-operator` profile in `~/.aws/config` assumes it successfully
 (2026-10-05). The deployer cannot remove it (outside its prefix). Delete it, and the profile, with an
 identity above the deployer.
-
-### jobs-command/W1 — `memory.totalKb` noise in `jobs diff` · Could · S
-
-Filed in `openspec/changes/archive/2026-10-07-jobs-command/verify.md`, left for the user to decide.
-Seen again on 2026-10-10: a re-run of the same job on the same instance type (`c5.2xlarge`) differed
-in nothing but `memory.totalKb` (15882372 vs 15882380, 8 KB), so `jobs diff` reported `Differs in:
-memory` for two environments that are equivalent for measurement purposes. Candidates are unchanged:
-compare memory in MiB, or print `totalKb` but leave it out of the verdict.
 
 ### E4 — the results table formats scores in the machine's locale · Could · XS
 
