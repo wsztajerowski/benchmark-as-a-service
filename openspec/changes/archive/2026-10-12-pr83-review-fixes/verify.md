@@ -198,3 +198,15 @@ the AWS CLI (U2: no `baas` command exports).
 Findings filed or updated in `docs/review/open-findings.md`: E1–E6 new; S14, U2, U14 updated with
 what was seen; jobs-command/W1, pr83/W3 and pr83/W5 moved there.
 
+
+## 2026-10-13: W4 step 4 run under `narrow-bucket-grants`
+
+Run on `baas-development` (us-east-1) rather than a new `baas-dev`, whose deployer policy still needs
+an IAM admin to attach it. Reactor CLI at `narrow-bucket-grants` `a57564e`.
+
+| # | Step | Result |
+|---|---|---|
+| R2 | `aws s3 rb s3://baas-development` (every version and delete marker removed first — `rb --force` leaves them under suspended versioning), stack left in place, then `baas --deployment baas-development admin deployment teardown --yes` | **Exit 0.** "Bucket baas-development does not exist; nothing to empty.", stack deleted, image retired, `~/.baas/deployments/baas-development.yaml` removed. `DescribeStacks` → does not exist |
+| W1, part | `admin deployment setup --region us-east-1 --deployer-aws-profile baas-admin` on the now-empty names | Exit 0: names checked free, stack created, configuration file rewritten identical to the original |
+
+**W2 closed, W4 step 4 closed.** W1 is closed for the create path. The `ROLLBACK_COMPLETE` delete-then-create branch is still neither unit-tested nor run live. **R16** (another account's bucket, the `test` name) is still open: it needs `test`'s deployer policy attached by an IAM admin, and stays in `QUEUE.md`.

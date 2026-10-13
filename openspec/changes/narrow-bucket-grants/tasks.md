@@ -28,12 +28,12 @@
 
 ## 5. Live verification (manual — no automated test covers the `baas run` path)
 
-- [ ] 5.1 On a second deployment (infra/README.md, *A second deployment*): `baas admin deployment setup` with the reactor CLI, `baas admin image build`, then a `jmh-with-async` run of `fake-jmh-benchmarks` and a JCStress sanity run; verify both complete with flame graph, `logs/async-output/`, `environment.json`, `packages.txt` and `cloud-init-output.log` in `baas jobs download`, i.e. no upload was denied
-- [ ] 5.2 Build the reactor CLI as a released version (`mvn versions:set -DnewVersion=<latest release>` in a scratch worktree, never committed) so it seeds from that release; on the second deployment, with `releases/<version>/` absent, start two `baas run --detach` in the same second; verify exactly one seed write lands, the other logs the refusal, and both jobs complete
-- [ ] 5.3 `aws iam simulate-principal-policy` against `<prefix>-role-runner`: verify `s3:PutObject` on `releases/x`, `s3:DeleteObject` on `jobs/x` and `s3:ListBucket` are denied while `s3:PutObject` on `jobs/x` and `s3:GetObject` on `releases/x` are allowed; against `<prefix>-role-operator`, verify `s3:DeleteObject` is denied
-- [ ] 5.4 `baas admin deployment teardown` of the second deployment; verify the stack and its `~/.baas/deployments/<name>.yaml` are gone (teardown's bucket emptying still works under the deployer)
-- [ ] 5.5 Record 5.1–5.4 in `verify.md` in the change directory
+- [x] 5.1 On a second deployment (infra/README.md, *A second deployment*): `baas admin deployment setup` with the reactor CLI, `baas admin image build`, then a `jmh-with-async` run of `fake-jmh-benchmarks` and a JCStress sanity run; verify both complete with flame graph, `logs/async-output/`, `environment.json`, `packages.txt` and `cloud-init-output.log` in `baas jobs download`, i.e. no upload was denied
+- [x] 5.2 Build the reactor CLI as a released version (`mvn versions:set -DnewVersion=<latest release>` in a scratch worktree, never committed) so it seeds from that release; on the second deployment, with `releases/<version>/` absent, start two `baas run --detach` in the same second; verify exactly one seed write lands, the other logs the refusal, and both jobs complete
+- [x] 5.3 `aws iam simulate-principal-policy` against `<prefix>-role-runner`: verify `s3:PutObject` on `releases/x`, `s3:DeleteObject` on `jobs/x` and `s3:ListBucket` are denied while `s3:PutObject` on `jobs/x` and `s3:GetObject` on `releases/x` are allowed; against `<prefix>-role-operator`, verify `s3:DeleteObject` is denied
+- [x] 5.4 `baas admin deployment teardown` of the second deployment; verify the stack and its `~/.baas/deployments/<name>.yaml` are gone (teardown's bucket emptying still works under the deployer)
+- [x] 5.5 Record 5.1–5.4 in `verify.md` in the change directory
 
 ## 6. Verify
 
-- [ ] 6.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
+- [x] 6.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
