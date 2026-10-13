@@ -151,7 +151,7 @@ SHALL NOT enable `git.resolveProject`.
   asserts them from the JSON `tags` object returned by `baas results query --job-id`
 
 #### Scenario: CI does not depend on git derivation
-- **WHEN** the self-test runs with a fresh configuration written by `baas config sync`
+- **WHEN** the self-test runs with no configuration file on the CI machine
 - **THEN** the job succeeds without `git.resolveProject` being set
 
 ### Requirement: The self-test also covers JCStress, in sanity mode
@@ -174,3 +174,17 @@ test whose outcome depends on whether a data race fires.
 #### Scenario: A racing fixture does not make CI flaky
 - **WHEN** the fixture's forbidden outcome fires in one job and not in another
 - **THEN** both jobs pass the self-test, since no assertion depends on the pass or fail counts
+
+### Requirement: Continuous integration names its deployment only through the operator role
+A continuous-integration job SHALL configure only the operator role to federate into and a region for
+the credential exchange. It SHALL NOT run `baas config sync`, pass `--deployment`, or hold a
+repository variable naming the deployment: the CLI takes the deployment from the operator role the job
+federated into, and the deployment's region from its bucket.
+
+#### Scenario: The workflow carries no deployment name
+- **WHEN** `e2e-cloud-test.yml` is inspected
+- **THEN** it contains no `config sync` step, no `--deployment` and no reference to `CORE_STACK_NAME`
+
+#### Scenario: A region mismatch does not misdirect CI
+- **WHEN** the CI job's `AWS_REGION` differs from the region the deployment was created in
+- **THEN** the job runs on the deployment in its own region

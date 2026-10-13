@@ -117,7 +117,7 @@ Live checks use the reactor JAR against `baas-development` (`java -jar baas-cli/
 - [x] 8.1 Remove both `config sync` steps from `e2e-cloud-test.yml` and every `CORE_STACK_NAME`
   reference; keep `OPERATOR_ROLE_ARN` and `AWS_REGION`. Verify by grep, and by the PR's own e2e run
   going green on both jobs (`benchmark`, `jcstress`) with no configuration file.
-- [ ] 8.2 After merge into `next-release`, delete the `CORE_STACK_NAME` repository variable
+- [x] 8.2 After merge into `next-release`, delete the `CORE_STACK_NAME` repository variable — deleted 2026-10-13, after v7.1.0 reached `main` (no workflow there read it)
   (`gh variable delete CORE_STACK_NAME`) — only after confirming no workflow on `main` still reads it;
   if `main` does, defer the deletion until `next-release` reaches `main` and record that in `verify.md`.
 
