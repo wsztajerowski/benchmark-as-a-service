@@ -88,8 +88,8 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
         }
         byGroup.put("", new LinkedHashMap<>());
         for (String key : keys) {
-            String left = a.fields().getOrDefault(key, "");
-            String right = b.fields().getOrDefault(key, "");
+            String left = compared(key, a.fields().getOrDefault(key, ""));
+            String right = compared(key, b.fields().getOrDefault(key, ""));
             if (left.equals(right)) {
                 continue;
             }
@@ -100,6 +100,26 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
         }
         byGroup.values().removeIf(Map::isEmpty);
         return byGroup;
+    }
+
+    /** Memory fields the manifest records in KiB, compared and shown in whole MiB. */
+    private static final Set<String> KIB_FIELDS = Set.of("memory.totalKb", "memory.swapTotalKb");
+
+    /**
+     * The value a field is compared as. Two instances of one type report {@code MemTotal} a few KiB
+     * apart (15882372 vs 15882380 on {@code c5.2xlarge}), which is no difference for a measurement,
+     * so memory is compared in whole MiB, rounded down. A value that is not a number is compared as
+     * it is, so a malformed manifest still shows what it holds. The manifest itself keeps KiB.
+     */
+    private static String compared(String key, String value) {
+        if (!KIB_FIELDS.contains(key) || value.isBlank()) {
+            return value;
+        }
+        try {
+            return Long.parseLong(value.strip()) / 1024 + " MiB";
+        } catch (NumberFormatException e) {
+            return value;
+        }
     }
 
     public record Difference(String left, String right) {
