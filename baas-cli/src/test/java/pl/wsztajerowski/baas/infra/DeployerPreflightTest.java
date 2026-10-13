@@ -79,51 +79,116 @@ class DeployerPreflightTest {
 
     @Test
     void aDeniedActionIsReportedOnceAndAllowedOnesNot() {
-        var iam = new FakeIam(request -> request.actionNames().contains("sts:AssumeRole"));
+        var iam = new FakeIam(action -> action.equals("sts:AssumeRole"));
 
         var denied = new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
 
         assertThat(denied).containsExactly("sts:AssumeRole");
-        assertThat(iam.requests).hasSize(probes().size())
-            .allSatisfy(request -> {
-                assertThat(request.actionNames()).hasSize(1);
-                assertThat(request.policySourceArn()).isEqualTo(CALLER);
-            });
+        assertThat(iam.requests).allSatisfy(request -> assertThat(request.policySourceArn()).isEqualTo(CALLER));
+        assertThat(iam.requests.stream().flatMap(request -> request.actionNames().stream()).toList())
+            .as("every probed action is asked about exactly once")
+            .containsExactlyInAnyOrderElementsOf(probes().stream().map(DeployerPreflight.Probe::action).toList());
+    }
+
+    /**
+     * A statement goes in one call, so 56 actions take a handful of calls. IAM throttles this API
+     * hard: one call per action took ~26 s live.
+     */
+    @Test
+    void eachStatementTakesAtMostTwoCalls() {
+        var iam = new FakeIam(action -> false);
+
+        new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
+
+        assertThat(iam.refused).as("wildcard and plain actions are never mixed").isZero();
+        assertThat(iam.requests).hasSize(13);
+    }
+
+    /**
+     * IAM refuses one call mixing actions that "require different authorization information"
+     * (iam:Get* beside iam:CreateRole, found live): the call is split until IAM accepts it, and a
+     * denial inside a split part is still found.
+     */
+    @Test
+    void aRefusedMixIsSplitAndStillJudgedPerAction() {
+        var iam = new FakeIam(action -> action.equals("iam:UpdateRole"));
+        iam.refuseMixesOf = "iam:";
+
+        var denied = new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
+
+        assertThat(denied).containsExactly("iam:UpdateRole");
+        assertThat(iam.refused).isPositive();
     }
 
     @Test
     void aFullyAttachedPolicyReportsNothing() {
-        assertThat(new DeployerPreflight(new FakeIam(request -> false)).simulate(CALLER, renderedPolicy())).isEmpty();
+        assertThat(new DeployerPreflight(new FakeIam(action -> false)).simulate(CALLER, renderedPolicy())).isEmpty();
     }
 
     /** A caller that may not simulate gets no check, as before: the preflight is an affordance. */
     @Test
     void aCallerThatMayNotSimulateGetsNoCheck() {
-        var iam = new FakeIam(request -> {
-            throw (IamException) IamException.builder()
-                .awsErrorDetails(AwsErrorDetails.builder().errorCode("AccessDenied").build()).build();
-        });
+        var iam = new FakeIam(action -> false);
+        iam.failure = "AccessDenied";
 
         assertThat(new DeployerPreflight(iam).simulate(CALLER, renderedPolicy())).isEmpty();
     }
 
-    /** Answers every simulation from {@code denies}: one evaluation result per request. */
-    private static final class FakeIam implements IamClient {
-        private final Predicate<SimulatePrincipalPolicyRequest> denies;
-        final List<SimulatePrincipalPolicyRequest> requests = new ArrayList<>();
+    /** IAM throttles SimulatePrincipalPolicy hard: a throttled call waits and asks again. */
+    @Test
+    void aThrottledCallIsAskedAgainRatherThanTurningTheCheckOff() {
+        var iam = new FakeIam(action -> action.equals("sts:AssumeRole"));
+        iam.throttleOnce = "sts:AssumeRole";
 
-        FakeIam(Predicate<SimulatePrincipalPolicyRequest> denies) {
+        assertThat(new DeployerPreflight(iam).simulate(CALLER, renderedPolicy())).containsExactly("sts:AssumeRole");
+    }
+
+    /**
+     * Answers each action of a simulation from {@code denies}. Like IAM, it refuses a call mixing a
+     * wildcard action with a plain one (the "different authorization information" case).
+     */
+    private static final class FakeIam implements IamClient {
+        private final Predicate<String> denies;
+        final List<SimulatePrincipalPolicyRequest> requests = new ArrayList<>();
+        /** Refuses any multi-action call for actions of this prefix: a mix IAM refuses on some other line. */
+        String refuseMixesOf;
+        int refused;
+        String failure;
+        String throttleOnce;
+
+        FakeIam(Predicate<String> denies) {
             this.denies = denies;
         }
 
         @Override
         public SimulatePrincipalPolicyResponse simulatePrincipalPolicy(SimulatePrincipalPolicyRequest request) {
+            if (failure != null) {
+                throw error(failure);
+            }
+            if (throttleOnce != null && request.actionNames().contains(throttleOnce)) {
+                throttleOnce = null;
+                throw error("Throttling");
+            }
+            boolean anyWildcard = request.actionNames().stream().anyMatch(action -> action.contains("*"));
+            boolean anyPlain = request.actionNames().stream().anyMatch(action -> !action.contains("*"));
+            boolean refusedHere = refuseMixesOf != null && request.actionNames().size() > 1
+                && request.actionNames().getFirst().startsWith(refuseMixesOf);
+            if ((anyWildcard && anyPlain) || refusedHere) {
+                refused++;
+                throw error("InvalidInput");
+            }
             requests.add(request);
-            String decision = denies.test(request) ? "implicitDeny" : "allowed";
             return SimulatePrincipalPolicyResponse.builder()
-                .evaluationResults(EvaluationResult.builder()
-                    .evalActionName(request.actionNames().getFirst()).evalDecision(decision).build())
+                .evaluationResults(request.actionNames().stream()
+                    .map(action -> EvaluationResult.builder().evalActionName(action)
+                        .evalDecision(denies.test(action) ? "implicitDeny" : "allowed").build())
+                    .toList())
                 .build();
+        }
+
+        private static IamException error(String code) {
+            return (IamException) IamException.builder().statusCode(400)
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode(code).build()).build();
         }
 
         @Override
