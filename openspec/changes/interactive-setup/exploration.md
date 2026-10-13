@@ -2,7 +2,7 @@
 
 Explored 2026-10-10 → 2026-10-13 with the user, from the live end-to-end test of v7.0.0
 (`archive/2026-10-12-pr83-review-fixes/verify.md`, *Full end-to-end test*), re-grounded on `main` at
-v7.1.1. It builds on [`setup-prerequisites`](../setup-prerequisites/exploration.md): the derived
+v7.1.1. It builds on [`setup-prerequisites`](../archive/2026-10-13-setup-prerequisites/exploration.md): the derived
 preflight, `--policy-file`, and the removal of existing-VPC support land there first. Next step:
 `/opsx:propose interactive-setup`, after `setup-prerequisites` is proposed.
 

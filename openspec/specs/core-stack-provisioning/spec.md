@@ -225,7 +225,10 @@ SHALL then identify the source with `sts:GetCallerIdentity` and:
   source's own account, and keep those credentials valid for as long as the command runs.
 
 When the assumption fails, the command SHALL fail naming the role and the source, and SHALL NOT make
-any further call with the source credentials. `baas admin` commands SHALL use their source —
+any further call with the source credentials. When the source was `aws.deployerProfile` and the
+assumption was denied, the failure SHALL also say that the deployer policy attached to that identity
+may predate this CLI, and name the `baas --deployment <name> admin deployment setup --policy-file
+<file>` command that renders the current one. `baas admin` commands SHALL use their source —
 `aws.deployerProfile`, else the default credential chain — as is, and SHALL NOT assume the operator
 role.
 
@@ -240,6 +243,14 @@ role.
 #### Scenario: A failed assumption stops the command
 - **WHEN** the source credentials may not assume `<name>-role-operator` and `baas jobs list` is invoked
 - **THEN** the command exits non-zero naming the role and the source, and makes no EC2, S3, DynamoDB or CloudFormation call
+
+#### Scenario: A deployer denied the assumption is pointed at a stale policy
+- **WHEN** the configuration has `aws.deployerProfile: baas-admin` and no `aws.operatorProfile`, `baas-admin`'s attached policy has no `sts:AssumeRole` on `<name>-role-operator`, and `baas jobs list` is invoked
+- **THEN** the command exits non-zero naming the role and `baas-admin`, says the attached deployer policy may predate this CLI, and names `baas --deployment <name> admin deployment setup --policy-file <file>`
+
+#### Scenario: An operator profile denied the assumption gets no policy hint
+- **WHEN** `aws.operatorProfile: teammate` may not assume `<name>-role-operator` and `baas jobs list` is invoked
+- **THEN** the command exits non-zero naming the role and `teammate`, and does not mention the deployer policy
 
 #### Scenario: Another deployment's operator role is refused
 - **WHEN** `baas --deployment wiktor-dev results query` runs with credentials for the assumed role `baas-123456789012-role-operator`
@@ -441,21 +452,6 @@ endpoint, because it carries no hourly charge.
 - **WHEN** the deployed security group's egress rules are inspected
 - **THEN** no rule covers port 27017
 
-### Requirement: The image build and the runner do not share a security group
-When the stack creates its own networking, `RunnerImageInfrastructure` SHALL use a dedicated
-`ImageBuildSecurityGroup` permitting outbound TCP 443 and 80, and `RunnerSecurityGroup` SHALL permit
-outbound TCP 443 only. Under `UseExistingVpc` both SHALL use `ExistingSecurityGroupId`, and the stack
-SHALL NOT create a security group in the existing VPC. `RunnerSecurityGroup`'s `GroupDescription` SHALL
-NOT change, since editing it replaces the group.
-
-#### Scenario: Port 80 is the build's alone
-- **WHEN** the two groups' egress rules are inspected on a stack that created its networking
-- **THEN** the build group covers 443 and 80, and the runner group covers 443 and nothing else
-
-#### Scenario: An existing VPC keeps the operator's group
-- **WHEN** the stack is deployed with `UseExistingVpc=true`
-- **THEN** no security group resource is created and the build instance uses `ExistingSecurityGroupId`
-
 ### Requirement: The runner can write results but not read them
 `RunnerRole` SHALL be granted `dynamodb:PutItem` and `dynamodb:BatchWriteItem` on the results table ARN
 restricted to `RESULT#` partitions, and `dynamodb:UpdateItem` restricted to the `JOB` partition, and
@@ -647,25 +643,6 @@ its name carries.
 - **WHEN** the stack creates the Image Builder component, recipe, infrastructure configuration, distribution configuration and pipeline
 - **THEN** no two of them share a name
 
-### Requirement: VPC parameters are immutable once the deployment exists
-`baas admin deployment setup` SHALL honour `--use-existing-vpc` and its accompanying VPC, subnet and security
-group options when it creates a deployment. When the deployment already exists, it SHALL
-compare the submitted networking parameters against the deployed ones and SHALL refuse the update
-if they differ, naming both values and submitting nothing. Omitting the options entirely SHALL carry
-the deployed values forward.
-
-#### Scenario: Re-setup without networking options preserves existing networking
-- **WHEN** `baas admin deployment setup` runs against a deployment that was created with `--use-existing-vpc`, and names no networking options
-- **THEN** the deployed networking parameters are carried forward and no new VPC is created
-
-#### Scenario: Re-setup with different networking is refused
-- **WHEN** `baas admin deployment setup --use-existing-vpc --vpc-id vpc-999 ...` runs against a deployment set up against `vpc-123`
-- **THEN** the command exits with an error naming both the deployed and the submitted values, and no stack update is submitted
-
-#### Scenario: Re-setup with identical networking proceeds
-- **WHEN** `baas admin deployment setup` repeats exactly the networking options the deployment was set up with
-- **THEN** the update proceeds normally
-
 ### Requirement: Teardown retires the runner image
 After the core stack is deleted, `baas admin deployment teardown` SHALL retire the deployment's runner image,
 unconditionally and with no option to keep it:
@@ -777,13 +754,30 @@ rather than met with a policy for a second one — `baas admin deployment setup`
 the deployer policy for the deployment it is about to create or update — the account from
 `sts:GetCallerIdentity`, the region from `--region` or its default, the name resolved as
 *A deployment is named by its prefix, derived from the account by default* states — and, where the
-caller may call `iam:SimulatePrincipalPolicy`, check the
-caller's rights against it. When rights are missing it SHALL print the rendered policy to standard
-output, state on standard error which actions are missing and that the policy must be attached before
-re-running, create nothing, and exit non-zero. When rights are present, or cannot be checked, it SHALL
-proceed; an `AccessDenied` during the deployment SHALL still be reported together with the rendered
-policy. There SHALL be no separate command that prints the policy, and no option to render it for
-another account.
+caller may call `iam:SimulatePrincipalPolicy`, check the caller's rights against it.
+
+The check SHALL cover every statement of the rendered policy that carries no `Condition`, simulating
+that statement's actions against its resources exactly as the rendered document names them, wildcard
+actions and pattern resources included. It SHALL NOT rely on a list of actions maintained apart from
+the policy, so a statement added to the policy is checked in the release that adds it.
+
+With `--policy-file <path>`, setup SHALL write the rendered policy to that path before acting on the
+check's result, whether or not rights are missing, and then continue exactly as it would without the
+option.
+
+When rights are missing it SHALL print the rendered policy to standard output, state on standard
+error which actions are missing and that the policy must be attached before re-running, name the file
+when `--policy-file` was given, create nothing, and exit non-zero. Whenever it reports missing rights
+it SHALL also print, on standard error, the commands an IAM administrator runs to attach the policy
+as a customer-managed policy named `BaasCliDeployerPolicy-<deployment>`, with the account, the policy
+name and the caller filled in: one set for a first attachment and one for publishing a new version
+of an existing policy.
+
+When rights are present, or cannot be checked, it SHALL proceed. A permission failure during the
+deployment SHALL still be reported together with the rendered policy, or with the path of the file
+when `--policy-file` was given, whether the failure comes back from an AWS API call made by setup or
+is reported by CloudFormation in the stack's events. There SHALL be no separate command that prints
+the policy, and no option to render it for another account.
 
 #### Scenario: Missing rights stop setup before anything is created
 - **WHEN** an identity without the deployer policy runs `baas admin deployment setup`
@@ -805,6 +799,30 @@ another account.
 #### Scenario: A named deployment's policy names that deployment
 - **WHEN** `baas --deployment wiktor-dev admin deployment setup --region us-east-1` runs for an identity holding only the default deployment's policy
 - **THEN** the printed policy's resources are scoped to `wiktor-dev` in `us-east-1`, and nothing is created
+
+#### Scenario: A statement newer than the attached policy is caught
+- **WHEN** the attached policy lacks one statement the rendered policy has, such as `AssumeOwnOperatorRole`, and setup runs
+- **THEN** the check names that statement's missing action, nothing is created, and the exit code is non-zero
+
+#### Scenario: Wildcard actions and pattern resources are checked as written
+- **WHEN** the rendered policy grants `ec2:Describe*` on `*` and an Image Builder action on `…:component/<prefix>-*`
+- **THEN** both are simulated with exactly those action names and resources, and a caller lacking either is reported missing it
+
+#### Scenario: The policy file is written when rights are present
+- **WHEN** an identity holding the rendered policy runs `baas admin deployment setup --policy-file p.json`
+- **THEN** `p.json` holds the rendered policy and the deployment is created or updated
+
+#### Scenario: The policy file is written when rights are missing
+- **WHEN** an identity without the deployer policy runs `baas admin deployment setup --policy-file p.json`
+- **THEN** `p.json` holds the rendered policy, standard error names the file and the administrator's commands, nothing is created, and the exit code is non-zero
+
+#### Scenario: The administrator's commands are filled in
+- **WHEN** setup reports missing rights for deployment `baas-development` in account `381492019823`
+- **THEN** standard error shows an `aws iam create-policy` with policy name `BaasCliDeployerPolicy-baas-development`, an attach command for the caller, and an `aws iam create-policy-version … --set-as-default` for `arn:aws:iam::381492019823:policy/BaasCliDeployerPolicy-baas-development`
+
+#### Scenario: A permission failure inside the stack is reported with the policy
+- **WHEN** a deployment fails because CloudFormation reports a resource failed with a not-authorised reason
+- **THEN** setup's report names that resource and reason and also prints the rendered policy, or names the `--policy-file` path when one was given, and the exit code is non-zero
 
 ### Requirement: A deployment is named by its prefix, derived from the account by default
 `baas admin deployment setup` SHALL create or update the deployment named by `--deployment`, using
@@ -910,3 +928,17 @@ SHALL still fit the inline-policy budget test.
 #### Scenario: Another deployment's operator role is not granted
 - **WHEN** the deployer policy rendered for `baas-123456789012` is inspected
 - **THEN** its only `sts:AssumeRole` resource is `arn:aws:iam::<account>:role/baas-123456789012-role-operator`
+
+### Requirement: The image build and the runner use separate groups in the stack's own VPC
+`RunnerImageInfrastructure` SHALL use a dedicated `ImageBuildSecurityGroup` permitting outbound TCP 443
+and 80, and `RunnerSecurityGroup` SHALL permit outbound TCP 443 only. The stack SHALL create both
+groups in the VPC it creates. `RunnerSecurityGroup`'s `GroupDescription` SHALL NOT change, since
+editing it replaces the group.
+
+#### Scenario: Port 80 is the build's alone
+- **WHEN** the two groups' egress rules are inspected
+- **THEN** the build group covers 443 and 80, and the runner group covers 443 and nothing else
+
+#### Scenario: No operator-supplied group is accepted
+- **WHEN** the core template's parameters are inspected
+- **THEN** it declares no parameter naming an existing VPC, subnet or security group, and no condition choosing between created and supplied networking
