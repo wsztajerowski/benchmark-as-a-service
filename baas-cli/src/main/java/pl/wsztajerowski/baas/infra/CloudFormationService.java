@@ -21,6 +21,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 public class CloudFormationService {
@@ -69,11 +70,11 @@ public class CloudFormationService {
      * Updates an existing stack, changing only the named parameters and carrying every other one
      * forward with {@code UsePreviousValue}.
      *
-     * <p>{@code baas admin image build} owns three parameters and knows nothing about the rest. A
-     * plain create-style call would send only what it knows, and CloudFormation
-     * fills the remainder from template defaults — which for a stack deployed with
-     * {@code --use-existing-vpc} means {@code UseExistingVpc} silently flips back to "false" and
-     * the update starts building a VPC over someone's existing networking.
+     * <p>{@code baas admin image build} owns a few parameters and knows nothing about the rest. A
+     * plain create-style call would send only what it knows, and CloudFormation would fill the
+     * remainder from template defaults — which for the federation parameters means a build
+     * silently revokes CI's access. A deployed parameter the template no longer declares is not
+     * sent at all.
      */
     public void updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
@@ -82,8 +83,16 @@ public class CloudFormationService {
         // has to be recognised, before CloudFormation answers with its own less useful rejection.
         requireUpdatable(stack);
 
+        // Only what the new template declares: CloudFormation refuses the whole update when it is
+        // sent a parameter the template no longer has, and it drops an undeclared one by itself.
+        // Removing UseExistingVpc and its three companions (setup-prerequisites) is what made this
+        // matter — every existing stack still carries them.
+        Set<String> declared = declaredParameters(templateBody);
         var keys = new java.util.LinkedHashSet<String>();
-        stack.parameters().forEach(parameter -> keys.add(parameter.parameterKey()));
+        stack.parameters().stream()
+            .map(Parameter::parameterKey)
+            .filter(declared::contains)
+            .forEach(keys::add);
         keys.addAll(changed.keySet());
 
         List<Parameter> cfParams = keys.stream()
@@ -143,12 +152,44 @@ public class CloudFormationService {
         try {
             waiter.run();
         } catch (SdkClientException e) {
-            throw new IllegalStateException(failureReport(stackName, operation), e);
+            throw failureReport(stackName, operation, e);
         }
     }
 
-    private String failureReport(String stackName, String operation) {
+    /**
+     * A stack operation that failed, with whether its root cause is a permission the caller lacks.
+     * Setup hands over the deployer policy for that case alone — most failures (a taken name, a
+     * quota, an image version clash) have nothing to do with the policy, and printing it would
+     * point the reader at the wrong cause.
+     */
+    public static final class StackOperationException extends IllegalStateException {
+        private final boolean permissionFailure;
+
+        StackOperationException(String message, boolean permissionFailure, Throwable cause) {
+            super(message, cause);
+            this.permissionFailure = permissionFailure;
+        }
+
+        public boolean permissionFailure() {
+            return permissionFailure;
+        }
+    }
+
+    /**
+     * Whether a stack event's reason is a denied permission, in any of the shapes CloudFormation
+     * relays from the services this stack calls: IAM's "is not authorized to perform", EC2's "You are
+     * not authorized to perform this operation" and {@code UnauthorizedOperation}, an
+     * {@code AccessDenied} code, and S3's "Access Denied" (setup-prerequisites task 1.2).
+     */
+    static boolean isPermissionFailure(String reason) {
+        String lower = reason.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("not authorized to perform") || lower.contains("accessdenied")
+            || lower.contains("access denied") || lower.contains("unauthorizedoperation");
+    }
+
+    private StackOperationException failureReport(String stackName, String operation, Throwable cause) {
         var report = new StringBuilder("Stack " + stackName + " failed to " + operation + ".");
+        boolean permission = false;
         try {
             var events = cf.describeStackEvents(r -> r.stackName(stackName)).stackEvents();
 
@@ -170,6 +211,7 @@ public class CloudFormationService {
                 .toList();
 
             // Events come back newest-first, so the last one is the root cause.
+            permission = failures.stream().anyMatch(event -> isPermissionFailure(event.resourceStatusReason()));
             for (int i = failures.size() - 1; i >= 0; i--) {
                 report.append(System.lineSeparator())
                     .append("  ").append(failures.get(i).logicalResourceId())
@@ -183,8 +225,38 @@ public class CloudFormationService {
             report.append(System.lineSeparator())
                 .append("  (could not read stack events: ").append(e.getMessage()).append(')');
         }
-        return report.toString();
+        return new StackOperationException(report.toString(), permission, cause);
     }
+
+    /**
+     * The parameter names a template declares: the keys of its top-level {@code Parameters:} block.
+     * Read by indentation rather than by a YAML parser, because CloudFormation's short-form tags
+     * ({@code !Ref}, {@code !If}) need a custom constructor to parse at all; the only template this
+     * class submits is the bundled one, and a test pins this read against a full parse of it.
+     */
+    static Set<String> declaredParameters(String templateBody) {
+        Set<String> names = new java.util.LinkedHashSet<>();
+        boolean inParameters = false;
+        for (String line : templateBody.split("\\R")) {
+            if (line.isBlank() || line.stripLeading().startsWith("#")) {
+                continue;
+            }
+            boolean topLevel = !Character.isWhitespace(line.charAt(0));
+            if (topLevel) {
+                inParameters = line.startsWith("Parameters:");
+                continue;
+            }
+            var key = PARAMETER_KEY.matcher(line);
+            if (inParameters && key.matches()) {
+                names.add(key.group(1));
+            }
+        }
+        return names;
+    }
+
+    /** A key indented exactly two spaces under {@code Parameters:}. */
+    private static final java.util.regex.Pattern PARAMETER_KEY =
+        java.util.regex.Pattern.compile("^  ([A-Za-z0-9]+):\\s*(#.*)?$");
 
     public Map<String, String> getStackOutputs(String stackName) {
         return describeStack(stackName)
@@ -194,9 +266,8 @@ public class CloudFormationService {
     }
 
     /**
-     * The parameters a deployed stack currently carries. {@code baas admin deployment setup} compares the
-     * networking ones against what an invocation submits, so a change is refused before anything
-     * reaches CloudFormation rather than discovered as a replaced subnet afterwards.
+     * The parameters a deployed stack currently carries: setup reads the deployed image and
+     * federation values from them before an update.
      */
     public Map<String, String> getStackParameters(String stackName) {
         return describeStack(stackName)

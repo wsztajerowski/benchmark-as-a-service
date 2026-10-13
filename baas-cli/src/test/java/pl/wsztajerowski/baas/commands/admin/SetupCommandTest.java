@@ -220,65 +220,16 @@ class SetupCommandTest {
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
-    // ─── Networking is immutable once the deployment exists ───────────────────
+    // ─── Existing-VPC support is removed ─────────────────────────────────────────
 
-    @Test
-    void namingNoNetworkingOptionsSubmitsNoNetworkingParameters() {
-        assertThat(parsed().networkingParameters()).isEmpty();
-    }
+    /** Every deployment uses the VPC its own stack creates (setup-prerequisites). */
+    @ParameterizedTest
+    @ValueSource(strings = {"--use-existing-vpc", "--vpc-id", "--subnet-id", "--sg-id"})
+    void theExistingVpcOptionsAreGone(String removed) {
+        CommandLine cmd = new CommandLine(new SetupCommand());
 
-    @Test
-    void namingNetworkingOptionsSubmitsAllFour() {
-        var submitted = parsed("--use-existing-vpc", "--vpc-id", "vpc-123",
-            "--subnet-id", "subnet-123", "--sg-id", "sg-123").networkingParameters();
-
-        assertThat(submitted).containsExactlyInAnyOrderEntriesOf(Map.of(
-            "UseExistingVpc", "true",
-            "ExistingVpcId", "vpc-123",
-            "ExistingSubnetId", "subnet-123",
-            "ExistingSecurityGroupId", "sg-123"));
-    }
-
-    /**
-     * The failure this closes: {@code SetupCommand} used to send these four unconditionally, so a
-     * teammate's plain {@code baas admin deployment setup} against a shared deployment set up with
-     * {@code --use-existing-vpc} submitted {@code UseExistingVpc=false} and rebuilt the networking
-     * underneath everyone.
-     */
-    @Test
-    void anUpdateThatWouldChangeNetworkingIsRefused() {
-        Map<String, String> deployed = Map.of(
-            "UseExistingVpc", "true",
-            "ExistingVpcId", "vpc-123",
-            "ExistingSubnetId", "subnet-123",
-            "ExistingSecurityGroupId", "sg-123");
-        Map<String, String> submitted = Map.of(
-            "UseExistingVpc", "true",
-            "ExistingVpcId", "vpc-999",
-            "ExistingSubnetId", "subnet-123",
-            "ExistingSecurityGroupId", "sg-123");
-
-        assertThatThrownBy(() -> SetupCommand.requireNetworkingUnchanged(submitted, deployed))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("ExistingVpcId")
-            .hasMessageContaining("vpc-123")
-            .hasMessageContaining("vpc-999");
-    }
-
-    @Test
-    void anUpdateRepeatingTheDeployedNetworkingProceeds() {
-        Map<String, String> deployed = Map.of("UseExistingVpc", "true", "ExistingVpcId", "vpc-123");
-
-        assertThatCode(() -> SetupCommand.requireNetworkingUnchanged(deployed, deployed))
-            .doesNotThrowAnyException();
-    }
-
-    @Test
-    void anUpdateNamingNoNetworkingProceedsWhateverIsDeployed() {
-        Map<String, String> deployed = Map.of("UseExistingVpc", "true", "ExistingVpcId", "vpc-123");
-
-        assertThatCode(() -> SetupCommand.requireNetworkingUnchanged(Map.of(), deployed))
-            .doesNotThrowAnyException();
+        assertThatThrownBy(() -> cmd.parseArgs(removed, "x"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
     @Test
@@ -367,24 +318,6 @@ class SetupCommandTest {
             .isEmpty();
     }
 
-    // ─── U34: networking ids belong to --use-existing-vpc ────────────────────────
-
-    @Test
-    void networkingIdsWithoutTheFlagAreRefusedNotIgnored() {
-        assertThatThrownBy(parsed("--vpc-id", "vpc-1")::validateNetworkingOptions)
-            .isInstanceOf(CommandLine.ParameterException.class)
-            .hasMessageContaining("--use-existing-vpc");
-    }
-
-    @Test
-    void theFlagStillNeedsAllThreeIds() {
-        assertThatThrownBy(parsed("--use-existing-vpc", "--vpc-id", "vpc-1")::validateNetworkingOptions)
-            .isInstanceOf(CommandLine.ParameterException.class);
-        assertThatCode(parsed("--use-existing-vpc", "--vpc-id", "v", "--subnet-id", "s", "--sg-id", "g")
-            ::validateNetworkingOptions).doesNotThrowAnyException();
-        assertThatCode(parsed()::validateNetworkingOptions).doesNotThrowAnyException();
-    }
-
     // ─── The deployer policy is a step of setup ──────────────────────────────────
 
     @Test
@@ -394,7 +327,7 @@ class SetupCommandTest {
         new CommandLine(command).setOut(new java.io.PrintWriter(out, true));
 
         Integer exit = command.refusalForMissingRights(java.util.List.of("cloudformation:CreateStack"),
-            "{\"Version\":\"2012-10-17\"}", "123456789012", "eu-central-1", "baas-123456789012");
+            "{\"Version\":\"2012-10-17\"}", "123456789012", "eu-central-1", "baas-123456789012", USER);
 
         assertThat(exit).isEqualTo(1);
         assertThat(out.toString().strip()).isEqualTo("{\"Version\":\"2012-10-17\"}");
@@ -402,6 +335,113 @@ class SetupCommandTest {
 
     @Test
     void sufficientOrUncheckableRightsCarryOn() {
-        assertThat(new SetupCommand().refusalForMissingRights(java.util.List.of(), "{}", "1", "r", "d")).isNull();
+        assertThat(new SetupCommand().refusalForMissingRights(java.util.List.of(), "{}", "1", "r", "d", USER)).isNull();
+    }
+
+    private static final String USER = "arn:aws:iam::381492019823:user/baas-admin-wiktor";
+
+    /**
+     * 7.1's AssumeOwnOperatorRole, the third statement a stale policy slipped past: with the
+     * probes derived from the policy, a caller lacking only it is refused before anything exists.
+     */
+    @Test
+    void aStatementNewerThanTheAttachedPolicyIsCaught() {
+        String policy = new pl.wsztajerowski.baas.infra.DeployerPolicyRenderer()
+            .render("381492019823", "us-east-1", "baas-development");
+        var denied = new pl.wsztajerowski.baas.infra.DeployerPreflight(new DenyingIam("sts:AssumeRole"))
+            .simulate(USER, policy);
+        var command = new SetupCommand();
+        new CommandLine(command).setOut(new java.io.PrintWriter(new java.io.StringWriter(), true));
+
+        assertThat(denied).containsExactly("sts:AssumeRole");
+        assertThat(command.refusalForMissingRights(denied, policy, "381492019823", "us-east-1",
+            "baas-development", USER)).isEqualTo(1);
+    }
+
+    @Test
+    void theAdministratorsCommandsAreFilledInForAUser() {
+        String commands = SetupCommand.administratorCommands("381492019823", "baas-development", USER, "p.json");
+
+        assertThat(commands)
+            .contains("aws iam create-policy --policy-name BaasCliDeployerPolicy-baas-development --policy-document file://p.json")
+            .contains("aws iam attach-user-policy --user-name baas-admin-wiktor "
+                + "--policy-arn arn:aws:iam::381492019823:policy/BaasCliDeployerPolicy-baas-development")
+            .contains("aws iam create-policy-version --policy-arn "
+                + "arn:aws:iam::381492019823:policy/BaasCliDeployerPolicy-baas-development "
+                + "--policy-document file://p.json --set-as-default");
+    }
+
+    @Test
+    void anAssumedRoleGetsARolePolicyAttachment() {
+        assertThat(SetupCommand.administratorCommands("381492019823", "d",
+            "arn:aws:sts::381492019823:assumed-role/platform-admin/alice", "p.json"))
+            .contains("aws iam attach-role-policy --role-name platform-admin");
+    }
+
+    /** IAM Identity Center owns its roles: the policy goes into the permission set. */
+    @Test
+    void anIdentityCenterRoleIsPointedAtItsPermissionSet() {
+        assertThat(SetupCommand.administratorCommands("381492019823", "d",
+            "arn:aws:sts::381492019823:assumed-role/AWSReservedSSO_Admin_0123abcd/alice", "p.json"))
+            .contains("IAM Identity Center")
+            .contains("permission set")
+            .doesNotContain("attach-role-policy");
+    }
+
+    @Test
+    void thePolicyFileHoldsTheRenderedPolicy(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) throws Exception {
+        var file = dir.resolve("p.json");
+        var command = parsed("--policy-file", file.toString());
+
+        assertThat(command.writePolicyFile("{\"Version\":\"2012-10-17\"}")).isTrue();
+        assertThat(java.nio.file.Files.readString(file).strip()).isEqualTo("{\"Version\":\"2012-10-17\"}");
+    }
+
+    @Test
+    void anUnwritablePolicyFileStopsSetup(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        var command = parsed("--policy-file", dir.resolve("missing-directory").resolve("p.json").toString());
+
+        assertThat(command.writePolicyFile("{}")).isFalse();
+    }
+
+    /** With --policy-file the hand-over names the file; stdout still holds only the policy. */
+    @Test
+    void aRefusalWithAPolicyFileKeepsThePolicyAsTheOnlyPayload(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir) {
+        var out = new java.io.StringWriter();
+        var command = parsed("--policy-file", dir.resolve("p.json").toString());
+        new CommandLine(command).setOut(new java.io.PrintWriter(out, true));
+
+        command.refusalForMissingRights(java.util.List.of("iam:CreateRole"), "{\"Version\":\"2012-10-17\"}",
+            "381492019823", "us-east-1", "baas-development", USER);
+
+        assertThat(out.toString().strip()).isEqualTo("{\"Version\":\"2012-10-17\"}");
+    }
+
+    /** Denies exactly one action, allowing every other simulation. */
+    private static final class DenyingIam implements software.amazon.awssdk.services.iam.IamClient {
+        private final String deniedAction;
+
+        DenyingIam(String deniedAction) {
+            this.deniedAction = deniedAction;
+        }
+
+        @Override
+        public software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyResponse simulatePrincipalPolicy(
+            software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyRequest request) {
+            String action = request.actionNames().getFirst();
+            return software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyResponse.builder()
+                .evaluationResults(software.amazon.awssdk.services.iam.model.EvaluationResult.builder()
+                    .evalActionName(action).evalDecision(action.equals(deniedAction) ? "implicitDeny" : "allowed").build())
+                .build();
+        }
+
+        @Override
+        public String serviceName() {
+            return "iam";
+        }
+
+        @Override
+        public void close() {
+        }
     }
 }

@@ -56,10 +56,8 @@ class CoreTemplateTest {
     void theImageBuildHasItsOwnSecurityGroupAndOnlyItKeepsPort80() {
         var groupIds = (List<Object>)
             InfraFixtures.properties(template, "RunnerImageInfrastructure").get("SecurityGroupIds");
-        assertThat(groupIds).hasSize(1);
-        assertThat((List<Object>) groupIds.get(0))
-            .as("!If [CreateNetworking, build group, the operator's existing group]")
-            .containsExactly("CreateNetworking", "ImageBuildSecurityGroup", "ExistingSecurityGroupId");
+        assertThat(groupIds).as("the stack's own build group, never a supplied one")
+            .containsExactly("ImageBuildSecurityGroup");
 
         var runnerEgress = (List<Map<String, Object>>)
             InfraFixtures.properties(template, "RunnerSecurityGroup").get("SecurityGroupEgress");
@@ -68,10 +66,23 @@ class CoreTemplateTest {
         var buildEgress = (List<Map<String, Object>>)
             InfraFixtures.properties(template, "ImageBuildSecurityGroup").get("SecurityGroupEgress");
         assertThat(buildEgress).extracting(rule -> rule.get("FromPort")).containsExactlyInAnyOrder(443, 80);
+    }
 
-        assertThat(InfraFixtures.resource(template, "ImageBuildSecurityGroup").get("Condition"))
-            .as("under --use-existing-vpc no group is created in the operator's VPC")
-            .isEqualTo("CreateNetworking");
+    /**
+     * Every deployment uses the VPC its own stack creates (setup-prerequisites): no parameter can
+     * name an operator's VPC, subnet or group, and no condition chooses between the two.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void noOperatorSuppliedNetworkingIsAccepted() {
+        var parameters = (Map<String, Object>) template.get("Parameters");
+        assertThat(parameters.keySet())
+            .noneMatch(name -> name.startsWith("Existing") || name.equals("UseExistingVpc"));
+        var conditions = (Map<String, Object>) template.get("Conditions");
+        assertThat(conditions).doesNotContainKey("CreateNetworking");
+        var resources = (Map<String, Map<String, Object>>) template.get("Resources");
+        assertThat(resources.values()).noneSatisfy(resource ->
+            assertThat(resource.get("Condition")).isEqualTo("CreateNetworking"));
     }
 
     /**
@@ -481,10 +492,7 @@ class CoreTemplateTest {
         var resource = InfraFixtures.resource(template, "DynamoDbGatewayEndpoint");
         var properties = InfraFixtures.properties(template, "DynamoDbGatewayEndpoint");
 
-        assertThat(resource.get("Condition"))
-            .as("mirrors S3GatewayEndpoint — under UseExistingVpc=true the operator supplies their "
-                + "own networking and the stack creates no endpoint at all")
-            .isEqualTo("CreateNetworking");
+        assertThat(resource).doesNotContainKey("Condition");
         assertThat(properties.get("VpcEndpointType")).isEqualTo("Gateway");
         assertThat(String.valueOf(properties.get("ServiceName"))).contains("dynamodb");
     }

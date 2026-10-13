@@ -152,8 +152,9 @@ public final class OperatorSession {
             throw new OperatorRoleException("""
                 Cannot assume %s from %s (%s): %s
                   Nothing was done. That identity needs sts:AssumeRole on the role — ask the deployment's admin,
-                  or choose another source: baas --deployment %s config set --operator-aws-profile <profile>"""
-                .formatted(roleArn, sourceDescription(), identity.arn(), e.getMessage(), name), e);
+                  or choose another source: baas --deployment %s config set --operator-aws-profile <profile>%s"""
+                .formatted(roleArn, sourceDescription(), identity.arn(), e.getMessage(), name,
+                    stalePolicyHint(e, name)), e);
         }
     }
 
@@ -181,6 +182,24 @@ public final class OperatorSession {
             source = AwsClientFactory.profile(currentConfig().getAws().operatorSourceProfile());
         }
         return source;
+    }
+
+    /**
+     * When the deployer profile is the source, the grant that failed is the deployer policy's own
+     * {@code AssumeOwnOperatorRole} (7.1). A policy attached before that release lacks it, and
+     * nothing else would say so: setup's preflight passed it at the time.
+     */
+    private String stalePolicyHint(SdkException failure, String name) {
+        BaasConfig.AwsConfig settings = currentConfig().getAws();
+        if (settings.getOperatorProfile() != null || settings.getDeployerProfile() == null
+            || !DeployerPreflight.isAccessDenied(failure)) {
+            return "";
+        }
+        return """
+
+              The deployer policy attached to profile %s may predate this CLI. Render the current one and
+              have it attached: baas --deployment %s admin deployment setup --policy-file %s-deployer-policy.json"""
+            .formatted(settings.getDeployerProfile(), name, name);
     }
 
     private String sourceDescription() {
