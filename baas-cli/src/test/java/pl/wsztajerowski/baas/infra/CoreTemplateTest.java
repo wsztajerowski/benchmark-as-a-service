@@ -502,8 +502,8 @@ class CoreTemplateTest {
     /**
      * NOT a proof the runner cannot delete: {@code dynamodb:BatchWriteItem} carries
      * {@code DeleteRequest} entries and gets no separate {@code dynamodb:DeleteItem} IAM check, so
-     * granting it grants deletes too. That is consistent with existing posture — the runner already
-     * holds {@code s3:DeleteObject} on the whole bucket — so the grant stays. This test only proves
+     * granting it grants deletes too. A deleted measurement row is recoverable from the job's
+     * {@code jmh-result.json} — which the runner can no longer delete — so the grant stays. This test only proves
      * the runner is never granted read (Scan/Query) or the standalone single-item delete action.
      */
     @Test
@@ -567,6 +567,33 @@ class CoreTemplateTest {
     void noDynamoDbGrantUsesAWildcardResource() {
         assertThat(InfraFixtures.resources(dynamoDbPolicyDocumentFor("RunnerRole"))).doesNotContain("*");
         assertThat(InfraFixtures.resources(dynamoDbPolicyDocumentFor("OperatorRole"))).doesNotContain("*");
+    }
+
+    // ─── Working-bucket grants (narrow-bucket-grants: S14, S7, S15) ──────────────
+
+    /**
+     * Every pair the runner holds is one a job uses: its own uploads and downloads under
+     * {@code jobs/}, and the pinned runner's download from {@code releases/}. No write there, or
+     * benchmark code could replace the runner every later job of that version executes (S14); no
+     * delete and no listing anywhere (S7). An allow-list, so a new top-level prefix is closed to
+     * the runner until someone opens it.
+     */
+    @Test
+    void theRunnerWritesOnlyUnderJobsAndOnlyReadsReleases() {
+        assertThat(s3Grants("RunnerRole")).containsExactlyInAnyOrder(
+            "s3:PutObject " + bucketArn("jobs/*"),
+            "s3:GetObject " + bucketArn("jobs/*"),
+            "s3:GetObject " + bucketArn("releases/*"));
+    }
+
+    /**
+     * Nothing under the operator role deletes an object — teardown empties the bucket under the
+     * deployer's rights — and CI federates into this role on {@code pull_request} (S15).
+     */
+    @Test
+    void theOperatorCannotDeleteObjects() {
+        assertThat(InfraFixtures.actions(s3PolicyDocumentFor("OperatorRole")))
+            .containsExactlyInAnyOrder("s3:PutObject", "s3:GetObject", "s3:ListBucket");
     }
 
     // ─── GitHub OIDC federation on the operator role ─────────────────────────────
@@ -670,6 +697,34 @@ class CoreTemplateTest {
     }
 
     /** The named-policy list entry (not statement) on {@code logicalId} that grants DynamoDB actions. */
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> s3PolicyDocumentFor(String logicalId) {
+        var policies = (List<Map<String, Object>>) InfraFixtures.properties(template, logicalId).get("Policies");
+        return policies.stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .filter(document -> InfraFixtures.actions(document).stream()
+                .anyMatch(action -> action.startsWith("s3:")))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("No s3 policy document on " + logicalId));
+    }
+
+    /** Each {@code "<action> <resource>"} pair a role's S3 document grants, across its statements. */
+    @SuppressWarnings("unchecked")
+    private List<String> s3Grants(String logicalId) {
+        var statements = (List<Map<String, Object>>) s3PolicyDocumentFor(logicalId).get("Statement");
+        var grants = new java.util.ArrayList<String>();
+        for (var statement : statements) {
+            var actions = statement.get("Action") instanceof List<?> list ? list : List.of(statement.get("Action"));
+            var resources = statement.get("Resource") instanceof List<?> list ? list : List.of(statement.get("Resource"));
+            actions.forEach(action -> resources.forEach(resource -> grants.add(action + " " + resource)));
+        }
+        return grants;
+    }
+
+    private static String bucketArn(String keyPattern) {
+        return "arn:${AWS::Partition}:s3:::${ResourceNamePrefix}/" + keyPattern;
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> dynamoDbPolicyDocumentFor(String logicalId) {
         var policies = (List<Map<String, Object>>) InfraFixtures.properties(template, logicalId).get("Policies");
