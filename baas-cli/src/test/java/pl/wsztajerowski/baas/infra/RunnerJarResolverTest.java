@@ -1,8 +1,15 @@
 package pl.wsztajerowski.baas.infra;
 
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectResponse;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -87,5 +94,59 @@ class RunnerJarResolverTest {
     void theBuildNamesTheUpstreamRepositoryByDefault() {
         assertThat(pl.wsztajerowski.baas.BaasVersion.sourceRepo())
             .isEqualTo("wsztajerowski/benchmark-as-a-service");
+    }
+
+    // ─── Seeding: the put is conditional, and a refusal means the slot is seeded ──
+    //
+    // The 412 refusal is exercised against LocalStack in RunnerJarResolverIT. A 409 is S3's answer
+    // when two conditional puts of one key are in flight at once, which LocalStack cannot be made
+    // to produce on demand, so it and the rethrow are pinned here against a stub.
+
+    private final List<PutObjectRequest> puts = new ArrayList<>();
+
+    @Test
+    void theSeedAsksS3ToRefuseAnExistingObject() {
+        RunnerJarResolver.seed(answering(null), "b", "k", new byte[]{1});
+
+        assertThat(puts).singleElement().extracting(PutObjectRequest::ifNoneMatch).isEqualTo("*");
+    }
+
+    @Test
+    void aConcurrentConditionalPutConflictMeansAnotherLaunchIsSeeding() {
+        assertThat(RunnerJarResolver.seed(answering(409), "b", "k", new byte[]{1})).isFalse();
+    }
+
+    @Test
+    void aPreconditionFailureMeansTheSlotIsAlreadySeeded() {
+        assertThat(RunnerJarResolver.seed(answering(412), "b", "k", new byte[]{1})).isFalse();
+    }
+
+    @Test
+    void anyOtherRefusalStillFailsTheLaunch() {
+        assertThatThrownBy(() -> RunnerJarResolver.seed(answering(403), "b", "k", new byte[]{1}))
+            .isInstanceOf(S3Exception.class);
+    }
+
+    /** An S3 client whose put succeeds when {@code status} is null and otherwise fails with it. */
+    private S3Client answering(Integer status) {
+        return new S3Client() {
+            @Override
+            public PutObjectResponse putObject(PutObjectRequest request, RequestBody body) {
+                puts.add(request);
+                if (status != null) {
+                    throw (S3Exception) S3Exception.builder().statusCode(status).build();
+                }
+                return PutObjectResponse.builder().build();
+            }
+
+            @Override
+            public String serviceName() {
+                return "s3";
+            }
+
+            @Override
+            public void close() {
+            }
+        };
     }
 }
