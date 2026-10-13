@@ -124,6 +124,23 @@ Plain fixes found while exploring:
 The CI stack's section (line 132's `--deployment baas-ci` included) is left to `interactive-setup`,
 which deletes that stack.
 
+### D7 — `baas jobs diff` compares memory in MiB
+
+Added by the user on 2026-10-13, as a small rider. Finding jobs-command/W1: two instances of one type
+report `memory.totalKb` a few KB apart (15882372 vs 15882380 on `c5.2xlarge`, seen again in the
+2026-10-10 end-to-end test). So `jobs diff` of a re-run on the same instance type reports
+`Differs in: memory` for environments that are equivalent for measurement. The `memory` group's KiB
+fields (`totalKb`, `swapTotalKb`) are compared, and when they differ printed, in MiB (`/proc/meminfo`
+reports KiB, so the divisor is 1024). `environment.json` keeps the raw KiB, since the observation is
+not rewritten, and `jobs show` is unchanged.
+
+Accepted edge: rounding to MiB still reports a difference when the two values straddle a MiB
+boundary, roughly 1 in 128 pairs for an 8 KiB gap. A tolerance band would remove that, but it is
+extra mechanism for a rare, harmless outcome (keep it simple). The scenario *Identical environments
+report no differences* (`runner-image-provisioning`, *Two jobs' environments are compared group by
+group*) then holds for memory. It still fails when the same type lands on another CPU model
+(finding E6), which is a real difference and stays reported.
+
 ## Out of scope
 
 - The interactive walkthrough, `--non-interactive`, `--build-image`, the OIDC provider and the
@@ -132,8 +149,8 @@ which deletes that stack.
 
 ## Findings this closes or touches
 
-- None in `docs/review/open-findings.md` by ID. The stale-policy misses were never filed as one
-  finding. D4 closes a spec/code divergence found here.
+- **jobs-command/W1** (D7) is closed: delete its entry and index row in `docs/review/open-findings.md`.
+- The stale-policy misses were never filed as one finding. D4 closes a spec/code divergence found here.
 
 ## Open for the proposal
 
