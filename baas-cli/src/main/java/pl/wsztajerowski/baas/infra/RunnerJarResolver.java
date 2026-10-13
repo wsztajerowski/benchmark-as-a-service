@@ -80,7 +80,8 @@ public final class RunnerJarResolver {
             return true;
         } catch (S3Exception e) {
             if (e.statusCode() == 412 || e.statusCode() == 409) {
-                logger.info("Runner JAR s3://{}/{} was seeded by another launch; using it", bucket, key);
+                logger.info("Runner JAR s3://{}/{} was seeded by another launch (HTTP {}); using it",
+                    bucket, key, e.statusCode());
                 return false;
             }
             throw e;

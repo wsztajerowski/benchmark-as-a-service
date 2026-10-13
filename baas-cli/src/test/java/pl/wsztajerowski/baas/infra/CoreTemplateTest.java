@@ -502,8 +502,8 @@ class CoreTemplateTest {
     /**
      * NOT a proof the runner cannot delete: {@code dynamodb:BatchWriteItem} carries
      * {@code DeleteRequest} entries and gets no separate {@code dynamodb:DeleteItem} IAM check, so
-     * granting it grants deletes too. A deleted measurement row is recoverable from the job's
-     * {@code jmh-result.json} — which the runner can no longer delete — so the grant stays. This test only proves
+     * granting it grants deletes too. A deleted row is no worse than what benchmark code can already
+     * do to any job's objects under {@code jobs/*} (finding S7), so the grant stays. This test only proves
      * the runner is never granted read (Scan/Query) or the standalone single-item delete action.
      */
     @Test
