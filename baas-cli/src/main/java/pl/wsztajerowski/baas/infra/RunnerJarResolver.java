@@ -45,7 +45,9 @@ public final class RunnerJarResolver {
      * Upload-if-absent, never overwrite. A present object is used as-is, so a corrupted one does
      * not self-repair — the fix is deleting the key so the next job re-seeds it. Overwriting
      * instead would make {@code releases/<version>/} mutable, which is the one property the whole
-     * pinning argument rests on.
+     * pinning argument rests on. The head only spares later jobs the download; what enforces
+     * "never overwrite" is the conditional put in {@link #seed}, so two first jobs of a version
+     * that both found the slot empty still write it once.
      */
     public static String resolve(S3Client s3, String bucket, String version, String sourceRepo) {
         String key = JobLayout.runnerJarKey(version);
@@ -58,9 +60,31 @@ public final class RunnerJarResolver {
         String publishedSha = new String(
             fetchAsset(sourceRepo, version, CHECKSUM_ASSET), StandardCharsets.UTF_8);
         verify(jar, publishedSha);
-        s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).build(),
-            RequestBody.fromBytes(jar));
+        seed(s3, bucket, key, jar);
         return key;
+    }
+
+    /**
+     * Writes the slot only if S3 holds nothing at the key. S3 answers 412 when the object appeared
+     * after the head, and 409 when another conditional put of it is still in flight; either way
+     * another launch is seeding the same verified release asset, so the slot is treated as seeded.
+     * Should that other upload fail after a 409, this job's instance finds no runner and fails
+     * with its boot log uploaded, and the next job re-seeds.
+     *
+     * @return whether this call wrote the object
+     */
+    static boolean seed(S3Client s3, String bucket, String key, byte[] jar) {
+        try {
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).ifNoneMatch("*").build(),
+                RequestBody.fromBytes(jar));
+            return true;
+        } catch (S3Exception e) {
+            if (e.statusCode() == 412 || e.statusCode() == 409) {
+                logger.info("Runner JAR s3://{}/{} was seeded by another launch; using it", bucket, key);
+                return false;
+            }
+            throw e;
+        }
     }
 
     static boolean exists(S3Client s3, String bucket, String key) {

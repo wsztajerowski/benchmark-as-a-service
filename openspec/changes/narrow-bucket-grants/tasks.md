@@ -15,9 +15,9 @@
 
 ## 3. Conditional seed
 
-- [ ] 3.1 Extract the put in `RunnerJarResolver.resolve` into a package-private `seed(S3Client, bucket, key, bytes)` that sends `If-None-Match: *`, returns `true` when it wrote and `false` on 412 or 409 (logged at info, naming the key), and rethrows every other error; `resolve` keeps its `HeadObject` first and returns the key either way. Verify the existing `RunnerJarResolverTest` stays green
-- [ ] 3.2 Test the seed (LocalStack IT if 1.2 said yes, else stubbed `S3Client` unit tests for 412 and 409 plus a non-conditional error that still throws): first seed writes, second seed of the same key returns `false` and leaves the first bytes unchanged; verify the test fails with the condition removed
-- [ ] 3.3 Update `RunnerJarResolver`'s javadoc so "upload-if-absent, never overwrite" names the conditional write as what enforces it; verify by reading
+- [x] 3.1 Extract the put in `RunnerJarResolver.resolve` into a package-private `seed(S3Client, bucket, key, bytes)` that sends `If-None-Match: *`, returns `true` when it wrote and `false` on 412 or 409 (logged at info, naming the key), and rethrows every other error; `resolve` keeps its `HeadObject` first and returns the key either way. Verify the existing `RunnerJarResolverTest` stays green
+- [x] 3.2 Test the seed (LocalStack IT if 1.2 said yes, else stubbed `S3Client` unit tests for 412 and 409 plus a non-conditional error that still throws): first seed writes, second seed of the same key returns `false` and leaves the first bytes unchanged; verify the test fails with the condition removed
+- [x] 3.3 Update `RunnerJarResolver`'s javadoc so "upload-if-absent, never overwrite" names the conditional write as what enforces it; verify by reading
 
 ## 4. Documentation
 
