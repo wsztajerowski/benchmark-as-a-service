@@ -1,107 +1,138 @@
 package pl.wsztajerowski.baas.infra;
 
 import org.junit.jupiter.api.Test;
+import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
+import software.amazon.awssdk.services.iam.IamClient;
+import software.amazon.awssdk.services.iam.model.EvaluationResult;
+import software.amazon.awssdk.services.iam.model.IamException;
+import software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyRequest;
+import software.amazon.awssdk.services.iam.model.SimulatePrincipalPolicyResponse;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class DeployerPreflightTest {
 
-    /**
-     * Before this, none of the five simulated actions was DynamoDB — a deployer running with a
-     * stale attached policy passed preflight, then the real stack update failed partway on
-     * dynamodb:CreateTable and rolled back. dynamodb:CreateTable is unconditioned and
-     * resource-scoped, exactly the shape simulateCriticalActions was built for, so it belongs in
-     * the same map as cloudformation:CreateStack, s3:CreateBucket, ssm:PutParameter, iam:GetRole
-     * and iam:CreateRole.
-     */
-    @Test
-    void simulatesDynamoDbTableCreationSoAStalePolicyFailsBeforePreflightPasses() {
-        var actions = DeployerPreflight.criticalActionsToResources(
-            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
+    private static final String CALLER = "arn:aws:iam::" + InfraFixtures.ACCOUNT_ID + ":user/deployer";
 
-        assertThat(actions).containsEntry("dynamodb:CreateTable",
-            "arn:aws:dynamodb:%s:%s:table/%s-results"
-                .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
+    private static String renderedPolicy() {
+        return new DeployerPolicyRenderer().render(InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
+    }
+
+    private static List<DeployerPreflight.Probe> probes() {
+        return DeployerPreflight.probes(renderedPolicy());
     }
 
     /**
-     * The same lesson arriving from a new direction. Deploying a core stack with federation
-     * parameters rewrites OperatorRole's trust policy, and {@code iam:UpdateAssumeRolePolicy} is
-     * newer than any deployer policy attached before it existed — so the stale-policy case is the
-     * expected one, not the exotic one. Verified live against this account before the probe was
-     * added: {@code SimulatePrincipalPolicy} returned {@code implicitDeny} for it while
-     * {@code iam:CreateRole} returned {@code allowed}, meaning preflight would have passed and the
-     * update would have rolled back partway.
+     * The probes are the policy: every unconditioned statement, and nothing else. A hand-kept list
+     * used to stand here, and three times a release added a statement it did not cover —
+     * dynamodb:CreateTable, iam:UpdateRole, and 7.1's sts:AssumeRole — so a stale policy passed.
      */
     @Test
-    void simulatesTheTrustPolicyEditSoAStalePolicyFailsBeforeTheStackRollsBack() {
-        var actions = DeployerPreflight.criticalActionsToResources(
-            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
+    void probesEveryUnconditionedStatementAndNoConditionedOne() {
+        Set<String> probed = probes().stream().map(DeployerPreflight.Probe::sid).collect(java.util.stream.Collectors.toSet());
 
-        assertThat(actions).containsEntry("iam:UpdateAssumeRolePolicy",
-            "arn:aws:iam::%s:role/%s-role-operator"
-                .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
+        assertThat(probed).containsExactlyInAnyOrder(
+            "CloudFormation", "SsmRunnerAmiPointer", "ImageBuilder", "PassRolesToServices",
+            "AssumeOwnOperatorRole", "IAM", "PreflightSimulation", "ResultsTableLifecycle",
+            "S3WorkingBucketLifecycle");
     }
 
     /**
-     * The half that was missed, and it cost a stuck stack. Federating changes OperatorRole through
-     * two IAM APIs — the trust policy above, and {@code iam:UpdateRole} for MaxSessionDuration.
-     * Probing only the first let preflight pass, the update fail partway on the second, and then
-     * the <em>rollback</em> fail on it as well (unwinding MaxSessionDuration needs the same
-     * action), leaving {@code baas-3q7i7s65} in UPDATE_ROLLBACK_FAILED — a state that needs
-     * ContinueUpdateRollback and a human, which is exactly what preflight exists to avoid.
+     * The simulator has no value for aws:RequestedRegion or iam:AWSServiceName, so probing a
+     * conditioned statement would report a denial that will not happen.
      */
     @Test
-    void simulatesTheMaxSessionDurationChangeToo() {
-        var actions = DeployerPreflight.criticalActionsToResources(
-            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
-
-        assertThat(actions).containsEntry("iam:UpdateRole",
-            "arn:aws:iam::%s:role/%s-role-operator"
-                .formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
+    void conditionedStatementsAreNotProbed() {
+        assertThat(probes()).extracting(DeployerPreflight.Probe::sid)
+            .doesNotContain("EC2", "CloudFormationValidateTemplate", "ImageBuilderRead",
+                "ImageBuilderServiceLinkedRole");
     }
 
-    /**
-     * Stated as a rule rather than as two cases: every IAM action the preflight probes must also
-     * be granted by the policy it prints when the probe fails. A probe for an action the rendered
-     * policy does not grant would tell the user to attach a policy that still cannot deploy.
-     */
+    /** Each probe is one action, carrying its statement's resources verbatim, patterns included. */
     @Test
-    void everyProbedIamActionIsGrantedByTheRenderedPolicy() {
-        var probed = DeployerPreflight.criticalActionsToResources(
-            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX).keySet();
+    void eachProbeCarriesItsStatementsResourcesAsWritten() {
+        var iam = probes().stream().filter(probe -> probe.action().equals("iam:CreateRole")).toList();
 
-        assertThat(probed.stream().filter(action -> action.startsWith("iam:")).toList())
-            .isNotEmpty()
-            .allSatisfy(action -> assertThat(
-                InfraFixtures.grants(InfraFixtures.deployerPolicy(), action))
-                .as("preflight probes %s but the rendered policy does not grant it", action)
-                .isTrue());
+        assertThat(iam).singleElement().satisfies(probe -> assertThat(probe.resources()).contains(
+            "arn:aws:iam::%s:role/%s-role-operator".formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX),
+            "arn:aws:iam::%s:instance-profile/%s-profile-runner".formatted(InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX)));
+        assertThat(probes()).filteredOn(probe -> probe.sid().equals("ImageBuilder"))
+            .allSatisfy(probe -> assertThat(probe.resources()).allSatisfy(resource ->
+                assertThat(resource).contains(InfraFixtures.PREFIX)));
+    }
+
+    /** The three actions a stale policy once slipped past are probed, against the right resources. */
+    @Test
+    void theActionsThatOnceSlippedPastAreProbed() {
+        assertThat(probes()).anySatisfy(probe -> {
+            assertThat(probe.action()).isEqualTo("dynamodb:CreateTable");
+            assertThat(probe.resources()).anySatisfy(resource -> assertThat(resource).endsWith(":table/" + InfraFixtures.PREFIX + "-results"));
+        });
+        assertThat(probes()).extracting(DeployerPreflight.Probe::action)
+            .contains("iam:UpdateAssumeRolePolicy", "iam:UpdateRole", "sts:AssumeRole");
     }
 
     @Test
-    void simulatesTheOtherFourCriticalActionsToo() {
-        var actions = DeployerPreflight.criticalActionsToResources(
-            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
+    void aDeniedActionIsReportedOnceAndAllowedOnesNot() {
+        var iam = new FakeIam(request -> request.actionNames().contains("sts:AssumeRole"));
 
-        assertThat(actions).containsKeys(
-            "cloudformation:CreateStack", "s3:CreateBucket", "ssm:PutParameter",
-            "iam:GetRole", "iam:CreateRole");
+        var denied = new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
+
+        assertThat(denied).containsExactly("sts:AssumeRole");
+        assertThat(iam.requests).hasSize(probes().size())
+            .allSatisfy(request -> {
+                assertThat(request.actionNames()).hasSize(1);
+                assertThat(request.policySourceArn()).isEqualTo(CALLER);
+            });
     }
 
-    /**
-     * Since the cutover no command writes {@code /<prefix>/mongo/connection-string}, so probing
-     * it proved nothing about a policy the deployer actually needs. The runner AMI pointer is the
-     * SSM write that remains — and §14 removes the Mongo grant from the deployer policy, which
-     * would have turned the old probe into a preflight failure for a permission nothing uses.
-     */
     @Test
-    void simulatesTheSsmWriteTheDeployerStillPerforms() {
-        var actions = DeployerPreflight.criticalActionsToResources(
-            InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
+    void aFullyAttachedPolicyReportsNothing() {
+        assertThat(new DeployerPreflight(new FakeIam(request -> false)).simulate(CALLER, renderedPolicy())).isEmpty();
+    }
 
-        assertThat(actions).containsEntry("ssm:PutParameter",
-            "arn:aws:ssm:%s:%s:parameter/%s/runner/ami-id"
-                .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
+    /** A caller that may not simulate gets no check, as before: the preflight is an affordance. */
+    @Test
+    void aCallerThatMayNotSimulateGetsNoCheck() {
+        var iam = new FakeIam(request -> {
+            throw (IamException) IamException.builder()
+                .awsErrorDetails(AwsErrorDetails.builder().errorCode("AccessDenied").build()).build();
+        });
+
+        assertThat(new DeployerPreflight(iam).simulate(CALLER, renderedPolicy())).isEmpty();
+    }
+
+    /** Answers every simulation from {@code denies}: one evaluation result per request. */
+    private static final class FakeIam implements IamClient {
+        private final Predicate<SimulatePrincipalPolicyRequest> denies;
+        final List<SimulatePrincipalPolicyRequest> requests = new ArrayList<>();
+
+        FakeIam(Predicate<SimulatePrincipalPolicyRequest> denies) {
+            this.denies = denies;
+        }
+
+        @Override
+        public SimulatePrincipalPolicyResponse simulatePrincipalPolicy(SimulatePrincipalPolicyRequest request) {
+            requests.add(request);
+            String decision = denies.test(request) ? "implicitDeny" : "allowed";
+            return SimulatePrincipalPolicyResponse.builder()
+                .evaluationResults(EvaluationResult.builder()
+                    .evalActionName(request.actionNames().getFirst()).evalDecision(decision).build())
+                .build();
+        }
+
+        @Override
+        public String serviceName() {
+            return "iam";
+        }
+
+        @Override
+        public void close() {
+        }
     }
 }
