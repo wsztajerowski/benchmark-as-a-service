@@ -42,7 +42,7 @@
         <morphia-core.version>2.5.3</morphia-core.version>
         <picocli.version>4.7.7</picocli.version>
         <slf4j.version>2.0.20</slf4j.version>
-        <jackson-dataformat-yaml.version>2.22.2</jackson-dataformat-yaml.version>
+        <jackson-dataformat-yaml.version>2.22.3</jackson-dataformat-yaml.version>
     </properties>
     <distributionManagement>
         <repository>
