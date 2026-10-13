@@ -323,7 +323,11 @@ first `Differs in:` naming the differing groups, then each differing field with 
 `machine.amiId` differs it SHALL also read both jobs' `packages.txt` and report, as a `packages` group,
 the packages whose version changed and those added or removed; when the AMIs are equal it SHALL read no
 `packages.txt`. When nothing differs it SHALL say that both jobs were measured on the same environment and
-exit 0. A `schemaVersion` mismatch SHALL be warned about on standard error. A job id that resolves to no
+exit 0. The `memory` group's fields recorded in KiB (`totalKb`, `swapTotalKb`) SHALL be compared, and
+printed when they differ, as whole MiB (KiB divided by 1024 and rounded down) with the unit `MiB` on
+each value, so two instances of one
+type whose memory differs by a few KiB are reported as the same environment; `environment.json` keeps
+the KiB values it recorded. A `schemaVersion` mismatch SHALL be warned about on standard error. A job id that resolves to no
 job SHALL fail naming that id before any S3 read, and a missing manifest SHALL fail naming the job. It
 SHALL run under operator credentials and write its payload to standard output.
 
@@ -362,3 +366,11 @@ SHALL run under operator credentials and write its payload to standard output.
 #### Scenario: Diff uses operator credentials
 - **WHEN** the configuration sets both `aws.deployerProfile` and `aws.operatorProfile` and `baas jobs diff` runs
 - **THEN** AWS clients are built from `aws.operatorProfile`
+
+#### Scenario: Memory a few KiB apart is not a difference
+- **WHEN** two jobs on the same AMI and instance type recorded `memory.totalKb` 15882372 and 15882380
+- **THEN** `baas jobs diff` reports no difference in `memory`
+
+#### Scenario: A real memory difference is printed in MiB
+- **WHEN** two jobs recorded `memory.totalKb` 15882372 and 16085124
+- **THEN** `Differs in:` includes `memory`, and `totalKb` is listed with the values `15510 MiB` and `15708 MiB`

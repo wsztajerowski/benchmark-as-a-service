@@ -6,10 +6,9 @@ Set 2026-10-02.
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | [`setup-prerequisites`](setup-prerequisites/exploration.md) | stale-policy misses, existing-VPC removal, jobs-command/W1 | Explored 2026-10-13; being proposed | `/opsx:apply setup-prerequisites` once proposed |
-| 2 | [`interactive-setup`](interactive-setup/exploration.md) | new-user setup analysis, E2 | Explored 2026-10-13. After `setup-prerequisites`, whose preflight and `--policy-file` it builds on | `/opsx:propose interactive-setup` |
-| 3 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
-| 4 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
+| 1 | [`interactive-setup`](interactive-setup/exploration.md) | new-user setup analysis, E2 | Explored 2026-10-13. Unblocked: `setup-prerequisites` (the whole-policy preflight and `--policy-file` it builds on) merged in PR #94 and archived 2026-10-13 | `/opsx:propose interactive-setup` |
+| 2 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
+| 3 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
 
 ## Deferred checks
 
