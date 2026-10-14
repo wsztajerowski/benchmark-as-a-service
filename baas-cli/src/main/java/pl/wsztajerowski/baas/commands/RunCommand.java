@@ -195,9 +195,10 @@ public class RunCommand implements Callable<Integer> {
         }
         if (!missing.isEmpty()) {
             throw new IllegalStateException(
-                "Stack %s did not report %s. Run `baas admin deployment setup`, or point this machine at a "
-                    .formatted(config.stackName(), String.join(", ", missing))
-                    + "existing deployment with `baas config sync --deployment <prefix>`.");
+                "Stack %s did not report %s. Run `%s`, or point this machine at an existing deployment "
+                    .formatted(config.stackName(), String.join(", ", missing),
+                        Hints.command(config.getPrefix(), "admin deployment setup"))
+                    + "with `baas --deployment <name> config sync`.");
         }
         return outputs;
     }
@@ -219,6 +220,8 @@ public class RunCommand implements Callable<Integer> {
      * that died after launching still has an id, and that id is the whole point of the option.
      */
     String summaryJobId;
+    /** The deployment the job runs on, for the hints that follow it. */
+    String summaryDeployment;
     String summaryProject;
     String summaryResultPath;
     String summaryInstanceId;
@@ -271,16 +274,17 @@ public class RunCommand implements Callable<Integer> {
         if (summaryJobId == null || (console == null && spec == null)) {
             return;
         }
+        String d = summaryDeployment;
         if (exitCode == 0 && detached) {
             // Nothing has been measured yet: the job is followed, not queried.
-            Hints.show(console(), sink, "follow it", "baas jobs show " + summaryJobId,
-                "stop it", "baas jobs terminate " + summaryJobId);
+            Hints.show(console(), sink, "follow it", Hints.command(d, "jobs show " + summaryJobId),
+                "stop it", Hints.command(d, "jobs terminate " + summaryJobId));
         } else if (exitCode == 0) {
-            Hints.show(console(), sink, "measurements", "baas query --job-id " + summaryJobId,
-                "artifacts", "baas jobs download " + summaryJobId);
+            Hints.show(console(), sink, "measurements", Hints.command(d, "query --job-id " + summaryJobId),
+                "artifacts", Hints.command(d, "jobs download " + summaryJobId));
         } else {
-            Hints.show(console(), sink, "what happened", "baas jobs show " + summaryJobId,
-                "boot log", "baas jobs download " + summaryJobId);
+            Hints.show(console(), sink, "what happened", Hints.command(d, "jobs show " + summaryJobId),
+                "boot log", Hints.command(d, "jobs download " + summaryJobId));
         }
     }
 
@@ -353,11 +357,11 @@ public class RunCommand implements Callable<Integer> {
 
             if (resolved.isEmpty()) {
                 logger.error("""
-                        No runner image is published for this account ({}).
-                          Build one:  baas admin image build
+                        Deployment {} has no runner image ({}).
+                          Build one:  {}
                         Nothing was launched — the runner boots from a purpose-built AMI and \
                         there is no boot-time install path.""",
-                    factory.region());
+                    config.getPrefix(), factory.region(), Hints.command(config.getPrefix(), "admin image build"));
                 return 1;
             }
             runnerImage = resolved.get();
@@ -380,6 +384,7 @@ public class RunCommand implements Callable<Integer> {
         String createdAt = jobInstant.toString();
         String resultPath = JobLayout.jobPrefix(resolvedProject, jobId);
         summaryJobId = jobId;
+        summaryDeployment = config.getPrefix();
         summaryResultPath = resultPath;
         logger.info("Job {} — results will land under s3://{}/{}",
             jobId, config.bucket(), resultPath);
@@ -443,7 +448,8 @@ public class RunCommand implements Callable<Integer> {
             logger.error("""
                 Could not record run {} in the results table, so nothing was launched: {}
                 If the operator role lacks dynamodb:UpdateItem, the deployment predates run \
-                tracking — update it with `baas admin deployment setup`.""", jobId, e.getMessage());
+                tracking — update it with `{}`.""", jobId, e.getMessage(),
+                Hints.command(config.getPrefix(), "admin deployment setup"));
             return 1;
         }
         session = current;

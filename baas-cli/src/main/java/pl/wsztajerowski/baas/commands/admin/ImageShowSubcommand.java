@@ -9,6 +9,7 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
@@ -58,7 +59,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
             if (!cloudFormation.stackExists(prefix)) {
-                logger.error("Stack {} does not exist. Run `baas admin deployment setup` first.", prefix);
+                logger.error("Stack {} does not exist. Run `{}` first.", prefix, Hints.command(prefix, "admin deployment setup"));
                 return 1;
             }
             extension = cloudFormation.getStackParameters(prefix)
@@ -78,9 +79,10 @@ public class ImageShowSubcommand implements Callable<Integer> {
                 // Warn, not payload: an absent image means every `baas run` fails until one is
                 // built. Exit 0 still — the command answered the question it was asked.
                 logger.warn("""
-                    No runner image has been built for this account.
-                      Build one:  baas admin image build
-                    Until then `baas run` will fail before launching anything.""");
+                    Deployment {} has no runner image yet.
+                      Build one:  {}
+                    Until then `baas run` will fail before launching anything.""",
+                    prefix, Hints.command(prefix, "admin image build"));
                 return 0;
             }
 
@@ -100,7 +102,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
             // The base this CLI bundles is not necessarily the one deployed, and a difference
             // between them is the usual reason a result carries an unexpected imageVersion tag.
             String bundled = new RunnerImageRenderer().definition().imageVersion();
-            String warning = driftWarning(bundled, baseOf(image.imageVersion()));
+            String warning = driftWarning(prefix, bundled, baseOf(image.imageVersion()));
             if (warning != null) {
                 logger.warn("{}", warning);
             }
@@ -136,13 +138,13 @@ public class ImageShowSubcommand implements Callable<Integer> {
      * build it. Older: upgrading the CLI is the fix — build-image refuses an older base, and saying
      * "build" here once advised exactly the downgrade it now refuses.
      */
-    static String driftWarning(String bundledBase, String deployedBase) {
+    static String driftWarning(String deployment, String bundledBase, String deployedBase) {
         if (deployedBase == null || bundledBase.equals(deployedBase)) {
             return null;
         }
         if (RunnerImageParameters.compareVersions(bundledBase, deployedBase) > 0) {
             return "This CLI bundles runner-image base " + bundledBase + ", but the published image is built on "
-                + deployedBase + " — run `baas admin image build` to publish it.";
+                + deployedBase + " — run `" + Hints.command(deployment, "admin image build") + "` to publish it.";
         }
         return "This CLI bundles runner-image base " + bundledBase + ", older than the published image's "
             + deployedBase + " — upgrade the CLI (~/.local/share/baas/install.sh --update); build-image refuses an older base.";

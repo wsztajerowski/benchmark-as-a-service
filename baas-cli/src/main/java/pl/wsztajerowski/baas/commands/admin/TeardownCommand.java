@@ -10,6 +10,7 @@ import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.LoggingMixin;
+import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
@@ -25,6 +26,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Supplier;
@@ -83,7 +85,7 @@ public class TeardownCommand implements Callable<Integer> {
         try (var ec2 = factory.ec2()) {
             var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances(resolvedStack);
             if (!running.isEmpty()) {
-                logger.error(inFlightRefusal(running));
+                logger.error(inFlightRefusal(resolvedStack, running));
                 return 1;
             }
         }
@@ -98,14 +100,16 @@ public class TeardownCommand implements Callable<Integer> {
         // the stack deletes the only copy. A teardown that cannot save it deletes nothing — a
         // re-run costs a minute, a lost extension cannot be recovered.
         Optional<Path> savedExtension;
+        boolean federated;
         try (var cf = factory.cloudFormation()) {
-            String extension = new CloudFormationService(cf).getStackParameters(resolvedStack)
-                .getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
+            Map<String, String> parameters = new CloudFormationService(cf).getStackParameters(resolvedStack);
+            federated = !parameters.getOrDefault("GitHubOrg", "").isBlank();
+            String extension = parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
             savedExtension = saveExtension(extension, configService().root(), resolvedStack);
         } catch (IOException | RuntimeException e) {
             logger.error("Could not save the runner-image extension of {} ({}). Nothing was deleted.\n"
-                + "  Save it by hand with `baas admin image show --extension > <file>`, then re-run teardown.",
-                resolvedStack, e.getMessage());
+                + "  Save it by hand with `{}`, then re-run teardown.",
+                resolvedStack, e.getMessage(), Hints.command(resolvedStack, "admin image show --extension > <file>"));
             return 1;
         }
 
@@ -141,7 +145,10 @@ public class TeardownCommand implements Callable<Integer> {
             logger.warn("{}", imageLeftoverNotice(resolvedStack, imageLeftovers));
         }
 
-        savedExtension.ifPresent(file -> logger.warn("{}", extensionSavedNotice(file)));
+        savedExtension.ifPresent(file -> logger.warn("{}", extensionSavedNotice(resolvedStack, file)));
+        if (federated) {
+            logger.info("{}", providerLeftNotice(resolvedStack));
+        }
         return 0;
     }
 
@@ -161,11 +168,22 @@ public class TeardownCommand implements Callable<Integer> {
         return Optional.of(file);
     }
 
-    static String extensionSavedNotice(Path file) {
+    static String extensionSavedNotice(String deployment, Path file) {
         return """
             Runner-image extension saved to %1$s
               The stack held its only copy. After a later setup, push it back with:
-                baas admin image build --extension %1$s""".formatted(file);
+                %2$s""".formatted(file, Hints.command(deployment, "admin image build --extension " + file));
+    }
+
+    /**
+     * The GitHub OIDC provider is account-wide and may serve other projects, so no command deletes
+     * it — setup creates it when absent and never modifies it. Said once its last known user here
+     * is gone, so a leftover provider is never a surprise.
+     */
+    static String providerLeftNotice(String deployment) {
+        return "The account's GitHub OIDC provider (token.actions.githubusercontent.com) is left in place: "
+            + "it is account-wide and may serve other projects. " + deployment
+            + " no longer trusts it, since its operator role is gone.";
     }
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
@@ -227,7 +245,8 @@ public class TeardownCommand implements Callable<Integer> {
         return """
             Runner image retired: the AMI %1$s named, its snapshots, the pointer itself and the
               Image Builder records of %2$s. A later setup of this deployment needs
-              `baas admin image build` before `baas run` works.""".formatted(pointerPath(deployment), recipeName(deployment));
+              `%3$s` before `baas run` works.""".formatted(pointerPath(deployment), recipeName(deployment),
+            Hints.command(deployment, "admin image build"));
     }
 
     static String imageLeftoverNotice(String deployment, List<String> leftovers) {
@@ -249,13 +268,13 @@ public class TeardownCommand implements Callable<Integer> {
      * the same {@code DescribeInstances} the gate already makes: teardown runs with deployer
      * credentials, which hold no read of the results table, and need none for this.
      */
-    static String inFlightRefusal(List<Ec2ProvisioningService.LiveRunner> running) {
+    static String inFlightRefusal(String deployment, List<Ec2ProvisioningService.LiveRunner> running) {
         String rows = running.stream()
             .map(r -> "  %-30s %-21s %s".formatted(
                 r.jobId() == null ? "(no job id tag)" : r.jobId(), r.instanceId(), r.state()))
             .collect(Collectors.joining("\n"));
         return (running.size() == 1 ? "Aborting: 1 job is" : "Aborting: " + running.size() + " jobs are")
             + " still in flight:\n" + rows + "\n"
-            + "Wait for them to finish, or stop each one:  baas jobs terminate <jobId>";
+            + "Wait for them to finish, or stop each one:  " + Hints.command(deployment, "jobs terminate <jobId>");
     }
 }

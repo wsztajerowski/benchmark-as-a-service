@@ -150,11 +150,11 @@ is the recipe version the command would have built (design, *adopted by recipe v
 
 ## 11. Hints carry `--deployment` (D7, D12)
 
-- [ ] 11.1 A `Hints.command(deployment, …)` helper. Use it in `RunCommand`'s no-image refusal (saying
+- [x] 11.1 A `Hints.command(deployment, …)` helper. Use it in `RunCommand`'s no-image refusal (saying
   "deployment", not "account") and results hints, `ConfigShowSubcommand`, setup's closing text and
   every `→` hint that names a deployment-scoped command. Verify with updated tests, and with a
   `git grep '"baas '` review listing each remaining bare hint and why it stays bare.
-- [ ] 11.2 `BaasApp`'s `--deployment` description gets D12's text. Verify with a help-output test.
+- [x] 11.2 `BaasApp`'s `--deployment` description gets D12's text. Verify with a help-output test.
 
 ## 12. Documentation
 
