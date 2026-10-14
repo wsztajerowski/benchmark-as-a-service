@@ -1,12 +1,14 @@
 # Security review — branch `codebase-review`, 2026-10-13
 
+Re-verified against 7d9660a on 2026-10-14.
+
 ## Summary
 
 1. The main gap: the "never overwritten" pinned runner JAR (`releases/<v>/benchmark-runner.jar`) can be overwritten by any operator, and by any CI branch through S2. The CLI and the instance both trust whatever object is at that key, so one plain `PutObject` changes the runner code for every later job of that version (X1).
 2. The runner image installs async-profiler, which runs as root on every runner, from a GitHub tarball with no checksum. The version is pinned but the bytes are not (X2).
 3. The runner role can create job items through the upsert behaviour of `UpdateItem`, and can write malformed measurement rows. The readers throw on these rows, and no BaaS role can delete an item, so one bad row breaks `jobs list` or `results query` until an admin removes it. The template comment says this cannot happen (X3).
-4. One statement in the deployer policy is not prefix-exact. Its Image Builder `${PREFIX}-*` lets the default deployment's deployer reach `baas-<acct>-dev`'s pipeline (X4).
-5. The rest is small hardening: OIDC subject input validation (X5), CloudTrail attribution (X6), terminal and JSON output of runner-written data (X7), and same-origin checksums (X8). User-data quoting, IMDS, the security group, `jobs download` path handling, the YAML/JSON parsing, and logging all came out sound.
+4. One statement in the deployer policy is not prefix-exact. Its Image Builder `${PREFIX}-*` lets the default deployment's deployer reach `baas-<acct>-dev`'s pipeline (X4). The policy is now customer-managed with a 5632 budget, so the exact-name fix fits.
+5. The rest is small hardening: OIDC subject input validation (X5, now also reachable from setup's interactive prompts, and with setup creating the provider itself), CloudTrail attribution (X6), terminal and JSON output of runner-written data (X7), and same-origin checksums (X8). User-data quoting, IMDS, the security group, `jobs download` path handling, the YAML/JSON parsing, and logging all came out sound.
 
 ## Index
 
@@ -15,8 +17,8 @@
 | X1 | The pinned runner JAR under `releases/` is writable by every operator (and every CI ref via S2), and nothing re-verifies it once it is seeded | Should | S |
 | X2 | async-profiler is baked into the AMI from a GitHub tarball with no checksum | Should | S |
 | X3 | The runner role can create job items (because `UpdateItem` upserts) and malformed `RESULT#` rows. Readers throw on them, which permanently breaks `jobs list` / `results query` | Could | S |
-| X4 | The deployer policy's Image Builder resource `*/${PREFIX}-*` also covers every deployment whose name extends this one | Could | XS |
-| X5 | `--github-org` / `--github-repo` are not validated, so `*` or `?` widen the OIDC trust silently | Could | XS |
+| X4 | The deployer policy's Image Builder resource `*/${PREFIX}-*` also covers every deployment whose name extends this one (re-verified: the budget now fits the fix) | Could | XS |
+| X5 | `--github-org` / `--github-repo` and setup's interactive GitHub answers are not validated, so `*` or `?` widen the OIDC trust silently | Could | XS |
 | X6 | Every operator session is named `baas-cli`, so CloudTrail cannot tell operators apart without a join | Could | XS |
 | X7 | Runner-written strings reach the terminal unsanitised, and `jobs show --format json` splices raw `environment.json` text into its output | Could | XS |
 | X8 | The CLI and runner-JAR checksums come from the same release as the assets: this gives integrity, not authenticity (challenges CLAUDE.md "Runner JAR integrity: Closed") | Could | S |
@@ -28,7 +30,7 @@ Necessity and effort are graded as defined in `docs/review/open-findings.md`.
 ## X1 — The pinned runner JAR is writable by every operator, and nothing re-verifies it · Should · S
 
 **Where:**
-- `infra/cf-template-core.yaml:709-720` (operator S3 grant)
+- `infra/cf-template-core.yaml:705-716` (operator S3 grant)
 - `baas-cli/.../infra/RunnerJarResolver.java:52-57` and `:91-103`
 - `baas-cli/.../infra/UserDataScriptBuilder.java:237`
 - the test fixture `infra/operator-policy.json:80-92` mirrors the template grant
@@ -79,7 +81,7 @@ Necessity and effort are graded as defined in `docs/review/open-findings.md`.
 ## X3 — The runner can create job items and malformed rows, and readers fail on them · Could · S
 
 **Where:**
-- `infra/cf-template-core.yaml:380-404`, whose comments at `:384-385` ("it cannot forge a job item") and `:395-397` ("no Put, so it can never create a job item") are wrong
+- `infra/cf-template-core.yaml:376-400`, whose comments at `:380-381` ("it cannot forge a job item") and `:391-393` ("no Put, so it can never create a job item") are wrong
 - `baas-model/.../JobItemMapper.java:67-83` (`Instant.parse(str(item, CREATED_AT))` at :76)
 - `baas-model/.../MeasurementItemMapper.java:141-151` (`Instant.parse`, `MeasurementKind.valueOf` on possibly-null attributes)
 - `baas-cli/.../jobs/DynamoDbJobRecorder.java:149-151` (`newestFirst` maps every item with no try)
@@ -102,7 +104,7 @@ Necessity and effort are graded as defined in `docs/review/open-findings.md`.
 
 ## X4 — The deployer policy's Image Builder statement is not prefix-exact · Could · XS
 
-**Where:** `infra/deployer-policy.json:76-91`. Names come from `DeploymentNameRule` (`^[a-z][a-z0-9-]*[a-z0-9]$`), and `cf-template-core.yaml:9` itself gives `baas-123456789012-dev` as an example name.
+**Where:** `infra/deployer-policy.json:76-91` (unchanged by `interactive-setup`). Names come from `DeploymentNameRule` (`^[a-z][a-z0-9-]*[a-z0-9]$`), and `cf-template-core.yaml:9` itself gives `baas-123456789012-dev` as an example name.
 
 **Evidence:**
 - The statement's resource is `arn:aws:imagebuilder:${REGION}:${ACCOUNT_ID}:*/${PREFIX}-*`, covering `Delete*`, `Update*`, `Create*` and `StartImagePipelineExecution`.
@@ -114,20 +116,34 @@ Necessity and effort are graded as defined in `docs/review/open-findings.md`.
 
 **Recommendation:**
 - Enumerate the seven exact resource names: `component/${PREFIX}-component-{runner,extension,contract}/*`, `image-recipe/${PREFIX}-recipe-runner/*`, `infrastructure-configuration/${PREFIX}-infra-config-runner`, `distribution-configuration/${PREFIX}-dist-config-runner`, `image-pipeline/${PREFIX}-pipeline-runner`, plus `image/${PREFIX}-recipe-runner/*` for the build records.
-- Re-check `renderedPolicyLeavesRoomInAnInlinePolicyBudget`: this adds roughly 400 characters against 238 of headroom under 4608. If it does not fit, correct CLAUDE.md instead.
+- The budget moved with `interactive-setup`. The policy is now attached as the customer-managed `BaasCliDeployerPolicy-<deployment>`, and the test is `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` (`DeployerPolicyTest.java:301`), bounded at 6144 − 512 = 5632 rather than 4608. Measured on 2026-10-14 with the new `GitHubOidcProvider` statement, the rendered document is 4581 non-whitespace characters for the fixture prefix `baas-123456789012` (it was 4370 at dabbc55), and 5001 for a 47-character name, the longest `DeploymentNameRule` allows.
+- Cost of the fix, measured the same way:
+  - Eight fully typed ARNs (above): +736 for the fixture prefix, giving 5317. That is under 5632.
+  - Seven `*/${PREFIX}-<suffix>` patterns (`component-runner/*`, `component-extension/*`, `component-contract/*`, `recipe-runner/*`, which also covers `image/…`, `infra-config-runner`, `dist-config-runner`, `pipeline-runner`): +547, giving 5128. This is the cheaper choice and is just as exact, because each suffix is fixed.
+  - At a 47-character name, the compact form gives 5728. That is over the 512 reserve but under IAM's 6144 cap. The test measures only the fixture prefix, so it would stay green.
+- If the reserve matters for long names, accept the overshoot and say so in the test's comment. The earlier fallback, correcting CLAUDE.md instead, is no longer needed.
 
 ## X5 — OIDC subject components are not validated · Could · XS
 
-**Where:** `baas-cli/.../commands/admin/SetupCommand.java:562-568` and `infra/cf-template-core.yaml:633-639`.
+**Where:**
+- `baas-cli/.../commands/admin/setup/GitHubStep.java:181-187` (`subjectPatterns`), fed by `:72-77` (flags) and `:82-108` / `:110-114` (interactive answers)
+- `baas-cli/.../commands/admin/SetupCommand.java:120-140` (`validateFederationOptions` checks only that both flags are present)
+- `infra/cf-template-core.yaml:625-636`
 
-**Evidence:** `"repo:" + org + "/" + repo + ":*"` is built from raw `--github-org` / `--github-repo` values and lands in a `StringLike` condition, where `*` and `?` are wildcards.
+**Evidence:**
+- `"repo:" + org + "/" + repo + ":*"` is built from raw values and lands in a `StringLike` condition, where `*` and `?` are wildcards.
+- `interactive-setup` added a second input path. The walkthrough's prompts ("GitHub organisation or user", "Repositories, comma-separated") are only `strip()`ped and split on commas before they reach the same `subjectPatterns`.
+- Since ADR 0008, setup also creates the account's GitHub OIDC provider when it is absent (`AwsSetupAws.createOidcProvider`, `AwsSetupAws.java:165-171`). Before that, federation needed an admin to deploy `cf-template-ci.yaml` by hand first. Now one setup run with a wildcard org both creates the provider and installs the open trust.
 
 **Scenario:**
 - `--github-repo '*'` admits every repository of the org.
 - `--github-org '*'` admits *every repository on GitHub* that targets `sts.amazonaws.com`. Any public repo's workflow could then assume the operator role.
-- Setup reports success either way. There is also no pin on the immutable `repository_id` claim, so a deleted or renamed org or repo name can be re-registered by someone else.
+- Setup reports success either way, and in an account with no provider it now creates one too. There is also no pin on the immutable `repository_id` claim, so a deleted or renamed org or repo name can be re-registered by someone else.
 
-**Recommendation:** Validate both values against GitHub's name grammar (`[A-Za-z0-9-]` for owners, `[A-Za-z0-9._-]` for repositories) and refuse anything else. Optionally pin `repository_owner_id` as well.
+**Recommendation:**
+- Validate both values against GitHub's name grammar (`[A-Za-z0-9-]` for owners, `[A-Za-z0-9._-]` for repositories).
+- Do this in `GitHubStep` (or `SetupContext.Federation`'s constructor), so the flag path and the prompt path share one check: the flags are refused, and the prompts ask again.
+- Optionally pin `repository_owner_id` as well.
 
 ## X6 — Every operator session has the same name · Could · XS
 
@@ -195,8 +211,20 @@ Necessity and effort are graded as defined in `docs/review/open-findings.md`.
 - **IAM shape.**
   - `RunnerRole` holds only `jobs/*` put/get and `releases/*` get, and TerminateInstances by tag (accepted).
   - The operator's `RunInstances` is split per resource type and restricted to compute/general instance families. `key-pair` and `launch-template` are not granted, so SSH keys cannot be attached. `PassRole` covers `RunnerRole` only. `CreateTags` is allowed only at launch, so existing instances cannot be re-tagged into the terminate scope.
-  - The deployer's IAM, S3, SSM, DynamoDB and CloudFormation statements are exact. X4 is the only exception.
+  - The deployer's IAM, S3, SSM, DynamoDB and CloudFormation statements are exact. X4 is the only exception. The new `GitHubOidcProvider` statement (`deployer-policy.json:126-134`) grants only `Get`/`CreateOpenIDConnectProvider` on the one GitHub-issuer ARN. Setup never updates or deletes the provider, and it never changes the audiences of an existing provider (`GitHubStep.java:56-62` hands that to an admin).
 - **Stale-bucket and sniping paths.** After a teardown the operator role is gone, so a stale `~/.baas` file fails at assumption before any upload to a re-registered bucket name. Setup refuses a taken name.
 - **Installer.** `set -u`, staged atomic `mv`, the checksum is verified before install, and the trap-based cleanup is correct. The `--update` hand-off interpolates `$newest`, which comes from GitHub's redirect URL. A malicious tag would need repository write access, which already allows publishing a malicious `install.sh`, so this adds nothing new.
 - **DynamoDB conditions from the CLI.** `reserve` uses `attribute_not_exists`. Later writes use `attribute_exists AND NOT_TERMINAL`, and the instance receives the same expression. These are correct for honest writers. X3 covers dishonest ones.
 - **Already filed or accepted, and not re-filed:** S2, S7, S10, A4; operator root trust; runners terminating each other (including across deployments, per ADR 0006); deployer escalation; relaxed kernel tunables; no TLS-only policy and no 0700 on `~/.baas` (ADR 0005).
+- **interactive-setup (7d9660a) additions.**
+  - `ImageBuilderService.adoptOrBuild` adopts only the newest build of this deployment's own pipeline, at the recipe version the stack declares now. It publishes only an `AVAILABLE` build, which has passed the contract test phase.
+  - `PolicyHandOver` writes only the rendered policy, which holds no secret, to a path the user chose (default `./policy.json`). It prints only the administrator commands derived from the caller ARN.
+  - One stray file: `baas-cli/policy.json` was committed in 6eebcb8. It is a fixture-account rendering (`123456789012`), not a real one, so it is not a security issue. It shows a setup test writing the default `policy.json` into the module directory, which suggests `.gitignore` should carry `policy.json`.
+
+## Resolved by interactive-setup (7d9660a)
+
+None. The change touched X4's budget and X5's input paths, but closed no finding.
+
+## Withdrawn
+
+None.
