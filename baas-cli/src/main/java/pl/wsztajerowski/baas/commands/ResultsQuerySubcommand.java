@@ -356,7 +356,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         List<String> projects = results.listVisibleProjects();
         if (projects.isEmpty()) {
             logger.error("No project holds results outside exclude_from_results. "
-                + "To see everything: baas results query --all-projects --show-excluded");
+                + "To see everything: {}", Hints.command(config.getPrefix(), "results query --all-projects --show-excluded"));
             return Optional.empty();
         }
         if (!console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {

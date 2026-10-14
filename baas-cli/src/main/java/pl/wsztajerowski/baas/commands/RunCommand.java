@@ -536,8 +536,9 @@ public class RunCommand implements Callable<Integer> {
         // From here the hook leaves the job alone. A Ctrl+C that lands before this line still cancels
         // it, which is what an interrupt during a launch means.
         detached = true;
-        logger.info("Job {} detached; it ends on instance {}. Follow it: baas jobs show {}",
-            current.job().jobId(), current.instanceId(), current.job().jobId());
+        logger.info("Job {} detached; it ends on instance {}. Follow it: {}",
+            current.job().jobId(), current.instanceId(),
+            Hints.command(summaryDeployment, "jobs show " + current.job().jobId()));
         return 0;
     }
 
@@ -579,7 +580,7 @@ public class RunCommand implements Callable<Integer> {
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).putText(config.bucket(),
                 JobLayout.launchErrorKey(job.project(), job.jobId()), report);
-            logger.info("Launch error recorded: baas jobs download {}", job.jobId());
+            logger.info("Launch error recorded: {}", Hints.command(config.getPrefix(), "jobs download " + job.jobId()));
         } catch (RuntimeException e) {
             logger.warn("Could not upload {} ({})", JobLayout.LAUNCH_ERROR_NAME, e.getMessage());
         }
@@ -623,8 +624,8 @@ public class RunCommand implements Callable<Integer> {
             logger.error("Job {} was cancelled.", jobId);
         } else if (JobSession.Outcome.STATUS_LOST.equals(status)) {
             logger.error("Instance {} terminated without recording its final status, but the job "
-                + "stored measurements: baas results query --job-id {}\nRunner log: {}",
-                instanceId, jobId, logPath);
+                + "stored measurements: {}\nRunner log: {}",
+                instanceId, Hints.command(config.getPrefix(), "results query --job-id " + jobId), logPath);
         } else {
             logger.error("Instance {} terminated without recording a final status — the runner "
                 + "died before finishing.\nRunner log (present only if the instance got far "
@@ -881,8 +882,8 @@ public class RunCommand implements Callable<Integer> {
      */
     void reportJobResults(List<ResultRow> rows, String jobId, Consumer<List<ResultRow>> printTable) {
         if (jsonSummary()) {
-            logger.info("Job {} stored {} measurement(s) — baas results query --job-id {}",
-                jobId, rows.size(), jobId);
+            logger.info("Job {} stored {} measurement(s) — {}",
+                jobId, rows.size(), Hints.command(summaryDeployment, "results query --job-id " + jobId));
             return;
         }
         // Named, not just shown: this is the value `baas jobs download <jobId>` takes.
