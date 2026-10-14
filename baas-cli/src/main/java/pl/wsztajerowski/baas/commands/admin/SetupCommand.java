@@ -62,7 +62,7 @@ public class SetupCommand implements Callable<Integer> {
 
     // ─── GitHub OIDC federation ──────────────────────────────────────────────────
     //
-    // These three set the federated trust on BaasCliOperatorRole. Omitting them on a later setup
+    // These set the federated trust on BaasCliOperatorRole. Omitting them on a later setup
     // leaves the deployed trust untouched rather than dropping it: the update path carries every
     // unnamed parameter forward with UsePreviousValue. That is why revocation needs its own
     // gesture — nothing should be able to cut CI's access to a deployment by accident.
@@ -79,12 +79,6 @@ public class SetupCommand implements Callable<Integer> {
         description = "Repository name allowed to assume the operator role. Repeatable, or "
             + "comma-separated; one deployment can serve several repositories.")
     List<String> githubRepos = new ArrayList<>();
-
-    @Option(names = "--oidc-provider-arn",
-        description = "ARN of the account's existing GitHub OIDC identity provider. Forwarded to "
-            + "CloudFormation verbatim — no IAM call looks it up, so the CI stack stays outside "
-            + "every baas command's reach.")
-    String oidcProviderArn;
 
     @Option(names = "--revoke-github-oidc",
         description = "Remove the federated trust statement, submitting the federation parameters "
@@ -505,7 +499,7 @@ public class SetupCommand implements Callable<Integer> {
      * The federation parameters this invocation names, or empty when it names none. An empty map
      * on the update path means "carry the deployed values forward".
      *
-     * <p>Revocation submits all three explicitly empty, which turns the template's
+     * <p>Revocation submits both explicitly empty, which turns the template's
      * {@code FederateGitHub} condition false and takes the federated statement with it. The
      * account-root principal is a separate statement and survives either way, so neither
      * federating nor revoking can lock a local operator out.
@@ -514,11 +508,10 @@ public class SetupCommand implements Callable<Integer> {
         if (revokeGithubOidc) {
             return noFederation();
         }
-        if (githubOrg == null && githubRepos.isEmpty() && oidcProviderArn == null) {
+        if (githubOrg == null && githubRepos.isEmpty()) {
             return Map.of();
         }
         return Map.of(
-            "GitHubOidcProviderArn", oidcProviderArn,
             "GitHubOrg", githubOrg,
             "GitHubRepo", subjectPatterns(githubOrg, githubRepos));
     }
@@ -528,9 +521,9 @@ public class SetupCommand implements Callable<Integer> {
      * it named none.
      *
      * <p>A create cannot use {@code UsePreviousValue} — CloudFormation rejects it for a parameter
-     * with no previous value — so it has to send explicit values for all three. This used to send
+     * with no previous value — so it has to send explicit values for both. This used to send
      * them unconditionally <em>empty</em>, which discarded the options the caller had just typed:
-     * {@code baas admin deployment setup --github-org … --oidc-provider-arn …} against a fresh stack reported
+     * {@code baas admin deployment setup --github-org … --github-repo …} against a fresh stack reported
      * success and deployed an operator role with no federated principal, so CI could not assume
      * it. The bug was invisible for as long as every federated deployment happened to have been
      * federated by an update rather than a create.
@@ -541,12 +534,12 @@ public class SetupCommand implements Callable<Integer> {
     }
 
     /**
-     * All three submitted explicitly empty, which turns the template's {@code FederateGitHub}
+     * Both submitted explicitly empty, which turns the template's {@code FederateGitHub}
      * condition false. Held here rather than in either caller so the two cannot recurse into each
      * other — they did, briefly, and the tests caught it as a StackOverflowError.
      */
     private static Map<String, String> noFederation() {
-        return Map.of("GitHubOidcProviderArn", "", "GitHubOrg", "", "GitHubRepo", "");
+        return Map.of("GitHubOrg", "", "GitHubRepo", "");
     }
 
     /**
@@ -573,24 +566,22 @@ public class SetupCommand implements Callable<Integer> {
      * same stance {@code baas run} takes on a {@code --tag} for a reserved key.
      */
     void validateFederationOptions() {
-        boolean anySetting = githubOrg != null || !githubRepos.isEmpty() || oidcProviderArn != null;
+        boolean anySetting = githubOrg != null || !githubRepos.isEmpty();
         if (revokeGithubOidc && anySetting) {
             throw new ParameterException(spec.commandLine(),
-                "--revoke-github-oidc cannot be combined with --github-org, --github-repo or "
-                    + "--oidc-provider-arn. Revoking and setting at once has no sensible "
-                    + "precedence. Nothing was deployed.");
+                "--revoke-github-oidc cannot be combined with --github-org or --github-repo. "
+                    + "Revoking and setting at once has no sensible precedence. Nothing was deployed.");
         }
         if (!anySetting) {
             return;
         }
         List<String> missing = new ArrayList<>();
-        if (oidcProviderArn == null) missing.add("--oidc-provider-arn");
         if (githubOrg == null) missing.add("--github-org");
         if (githubRepos.isEmpty()) missing.add("--github-repo");
         if (!missing.isEmpty()) {
             throw new ParameterException(spec.commandLine(),
-                "GitHub federation needs all of --oidc-provider-arn, --github-org and "
-                    + "--github-repo; missing " + String.join(", ", missing)
+                "GitHub federation needs both --github-org and --github-repo; missing "
+                    + String.join(", ", missing)
                     + ". A partial set deploys a trust condition that is always false, so the "
                     + "stack would report success while continuous integration has no access. "
                     + "Nothing was deployed.");

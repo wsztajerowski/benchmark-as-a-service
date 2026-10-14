@@ -16,11 +16,12 @@ class SetupCommandTest {
 
     /**
      * {@code --workflow-id} and {@code --workflow-branch} are not reinstated — they configured the
-     * GHA dispatch path, which is gone. The prefix has its own test below — it is derived from
+     * GHA dispatch path, which is gone. {@code --oidc-provider-arn} is gone too: the provider's ARN
+     * is fixed by the account, so setup derives it. The prefix has its own test below — it is derived from
      * the caller's AWS account and cannot be named on the command line at all.
      */
     @ParameterizedTest
-    @ValueSource(strings = {"--workflow-id", "--workflow-branch"})
+    @ValueSource(strings = {"--workflow-id", "--workflow-branch", "--oidc-provider-arn"})
     void rejectsRemovedGitHubOidcOptions(String removedOption) {
         CommandLine cmd = new CommandLine(new SetupCommand());
 
@@ -43,11 +44,10 @@ class SetupCommandTest {
      */
     @Test
     void acceptsTheFederationOptionsAgain() {
-        var command = parsed("--oidc-provider-arn", "arn:aws:iam::1:oidc-provider/x",
-            "--github-org", "wsztajerowski", "--github-repo", "benchmark-as-a-service");
+        var command = parsed("--github-org", "wsztajerowski", "--github-repo", "benchmark-as-a-service");
 
         assertThat(command.federationParameters())
-            .containsEntry("GitHubOidcProviderArn", "arn:aws:iam::1:oidc-provider/x")
+            .doesNotContainKey("GitHubOidcProviderArn")
             .containsEntry("GitHubOrg", "wsztajerowski")
             .containsEntry("GitHubRepo", "repo:wsztajerowski/benchmark-as-a-service:*");
     }
@@ -58,11 +58,11 @@ class SetupCommandTest {
      */
     @Test
     void twoRepositoriesBecomeTwoSubjectPatterns() {
-        assertThat(parsed("--oidc-provider-arn", "arn:x", "--github-org", "acme",
+        assertThat(parsed("--github-org", "acme",
             "--github-repo", "one", "--github-repo", "two").federationParameters())
             .containsEntry("GitHubRepo", "repo:acme/one:*,repo:acme/two:*");
 
-        assertThat(parsed("--oidc-provider-arn", "arn:x", "--github-org", "acme",
+        assertThat(parsed("--github-org", "acme",
             "--github-repo", "one,two").federationParameters())
             .as("comma-separated must behave identically to a repeated option")
             .containsEntry("GitHubRepo", "repo:acme/one:*,repo:acme/two:*");
@@ -85,31 +85,28 @@ class SetupCommandTest {
      * The create path cannot use {@code UsePreviousValue} — CloudFormation rejects it for a
      * parameter with no previous value — so it must send explicit values. It used to send all
      * three <em>empty</em> unconditionally, which silently discarded the federation options the
-     * invocation named: `baas admin deployment setup --github-org ... --oidc-provider-arn ...` reported
+     * invocation named: `baas admin deployment setup --github-org ... --github-repo ...` reported
      * success against a fresh stack and deployed a role CI could not assume. Found by pointing CI
      * at a freshly created deployment.
      */
     @Test
     void aCreateCarriesTheFederationOptionsItWasGiven() {
-        var command = parsed("--oidc-provider-arn", "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
-            "--github-org", "acme", "--github-repo", "widgets");
+        var command = parsed("--github-org", "acme", "--github-repo", "widgets");
 
         assertThat(command.federationParametersForCreate()).containsExactlyInAnyOrderEntriesOf(Map.of(
-            "GitHubOidcProviderArn", "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com",
             "GitHubOrg", "acme",
             "GitHubRepo", "repo:acme/widgets:*"));
     }
 
     @Test
-    void aCreateNamingNoFederationSubmitsAllThreeEmpty() {
+    void aCreateNamingNoFederationSubmitsBothEmpty() {
         assertThat(parsed().federationParametersForCreate()).containsExactlyInAnyOrderEntriesOf(Map.of(
-            "GitHubOidcProviderArn", "", "GitHubOrg", "", "GitHubRepo", ""));
+            "GitHubOrg", "", "GitHubRepo", ""));
     }
 
     @Test
-    void revocationSubmitsAllThreeParametersEmpty() {
+    void revocationSubmitsBothParametersEmpty() {
         assertThat(parsed("--revoke-github-oidc").federationParameters())
-            .containsEntry("GitHubOidcProviderArn", "")
             .containsEntry("GitHubOrg", "")
             .containsEntry("GitHubRepo", "");
     }
@@ -133,7 +130,6 @@ class SetupCommandTest {
     void namingSomeFederationOptionsButNotAllIsAUsageError() {
         assertThatThrownBy(parsed("--github-org", "acme")::validateFederationOptions)
             .isInstanceOf(CommandLine.ParameterException.class)
-            .hasMessageContaining("--oidc-provider-arn")
             .hasMessageContaining("--github-repo");
     }
 

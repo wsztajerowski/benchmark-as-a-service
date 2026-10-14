@@ -629,7 +629,22 @@ class CoreTemplateTest {
         assertThat(statement).containsEntry("Action", "sts:AssumeRoleWithWebIdentity");
         assertThat((Map<String, Object>) statement.get("Principal"))
             .as("no intermediate role stands between the workload identity and the operator role")
-            .containsEntry("Federated", "GitHubOidcProviderArn");
+            .containsEntry("Federated",
+                "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com");
+    }
+
+    /**
+     * The provider's ARN is fixed by its issuer URL and the account, so the template composes it.
+     * A parameter carrying it would be one more value setup had to supply and keep in step with the
+     * provider setup itself creates.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void noParameterCarriesTheProviderArn() {
+        var parameters = (Map<String, Object>) template.get("Parameters");
+
+        assertThat(parameters).doesNotContainKey("GitHubOidcProviderArn");
+        assertThat(parameters.keySet()).noneMatch(name -> name.toLowerCase().contains("oidc"));
     }
 
     /**
@@ -685,7 +700,7 @@ class CoreTemplateTest {
         var resources = (Map<String, Object>) template.get("Resources");
 
         assertThat(resources.values())
-            .as("the identity provider is account-global and lives in the CI stack")
+            .as("the identity provider is account-global: setup creates it outside any stack")
             .noneMatch(resource -> "AWS::IAM::OIDCProvider"
                 .equals(((Map<String, Object>) resource).get("Type")));
         assertThat(resources).doesNotContainKey("WorkflowRole");

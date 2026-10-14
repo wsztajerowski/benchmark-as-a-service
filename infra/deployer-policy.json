@@ -124,6 +124,15 @@
       ]
     },
     {
+      "Sid": "GitHubOidcProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider"
+      ],
+      "Resource": "arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
       "Sid": "AssumeOwnOperatorRole",
       "Effect": "Allow",
       "Action": "sts:AssumeRole",

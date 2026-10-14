@@ -33,10 +33,6 @@ final class InfraFixtures {
         return loadYaml("/templates/cf-template-core.yaml");
     }
 
-    static Map<String, Object> ciTemplate() {
-        return loadYaml("/infra/cf-template-ci.yaml");
-    }
-
     /**
      * The rendered policy, not the template — the file on disk carries {@code ${…}} placeholders
      * and is never attached in that form, so asserting on it directly would test nothing real.
