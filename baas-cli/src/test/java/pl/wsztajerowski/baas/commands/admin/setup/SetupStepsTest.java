@@ -537,6 +537,22 @@ class SetupStepsTest {
         assertThat(run.out.toString()).contains("\"Statement\"");
     }
 
+    /** Found live with lynx: a denial at a later step must hand the policy over, not end bare. */
+    @Test
+    void aDenialAtALaterStepHandsThePolicyOver() throws Exception {
+        var run = existing("dev", DEV_FILE);
+        run.aws.preflights.clear();
+        run.aws.preflights.add(new SetupAws.Preflight.NotChecked());
+        run.aws.imageFailure = software.amazon.awssdk.awscore.exception.AwsServiceException.builder()
+            .message("not authorized to perform: imagebuilder:ListImagePipelineImages")
+            .awsErrorDetails(software.amazon.awssdk.awscore.exception.AwsErrorDetails.builder()
+                .errorCode("AccessDeniedException").build())
+            .build();
+
+        assertThat(run.run()).isEqualTo(1);
+        assertThat(run.out.toString().strip()).startsWith("{").endsWith("}").contains("\"Statement\"");
+    }
+
     // ─── Step 9: operator role ────────────────────────────────────────────────────
 
     @Test
