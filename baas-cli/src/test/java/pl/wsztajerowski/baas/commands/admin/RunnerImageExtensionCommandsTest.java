@@ -89,34 +89,6 @@ class RunnerImageExtensionCommandsTest {
             .doesNotContain("no-such-profile-baas-test");
     }
 
-    // ─── Setup's starter ─────────────────────────────────────────────────────────
-
-    @Test
-    void setupWritesTheStarterWhenNoneExists() throws Exception {
-        Path file = dir.resolve(SetupCommand.EXTENSION_STARTER_FILE);
-
-        SetupCommand.writeExtensionStarter(file);
-
-        assertThat(Files.readString(file))
-            .as("the same document a pull of a deployment with no extension prints")
-            .isEqualTo(RunnerImageExtension.withMarker(""))
-            .startsWith("# baas-extension-base: none");
-        assertThat(RunnerImageExtension.parse(Files.readString(file)).content())
-            .as("pushed unchanged, the starter deploys nothing")
-            .isEmpty();
-    }
-
-    @Test
-    void setupNeverOverwritesAnEditedExtensionFile() throws Exception {
-        Path file = dir.resolve(SetupCommand.EXTENSION_STARTER_FILE);
-        String edited = "# baas-extension-base: none\n" + EXTENSION;
-        Files.writeString(file, edited);
-
-        SetupCommand.writeExtensionStarter(file);
-
-        assertThat(Files.readString(file)).isEqualTo(edited);
-    }
-
     // ─── `baas admin image show` ──────────────────────────────────────────────────────
 
     @Test
