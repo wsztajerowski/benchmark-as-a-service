@@ -167,7 +167,8 @@ public class ImageBuildSubcommand implements Callable<Integer> {
             }
 
             String parameterName = DeploymentNames.of(prefix).amiPointer();
-            String amiId = service.publish(pipelineArn, parameterName, plan.label(), parentAmiId);
+            String amiId = service.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
+                plan.values().get(RunnerImageParameters.RECIPE_VERSION));
 
             logger.info("""
                 Runner image {} built and published.

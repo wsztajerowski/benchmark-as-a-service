@@ -10,6 +10,8 @@ import software.amazon.awssdk.services.imagebuilder.model.ImageSummary;
 import software.amazon.awssdk.services.imagebuilder.model.ImageVersion;
 import software.amazon.awssdk.services.imagebuilder.model.ListImageBuildVersionsRequest;
 import software.amazon.awssdk.services.imagebuilder.model.ListImageBuildVersionsResponse;
+import software.amazon.awssdk.services.imagebuilder.model.ListImagePipelineImagesRequest;
+import software.amazon.awssdk.services.imagebuilder.model.ListImagePipelineImagesResponse;
 import software.amazon.awssdk.services.imagebuilder.model.ListImagesRequest;
 import software.amazon.awssdk.services.imagebuilder.model.ListImagesResponse;
 import software.amazon.awssdk.services.imagebuilder.model.GetComponentRequest;
@@ -31,7 +33,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * In-memory Image Builder. Only the five calls {@link ImageBuilderService} makes are implemented;
+ * In-memory Image Builder. Only the calls {@link ImageBuilderService} makes are implemented;
  * everything else inherits the interface default and throws, so a new call site shows up as a
  * failing test rather than a silent no-op.
  */
@@ -59,6 +61,11 @@ class FakeImageBuilder implements ImagebuilderClient {
     /** Names passed to the listImages name filter, so a test can see which recipe was asked for. */
     final List<String> imageNameFilters = new ArrayList<>();
 
+    /** What {@code listImagePipelineImages} reports: the pipeline's earlier builds, none by default. */
+    final List<ImageSummary> pipelineImages = new ArrayList<>();
+    /** Build ARNs {@code getImage} was asked about, so a test can see which build was waited on. */
+    final List<String> polledBuilds = new ArrayList<>();
+
     String amiId = "ami-unset";
     ImageStatus terminalStatus = ImageStatus.AVAILABLE;
     String failureReason;
@@ -73,7 +80,13 @@ class FakeImageBuilder implements ImagebuilderClient {
     }
 
     @Override
+    public ListImagePipelineImagesResponse listImagePipelineImages(ListImagePipelineImagesRequest request) {
+        return ListImagePipelineImagesResponse.builder().imageSummaryList(pipelineImages).build();
+    }
+
+    @Override
     public GetImageResponse getImage(GetImageRequest request) {
+        polledBuilds.add(request.imageBuildVersionArn());
         var image = Image.builder()
             .arn(request.imageBuildVersionArn())
             .state(ImageBuilderServiceTest.state(terminalStatus, failureReason))
