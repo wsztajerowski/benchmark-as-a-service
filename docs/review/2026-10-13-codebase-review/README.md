@@ -158,7 +158,7 @@ baas-cli
   baas.console     unchanged
   baas.session     Deployment (immutable, B7), OperatorSession, DeployerSession (new), AwsClientFactory,
                    ConfigService, DeploymentFile, DeploymentNames, BucketProbe
-  -- slices: one per noun, no slice imports another --
+  -- slices: one per noun, imported only in the order deployment → jobs → {image, results} --
   baas.jobs        run, list, show, diff, download, terminate
                    commands (parse + print) → handlers (JobLaunch, …) → JobSession/JobStop
                    ports: JobRecorder, Instances, ArtifactStore; adapters: DynamoDbJobRecorder,
@@ -190,7 +190,8 @@ Mermaid sources in [`diagrams/`](diagrams/). Render with `mmdc -i <file>.mmd -o 
 Rules, enforced by one plain JUnit or ArchUnit test:
 - picocli is imported only by command classes;
 - pure decision classes import nothing from `software.amazon`;
-- no slice imports another slice's internals;
+- slices import each other only along deployment → jobs → {image, results}, and `config` imports no
+  slice (amended after the spike below, which showed that strict isolation does not fit this domain);
 - the `model` package imports no SDK.
 
 **Why this one?** It fixes the two real defects, which are orchestration inside picocli classes and the
@@ -214,6 +215,49 @@ not the default.
   against, plus a framework dependency and slower startup.
 - **Mediator:** a single-process CLI has nothing to mediate.
 - **Full Clean Architecture rings:** too many modules for about 11k lines.
+
+### Feasibility spike (2026-10-14)
+
+To check whether the target fits the current code, every one of the 172 `baas-cli` classes was moved
+into its target package on a throwaway branch. The branch was `arch-spike`, off `next-release`
+`ca306e0`, in the worktree `../baas-arch-spike`, and was never merged. The move kept the code as it
+was. Then it was compiled and the tests were run.
+
+- **The moves are mechanical and safe.** After 139 file moves, main and test code compile, and all
+  **957 unit tests pass** (73 in `baas-model`, 884 in `baas-cli`). Getting there took:
+  - **Main code: 3 blockers.**
+    - `LoggingMixin` and `BaasApp` read each other's package-private members, so B5's "move
+      `LoggingMixin` out of the root" is a real two-way dependency, not just a misplaced class.
+    - `jobs list`, `jobs show` and `config list` borrow the JSON/CSV helpers in
+      `ResultsQuerySubcommand` (B10/K3).
+    - `GitProject` is package-private but shared by `run` and `results query`.
+  - **Tests: about 20 declarations made public.**
+    - Package-private shared fixtures: `InfraFixtures`, `FakeEc2` and `FakeSsm`. `FakeEc2` and
+      `FakeSsm` use each other across the future `jobs` and `image` slices.
+    - `ConsoleOutputTest` and `CommandTreeTest` poking private members of `RunCommand`,
+      `ResultsQuerySubcommand` and `JobsDiffSubcommand`.
+    - One test, `DeploymentOptionTest.noEnvironmentVariableIsConsulted`, reads a source file by
+      path.
+  - **The other rules already hold.** picocli is imported only by command and mixin classes. The
+    resource lookups are absolute. The log-level property is keyed on `pl.wsztajerowski`, so `-v`
+    survives every move. The main class stays `pl.wsztajerowski.baas.BaasApp`.
+- **"No slice imports another" does not hold, and should not be the rule.** After the moves, 29
+  cross-slice uses remain. They fall into three groups:
+
+| Kind | Uses | What removes them |
+|---|---|---|
+| Shared AWS readers sitting in a slice | 9 | Move them to the shared kernel. `CloudFormationService`'s stack reads are used by `run`, `config sync`, `image build/show` and setup. Also: `S3UploadService`, `RunnerJarResolver.sha256Hex`, and `DeployerPreflight.isAccessDenied`, which `OperatorSession` uses. This is an amendment to the target: the kernel needs a small `aws` reader set, not only sessions |
+| Already-planned fixes | 5 | Step 1's `Json`/`Csv` writers (3). Tag-pair parsing moves to the model (2). `ResultsQueryService` stops building a `DynamoDbJobRecorder` (B5) |
+| Real domain dependencies | 15+ | Setup builds the image and teardown retires it (deployment → image, 9). Teardown names in-flight runners (deployment → jobs). `run` looks up the image (jobs → image) and prints its own measurements, and `jobs diff/download` find result paths (jobs → results). Hiding these behind ports would be mechanism with no second implementation |
+
+  Once the first two groups are gone, the remaining edges form a DAG: deployment → jobs →
+  {image, results}, and config depends on nothing else. The rule above is amended to that order. The
+  17 uses of root's static `BaasApp.configService(spec)` locator stay until step 2's per-invocation
+  context replaces it.
+- **Better step order.** Do step 1, the B5 fixes, the kernel `aws` move and a public test-support
+  package for `InfraFixtures`/`FakeEc2`/`FakeSsm` *before* step 4's moves. Then the moves need almost
+  no visibility changes. Rewrite `ConsoleOutputTest` per slice, and give
+  `noEnvironmentVariableIsConsulted` a classpath-based check, before moving anything.
 
 ### Migration path
 
