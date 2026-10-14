@@ -70,6 +70,19 @@ final class FakeSetupAws implements SetupAws {
         return SdkClientException.create("The SSO session associated with this profile has expired");
     }
 
+    /** The SDK's message when no provider in the default chain has credentials, abridged. */
+    static SdkClientException noCredentials() {
+        return SdkClientException.create("Unable to load credentials from any of the providers in the chain "
+            + "AwsCredentialsProviderChain(credentialsProviders=[SystemPropertyCredentialsProvider(), "
+            + "ProfileCredentialsProvider(profileName=default, profileFile=ProfileFile(sections=[profiles]))]) : "
+            + "[SystemPropertyCredentialsProvider(): Unable to load credentials from system settings.]");
+    }
+
+    static SdkClientException missingProfile(String name) {
+        return SdkClientException.create("Profile file contained no credentials for profile '" + name
+            + "': ProfileFile(sections=[profiles], profiles=[Profile(name=lynx, properties=[region])])");
+    }
+
     @Override
     public BucketProbe bucket(String name) {
         calls.add("bucket:" + name);

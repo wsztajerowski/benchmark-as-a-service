@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.commands.admin.setup;
 import pl.wsztajerowski.baas.console.Console;
 
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Supplier;
 
@@ -23,11 +24,23 @@ final class Prompter {
 
     /** The answer, or {@code defaultValue} for an empty line or a closed input. */
     String ask(String question, String defaultValue) {
+        return answer(question, defaultValue).orElse(defaultValue);
+    }
+
+    /**
+     * The answer, {@code defaultValue} for an empty line ({@code ""} when there is none), and empty
+     * only on a closed input — for a question asked until it is answered, where taking the default
+     * on a closed input would ask forever.
+     */
+    Optional<String> answer(String question, String defaultValue) {
         console.print(defaultValue == null || defaultValue.isEmpty()
             ? question + ": "
             : question + " [" + defaultValue + "]: ");
         String answer = reader.get();
-        return answer == null || answer.isBlank() ? defaultValue : answer.strip();
+        if (answer == null) {
+            return Optional.empty();
+        }
+        return Optional.of(answer.isBlank() ? Objects.requireNonNullElse(defaultValue, "") : answer.strip());
     }
 
     boolean confirm(String question, boolean defaultYes) {
