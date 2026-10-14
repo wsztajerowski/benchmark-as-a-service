@@ -1,5 +1,15 @@
 # API gap review — `codebase-review` @ dabbc55, 2026-10-13
 
+Re-verified against 7d9660a on 2026-10-14.
+
+Re-verification: every citation was re-read at 7d9660a (`next-release` after `interactive-setup`).
+`benchmark-runner`, `baas-model`, `.github/` and the cited result, job and config classes did not
+change. `RunCommand`, `ResultsQuerySubcommand`, `ImageShowSubcommand`, `TeardownCommand`,
+`ImageBuilderService` and `cf-template-core.yaml` shifted, and `SetupCommand` was split into
+`commands/admin/setup/*`. No finding was resolved or withdrawn. G14 changed in substance. G7, G12 and
+G20 were widened to the new setup surface rather than filed again. The *Status* column of the index
+records each outcome.
+
 Scope: the `baas` command surface, the runner's CLI contract as user-data drives it, `baas-model`, and
 the stored data contract. Read-only; the CLI was built offline and every `--help` captured (appendix).
 Grades follow `docs/review/open-findings.md` (Must/Should/Could; XS–L). Nothing below re-files an
@@ -11,33 +21,34 @@ open finding, a U-series item, an ADR 0005 decision or a CLAUDE.md accepted risk
 2. **One guard bypass (G1):** `baas run`'s `--tag`/`--project` guards (U24 and the machine-observed rule) are bypassed by putting the same runner options after `--`, because PARAMS are appended last and the runner's `--tag` map is last-wins and `--project` beats the tag.
 3. **CI integration gaps:** machine formats are silently cut to 20 rows (G6); there is no waiter, so CI hand-copies the terminal-status set into bash (G5); exit codes do not separate "benchmark failed" from "couldn't launch" (G7); `jobs diff` cannot gate (G11).
 4. **Lifecycle asymmetries:** you can write measurements but never correct, re-tag or exclude one afterwards (G3); compare environments but not scores (G4); record a job but not *what* it ran (G8); configure a deployment locally but not forget one (G13); grow storage with no prune short of teardown (G15).
-5. **Schema versioning is in good shape** — `environment.json` parses tolerantly and `jobs diff` warns on mismatch; items are read field-by-field (see *Considered, not filed*). The remaining model issues are small: the type vocabulary is duplicated (G16), and contract docs are stale (G19).
+5. **Deployment surface after `interactive-setup`:** setup now reads the deployed GitHub trust back and offers it as the default, which narrows G14 to a read-only, machine-readable `deployment show`. Its unattended mode inherits the existing gaps: a step waiting on an IAM administrator exits 1 like a failure (G7), its outcome is prose only (G12), and its image step, like `admin image build`, never points to the build logs (G20).
+6. **Schema versioning is in good shape** — `environment.json` parses tolerantly and `jobs diff` warns on mismatch; items are read field-by-field (see *Considered, not filed*). The remaining model issues are small: the type vocabulary is duplicated (G16), and contract docs are stale (G19).
 
 ## Index
 
-| ID | Gap | Necessity | Effort | Who | Already queued? |
-|---|---|---|---|---|---|
-| G1 | PARAMS after `--` override the runner options the CLI guards (`--tag imageVersion=`, `--tag project=`, `--project`, `-m`) | Should | XS | user, CI | No (reopens U24 by another route) |
-| G2 | JCStress verdict and JMH secondary metrics are stored but readable by no command; a failing JCStress job is a green `completed` | **Must** | S | user, CI | No |
-| G3 | No way to exclude, re-tag or delete a measurement after the run | Should | M | user, operator | No |
-| G4 | No score comparison between jobs/baselines (`results compare`); CI regression gates hand-roll jq | Should | M | CI, user | Anticipated in `jobs-command` exploration, not queued |
-| G5 | No `jobs wait`; CI copies the terminal-status set into bash | Should | S (XS for a `terminal` field) | CI | Declared non-goal "additive later" in `detached-run` |
-| G6 | `--format json/csv` silently truncated to 20 rows; no total/hasMore in the payload | Should | XS | CI, scripts | No |
-| G7 | Exit codes don't separate failure kinds; runner's own exit code isn't propagated | Could | S | CI | No (U27 fixed the JSON side only) |
-| G8 | The job record doesn't say what ran: benchmark args, runner version/override, timeout, JCStress mode, JAR digest | Should | S | user, CI | Mode tag deferred in `jcstress-e2e` |
-| G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) | Could | M | user | No |
-| G10 | Runner can't pass JMH `-p` param overrides or more than one include regex | Should | S | user | No |
-| G11 | `jobs diff` has no JSON and exits 0 whether or not environments differ | Could | S | CI | No |
-| G12 | `config show`, `admin image show`, `jobs terminate`, `jobs download` have no machine-readable output | Could | XS each | CI, admin | No |
-| G13 | No way to forget a deployment locally (or reset a preference to default) | Should | XS | operator | No |
-| G14 | No read of the deployment's server-side state (stack status, trusted repos); `--github-repo` replaces a list nobody can read via `baas` | Could | S | admin | No |
-| G15 | No prune/retention: `jobs/` (incl. every `input/benchmark.jar`) and items grow until teardown | Could | M | admin | Partly adjacent to `export-before-teardown` (U2), N3 |
-| G16 | Benchmark-type vocabulary defined twice (CLI list vs runner subcommands), not in `baas-model` | Could | XS | maintainer | No |
-| G17 | `results query` JSON: unescaped string fields; no `project`, `kind`, artifact keys | Could | XS | CI | W5 covers only `mode:"null"` |
-| G18 | No non-interactive project listing | Could | XS | CI, scripts | No |
-| G19 | Contract docs are stale (JobLayout javadoc, StoredMeasurement, CLAUDE.md "CI mints its id") | Could | XS | maintainer | No |
-| G20 | Image-build logs under `image-builds/` are never pointed to | Could | XS | admin | No |
-| G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance | Could | S | CI | No |
+| ID | Gap | Necessity | Effort | Who | Already queued? | Status @ 7d9660a |
+|---|---|---|---|---|---|---|
+| G1 | PARAMS after `--` override the runner options the CLI guards (`--tag imageVersion=`, `--tag project=`, `--project`, `-m`) | Should | XS | user, CI | No (reopens U24 by another route); `-m` alone goes with `retire-mongodb` (QUEUE #3) | Valid, relocated |
+| G2 | JCStress verdict and JMH secondary metrics are stored but readable by no command; a failing JCStress job is a green `completed` | **Must** | S | user, CI | No | Valid |
+| G3 | No way to exclude, re-tag or delete a measurement after the run | Should | M | user, operator | No | Valid, relocated |
+| G4 | No score comparison between jobs/baselines (`results compare`); CI regression gates hand-roll jq | Should | M | CI, user | Anticipated in `jobs-command` exploration, not queued | Valid, relocated |
+| G5 | No `jobs wait`; CI copies the terminal-status set into bash | Should | S (XS for a `terminal` field) | CI | Declared non-goal "additive later" in `detached-run` (archived) | Valid |
+| G6 | `--format json/csv` silently truncated to 20 rows; no total/hasMore in the payload | Should | XS | CI, scripts | No | Valid, relocated |
+| G7 | Exit codes don't separate failure kinds; runner's own exit code isn't propagated; unattended setup exits 1 both for a failure and for a step awaiting an IAM admin | Could | S | CI, admin | No (U27 fixed the JSON side only; `interactive-setup` kept wait = exit 1 on purpose) | Valid, relocated; widened to setup |
+| G8 | The job record doesn't say what ran: benchmark args, runner version/override, timeout, JCStress mode, JAR digest | Should | S | user, CI | Mode tag deferred in `jcstress-e2e` | Valid, relocated |
+| G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) | Could | M | user | No | Valid |
+| G10 | Runner can't pass JMH `-p` param overrides or more than one include regex | Should | S | user | No | Valid |
+| G11 | `jobs diff` has no JSON and exits 0 whether or not environments differ | Could | S | CI | No | Valid |
+| G12 | `config show`, `admin image show`, `admin image build`, unattended `admin deployment setup`, `jobs terminate`, `jobs download` have no machine-readable output | Could | XS each | CI, admin | No | Changed (scope widened to setup and image build) |
+| G13 | No way to forget a deployment locally (or reset a preference to default) | Should | XS | operator | No | Valid, relocated |
+| G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` still replaces the list | Could | S | admin | No | Changed (setup now reads the trust back interactively) |
+| G15 | No prune/retention: `jobs/` (incl. every `input/benchmark.jar`) and items grow until teardown | Could | M | admin | Partly adjacent to `export-before-teardown` (QUEUE #2, U2), N3 | Valid |
+| G16 | Benchmark-type vocabulary defined twice (CLI list vs runner subcommands), not in `baas-model` | Could | XS | maintainer | No | Valid |
+| G17 | `results query` JSON: unescaped string fields; no `project`, `kind`, artifact keys | Could | XS | CI | W5 covers only `mode:"null"` | Valid, relocated |
+| G18 | No non-interactive project listing | Could | XS | CI, scripts | No | Valid, relocated |
+| G19 | Contract docs are stale (JobLayout javadoc, StoredMeasurement, CLAUDE.md "CI mints its id", `admin image show` "for this account") | Could | XS | maintainer | `StoredMeasurement` goes with `retire-mongodb` (QUEUE #3) | Valid (one bullet added) |
+| G20 | Image-build logs under `image-builds/` are never pointed to, by `admin image build` or by setup's image step | Could | XS | admin | No | Valid, relocated; widened to setup |
+| G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance | Could | S | CI | No | Valid |
 
 ---
 
@@ -51,7 +62,7 @@ the observed tags, and **then** `"${BENCHMARK_PARAMS_ARRAY[@]}"`, which is every
 "as defence in depth" because picocli's `--tag` map is last-wins. PARAMS come later still. The runner
 declares `--tag` as a `Map` (`ApiCommonSharedOptions.java:23-24`), and `getProject()` prefers
 `--project` over the `project` tag (`ApiCommonSharedOptions.java:108-121`). `RunCommand` checks only its
-own `--tag` against `RESERVED_TAG_KEYS`/`project` (`RunCommand.java:784-831`). Nothing scans
+own `--tag` against `RESERVED_TAG_KEYS`/`project` (`RunCommand.java:795-842`). Nothing scans
 `benchmarkParams` (`RunCommand.java:127-129`). So:
 
 - `baas run … jmh -- MyBench --tag imageVersion=1.0.0` stores a forged `imageVersion` that disagrees with `environment.json`, which CLAUDE.md says is rejected outright.
@@ -87,7 +98,7 @@ report `jobStatus` plus a `verdict`) when `failedTests + errorTests > 0`. That i
 ### G3 — A measurement cannot be corrected after the fact · Should · M · user, operator
 
 **Evidence.** `exclude_from_results` is "the" way to hide noise, but it is set only by `baas run --tag`.
-The operator's only table write is `UpdateItem` on `LeadingKeys = JOB` (`infra/cf-template-core.yaml:755-766`),
+The operator's only table write is `UpdateItem` on `LeadingKeys = JOB` (`infra/cf-template-core.yaml:751-762`),
 and no command writes `RESULT#*`. A job run with a wrong flag, on a noisy host (E6), or before a fix
 stays in every `--best-per` and default listing for the deployment's life. The only remedy is raw
 `dynamodb update-item` with an identity the operator role does not have.
@@ -100,7 +111,7 @@ more). Measurement fields themselves stay immutable. Delete is the larger decisi
 ### G4 — No score comparison between jobs or against a baseline · Should · M · CI, user
 
 **Evidence.** `jobs diff` compares environments only (`jobs-command` design D6). `results query
---job-id` takes one id (`ResultsQuerySubcommand.java:283-292` refuses combinations). The
+--job-id` takes one id (`ResultsQuerySubcommand.java:84-86`; `:182-186` refuses combinations). The
 `jobs-command` exploration expected it: "A later action (comparing two branches) gets its own verb,
 e.g. `results compare`" (`archive/2026-10-07-jobs-command/exploration.md:196`). It is in no queue. A
 PR regression gate, the obvious CI use of a benchmarking service, means two queries and a jq join on
@@ -128,8 +139,8 @@ would. It reuses `JobSession.await` minus the termination authority.
 
 ### G6 — Machine formats are silently truncated to 20 rows · Should · XS · CI, scripts
 
-**Evidence.** `DEFAULT_LIMIT = 20` applies whatever the format (`ResultsQuerySubcommand.java:122,128-133,260-266`);
-`jobs list` does the same (`JobsListSubcommand` `page()`, `:194-200`). The "Reporting 20 of N" note
+**Evidence.** `DEFAULT_LIMIT = 20` applies whatever the format (`ResultsQuerySubcommand.java:122,128-133,261-267`);
+`jobs list` does the same (`JobsListSubcommand.java:194-200`). The "Reporting 20 of N" note
 goes to the logger on stderr. JSON is a bare array with no count or continuation, so
 `baas query --project p --format json | jq` over "all results" gets 20 rows, and CSV export does too.
 CI's own use escapes this only because `--job-id` is unlimited.
@@ -142,21 +153,29 @@ contract today.
 ### G7 — Exit codes do not separate failure kinds · Could · S · CI
 
 **Evidence.** Any job outcome other than `completed` maps to 1 (`JobSession.java:224,245,263,274`). So
-do config errors, AWS/auth errors and launch failures (`RunCommand.java:308-523`; picocli's
-`exitCodeOnExecutionException`, `BaasApp.java:205`). 2 is for usage. The runner's own exit code,
+do config errors, AWS/auth errors and launch failures (`RunCommand.java:311-533`; picocli's
+`exitCodeOnExecutionException`, `BaasApp.java:207`). 2 is for usage. The runner's own exit code,
 recorded as `failed:<n>`, is not propagated, so a runner argument error (`failed:2`) looks the same as a
 benchmark crash. U27's `jobStatus` fixed this for `--format json` callers only.
 
+*Widened at 7d9660a.* `admin deployment setup --non-interactive`, or setup without a terminal, flattens
+the same way. A step that waits on someone outside `baas` (the deployer policy to attach, the OIDC
+provider's audience) returns 1 (`SetupWalkthrough.java:41-48`), as do every `Stop` and every failure.
+A pipeline running unattended setup cannot tell "an IAM administrator must act, then re-run" from "setup
+broke". The design kept this deliberately to preserve the old unattended behaviour
+(`archive/2026-10-14-interactive-setup/design.md:43-45`), so it is a contract choice, not a bug.
+
 **Recommendation.** Document and adopt a small table: 0 completed; 1 benchmark failed (`failed:*`);
 3 timed-out; 4 cancelled; 5 vanished/status-lost; 6 launch-failed; 2 usage; 1x for config/credentials.
-Keep `exitCode` in the JSON summary consistent with it. This is the kind of contract that is cheap
+Keep `exitCode` in the JSON summary consistent with it. Give setup's unattended wait its own code
+from the same table ("action required outside baas"). This is the kind of contract that is cheap
 before consumers exist and expensive after.
 
 ### G8 — The job record doesn't say what ran · Should · S · user, CI
 
 **Evidence.** `JobItem` holds identity, status, instance and tags (`JobItem.java:20-30`). It does not hold
 the benchmark arguments (PARAMS), the runner version or whether `--runner-jar` overrode it (the CLI only
-*logs* "Runner JAR: … pinned to CLI version" at `RunCommand.java:409-413`), the timeout or watchdog
+*logs* "Runner JAR: … pinned to CLI version" at `RunCommand.java:418-422`), the timeout or watchdog
 margin, or the benchmark JAR's digest. `environment.json` (`UserDataScriptBuilder.java:182-226`) has
 none of these either. The JCStress mode is "not recorded in any tag", deferred
 (`archive/2026-10-06-jcstress-e2e/design.md:92-94`). PARAMS live only in user-data, which dies with the
@@ -203,13 +222,25 @@ and `--exit-code`, following `git diff --exit-code`: 1 when anything differs.
 ### G12 — Remaining human-only outputs · Could · XS each · CI, admin
 
 `config show` prints aligned prose only (`ConfigShowSubcommand.java:45-90`), though `config list` has
-JSON. `admin image show` is prose only (`ImageShowSubcommand.java:29-71`), so an admin script can't read the
+JSON. `admin image show` is prose only (`ImageShowSubcommand.java:49-110`), so an admin script can't read the
 published label or AMI. `jobs terminate` reports through the logger only. `jobs download` prints a
-count, not the paths it wrote. Add `--format json` to the first two. The last two are optional.
+count, not the paths it wrote.
+
+*Widened at 7d9660a.* Setup now invites unattended use (`--non-interactive`, and the "To repeat this
+without prompts" line, `RepeatCommand.java:15-44`). What such a run produces is prose on the logger,
+though. The operator role ARN that CI's `OPERATOR_ROLE_ARN` needs is one line of `DoneStep.nextSteps`
+(`DoneStep.java:79-111`), and the only stdout payload is the deployer policy when rights are missing
+(`PolicyHandOver.java:49-52`). `admin image build`, whose build setup's image step now shares
+(`RunnerImageBuild.java:37-94`), likewise reports the AMI, label and pointer only through the logger
+(`ImageBuildSubcommand.java:113-119`).
+
+Add `--format json` to `config show`, `admin image show`, `admin image build` and setup. For setup that
+is one object with `deployment`, `region`, `operatorRoleArn`, `created`/`updated`, `imageLabel`/`amiId`
+when built, and `pending` naming a waiting step. `jobs terminate` and `jobs download` stay optional.
 
 ### G13 — No way to forget a deployment on this machine · Should · XS · operator
 
-**Evidence.** `ConfigService.delete` is reachable only from teardown (`TeardownCommand.java:69`).
+**Evidence.** `ConfigService.delete` is reachable only from teardown (`TeardownCommand.java:71`).
 Suppose a teammate tears a deployment down, or one is rebuilt under a new name. The stale
 `~/.baas/deployments/<name>.yaml` keeps "two or more configured" true, so every command demands
 `--deployment` (CLAUDE.md, *Absent `--deployment`*). The fix is `rm` under `~/.baas`, which the CLI never
@@ -219,16 +250,27 @@ though defaults are deliberately not written.
 **Recommendation.** `baas config remove --deployment <name>`: local only, no AWS call, prompt or `--yes`.
 Add `config set --unset <key>`. Both are one-file operations on `ConfigService`.
 
-### G14 — No read of the deployment's server-side state · Could · S · admin
+### G14 — No read-only view of the deployment's server-side state · Could · S · admin
 
-**Evidence.** `admin deployment` offers only `setup`/`teardown`. Stack status, deployed template and
-image-parameter versions, and the federation parameters (`GitHubOrg`, `GitHubRepo`, OIDC ARN) are
-not shown by any `baas` command (`config show` is local by design). Naming `--github-repo` submits the
-given list (`SetupCommand.java:505-513`), so adding one repository to the trust means knowing the
-current ones, which today means `aws cloudformation describe-stacks`.
+*Changed at 7d9660a.* Half of the original evidence is gone. Setup now reads the deployed trust back
+from the stack's `GitHubOrg`/`GitHubRepo` parameters (`GitHubStep.java:121-134`), shows it
+interactively ("GitHub Actions: … may run benchmarks on this deployment", then "Change that?"), and
+pre-fills the current organisation and repositories as the defaults to edit (`GitHubStep.java:81-96`).
+The plan says "unchanged (…)" when nothing moves (`PlanStep.java:38-45`). Adding one repository no
+longer needs `aws cloudformation describe-stacks`, provided a human runs setup on a terminal.
 
-**Recommendation.** `baas admin deployment show [--format json]`: stack status, last update, federation
-parameters, outputs, and whether the image pointer resolves. Optionally `setup --add-github-repo`.
+**Remaining evidence.** That read lives inside a deployer-credential command that can change the stack,
+and it prints nothing unless the trust is asked about. `admin deployment` still offers only
+`setup`/`teardown`. No command shows stack status, last update, outputs, deployed image-parameter
+versions or whether the image pointer resolves, and nothing about the deployment is machine-readable.
+Unattended, `--github-repo` still submits exactly the list given (`GitHubStep.java:72-76`). A script
+that adds a repository must already know the current ones, and the only non-interactive way to learn
+them is the AWS CLI.
+
+**Recommendation.** `baas admin deployment show [--format json]`: stack status and last update, the
+federation (org, repos, provider present), outputs, the image label and pointer, and drift against the
+bundled base. Read-only, deployer credentials. `--add-github-repo`/`--remove-github-repo` for unattended
+setup are optional once `show` exists.
 
 ### G15 — No retention or prune short of teardown · Could · M · admin
 
@@ -254,8 +296,8 @@ benchmark type". Move the list into `baas-model` (beside `TagKeys`) and have a r
 ### G17 — `results query` JSON contract rough edges · Could · XS · CI
 
 `printJson` formats `jobId`, `benchmarkName`, `mode`, `scoreUnit`, `createdAt` with raw `"%s"`, and
-`imageVersion`/`instanceType` through the unescaping `jsonOrNull` (`ResultsQuerySubcommand.java:396-414,
-459-461`). Tags and params, by contrast, go through `jsonString`. The object has no `project` field,
+`imageVersion`/`instanceType` through the unescaping `jsonOrNull` (`ResultsQuerySubcommand.java:397-415,
+481-483`). Tags and params, by contrast, go through `jsonString`. The object has no `project` field,
 though `--all-projects` mixes projects and `ResultRow` carries it, and no `kind`, `resultJsonKey` or
 `profilerOutputPath`, so a consumer cannot fetch the full result or flame graph without rebuilding keys,
 which CLAUDE.md forbids. Use `jsonString` for every string, and add `project`, `kind` and the two keys.
@@ -264,7 +306,7 @@ pr83/W5 (`"mode":"null"`) and pr83/W3 (6-decimal zero) are the same printer and 
 ### G18 — No non-interactive project listing · Could · XS · CI, scripts
 
 The picker is interactive only. Without a terminal, `results query` fails listing the projects on
-stderr (`ResultsQuerySubcommand.java:353-366`). `ResultsQueryService.listVisibleProjects` exists. Expose it as
+stderr (`ResultsQuerySubcommand.java:356-366`). `ResultsQueryService.listVisibleProjects` exists. Expose it as
 `baas results projects [--format json]`, or as a `--list-projects` flag if a new verb is unwanted.
 
 ### G19 — Contract documentation drift · Could · XS · maintainer
@@ -272,13 +314,19 @@ stderr (`ResultsQuerySubcommand.java:353-366`). `ResultsQueryService.listVisible
 - `JobLayout` javadoc: the bucket "name derives from a hash of the caller ARN" (`JobLayout.java:9-11`). It has been the deployment name since `account-derived-installation-naming`.
 - `StoredMeasurement`: "one DynamoDB item, one Mongo document". This is fine until `retire-mongodb`, which should update it.
 - CLAUDE.md (*One job is one prefix…*): "CI mints its id in bash and must pass the same instant". CI no longer mints ids; it calls `baas run`, which has no `--job-id` option.
+- `admin image show`'s description says "Report the runner image currently published for this account" (`ImageShowSubcommand.java:28`). The image is per deployment. `interactive-setup` reworded the command's warnings to "Deployment {} has no runner image yet", but not the description.
 - `UserDataScriptBuilder.java:179-181` comment: the manifest carries "the job's own identity". Schema 6 dropped identity. The comment is stripped before the instance sees it, so this is cosmetic.
 
 ### G20 — Image-build logs are never pointed to · Could · XS · admin
 
-Image Builder writes to `<bucket>/image-builds/` (`infra/cf-template-core.yaml:554`), but a failed
-`admin image build` prints only Image Builder's reason (`ImageBuilderService.java:154`) and never that
-prefix. Print `s3://<bucket>/image-builds/<…>` on failure, with an `aws s3 cp` line.
+Image Builder writes to `<bucket>/image-builds/` (`infra/cf-template-core.yaml:548-550`), but a failed
+build reports only Image Builder's reason (`ImageBuilderService.java:254-259`) and never that prefix.
+
+*Widened at 7d9660a.* The build moved into `RunnerImageBuild`, which `admin image build` and setup's
+image step share. Setup stops with the same bare message (`ImageStep.java:60-66`). The new wait-or-adopt
+path (`ImageBuilderService.adoptOrBuild`, `:157-190`) logs the build it waits for, but a failure there
+ends in the same `await` message. Print `s3://<bucket>/image-builds/<…>` with an `aws s3 cp` line on
+failure, once, in `RunnerImageBuild`, so both entry points get it.
 
 ### G21 — `baas run` has no caller idempotency key · Could · S · CI
 
@@ -296,26 +344,27 @@ reservation on a `gsi1pk`-style key or a small lookup item. Low priority while C
 - **Schema versioning.** `environment.json` has `schemaVersion` (6). `EnvironmentManifest.parse` reads grouped and flat manifests alike, and `jobs diff` warns on a mismatch (`EnvironmentManifest.java:17-51`, `JobsDiffSubcommand.java:139`). Measurement items have no version attribute but are mapped field-by-field with absent-tolerant reads, and `params` was added as an optional trailing key segment. The job-item break for older CLIs was accepted 2026-10-02. No gap worth a change.
 - **`admin image` for operators** (U10, won't fix). **Reattach** (ADR 0007). **Export** (U2, `export-before-teardown`). **`-m` vs `--mode`** (`retire-mongodb`, though G1 offers a better error meanwhile). **Table locale** (ADR 0005/U15). **Full-partition reads in `results query`/`jobs list`**: scale only, and `jobs-command` D14 already names the index as the answer.
 
-## Appendix — current command surface (from `--help`, built at dabbc55)
+## Appendix — current command surface (from `--help`, built offline at 7d9660a)
 
-Global (inherited): `--deployment <name>`, `-v`, `-h`, `-V`. Aliases: `run` = `jobs run`, `query` = `results query`.
+Global (inherited): `--deployment <name>` (help now reads "Optional when exactly one is configured…
+Printed hints always include it"), `-v`, `-h`, `-V`. Aliases: `run` = `jobs run`, `query` = `results query`.
 
 | Noun | Verb | Key options | Output formats |
 |---|---|---|---|
-| jobs | run `<type> [-- PARAMS]` | `--benchmark-jar` (req), `--project`, `--tag k=v`…, `--instance-type`, `--timeout`, `--watchdog-margin`, `--runner-jar`, `--detach` | text, json (summary object) |
-| jobs | list | `--project`, `--tag`/`--exclude-tag`, `--in-flight`, `--sort-by created\|status\|project`, `--asc`, `--limit`(20)/`--offset`, `--watch` | table, json, csv |
+| jobs | run `<type> [-- PARAMS]` | `--benchmark-jar` (req), `--project`, `--tag k=v`…, `--instance-type`, `--timeout`, `--watchdog-margin`, `--runner-jar`, `--detach`, `--format` | text, json (summary object) |
+| jobs | list | `--project`, `--tag`/`--exclude-tag`, `--in-flight`, `--sort-by created\|status\|project`, `--asc`, `--limit`(20; 0 = none)/`--offset`, `--watch` | table, json, csv |
 | jobs | show `<jobId>` | — | table, json (`job`, raw `environment`, `artifacts`) |
 | jobs | diff `<jobA> <jobB>` | — | table only; exit 0 always |
 | jobs | download `<jobId>` | `-o/--output-dir` | files; log line |
 | jobs | terminate `<jobId>` | `--yes` | log only |
-| results | query | `--project`/`--all-projects`, `--job-id`, `--benchmark-name` (regex), `--tag`/`--exclude-tag`, `--best-per <tag>`, `--show-excluded`, `--sort-by created\|benchmark\|score\|project`, `--asc`, `--limit`(20; ∞ with `--job-id`)/`--offset`, `--watch` | table, json, csv |
+| results | query | `--project`/`--all-projects`, `--job-id`, `--benchmark-name` (regex), `--tag`/`--exclude-tag`, `--best-per <tag>`, `--show-excluded`, `--sort-by created\|benchmark\|score\|project`, `--asc`, `--limit`(20; none with `--job-id`; 0 = none)/`--offset`, `--watch` | table, json, csv |
 | config | list | — | table, json |
 | config | set | `--operator-aws-profile`, `--deployer-aws-profile`, `--instance-type`, `--timeout`, `--watchdog-margin`, `--git-resolve-project` | — |
 | config | show | — | text only |
 | config | sync | `--operator-aws-profile` | — |
-| admin deployment | setup | `--region`, `--deployer-aws-profile`, `--github-org`, `--github-repo`…, `--oidc-provider-arn`, `--revoke-github-oidc`, `--policy-file` | text; policy JSON on stdout when rights are missing |
+| admin deployment | setup | `--region`, `--deployer-aws-profile`, `--policy-file`, `--non-interactive`, `--build-image`, `--github-org`, `--github-repo`…, `--revoke-github-oidc`. `--oidc-provider-arn` is gone: setup derives the provider ARN and creates the provider when absent (ADR 0008) | text, with prompts on a terminal. Unattended: the policy JSON on stdout when rights are missing, and exit 1 at any step awaiting outside action. After an interactive run that changed something, a "To repeat this without prompts" line |
 | admin deployment | teardown | `--yes` | text |
-| admin image | build | `--extension <file>` | text |
+| admin image | build | `--extension <file>`. Waits for, or adopts, a build an interrupted run left behind | text |
 | admin image | show | `--extension` (prints the AWSTOE doc) | text |
 
-Runner contract (user-data → `benchmark-runner.jar <type>`): CLI-owned `--job-id --created-at --result-path --s3-bucket --benchmark-path --results-table --tag…` (caller tags, then observed tags), then the caller's PARAMS verbatim (G1). Type-specific options: `jmh` (`ApiJmhOptions`: one include regex, `-f -wi -i -bm -t -tu -e -jvmArgs*`…; no `-p`), `jmh-with-prof` (`-pr name=opts`), `jmh-with-async` (`-ae -aot -ai -aop -aap`), `jcstress` (`--mode`, `-c -f -fsm -hs -r -jvmArgs*`, one test regex). Inconsistencies in the help itself: `--deployment <name>` vs `--deployment=<name>` across commands, and the `--tag` label rendered `<String=String>` where `--exclude-tag` says `<key=value>` (cosmetic, not filed).
+Runner contract (user-data → `benchmark-runner.jar <type>`), unchanged since dabbc55: CLI-owned `--job-id --created-at --result-path --s3-bucket --benchmark-path --results-table --tag…` (caller tags, then observed tags), then the caller's PARAMS verbatim (G1). Type-specific options: `jmh` (`ApiJmhOptions`: one include regex, `-f -wi -i -bm -t -tu -e -jvmArgs*`…; no `-p`), `jmh-with-prof` (`-pr name=opts`), `jmh-with-async` (`-ae -aot -ai -aop -aap`), `jcstress` (`--mode`, `-c -f -fsm -hs -r -jvmArgs*`, one test regex). Inconsistencies in the help itself, all still present: `--deployment <name>` (`jobs run`, `jobs list`, `jobs terminate`) vs `--deployment=<name>` elsewhere; the `--tag` label rendered `<String=String>` where `--exclude-tag` says `<key=value>`; and `admin image build`'s footer wraps mid-sentence ("…allowed to discard" / "their extension."). Cosmetic, not filed.

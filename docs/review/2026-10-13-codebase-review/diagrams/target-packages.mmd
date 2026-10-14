@@ -10,8 +10,8 @@ flowchart TB
   subgraph SLICES["Slices = nouns of the command tree, no slice imports another"]
     JOBS["jobs<br/>run · list · show · diff · download · terminate<br/>JobLaunch · JobSession · JobStop · JobListing<br/>EnvironmentManifest · UserDataScriptBuilder"]:::slice
     RES["results<br/>query<br/>ResultsQueryService · Filters · Grouping · Row"]:::slice
-    DEP["deployment<br/>setup · teardown<br/>CloudFormationService · DeployerPreflight<br/>DeployerPolicyRenderer"]:::slice
-    IMG["image<br/>build · show<br/>ImageBuilderService · RunnerImage* · Ssm"]:::slice
+    DEP["deployment<br/>setup · teardown<br/>SetupWalkthrough + steps over the SetupAws port<br/>CloudFormationService · DeployerPreflight<br/>DeployerPolicyRenderer"]:::slice
+    IMG["image<br/>build · show<br/>RunnerImageBuild · ImageBuilderService · RunnerImage* · Ssm"]:::slice
     CFG["config<br/>set · show · list · sync"]:::slice
   end
 
@@ -35,6 +35,7 @@ flowchart TB
   SES --> SDK
   SLICES -->|"adapters only"| SDK
   SLICES -->|"command classes only"| PICO
+  APP -.->|"hands image's RunnerImageBuild to setup's SetupAws.buildImage"| DEP
 
   RULES["Boundary test (JUnit or ArchUnit)<br/>picocli only in *Command classes<br/>no software.amazon in decider classes or in model<br/>no slice imports another slice"]:::ext
   RULES -.- SLICES
