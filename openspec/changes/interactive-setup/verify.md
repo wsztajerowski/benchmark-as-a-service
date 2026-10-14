@@ -1,6 +1,6 @@
 # Verify — interactive-setup
 
-Paid tests used: **0 / 20** (image builds and `baas run` jobs; user's budget, 2026-10-14).
+Paid tests used: **4 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
 
 ## 1. Blocking assumptions
 
@@ -48,6 +48,9 @@ describes the call as listing the images a pipeline created, with no state filte
 in-progress build appears is confirmed live in 13.2, the first paid build. If it does not, the lookup
 falls back to `ListImageBuildVersions` on the recipe's image version, which lists every build state.
 
+**Confirmed live in 13.2 (2026-10-14 17:29:50):** `ListImagePipelineImages` lists the killed CLI's
+build as `BUILDING` (`…/baas-development-recipe-runner/1.0.0/1`).
+
 ### 1.3 OIDC provider calls
 
 From the IAM API reference:
@@ -91,6 +94,16 @@ bare `baas` is one of the following:
   build --extension <this file>`), since one file can be pushed to any deployment, and its
   stale-push refusal, a static check that is given no deployment.
 - **Comments** in `UserDataScriptBuilder` and `simplelogger.properties`.
+- **`JobSession`'s two stop-failure messages** (`or run: baas jobs terminate <id>`): `JobSession`
+  is built from a job item and recorders, and never learns the deployment's name. Threading it
+  through for two failure-path messages was not worth widening that class. Recorded as **W1**.
+
+The first search (`"baas \|  baas \|`baas `) missed commands written after "— " or ": ". The
+13.1 live run showed one: `Job … stored 1 measurement(s) — baas results query --job-id …`.
+A wider search found these, which now go through `Hints.command` too:
+- `RunCommand`'s detach, launch-error, status-lost and measurement-count lines;
+- `results query`'s "To see everything";
+- `config sync`'s "Create the deployment again".
 
 Every instruction printed after a deployment is resolved goes through `Hints.command`:
 - run hints and the no-image refusal;
@@ -101,3 +114,72 @@ Every instruction printed after a deployment is resolved goes through `Hints.com
 - `RunCommand`'s missing-outputs and reservation messages;
 - `CloudFormationService`'s missing stack;
 - setup's closing text.
+
+
+## 13. Live verification
+
+Run with the working-tree CLI (`baas-cli/target/baas-cli.jar`, built from each commit under test).
+`-Duser.home` points at a scratch home holding copies of the two deployment files, and
+`AWS_CONFIG_FILE`/`AWS_SHARED_CREDENTIALS_FILE` point at the real `~/.aws`. The real `~/.baas` was
+backed up first (byte-identical, `diff -r`) and is never written by these checks.
+
+"Interrupted" means `kill -9` of the CLI's JVM. That is the closed-lid case. It also avoids the
+inherited-SIGINT trap in background shells, which would make the check say nothing.
+
+### 13.1 baas-development from scratch, interrupted create
+
+1. `admin deployment teardown --yes` (16:55–16:57):
+   - the stack is deleted;
+   - the image is retired (`ami-05f4851d3c30e3cb2` and its snapshot);
+   - the file is removed;
+   - no provider notice, correctly, since dev had no federation.
+2. `setup --non-interactive --region us-east-1 --deployer-aws-profile baas-admin`, killed with
+   `-9` right after `Creating stack baas-development...` (16:57:27):
+   - `DoneStep - Configuration written to …/baas-development.yaml` was logged 33 ms after the
+     create was accepted;
+   - the file holds `deployerProfile: baas-admin` (the preflight was Met) and `region: us-east-1`;
+   - the stack was `CREATE_IN_PROGRESS`.
+   **D20 holds.**
+3. Interactive re-run under a pseudo-terminal (`script`), with answers piped:
+   - Step 1 found the deployment in its file (`Deployment: baas-development (configured on this
+     machine)`), and the profile prompt defaulted to `[baas-admin]`. Nothing was retyped.
+   - The GitHub question was asked and answered `n`.
+   - Step 8: `Stack baas-development is CREATE_IN_PROGRESS: waiting for that to finish first...`
+     at 16:57:59, then `already up to date` at 17:01:58. No refused `UpdateStack`. **D19
+     (stack) holds.**
+   - Step 9: operator role assumable.
+   - Step 10: no image, so the build was offered. The piped input had reached EOF by then; a closed
+     input answers a confirmation *no* by design, so it did not build. The next steps named
+     `baas --deployment baas-development admin image build`. Later interactive checks use `expect`
+     instead of a pipe.
+
+### 13.2 Interrupted image builds (paid: 2)
+
+- **Paid 1, still running.** `admin image build`, killed with `-9` at 17:29:50 after
+  `Image build started: …/1.0.0/1`. The pipeline showed `/1` as `BUILDING`. The re-run at 17:30:17
+  logged `A build of this image started at 2026-10-14T15:29:39.623Z is still running; waiting for
+  it instead of starting another.`, then at 17:48:39 `Published ami-07219be12b971faf7 to
+  /baas-development/runner/ami-id`. The pipeline then held exactly one image, `/1`. **No second
+  build.**
+- **Paid 2, finished unseen.** `admin image build` started `…/1.0.0/2` at 17:49:21 and was killed
+  with `-9`. The build finished with no CLI attached (`AVAILABLE` at 18:00:54,
+  `ami-09ec488e03afa7719`), while the pointer still named `/1`'s `ami-07219be12b971faf7`. The re-run
+  at 18:01:29 logged `Adopting ami-09ec488e03afa7719, built at 2026-10-14T15:49:21.094Z by a run
+  that did not publish it. No new build is needed.`, then published it and retired
+  `ami-07219be12b971faf7` with its snapshot. It finished in 4 s.
+  `aws ec2 describe-images --owners self` (us-east-1) lists exactly one AMI, the published one.
+  **No orphaned AMI, and no second build.**
+
+### 13.1 continued
+
+- An interactive re-run (driven by `expect`, Enter at every prompt) at 18:01–18:02 asked exactly
+  two questions: the deployer profile `[baas-admin]` and the GitHub question. There was no plan
+  confirmation, no image offer (`Runner image: 1.3.0 (current)`) and no repeat command, and the
+  stack was `already up to date`. The deployment file is byte-identical before and after (`diff`).
+  **A healthy re-run changes nothing.**
+- **Paid 3:** `baas run jmh` with a benchmark class I made up (`pl.wsztajerowski.HelloWorld`)
+  failed as it should: `No matching benchmarks`, status `failed:1`, artifacts downloadable. That
+  was my mistake, not a defect.
+- **Paid 4:** `baas run jmh … -- Incrementing_Synchronized -f 1 -wi 1 -i 1` on the recreated dev
+  deployment: `completed`, 1 measurement stored (`20261014T160517359Z-dbba0693`). Its closing line
+  showed a bare hint, fixed above (11.1).

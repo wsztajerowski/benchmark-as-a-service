@@ -96,8 +96,8 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         if (outputs.isEmpty()) {
             logger.error("""
                     No deployment named '{}': its bucket is in {}, but no stack of that name is.
-                      Create the deployment again: baas admin deployment setup --region {}""",
-                name, region, region);
+                      Create the deployment again: baas --deployment {} admin deployment setup --region {}""",
+                name, region, name, region);
             return 1;
         }
 
