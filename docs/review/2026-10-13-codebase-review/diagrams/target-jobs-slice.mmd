@@ -1,0 +1,59 @@
+%% Target: inside one slice (jobs). Left to right: parse, orchestrate, decide, narrow ports, adapters.
+flowchart LR
+  classDef p fill:#fff4e5,stroke:#e8710a,color:#111
+  classDef a fill:#e8f0fe,stroke:#3367d6,color:#111
+  classDef d fill:#e6f4ea,stroke:#188038,color:#111
+  classDef port fill:#ffffff,stroke:#188038,stroke-dasharray:4 3,color:#111
+  classDef i fill:#f1f3f4,stroke:#5f6368,color:#111
+
+  subgraph PRES["Presentation: parse and print"]
+    direction TB
+    RC["RunCommand<br/>options to RunRequest<br/>owns the shutdown hook"]:::p
+    VIEW["RunReport rendering<br/>Json writer · StatusLine"]:::p
+  end
+
+  subgraph SHELL["Imperative shell: one handler per verb"]
+    JL["JobLaunch.run(RunRequest)<br/>resolve image + networking<br/>seed runner JAR, upload inputs<br/>render user-data<br/>reserve, launch, poll"]:::a
+  end
+
+  subgraph CORE["Functional core: records in, records out, no SDK"]
+    TAGS["RunnerTags.build<br/>reserved-key policy"]:::d
+    WD["watchdogBound"]:::d
+    UD["UserDataScriptBuilder<br/>pure, bash-harness tested"]:::d
+    JS["JobSession · JobStop<br/>first outcome wins"]:::d
+  end
+
+  subgraph PORTS["Narrow ports, only where order matters"]
+    IC(["ImageCatalog · StackInfo"]):::port
+    AS(["ArtifactStore"]):::port
+    JR(["JobRecorder"]):::port
+    IN(["Instances"]):::port
+  end
+
+  subgraph ADP["Production adapters"]
+    CF["CloudFormation + SSM readers"]:::i
+    S3A["S3ArtifactStore"]:::i
+    DDB["DynamoDbJobRecorder"]:::i
+    EC2["Ec2Instances"]:::i
+  end
+
+  subgraph TST["Test adapters"]
+    FAKES["In-memory ports<br/>one contract suite shared with the DynamoDB adapter<br/>no SDK fakes, no command subclassing"]:::port
+  end
+
+  RC -->|RunRequest| JL
+  JL -->|RunReport| VIEW
+  JL --> TAGS
+  JL --> WD
+  JL --> UD
+  JL --> JS
+  JL --> IC
+  JL --> AS
+  JS --> JR
+  JS --> IN
+  IC -. "implemented by" .- CF
+  AS -. "implemented by" .- S3A
+  JR -. "implemented by" .- DDB
+  IN -. "implemented by" .- EC2
+  JR -. "implemented by" .- FAKES
+  IN -. "implemented by" .- FAKES

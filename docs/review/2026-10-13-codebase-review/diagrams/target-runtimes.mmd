@@ -1,0 +1,42 @@
+%% Target: baas-model is the one contract all three runtimes read
+flowchart TB
+  classDef mod fill:#e8f0fe,stroke:#3367d6,color:#111
+  classDef sh fill:#fff4e5,stroke:#e8710a,color:#111
+  classDef aws fill:#f1f3f4,stroke:#5f6368,color:#111
+  classDef test fill:#e6f4ea,stroke:#188038,color:#111
+
+  subgraph MODEL["baas-model (one module, two packages)"]
+    PURE["model (no SDK imports)<br/>JobId · JobLayout prefix + leaf names (B3)<br/>JobStatus · TagKeys + EXCLUDE_FROM_RESULTS<br/>BenchmarkType · RunnerArgs flag names (B4)"]:::mod
+    DYN["model.dynamodb<br/>ResultKeys · MeasurementItemMapper · JobItemMapper<br/>TableSchema attribute names · NOT_TERMINAL guard (B2)"]:::mod
+    DYN --> PURE
+  end
+
+  subgraph LAPTOP["Laptop / CI"]
+    CLI["baas-cli<br/>slices by noun, see target-packages"]:::mod
+  end
+  subgraph EC2["EC2 runner instance"]
+    SH[["user-data bash<br/>every name, key and guard exported from the model"]]:::sh
+    RUN["benchmark-runner<br/>picocli options named from RunnerArgs"]:::mod
+  end
+  subgraph AWS["AWS"]
+    DDB[("DynamoDB")]:::aws
+    S3[("S3")]:::aws
+    CTRL["EC2 · CloudFormation · Image Builder<br/>SSM · IAM · STS"]:::aws
+  end
+
+  CLI -->|compile dep| DYN
+  RUN -->|compile dep| DYN
+  CLI -. "renders from model constants" .-> SH
+  SH -. "argv built from RunnerArgs" .-> RUN
+
+  CT["Contract tests (new)<br/>rendered argv parsed by TestWrapper (B4)<br/>rendered update-item addresses JobItemMapper.key (B2)<br/>one JobRecorder suite for fake + DynamoDB (T4)"]:::test
+  CT -.- SH
+  CT -.- RUN
+
+  CLI --> CTRL
+  CLI --> DDB
+  CLI --> S3
+  RUN --> DDB
+  RUN --> S3
+  SH --> DDB
+  SH --> S3
