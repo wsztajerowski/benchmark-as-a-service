@@ -62,4 +62,22 @@ class HelpAndHintsTest {
         assertThat(lines).isEmpty();
         assertThat(out.toString()).isEmpty();
     }
+
+    /** A hint printed with one deployment must still work once a second exists (E2). */
+    @Test
+    void aHintedCommandAlwaysNamesItsDeployment() {
+        assertThat(Hints.command("baas-123456789012", "query --job-id x"))
+            .isEqualTo("baas --deployment baas-123456789012 query --job-id x");
+    }
+
+    @Test
+    void theDeploymentOptionStatesWhenItIsNeeded() {
+        String help = BaasApp.commandLine(new BaasApp()).getSubcommands().get("results")
+            .getSubcommands().get("query").getUsageMessage(CommandLine.Help.Ansi.OFF);
+
+        assertThat(help.replaceAll("\\s+", " "))
+            .contains("Optional when exactly one is configured on this machine")
+            .contains("required with two or more")
+            .contains("Printed hints always include it");
+    }
 }

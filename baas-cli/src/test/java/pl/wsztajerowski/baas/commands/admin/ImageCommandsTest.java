@@ -99,15 +99,15 @@ class ImageCommandsTest {
 
     @Test
     void anOlderCliIsToldToUpgradeNeverToBuild() {
-        assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.4.0"))
+        assertThat(ImageShowSubcommand.driftWarning("dev", "1.3.0", "1.4.0"))
             .contains("upgrade the CLI")
-            .doesNotContain("run `baas admin image build`");
+            .doesNotContain("admin image build`");
     }
 
     @Test
     void aNewerCliIsToldToBuild() {
-        assertThat(ImageShowSubcommand.driftWarning("1.4.0", "1.3.0")).contains("run `baas admin image build`");
-        assertThat(ImageShowSubcommand.driftWarning("1.3.0", "1.3.0")).isNull();
-        assertThat(ImageShowSubcommand.driftWarning("1.3.0", null)).isNull();
+        assertThat(ImageShowSubcommand.driftWarning("dev", "1.4.0", "1.3.0")).contains("run `baas --deployment dev admin image build`");
+        assertThat(ImageShowSubcommand.driftWarning("dev", "1.3.0", "1.3.0")).isNull();
+        assertThat(ImageShowSubcommand.driftWarning("dev", "1.3.0", null)).isNull();
     }
 }

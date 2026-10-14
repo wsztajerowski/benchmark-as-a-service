@@ -112,7 +112,8 @@ public class CloudFormationService {
      */
     public boolean updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
-            "Stack '" + stackName + "' does not exist. Run `baas admin deployment setup` first."));
+            "Stack '" + stackName + "' does not exist. Run `baas --deployment " + stackName
+                + " admin deployment setup` first."));
         // Setup sends every existing stack down this path, so this is where a failed first create
         // has to be recognised, before CloudFormation answers with its own less useful rejection.
         requireUpdatable(stack);

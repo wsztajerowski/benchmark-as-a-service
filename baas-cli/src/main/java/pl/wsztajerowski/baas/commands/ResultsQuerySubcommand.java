@@ -219,7 +219,8 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
                 default -> printTable(console(), rows);
             }
             if (rows.isEmpty() && !allProjects) {
-                Hints.show(console(), logger, "which projects have results", "baas query --all-projects");
+                Hints.show(console(), logger, "which projects have results",
+                    Hints.command(config.getPrefix(), "query --all-projects"));
             }
         }
         return 0;

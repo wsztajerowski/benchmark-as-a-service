@@ -76,7 +76,9 @@ public class BaasApp implements Runnable {
      * configured deployment, and with two or more it must be given — see {@link ConfigService}.
      */
     @Option(names = "--deployment", scope = ScopeType.INHERIT, paramLabel = "<name>",
-        description = "Deployment to act on (default: the only one configured on this machine).")
+        description = "Deployment to act on. Optional when exactly one is configured on this machine; "
+            + "required with two or more (see `baas config list`). Printed hints always include it, "
+            + "so they stay valid when you add another.")
     String deployment;
 
     /**

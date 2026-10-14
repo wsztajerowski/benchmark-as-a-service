@@ -11,6 +11,15 @@ public final class Hints {
 
     private Hints() {}
 
+    /**
+     * {@code baas --deployment <name> <rest>}. Every printed command that acts on a deployment
+     * names it, however many are configured: a hint printed with one deployment then still works
+     * once a second exists, instead of being refused as ambiguous.
+     */
+    public static String command(String deployment, String rest) {
+        return "baas --deployment " + deployment + " " + rest;
+    }
+
     public static void show(Console console, Logger logger, String purpose, String command) {
         show(console, logger, purpose, command, null, null);
     }
