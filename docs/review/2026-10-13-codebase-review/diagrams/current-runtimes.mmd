@@ -1,0 +1,39 @@
+%% Today: the three runtimes and who owns which shared contract
+flowchart TB
+  classDef mod fill:#e8f0fe,stroke:#3367d6,color:#111
+  classDef sh fill:#fff4e5,stroke:#e8710a,color:#111
+  classDef aws fill:#f1f3f4,stroke:#5f6368,color:#111
+  classDef gap fill:#fde7e9,stroke:#d33,color:#111
+
+  subgraph LAPTOP["Laptop / CI"]
+    CLI["baas-cli<br/>67 classes, 10.8k lines<br/>commands + infra + jobs + results"]:::mod
+  end
+  MODEL["baas-model<br/>JobId · JobLayout prefix · JobStatus · TagKeys<br/>ResultKeys · MeasurementItemMapper · JobItemMapper"]:::mod
+  subgraph EC2["EC2 runner instance"]
+    SH[["user-data bash<br/>rendered by UserDataScriptBuilder"]]:::sh
+    RUN["benchmark-runner<br/>53 classes, 3.1k lines"]:::mod
+  end
+  subgraph AWS["AWS"]
+    DDB[("DynamoDB results table")]:::aws
+    S3[("S3 bucket jobs/ releases/")]:::aws
+    CTRL["EC2 · CloudFormation · Image Builder<br/>SSM · IAM · STS"]:::aws
+  end
+
+  CLI -->|compile dep| MODEL
+  RUN -->|compile dep| MODEL
+  CLI -. "renders script text" .-> SH
+  SH -. "argv as strings (B4)" .-> RUN
+
+  CLI --> CTRL
+  CLI --> DDB
+  CLI --> S3
+  RUN --> DDB
+  RUN --> S3
+  SH -->|"job_status update-item"| DDB
+  SH -->|"environment.json, logs"| S3
+
+  G1["Owned by nobody, spelled separately on each side<br/>artifact leaf names (B3) · runner flags + type names (B4)<br/>job-item attribute names in bash (B2)"]:::gap
+  G2["NOT_TERMINAL guard lives in the CLI adapter<br/>DynamoDbJobRecorder, not in baas-model (B2)"]:::gap
+  G1 -.- SH
+  G1 -.- RUN
+  G2 -.- CLI
