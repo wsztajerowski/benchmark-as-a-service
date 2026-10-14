@@ -183,3 +183,22 @@ inherited-SIGINT trap in background shells, which would make the check say nothi
 - **Paid 4:** `baas run jmh … -- Incrementing_Synchronized -f 1 -wi 1 -i 1` on the recreated dev
   deployment: `completed`, 1 measurement stored (`20261014T160517359Z-dbba0693`). Its closing line
   showed a bare hint, fixed above (11.1).
+
+### 13.4 Provider reuse, and an identity that may not simulate (no paid tests)
+
+- `setup --non-interactive --github-org wsztajerowski --github-repo benchmark-as-a-service` on dev:
+  - logged `GitHub OIDC provider: present, reused`, with no IAM write, and the stack updated;
+  - the operator role's trust named `arn:aws:iam::381492019823:oidc-provider/token.actions.githubusercontent.com`,
+    the ARN the template composes, beside the account root.
+  - Then `--revoke-github-oidc` left only the account-root principal. Dev is back to no federation.
+- `setup --non-interactive --deployer-aws-profile lynx > policy.json`:
+  - The permission check reported *not checked*. `lynx` turned out to be allowed the (no-op) stack
+    update and the operator-role assumption, so it got as far as step 10.
+  - It was then denied `imagebuilder:ListImagePipelineImages`. **That denial escaped as a generic
+    error, exit 1, with nothing on standard output**, contradicting *Setup renders the deployer
+    policy…*, which reports a denial from any setup call with the policy.
+  - **Fixed** in `SetupWalkthrough`: any access denial a step raises after the policy is rendered
+    becomes the same hand-over as a stack permission failure (resume at step 4), unit-tested by
+    `aDenialAtALaterStepHandsThePolicyOver`.
+  - Re-run on the rebuilt JAR: exit 1, standard output is exactly one policy document (14
+    statements), and the deployment file is byte-identical (`lynx` not stored over `baas-admin`).
