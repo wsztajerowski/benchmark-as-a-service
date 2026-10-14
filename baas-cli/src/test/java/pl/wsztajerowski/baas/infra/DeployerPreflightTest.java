@@ -38,8 +38,8 @@ class DeployerPreflightTest {
 
         assertThat(probed).containsExactlyInAnyOrder(
             "CloudFormation", "SsmRunnerAmiPointer", "ImageBuilder", "PassRolesToServices",
-            "AssumeOwnOperatorRole", "IAM", "PreflightSimulation", "ResultsTableLifecycle",
-            "S3WorkingBucketLifecycle");
+            "GitHubOidcProvider", "AssumeOwnOperatorRole", "IAM", "PreflightSimulation",
+            "ResultsTableLifecycle", "S3WorkingBucketLifecycle");
     }
 
     /**
@@ -101,7 +101,7 @@ class DeployerPreflightTest {
         new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
 
         assertThat(iam.refused).as("wildcard and plain actions are never mixed").isZero();
-        assertThat(iam.requests).hasSize(13);
+        assertThat(iam.requests).hasSize(14);
     }
 
     /**

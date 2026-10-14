@@ -156,6 +156,23 @@ class CloudFormationServiceTest {
             .doesNotContain("UseExistingVpc", "ExistingVpcId", "ExistingSubnetId", "ExistingSecurityGroupId");
     }
 
+    /**
+     * Every federated stack created before interactive-setup carries GitHubOidcProviderArn, which
+     * the template now composes instead. Its first update must not name it, or CloudFormation
+     * refuses the whole update — and CI's federation, carried forward beside it, must survive.
+     */
+    @Test
+    void theRemovedProviderArnParameterIsDroppedAndTheFederationKept() throws Exception {
+        var cf = new DeployedStack("ResourceNamePrefix", "GitHubOrg", "GitHubRepo", "GitHubOidcProviderArn");
+
+        new CloudFormationService(cf).updateStackParameters("d", CloudFormationService.coreTemplate(),
+            Map.of("ResourceNamePrefix", "d"));
+
+        assertThat(cf.submitted.parameters()).extracting(Parameter::parameterKey)
+            .contains("GitHubOrg", "GitHubRepo")
+            .doesNotContain("GitHubOidcProviderArn");
+    }
+
     @Test
     void permissionFailuresAreRecognisedInEveryShapeCloudFormationRelays() {
         assertThat(List.of(
