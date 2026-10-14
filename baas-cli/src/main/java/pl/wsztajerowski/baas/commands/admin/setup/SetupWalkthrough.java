@@ -2,6 +2,7 @@ package pl.wsztajerowski.baas.commands.admin.setup;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import pl.wsztajerowski.baas.infra.DeployerPreflight;
 
 import java.util.List;
 
@@ -28,7 +29,7 @@ final class SetupWalkthrough {
         while (index < steps.size()) {
             SetupStep step = steps.get(index);
             logger.debug("Setup step: {}", step.name());
-            switch (step.run(context)) {
+            switch (outcome(step, context)) {
                 case SetupStep.Outcome.Next ignored -> index++;
                 case SetupStep.Outcome.Stop stop -> {
                     if (stop.message() != null && !stop.message().isBlank()) {
@@ -52,6 +53,24 @@ final class SetupWalkthrough {
             }
         }
         return 0;
+    }
+
+    /**
+     * A step's outcome, with any access denial after the policy is rendered turned into the policy
+     * hand-over. The permission check is a convenience: an identity it could not check, or a
+     * statement it cannot evaluate, is found only when a call is refused — at whichever step makes
+     * that call — and a bare AccessDenied there is the dead end the walkthrough exists to remove.
+     */
+    private static SetupStep.Outcome outcome(SetupStep step, SetupContext context) throws Exception {
+        try {
+            return step.run(context);
+        } catch (RuntimeException e) {
+            if (context.policy == null || !DeployerPreflight.isAccessDenied(e)) {
+                throw e;
+            }
+            logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", e.getMessage());
+            return StackStep.permissionFailure(context);
+        }
     }
 
     private int indexOf(String name) {

@@ -47,6 +47,7 @@ final class FakeSetupAws implements SetupAws {
     Image image = new Image.Absent();
     Optional<RunningBuild> runningBuild = Optional.empty();
     IllegalStateException buildFailure;
+    RuntimeException imageFailure;
 
     /** A factory handing out this one fake, recording each region and profile asked for. */
     java.util.function.BiFunction<String, String, SetupAws> factory() {
@@ -196,6 +197,9 @@ final class FakeSetupAws implements SetupAws {
     @Override
     public Optional<RunningBuild> runningImageBuild(String deployment) {
         calls.add("runningImageBuild:" + deployment);
+        if (imageFailure != null) {
+            throw imageFailure;
+        }
         return runningBuild;
     }
 
