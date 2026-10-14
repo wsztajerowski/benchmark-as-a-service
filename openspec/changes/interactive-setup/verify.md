@@ -1,6 +1,6 @@
 # Verify — interactive-setup
 
-Paid tests used: **4 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
+Paid tests used: **6 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
 
 ## 1. Blocking assumptions
 
@@ -202,3 +202,50 @@ inherited-SIGINT trap in background shells, which would make the check say nothi
     `aDenialAtALaterStepHandsThePolicyOver`.
   - Re-run on the rebuilt JAR: exit 1, standard output is exactly one policy document (14
     statements), and the deployment file is byte-identical (`lynx` not stored over `baas-admin`).
+
+### 13.5 Teardown leaves the provider; dev recreated interactively
+
+- Dev was federated again (`present, reused`), then torn down with `--yes`. The output included
+  `The account's GitHub OIDC provider (token.actions.githubusercontent.com) is left in place: it is
+  account-wide and may serve other projects. baas-development no longer trusts it, since its operator
+  role is gone.` The provider still exists afterwards (`CreateDate 2024-12-15T18:53:42Z`). The
+  image was retired, and only dev's file was removed.
+- *Environment note, not a defect:* that federation update's waiter took 16.5 min for an update
+  CloudFormation finished in 30 s (the two earlier updates took 30 s each). `pmset -g log` shows the
+  Mac in Normal Sleep with only maintenance dark-wakes from 18:36:55, when a `caffeinate` assertion
+  ended. Every later check runs under `caffeinate -dimsu`.
+- **Paid 5:** dev recreated by a full interactive create (`expect`, 18:56–19:12). It asked for:
+  - the profile (no stored one, so no default; answered `baas-admin`);
+  - the region (`[eu-central-1]`, answered `us-east-1`);
+  - GitHub (`n`);
+  - the plan, which listed account and ARN, region, deployment, the create with bucket and
+    table, `GitHub: none` and the ~$0.20/month cost (confirmed);
+  - the image build offer (`y`).
+
+  It did **not** ask for the name, since `--deployment` named it. The file was written 36 ms after
+  `Creating stack`, the stack completed, the operator role was assumable, and build `/1` was
+  published as `ami-0ac8369b05bf4024b`. The closing repeat command was
+  `baas --deployment baas-development admin deployment setup --non-interactive --region us-east-1
+  --deployer-aws-profile baas-admin --build-image`, exactly the answers given.
+
+### 13.3 CI's deployment recreated from scratch (paid: 1 so far)
+
+- **The provider was not deleted before this check** (it still exists, `CreateDate
+  2024-12-15T18:53:42Z`), so the live run covers **reuse**, not creation.
+  `CreateOpenIDConnectProvider` is covered by `anAbsentProviderIsCreatedBeforeTheStack` against
+  the fake, by the policy test pinning the `Create` grant on the exact ARN, and by the permission
+  check, which simulated that grant as Met in every run here. A live create waits for the provider
+  to be deleted — **W2**.
+- `teardown --yes` (19:13–19:14): the stack was deleted, image `ami-0528c58373032fb85` retired,
+  and the output said `The account's GitHub OIDC provider … is left in place`.
+- `setup --non-interactive --region eu-central-1 --deployer-aws-profile baas-admin --github-org
+  wsztajerowski --github-repo benchmark-as-a-service --build-image` (19:14–19:30):
+  - `GitHub OIDC provider: present, reused`;
+  - the file was written 35 ms after `Creating stack`;
+  - the stack was created and the operator role assumable;
+  - **paid 6:** build `/1` published as `ami-006bf9067587a5c80`;
+  - the closing text printed both `gh variable set` lines, filled in.
+- The operator role ARN is unchanged (`…:role/baas-381492019823-role-operator`), and its trust holds
+  the account root plus `Federated: …:oidc-provider/token.actions.githubusercontent.com`. The
+  repository variables `OPERATOR_ROLE_ARN` and `AWS_REGION` already match, so nothing changes on
+  GitHub.
