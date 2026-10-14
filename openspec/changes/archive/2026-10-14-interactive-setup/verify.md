@@ -344,13 +344,15 @@ Unit suite: 880 tests, 0 failures. CI on PR #95 green, both paid E2E jobs includ
 - **W1** — `JobSession`'s two stop-failure messages still print `baas jobs terminate <id>`
   without `--deployment`. `JobSession` never learns the deployment's name (see 11.1).
   *Recommendation:* pass the name in when `JobSession` is next touched.
-- **W2** — Setup's provider *creation* was not exercised live: the account's provider was not
-  deleted before 13.3, so the live runs cover reuse only. Creation is unit-tested
-  (`anAbsentProviderIsCreatedBeforeTheStack`), the grant is simulated as Met in every live run, and
-  the request shape follows the API reference (task 1.3).
-  *Recommendation:* the next time the provider is absent (a new account, or after an IAM admin
-  deletes it), run `setup --github-org … --github-repo …` and check `aws iam
-  get-open-id-connect-provider` lists `sts.amazonaws.com`.
+- **W2** — *closed 2026-10-14.* Setup's provider *creation* had not been exercised live: the
+  account's provider was not deleted before 13.3, so the live runs covered reuse only. After the old
+  provider was deleted, a fresh setup of `baas-development` (federated to
+  `wsztajerowski/benchmark-as-a-service` and `wsztajerowski/lynx-journal`) created
+  `token.actions.githubusercontent.com` at 19:21:20Z. `get-open-id-connect-provider` lists the
+  `sts.amazonaws.com` audience, plus a thumbprint IAM filled in itself, since setup passes none.
+  The provider is account-wide, so `baas-381492019823`'s federation recovered with it: the E2E
+  jobs on PR #96 had failed with "The web identity token provided could not be validated" while it
+  was absent, and both passed on the re-run (run 38621678682).
 - **W3** — *closed 2026-10-14.* Four scenarios had no test of their own. Each now has a test
   and a live run; see *W3 follow-up* below.
 
@@ -361,7 +363,7 @@ Unit suite: 880 tests, 0 failures. CI on PR #95 green, both paid E2E jobs includ
 - `PolicyHandOver.attachThen` says "Nothing was created." unattended even after an update earlier
   in the same run. True for this run's resources, but it could say "Setup stopped here." instead.
 
-**Assessment:** no critical issues, 2 warnings open (W1, W2; W3 closed). Ready for archive once the PR is merged,
+**Assessment:** no critical issues, 1 warning open (W1; W2 and W3 closed). Ready for archive once the PR is merged,
 with the warnings noted.
 
 
