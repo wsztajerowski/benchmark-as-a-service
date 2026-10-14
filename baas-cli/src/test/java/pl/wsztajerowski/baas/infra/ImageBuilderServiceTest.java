@@ -22,6 +22,8 @@ class ImageBuilderServiceTest {
     private static final String POINTER = "/a1b2c3d4/runner/ami-id";
     private static final String PREVIOUS_AMI = "ami-000000000000previous";
     private static final String NEW_AMI = "ami-111111111111new";
+    /** The fake's build ARN ends {@code …/1.0.0/1}: a build it starts is of this recipe version. */
+    private static final String RECIPE_VERSION = "1.0.0";
 
     /** Shared so the cross-service ordering — pointer write, then deregister — is visible at all. */
     private final List<String> calls = new java.util.ArrayList<>();
@@ -45,7 +47,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
         ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
+        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(calls)
             .as("a deregister before the pointer write is a window in which every job fails")
@@ -59,7 +61,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
         ec2.images.put(PREVIOUS_AMI, imageWithSnapshots(PREVIOUS_AMI, "snap-old"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(published).isEqualTo(NEW_AMI);
         assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
@@ -74,7 +76,7 @@ class ImageBuilderServiceTest {
         imageBuilder.terminalStatus = ImageStatus.FAILED;
         imageBuilder.failureReason = "step InstallToolchain returned 1";
 
-        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent"))
+        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("step InstallToolchain returned 1");
 
@@ -97,7 +99,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-failed"));
         ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
 
-        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent"))
+        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION))
             .hasMessageContaining("component-contract failed");
 
         assertThat(calls)
@@ -116,7 +118,7 @@ class ImageBuilderServiceTest {
         for (ImageStatus status : List.of(ImageStatus.DEPRECATED, ImageStatus.DISABLED, ImageStatus.UNKNOWN_TO_SDK_VERSION)) {
             imageBuilder.terminalStatus = status;
 
-            assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent"))
+            assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Image build");
         }
@@ -128,7 +130,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.0.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent");
+        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
         assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage"));
@@ -147,7 +149,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(published).isEqualTo(NEW_AMI);
         assertThat(ssm.parameters)
@@ -165,7 +167,7 @@ class ImageBuilderServiceTest {
         ec2.deregisterClientFailure = software.amazon.awssdk.core.exception.SdkClientException.create(
             "Unable to execute HTTP request: Read timed out");
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent");
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(published).isEqualTo(NEW_AMI);
         assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
@@ -176,7 +178,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.0.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent");
+        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(calls).noneMatch(call -> call.startsWith("createTags"));
     }
@@ -186,7 +188,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, Image.builder().imageId(NEW_AMI).creationDate("2026-08-11T00:00:00Z").build());
 
-        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent");
+        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION);
 
         assertThat(calls)
             .as("without them `baas admin image show` has no identity to report and results carry no version")
@@ -361,6 +363,120 @@ class ImageBuilderServiceTest {
                     .build())
                 .toList())
             .build();
+    }
+
+    // ─── An interrupted build: waited for or adopted, never repeated ──────────────
+
+    private static final String RECIPE_IMAGES =
+        "arn:aws:imagebuilder:eu-central-1:123456789012:image/a1b2c3d4-recipe-runner/";
+
+    private static software.amazon.awssdk.services.imagebuilder.model.ImageSummary earlierBuild(
+            String recipeVersion, ImageStatus status, String amiId) {
+        var summary = software.amazon.awssdk.services.imagebuilder.model.ImageSummary.builder()
+            .arn(RECIPE_IMAGES + recipeVersion + "/3")
+            .state(state(status, null))
+            .dateCreated("2026-10-14T10:15:00Z");
+        return (amiId == null ? summary : summary.outputResources(amiOutput(amiId))).build();
+    }
+
+    /**
+     * Ctrl+C mid-build left Image Builder running; a re-run used to start a second build and the
+     * first one's AMI was never published or retired.
+     */
+    @Test
+    void aBuildStillRunningIsWaitedForInsteadOfStartingAnother() throws Exception {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+        imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.BUILDING, null));
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+
+        assertThat(imageBuilder.startedPipelines).as("never a second build").isEmpty();
+        assertThat(imageBuilder.polledBuilds).containsOnly(RECIPE_IMAGES + RECIPE_VERSION + "/3");
+        assertThat(published).isEqualTo(NEW_AMI);
+        assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
+        assertThat(calls).contains("deregisterImage:" + PREVIOUS_AMI);
+    }
+
+    @Test
+    void aBuildThatFinishedUnseenIsAdoptedWithoutBuilding() throws Exception {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+        imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.AVAILABLE, NEW_AMI));
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+
+        assertThat(imageBuilder.startedPipelines).isEmpty();
+        assertThat(published).isEqualTo(NEW_AMI);
+        assertThat(calls)
+            .as("adoption is publish's second half: repoint, then retire the replaced image")
+            .containsSubsequence("putParameter:" + NEW_AMI, "deregisterImage:" + PREVIOUS_AMI);
+    }
+
+    /**
+     * An extension pushed since the interrupted build changed the recipe version. Publishing the
+     * old build would put the superseded extension on every runner, so it is retired instead.
+     */
+    @Test
+    void aFinishedBuildOfASupersededRecipeIsRetiredAndANewOneBuilt() throws Exception {
+        String stale = "ami-222222222222stale";
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+        imageBuilder.pipelineImages.add(earlierBuild("0.9.0", ImageStatus.AVAILABLE, stale));
+        ec2.images.put(stale, imageWithSnapshots(stale, "snap-stale"));
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+
+        assertThat(imageBuilder.startedPipelines).containsExactly(PIPELINE);
+        assertThat(published).isEqualTo(NEW_AMI);
+        assertThat(calls).contains("deregisterImage:" + stale, "deleteSnapshot:snap-stale");
+    }
+
+    @Test
+    void theImageAlreadyPublishedIsNotAdoptedAgain() throws Exception {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+        imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.AVAILABLE, PREVIOUS_AMI));
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+
+        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+
+        assertThat(imageBuilder.startedPipelines).containsExactly(PIPELINE);
+    }
+
+    /** Image Builder still lists a build whose AMI someone deregistered by hand. */
+    @Test
+    void aFinishedBuildWhoseAmiIsGoneFallsThroughToABuild() throws Exception {
+        imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.AVAILABLE, "ami-333333333333gone"));
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.0.0", "ami-parent"));
+
+        assertThat(service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION)).isEqualTo(NEW_AMI);
+        assertThat(imageBuilder.startedPipelines).containsExactly(PIPELINE);
+    }
+
+    @Test
+    void aRunningBuildIsReportedWithItsStart() {
+        imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.TESTING, null));
+
+        assertThat(service().runningBuild(PIPELINE))
+            .hasValueSatisfying(build -> {
+                assertThat(build.recipeVersion()).isEqualTo(RECIPE_VERSION);
+                assertThat(build.started()).isEqualTo(java.time.Instant.parse("2026-10-14T10:15:00Z"));
+            });
+    }
+
+    @Test
+    void aFinishedBuildIsNotReportedAsRunning() {
+        imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.AVAILABLE, NEW_AMI));
+
+        assertThat(service().runningBuild(PIPELINE)).isEmpty();
     }
 
     static OutputResources amiOutput(String amiId) {
