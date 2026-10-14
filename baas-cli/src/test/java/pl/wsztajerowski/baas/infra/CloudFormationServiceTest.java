@@ -157,6 +157,38 @@ class CloudFormationServiceTest {
     }
 
     /**
+     * Setup writes the deployment's file between the two halves of a create, so the first must
+     * return once CloudFormation accepted the request — before any waiter, which would block
+     * until the stack is complete.
+     */
+    @Test
+    void submittingACreateDoesNotWaitForIt() {
+        var requests = new java.util.ArrayList<String>();
+        var cf = new software.amazon.awssdk.services.cloudformation.CloudFormationClient() {
+            @Override
+            public software.amazon.awssdk.services.cloudformation.model.CreateStackResponse createStack(
+                    software.amazon.awssdk.services.cloudformation.model.CreateStackRequest request) {
+                requests.add(request.stackName());
+                return software.amazon.awssdk.services.cloudformation.model.CreateStackResponse.builder().build();
+            }
+
+            @Override
+            public String serviceName() {
+                return "cloudformation";
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+
+        // Any other call — a waiter's DescribeStacks included — throws from the interface default.
+        new CloudFormationService(cf).submitCreate("d", TEMPLATE, Map.of("ResourceNamePrefix", "d"));
+
+        assertThat(requests).containsExactly("d");
+    }
+
+    /**
      * Every federated stack created before interactive-setup carries GitHubOidcProviderArn, which
      * the template now composes instead. Its first update must not name it, or CloudFormation
      * refuses the whole update — and CI's federation, carried forward beside it, must survive.

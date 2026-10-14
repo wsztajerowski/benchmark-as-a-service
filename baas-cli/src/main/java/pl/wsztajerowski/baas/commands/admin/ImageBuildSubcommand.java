@@ -80,11 +80,6 @@ public class ImageBuildSubcommand implements Callable<Integer> {
 
         String prefix = config.requirePrefix();
         String region = config.getAws().resolveRegion();
-        var renderer = new RunnerImageRenderer();
-        var definition = renderer.definition();
-        String baseVersion = definition.imageVersion();
-        String base = renderer.renderBase();
-
         // Read before any AWS call: a file that cannot be pushed fails without a round trip.
         Optional<RunnerImageExtension.WorkingCopy> pushed = Optional.empty();
         if (extensionFile != null) {
@@ -108,76 +103,20 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         // holds. See RunCommand for the other half of that split.
         var factory = new AwsClientFactory(region, AwsClientFactory.profile(config.getAws().getDeployerProfile()));
 
-        String componentName = DeploymentNames.of(prefix).runnerComponent();
-        try (var imageBuilderClient = factory.imageBuilder();
-             var ec2 = factory.ec2();
-             var ssm = factory.ssm();
-             var cf = factory.cloudFormation()) {
-
-            var cloudFormation = new CloudFormationService(cf);
-            if (!cloudFormation.stackExists(prefix)) {
-                logger.error("Stack {} does not exist. Run `baas admin deployment setup` first.", prefix);
-                return 1;
-            }
-            Map<String, String> deployed = cloudFormation.getStackParameters(prefix);
-            String refusal = olderBaseRefusal(baseVersion, deployed.get(RunnerImageParameters.IMAGE_VERSION), prefix);
-            if (refusal != null) {
-                logger.error(refusal);
-                return 1;
-            }
-            String deployedExtension = deployed.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
-
-            String extension = deployedExtension;
-            String parentAmiId;
-            try {
-                if (pushed.isPresent()) {
-                    RunnerImageExtension.requireCurrent(pushed.get(), deployedExtension);
-                    extension = pushed.get().content();
-                }
-                parentAmiId = new ParentImageResolver(ec2).resolve(definition.parentImage().amiName(), region);
-            } catch (IllegalStateException e) {
-                logger.error(e.getMessage());
-                return 1;
-            }
-
-            var plan = RunnerImageParameters.plan(renderer, baseVersion, base, parentAmiId, extension, deployed);
-            var service = new ImageBuilderService(imageBuilderClient, ec2, ssm);
-
-            // Before the stack update, not after: a rejected component version costs a minute of
-            // CloudFormation rollback, and the message names the resource rather than the fix. Only
-            // the base is checked — its version is the one written by hand; the others are derived
-            // from the deployed stack and cannot collide.
-            try {
-                service.preflightVersion(componentName, baseVersion, base);
-            } catch (IllegalStateException e) {
-                logger.error(e.getMessage());
-                return 1;
-            }
-
-            logger.info("Registering runner image {} (parent {})...", plan.label(), parentAmiId);
-            // Every image parameter is sent; everything else — the networking choices in
-            // particular — is carried forward from the deployed stack.
-            cloudFormation.updateStackParameters(prefix, CloudFormationService.coreTemplate(), plan.values());
-
-            String pipelineArn = cloudFormation.getStackOutputs(prefix).get("RunnerImagePipelineArn");
-            if (pipelineArn == null || pipelineArn.isEmpty()) {
-                logger.error("Stack {} has no RunnerImagePipelineArn output. Run `baas admin deployment setup` first.",
-                    prefix);
-                return 1;
-            }
-
-            String parameterName = DeploymentNames.of(prefix).amiPointer();
-            String amiId = service.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
-                plan.values().get(RunnerImageParameters.RECIPE_VERSION));
-
-            logger.info("""
-                Runner image {} built and published.
-                  AMI:       {}
-                  Parent:    {}
-                  Extension: {}
-                  Pointer:   {}""", plan.label(), amiId, parentAmiId,
-                RunnerImageExtension.identity(extension), parameterName);
-            return 0;
+        RunnerImageBuild.Result result;
+        try {
+            result = RunnerImageBuild.run(factory, prefix, region, pushed);
+        } catch (IllegalStateException e) {
+            logger.error(e.getMessage());
+            return 1;
         }
+        logger.info("""
+            Runner image {} built and published.
+              AMI:       {}
+              Parent:    {}
+              Extension: {}
+              Pointer:   {}""", result.label(), result.amiId(), result.parentAmiId(),
+            RunnerImageExtension.identity(result.extension()), result.pointer());
+        return 0;
     }
 }
