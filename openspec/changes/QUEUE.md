@@ -2,13 +2,15 @@
 
 OpenSpec has no priority or park state; `openspec list` shows every active change, newest first.
 This file is the order. Work the first unblocked item; never pick up a parked one unasked.
-Set 2026-10-02.
+Set 2026-10-02. A row may be a review walkthrough rather than a change: it has no directory under
+`openspec/changes/` and starts by reading the review, not with an `/opsx` command.
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
 | 1 | [`interactive-setup`](interactive-setup/exploration.md) | new-user setup analysis, E2 | Explored 2026-10-13. Unblocked: `setup-prerequisites` (the whole-policy preflight and `--policy-file` it builds on) merged in PR #94 and archived 2026-10-13 | `/opsx:propose interactive-setup` |
-| 2 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
-| 3 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
+| 2 | Codebase review triage *(review, not a change)* | Security, API-gap, code- and test-complexity and architecture reviews, plus a survey of CLI architecture styles, 2026-10-13 | Written 2026-10-13, untriaged. It lives only on the separate branch `codebase-review` (commit `5e3a9e5`), not on `next-release`. It waits for `interactive-setup` by the user's choice (2026-10-14), not because of a dependency | `git switch codebase-review` and read `docs/review/2026-10-13-codebase-review/README.md`. Put its §4 decisions one at a time. Rebase the branch onto `next-release` before filing anything into `docs/review/open-findings.md` |
+| 3 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
+| 4 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
 
 ## Deferred checks
 
