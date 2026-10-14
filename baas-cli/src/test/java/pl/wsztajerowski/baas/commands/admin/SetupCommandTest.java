@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
+import pl.wsztajerowski.baas.infra.BucketProbe;
 
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -125,5 +126,77 @@ class SetupCommandTest {
             .doesNotThrowAnyException();
         assertThatThrownBy(() -> new CommandLine(new SetupCommand()).parseArgs("--yes"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
+    }
+
+    // ─── --non-interactive on a terminal, through the real command tree ─────────────
+
+    /** Allows only the calls up to a denied permission check; anything later fails the test. */
+    private static final class DeniedAws implements pl.wsztajerowski.baas.commands.admin.setup.SetupAws {
+        @Override public Caller callerIdentity() { return new Caller("arn:aws:iam::123456789012:user/alice", "123456789012"); }
+        @Override public BucketProbe bucket(String name) { return new BucketProbe.Absent(); }
+        @Override public Preflight preflight(String callerArn, String policy) {
+            return new Preflight.Denied(java.util.List.of("cloudformation:CreateStack"));
+        }
+        @Override public boolean tableExists(String name) { throw new AssertionError("not reached"); }
+        @Override public java.util.Optional<software.amazon.awssdk.services.cloudformation.model.StackStatus> stackStatus(String s) { throw new AssertionError("not reached"); }
+        @Override public java.util.Optional<software.amazon.awssdk.services.cloudformation.model.StackStatus> awaitSettled(String s) { throw new AssertionError("not reached"); }
+        @Override public void deleteStack(String s) { throw new AssertionError("not reached"); }
+        @Override public java.util.Map<String, String> stackParameters(String s) { throw new AssertionError("not reached"); }
+        @Override public java.util.Map<String, String> stackOutputs(String s) { throw new AssertionError("not reached"); }
+        @Override public java.util.Map<String, String> imageParameters(java.util.Map<String, String> d) { throw new AssertionError("not reached"); }
+        @Override public void submitCreate(String s, java.util.Map<String, String> p) { throw new AssertionError("not reached"); }
+        @Override public void awaitCreate(String s) { throw new AssertionError("not reached"); }
+        @Override public boolean update(String s, java.util.Map<String, String> p) { throw new AssertionError("not reached"); }
+        @Override public void assumeRole(String r) { throw new AssertionError("not reached"); }
+        @Override public OidcProvider oidcProvider(String a) { throw new AssertionError("not reached"); }
+        @Override public void createOidcProvider() { throw new AssertionError("not reached"); }
+        @Override public Image image(String d) { throw new AssertionError("not reached"); }
+        @Override public java.util.Optional<RunningBuild> runningImageBuild(String d) { throw new AssertionError("not reached"); }
+        @Override public String buildImage(String d) { throw new AssertionError("not reached"); }
+    }
+
+    /** Runs setup through {@code BaasApp} on a console that says terminal; returns lines read and the exit. */
+    private static int[] onATerminal(java.nio.file.Path root, java.io.StringWriter out, String... args) {
+        int[] reads = {0};
+        CommandLine.IFactory defaults = CommandLine.defaultFactory();
+        CommandLine.IFactory factory = new CommandLine.IFactory() {
+            @Override
+            @SuppressWarnings("unchecked")
+            public <K> K create(Class<K> cls) throws Exception {
+                if (cls == SetupCommand.class) {
+                    var command = new SetupCommand();
+                    command.awsFactory = (region, profile) -> new DeniedAws();
+                    command.consoleFor = writer -> pl.wsztajerowski.baas.console.Console.withFlags(writer, true, false);
+                    command.answerReader = () -> { reads[0]++; return null; };
+                    return (K) command;
+                }
+                return defaults.create(cls);
+            }
+        };
+        int exit = new CommandLine(new pl.wsztajerowski.baas.BaasApp(root), factory)
+            .setOut(new java.io.PrintWriter(out, true))
+            .setErr(new java.io.PrintWriter(new java.io.StringWriter(), true))
+            .execute(args);
+        return new int[]{reads[0], exit};
+    }
+
+    /** Spec: "The option forces unattended on a terminal". */
+    @Test
+    void theOptionForcesUnattendedOnATerminal(@org.junit.jupiter.api.io.TempDir java.nio.file.Path root) {
+        var out = new java.io.StringWriter();
+
+        int[] result = onATerminal(root, out, "admin", "deployment", "setup", "--non-interactive", "--region", "us-east-1");
+
+        assertThat(result[0]).as("lines read: nothing is asked").isZero();
+        assertThat(result[1]).isEqualTo(1);
+        assertThat(out.toString().strip()).as("unattended, the policy is the payload").startsWith("{").endsWith("}");
+    }
+
+    /** The control: the same terminal without the option asks. */
+    @Test
+    void withoutTheOptionATerminalIsAsked(@org.junit.jupiter.api.io.TempDir java.nio.file.Path root) {
+        int[] result = onATerminal(root, new java.io.StringWriter(), "admin", "deployment", "setup", "--region", "us-east-1");
+
+        assertThat(result[0]).as("the profile prompt reads a line").isPositive();
     }
 }

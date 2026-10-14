@@ -1,0 +1,214 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "CloudFormation",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:CreateStack",
+        "cloudformation:DeleteStack",
+        "cloudformation:DescribeStackEvents",
+        "cloudformation:DescribeStacks",
+        "cloudformation:UpdateStack"
+      ],
+      "Resource": "arn:aws:cloudformation:us-east-1:123456789012:stack/baas-123456789012/*"
+    },
+    {
+      "Sid": "CloudFormationValidateTemplate",
+      "Effect": "Allow",
+      "Action": "cloudformation:ValidateTemplate",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "EC2",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:AssociateRouteTable",
+        "ec2:AttachInternetGateway",
+        "ec2:AuthorizeSecurityGroupEgress",
+        "ec2:CreateInternetGateway",
+        "ec2:CreateRoute",
+        "ec2:CreateRouteTable",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSubnet",
+        "ec2:CreateTags",
+        "ec2:CreateVpc",
+        "ec2:CreateVpcEndpoint",
+        "ec2:DeleteInternetGateway",
+        "ec2:DeleteRoute",
+        "ec2:DeleteRouteTable",
+        "ec2:DeleteSecurityGroup",
+        "ec2:DeleteSnapshot",
+        "ec2:DeleteSubnet",
+        "ec2:DeleteVpc",
+        "ec2:DeleteVpcEndpoints",
+        "ec2:DeregisterImage",
+        "ec2:Describe*",
+        "ec2:DetachInternetGateway",
+        "ec2:DisassociateRouteTable",
+        "ec2:ModifySubnetAttribute",
+        "ec2:ModifyVpcAttribute",
+        "ec2:RevokeSecurityGroupEgress"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "SsmRunnerAmiPointer",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:GetParameter",
+        "ssm:PutParameter",
+        "ssm:DeleteParameter"
+      ],
+      "Resource": "arn:aws:ssm:us-east-1:123456789012:parameter/baas-123456789012/runner/ami-id"
+    },
+    {
+      "Sid": "ImageBuilder",
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:CreateComponent",
+        "imagebuilder:CreateDistributionConfiguration",
+        "imagebuilder:CreateImagePipeline",
+        "imagebuilder:CreateImageRecipe",
+        "imagebuilder:CreateInfrastructureConfiguration",
+        "imagebuilder:Delete*",
+        "imagebuilder:StartImagePipelineExecution",
+        "imagebuilder:TagResource",
+        "imagebuilder:UntagResource",
+        "imagebuilder:Update*"
+      ],
+      "Resource": "arn:aws:imagebuilder:us-east-1:123456789012:*/baas-123456789012-*"
+    },
+    {
+      "Sid": "ImageBuilderRead",
+      "Effect": "Allow",
+      "Action": [
+        "imagebuilder:Get*",
+        "imagebuilder:List*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "us-east-1"
+        }
+      }
+    },
+    {
+      "Sid": "ImageBuilderServiceLinkedRole",
+      "Effect": "Allow",
+      "Action": "iam:CreateServiceLinkedRole",
+      "Resource": "arn:aws:iam::123456789012:role/aws-service-role/imagebuilder.amazonaws.com/*",
+      "Condition": {
+        "StringEquals": {
+          "iam:AWSServiceName": "imagebuilder.amazonaws.com"
+        }
+      }
+    },
+    {
+      "Sid": "PassRolesToServices",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": [
+        "arn:aws:iam::123456789012:role/baas-123456789012-role-runner",
+        "arn:aws:iam::123456789012:role/baas-123456789012-role-image-build"
+      ]
+    },
+    {
+      "Sid": "GitHubOidcProvider",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateOpenIDConnectProvider",
+        "iam:GetOpenIDConnectProvider"
+      ],
+      "Resource": "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    },
+    {
+      "Sid": "AssumeOwnOperatorRole",
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "arn:aws:iam::123456789012:role/baas-123456789012-role-operator"
+    },
+    {
+      "Sid": "IAM",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AddRoleToInstanceProfile",
+        "iam:AttachRolePolicy",
+        "iam:CreateInstanceProfile",
+        "iam:CreateRole",
+        "iam:DeleteInstanceProfile",
+        "iam:DeleteRole",
+        "iam:DeleteRolePolicy",
+        "iam:DetachRolePolicy",
+        "iam:Get*",
+        "iam:List*",
+        "iam:PutRolePolicy",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:UpdateRole",
+        "iam:RemoveRoleFromInstanceProfile",
+        "iam:TagRole",
+        "iam:UntagRole"
+      ],
+      "Resource": [
+        "arn:aws:iam::123456789012:role/baas-123456789012-role-runner",
+        "arn:aws:iam::123456789012:role/baas-123456789012-role-operator",
+        "arn:aws:iam::123456789012:role/baas-123456789012-role-image-build",
+        "arn:aws:iam::123456789012:instance-profile/baas-123456789012-profile-runner",
+        "arn:aws:iam::123456789012:instance-profile/baas-123456789012-profile-image-build"
+      ]
+    },
+    {
+      "Sid": "PreflightSimulation",
+      "Effect": "Allow",
+      "Action": "iam:SimulatePrincipalPolicy",
+      "Resource": "arn:aws:iam::123456789012:*"
+    },
+    {
+      "Sid": "ResultsTableLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:CreateTable",
+        "dynamodb:DeleteTable",
+        "dynamodb:UpdateTable",
+        "dynamodb:Describe*",
+        "dynamodb:UpdateTimeToLive",
+        "dynamodb:TagResource",
+        "dynamodb:UntagResource",
+        "dynamodb:ListTagsOfResource"
+      ],
+      "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/baas-123456789012-results"
+    },
+    {
+      "Sid": "S3WorkingBucketLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "s3:CreateBucket",
+        "s3:DeleteBucket",
+        "s3:DeleteObject",
+        "s3:DeleteObjectVersion",
+        "s3:Get*",
+        "s3:List*",
+        "s3:PutBucketPublicAccessBlock",
+        "s3:PutBucketTagging",
+        "s3:PutBucketVersioning",
+        "s3:PutEncryptionConfiguration",
+        "s3:PutLifecycleConfiguration"
+      ],
+      "Resource": [
+        "arn:aws:s3:::baas-123456789012",
+        "arn:aws:s3:::baas-123456789012/*"
+      ]
+    }
+  ]
+}
+
