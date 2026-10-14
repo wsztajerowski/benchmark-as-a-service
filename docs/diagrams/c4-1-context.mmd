@@ -3,7 +3,7 @@ C4Context
 
     Person(author, "Benchmark author", "Builds a JMH/JCStress JAR, runs it on a clean EC2 instance, compares results. Holds operator credentials.")
     Person(admin, "Deployment admin", "Deploys, re-bakes and tears down the account's one deployment. Holds deployer credentials.")
-    Person(iamAdmin, "Account IAM admin", "Attaches the rendered deployer policy; deploys cf-template-ci.yaml (the OIDC provider) by hand.")
+    Person(iamAdmin, "Account IAM admin", "Attaches the rendered deployer policy setup hands over; adds an audience to a shared OIDC provider if one lacks it.")
 
     System(baas, "Benchmark as a Service", "baas CLI plus one per-account cloud deployment: throwaway runners, results table, job artifacts.")
 
@@ -14,7 +14,7 @@ C4Context
 
     Rel(author, baas, "baas jobs (run, show, diff, download) / results query / config")
     Rel(admin, baas, "baas admin deployment setup / build-image / image / teardown")
-    Rel(iamAdmin, aws, "Attaches BaasCliDeployerPolicy; deploys the GitHub OIDC provider")
+    Rel(iamAdmin, aws, "Attaches BaasCliDeployerPolicy")
     Rel(gha, baas, "Runs the reactor-built CLI with --runner-jar")
     Rel(baas, ghReleases, "Fetches the version-pinned runner JAR once per version (laptop side, checksum-verified)")
     Rel(baas, aws, "Provisions and uses the deployment")

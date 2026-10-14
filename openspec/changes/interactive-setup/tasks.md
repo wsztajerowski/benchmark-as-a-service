@@ -158,7 +158,7 @@ is the recipe version the command would have built (design, *adopted by recipe v
 
 ## 12. Documentation
 
-- [ ] 12.1 CLAUDE.md:
+- [x] 12.1 CLAUDE.md:
   - the deployer-policy size paragraph becomes customer-managed (6144, budget 5632);
   - the `cf-template-ci.yaml` bullet and its "deploy order inverts" text are deleted, along with the
     reference under *IAM is split deliberately*;
@@ -167,15 +167,15 @@ is the recipe version the command would have built (design, *adopted by recipe v
   - the *A deployer policy is prefix-exact* bullet's inline wording is fixed.
 
   Verify by re-reading each edited paragraph against the code.
-- [ ] 12.2 `infra/README.md` and the top-level README: the walkthrough as the setup path, no CI-stack
+- [x] 12.2 `infra/README.md` and the top-level README: the walkthrough as the setup path, no CI-stack
   section, customer-managed attachment. Verify that each documented command and option exists in
   `--help`.
-- [ ] 12.3 A new ADR, `docs/adr/0008`, superseding `baas-cli-core-ci-split` D1/D2 with *create, never
+- [x] 12.3 A new ADR, `docs/adr/0008`, superseding `baas-cli-core-ci-split` D1/D2 with *create, never
   modify or delete* the OIDC provider. Verify that it links the archived change and D4.
-- [ ] 12.4 Update `docs/diagrams/baas-setup.mmd` to the eleven steps, render it with `mmdc` to a
+- [x] 12.4 Update `docs/diagrams/baas-setup.mmd` to the eleven steps, render it with `mmdc` to a
   scratch PNG and look at it, and keep the render out of the repository. Verify by inspecting the
   PNG.
-- [ ] 12.5 Delete E2's entry and index row from `docs/review/open-findings.md`. Verify with
+- [x] 12.5 Delete E2's entry and index row from `docs/review/open-findings.md`. Verify with
   `git grep -n 'E2 ' docs/review/open-findings.md` finding nothing.
 
 ## 13. Live verification (manual)

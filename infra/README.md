@@ -106,52 +106,40 @@ never overwriting it.
 - **The bake may reach the internet** (the build security group allows 443 and 80), which is what
   lets an extension download things.
 
-## Stack 2: `baas-ci` — the GitHub Actions identity provider
+## GitHub Actions: the identity provider and the federated trust
 
-Deploys the OIDC identity provider and nothing else. It takes no parameter from the core stack,
-and produces none the core stack consumes — so **deploy order is provider first**, then
-`baas admin deployment setup` with the provider's ARN. `WorkflowRole` used to live here and is gone: GitHub
-Actions federates directly into `BaasCliOperatorRole`, which the core stack owns.
-
-The provider is **account-global** — one per issuer URL per account. Check before deploying:
+There is no second stack. GitHub Actions federates directly into `BaasCliOperatorRole`, which the
+core stack owns, through the account's GitHub OIDC identity provider:
 
 ```bash
-aws iam list-open-id-connect-providers --profile YOUR_AWS_PROFILE
+baas admin deployment setup --github-org YOUR_GITHUB_ORG --github-repo YOUR_GITHUB_REPO
 ```
 
-If one already exists for `token.actions.githubusercontent.com`, **do not deploy this stack** —
-it would fail with `EntityAlreadyExists`. Use the existing ARN instead.
+On a terminal, setup asks for both instead. Setup composes the provider's ARN from the account —
+`arn:aws:iam::ACCOUNT:oidc-provider/token.actions.githubusercontent.com` — and:
 
-This needs an identity above the deployer: `deployer-policy.json` scopes `iam:Get*`/`iam:List*` to
-roles and never to `oidc-provider/*`, so the deployer gets `AccessDenied` even on the list above.
+- **creates the provider when it is absent**, through the IAM API and outside any stack, with the
+  `sts.amazonaws.com` audience and nothing else (no thumbprint: IAM verifies GitHub's endpoint
+  against its trusted CAs). It does so only after the plan is confirmed;
+- **reuses an existing one**. The provider is account-global — one per issuer URL — and may serve
+  other projects, so `baas` **never modifies or deletes it**. One that does not list
+  `sts.amazonaws.com` is left to an IAM administrator; setup prints the
+  `aws iam add-client-id-to-open-id-connect-provider` line to run and waits;
+- leaves it in place on teardown, and says so.
 
-```bash
-aws cloudformation deploy \
-  --profile YOUR_ADMIN_AWS_PROFILE \
-  --template-file cf-template-ci.yaml \
-  --deployment baas-ci \
-  --parameter-overrides ResourceNamePrefix=RESOURCE_PREFIX
-```
+The deployer policy's `GitHubOidcProvider` statement grants exactly `iam:GetOpenIDConnectProvider`
+and `iam:CreateOpenIDConnectProvider` on that one ARN. An account that deployed the old
+`cf-template-ci.yaml` keeps its provider, and setup reuses it as is.
 
-No `--capabilities` is needed — the stack declares no IAM role.
-
-### Federating a core stack into the provider
-
-```bash
-baas admin deployment setup \
-  --oidc-provider-arn arn:aws:iam::YOUR_AWS_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com \
-  --github-org YOUR_GITHUB_ORG \
-  --github-repo YOUR_GITHUB_REPO
-```
-
-All three are required together: a partial set deploys a trust condition that is always false, so
-the stack would report success while CI has no access — `baas admin deployment setup` rejects that outright.
+Both options are required together: a partial set deploys a trust condition that is always false,
+so the stack would report success while CI has no access — `baas admin deployment setup` rejects that outright.
 `--github-repo` is repeatable (and accepts a comma-separated list), so one deployment can serve
 several repositories.
 
-A later `baas admin deployment setup` that names none of them **carries the deployed values forward** rather
+A later `baas admin deployment setup` that names neither **carries the deployed values forward** rather
 than resubmitting the template defaults, so a setup run for an unrelated reason cannot silently
-revoke CI's access. Removing the trust is therefore its own explicit gesture:
+revoke CI's access. Interactively it shows the current repositories and asks whether to change them.
+Removing the trust is its own explicit gesture:
 
 ```bash
 baas admin deployment setup --revoke-github-oidc
@@ -202,7 +190,7 @@ This one **cannot** be created by the core stack itself — you need deployer pe
 *before* the stack exists in order to create it, so CloudFormation can never be the thing
 that grants permission to create CloudFormation stacks.
 
-It has to be a **customer-managed policy**. The rendered document is ~4.4 KB with whitespace
+It has to be a **customer-managed policy**. The rendered document is ~4.6 KB with whitespace
 stripped, which is what IAM counts, and the limits are:
 
 | Attachment | Cap | Fits? |
@@ -213,7 +201,7 @@ stripped, which is what IAM counts, and the limits are:
 
 The inline case is the trap: the cap is a budget shared with whatever else is attached, so the
 policy can fit today and be rejected after an unrelated addition. A `DeployerPolicyTest` case holds
-the rendered size under 4608 to keep headroom, which is why several statements wildcard a whole
+the rendered size under 5632 — the customer-managed cap less a 512 reserve — which is why several statements wildcard a whole
 verb class (`ec2:Describe*`, `s3:Get*`, `imagebuilder:Get*`) instead of enumerating actions.
 `Create` is deliberately not wildcarded — `imagebuilder:CreateImage` must stay excluded, and
 `s3:Put*` would grant `PutObject`.
@@ -227,6 +215,11 @@ Two grants look wrong and are not:
 - **`CloudFormationValidateTemplate` uses `Resource: "*"`.** The action parses a template body and
   reads no account state; AWS offers no resource-level permission for it. It is a separate
   statement so the stack-scoped `CloudFormation` grant stays scoped to one stack.
+
+On a terminal, setup handles all of this as one step: when rights fall short it asks whether to
+save the policy to a file (`policy.json` by default) or print it, shows the IAM administrator's
+commands with the names filled in, and waits — press Enter once the policy is attached, and it
+checks again and carries on. Unattended it works as below.
 
 ```bash
 # Setup renders the policy for the deployment it is about to create and writes it to the file
@@ -374,8 +367,8 @@ DEV=wiktor-dev   # any name: 3-47 chars, lowercase letters, digits and hyphens, 
 baas --deployment "$DEV" admin deployment setup --region us-east-1 > /tmp/deployer-dev.json
 #    ...attach /tmp/deployer-dev.json as a CUSTOMER-MANAGED policy, with an identity above the
 #    deployer. It will not fit inline alongside the account's own: two rendered documents are
-#    ~8.5k characters against IAM's 5120-character inline budget, shared across every inline policy
-#    on the principal.
+#    ~9k characters against IAM's 5120-character inline budget, shared across every inline policy
+#    on the principal. (On a terminal, setup saves it and waits instead of exiting.)
 
 # 2. Run setup again: it now deploys, and writes ~/.baas/deployments/$DEV.yaml.
 baas --deployment "$DEV" admin deployment setup --region us-east-1

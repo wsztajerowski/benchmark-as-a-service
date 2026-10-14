@@ -45,7 +45,6 @@ decides what to pick up next.
 | U2 | Nothing exports a deployment's data before a teardown, which now deletes everything | M | Low | `export-before-teardown` |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | S | Low | open |
-| E2 | Next-step hints omit `--deployment`, so with two deployments every one fails as printed | S | Low | open |
 | pr83/W5 | A JCStress row's `mode` is the string `"null"` in CSV and JSON | XS | Low | open |
 | pr83/W3 | `avgt` scores in `s/op` print as `0.000000` in JSON and CSV | S | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
@@ -143,21 +142,6 @@ graph's `cpool` holds more than `'all'`, so the check is about content and not e
 the runner, when `jfr` is combined with another format, either refuse the combination before the
 benchmark starts or render the other formats from the JFR afterwards (async-profiler's
 `jfrconv`). Refusing is the smaller change and fails loudly; converting keeps both artifacts.
-
-### E2 — next-step hints omit `--deployment` · Should · S
-
-With two deployments configured, every command refuses without `--deployment`. Yet the hints the
-CLI prints for the next step are bare, so each one fails exactly as printed:
-
-- setup's closing text: `baas admin image build` (`SetupCommand.java:445`; its teammate step
-  already carries `--deployment` since `derived-deployment-config`);
-- the no-image refusal: `Build one:  baas admin image build` (`RunCommand.java:357`), which also
-  says "for this account (us-east-1)" where a deployment is meant;
-- the end of a run: `baas results query --job-id …` (`RunCommand.java:878`, and `:620` on failure).
-
-Seen live on 2026-10-10: setup's printed `config set` was refused with "2 deployments are configured".
-**Proposed:** one helper that renders a hint with `--deployment <name>` whenever more than one
-deployment is configured (or always, which is simpler and never wrong), used at each site.
 
 ### pr83/W5 — a JCStress row's `mode` is the string `"null"` · Should · XS
 
