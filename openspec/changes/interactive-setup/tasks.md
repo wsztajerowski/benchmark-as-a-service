@@ -187,12 +187,12 @@ by the user beforehand. Run under a scratch `-Duser.home` with the real `~/.aws`
 under a pseudo-terminal (`script`), and Ctrl+C checks in the foreground. Record every paid test in
 `verify.md` with a running count.
 
-- [ ] 13.1 Manual: tear down `baas-development` with the current CLI, then set it up fresh and
+- [x] 13.1 Manual: tear down `baas-development` with the current CLI, then set it up fresh and
   interactively with the new one. Interrupt the create with Ctrl+C after `CreateStack` is accepted,
   and confirm the file exists and the re-run's step 1 offers it and waits for the create. Accept the
   image offer, run one `baas run` job, then do an interactive re-run that accepts every default and
   changes nothing. Record each step in `verify.md`.
-- [ ] 13.2 Manual: interrupt an `admin image build` on `baas-development` mid-build (paid). Re-run it
+- [x] 13.2 Manual: interrupt an `admin image build` on `baas-development` mid-build (paid). Re-run it
   while the build is in progress, and confirm it waits. Interrupt again, and once the build has
   finished unseen, re-run and confirm it adopts with no second build. Confirm no orphaned AMI remains
   (`aws ec2 describe-images --owners self`). Record in `verify.md`.
