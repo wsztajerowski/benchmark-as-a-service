@@ -80,34 +80,48 @@ One-time, and it needs the elevated deployer credentials described under
 baas admin deployment setup
 ```
 
-This deploys the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 and
-DynamoDB gateway endpoints, security group, the results bucket, the results table, and the
-runner/operator IAM roles — then records the deployment in `~/.baas/deployments/<name>.yaml`: its
-name, region and credential profile names. Nothing sensitive goes in that file.
+On a terminal this is a walkthrough. Each step checks what is already true, then does its part or
+tells you what to do and waits for Enter:
 
-Two things to know: the stack, bucket and table are all named after the deployment,
-`baas-<accountId>`, which setup derives from your AWS account — you don't choose it. And **nothing
-survives a teardown**: the bucket and the table are deleted with the deployment, so export what you
-want to keep first.
+1. which deployment — a new one, or one configured on this machine;
+2. your AWS credentials, shown before anything uses them;
+3. the deployment's name (`baas-<accountId>` is suggested; any valid name works) and region (chosen
+   once);
+4. the deployer policy — when your identity lacks it, setup saves it to `policy.json` (or prints it)
+   with the IAM administrator's commands, and waits until it is attached;
+5. that the bucket and table names are free;
+6. GitHub Actions, optionally — setup creates the account's GitHub OIDC provider when needed;
+7. the plan, which you confirm;
+8. the **core** CloudFormation stack — VPC, public subnet, internet gateway, S3 and DynamoDB gateway
+   endpoints, security group, the results bucket, the results table, and the runner/operator IAM
+   roles;
+9. that your credentials can act as the operator role;
+10. the runner image — offered, ~15 minutes;
+11. what to do next, and the command that repeats your answers without prompts.
 
-If your identity lacks the deployer policy, setup prints the policy it needs on standard output and
-stops without creating anything — `baas admin deployment setup > policy.json` hands it to whoever
-attaches it.
+Nothing records progress: quit at any step and run setup again, and it picks up where things stand.
+The deployment is recorded in `~/.baas/deployments/<name>.yaml` — its region and credential profile
+names, nothing sensitive.
 
-Setup finishes by printing follow-up steps for the operator role. **Do them** — until you do,
-`baas run` uses your default credential chain rather than the narrow role.
+Without a terminal, or with `--non-interactive`, setup asks nothing: each answer comes from its option
+(`--region`, `--deployer-aws-profile`, `--github-org`/`--github-repo`, `--build-image`, …) and it
+exits 1 at the first step you must do yourself — `baas admin deployment setup > policy.json` hands the
+policy to whoever attaches it.
+
+**Nothing survives a teardown**: the bucket and the table are deleted with the deployment, so
+export what you want to keep first.
 
 ### 3. Build the runner image
 
-One-time, and again with deployer credentials. Takes ~15 minutes.
+Setup offers this. To build it later, or again — with deployer credentials, ~15 minutes:
 
 ```bash
 baas admin image build
 ```
 
 `baas run` **fails until this exists** — the runner boots from a purpose-built AMI and installs
-nothing at run time, so there is no fallback path. Setup deliberately does not do this for you: a
-build takes ~15 minutes and every re-setup would pay for it.
+nothing at run time, so there is no fallback path. A build interrupted by Ctrl+C or a closed lid
+is not repeated: the next run waits for it, or publishes it if it finished meanwhile.
 
 What gets baked is declared in [`infra/runner-image.yaml`](infra/runner-image.yaml) — the pinned
 parent AL2023 AMI, Corretto, `perf`, the AWS CLI, async-profiler, and the kernel tunables that
@@ -379,10 +393,9 @@ needs `sts:AssumeRole` on the role and `baas --deployment <name> config sync --o
 | `fake-jmh-benchmarks` | Minimal JMH JAR, test fixture |
 | `fake-stress-tests` | Minimal JCStress JAR, test fixture |
 
-Infrastructure lives in [`infra/`](infra/README.md) as two independently-deployed CloudFormation
-stacks: `cf-template-core.yaml` (what the CLI deploys) and `cf-template-ci.yaml` (GitHub OIDC and
-the workflow role, for CI only — split out so the CLI's identity never needs
-`iam:CreateOIDCProvider`).
+Infrastructure lives in [`infra/`](infra/README.md): `cf-template-core.yaml`, the one stack the CLI
+deploys per deployment. The account's GitHub OIDC provider is created by setup when CI is asked
+for, outside any stack, and never modified or deleted by `baas`.
 
 ## Build and test
 
@@ -467,7 +480,7 @@ the reusable workflow, the contract is now *install the CLI* — see [Install](#
 
 Variables (no secrets — a role ARN is not sensitive, and nothing else is left to hold):
 `OPERATOR_ROLE_ARN` (core stack output `OperatorRoleArn`) and `AWS_REGION` (for the credential
-exchange only). CI names no deployment and runs no `config sync`: the CLI takes the deployment from
+exchange only). Setup prints the `gh variable set` lines for both, filled in. CI names no deployment and runs no `config sync`: the CLI takes the deployment from
 the operator role and the region from its bucket.
 
 `e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its

@@ -65,7 +65,7 @@ intended — a clean exit only proves it parsed, not that the arrow landed in th
 of the repository. Mermaid CLI is installed globally (`npm install -g @mermaid-js/mermaid-cli`); nothing in CI
 renders these files, so a broken diagram is otherwise found by its next reader. State machines for the deployment, an operator machine and a job: `docs/diagrams/baas-states-*.mmd`. Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md); later decisions, and the hardenings declined
-with their reasons, in `docs/adr/0002`–`0006`. Per-change
+with their reasons, in `docs/adr/0002`–`0008`. Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
 **OpenSpec changes use the stock `spec-driven` schema**, driven by `/opsx:explore` → `/opsx:propose`
@@ -310,8 +310,20 @@ The watchdog is the only one that survives a deadlocked JVM.
   command that removes it; it never deletes one. `BucketProbe` asks a redirect again in the region
   it names, because from elsewhere another account's bucket answers 301 like your own, and only its
   own region answers 403. A stack in `ROLLBACK_COMPLETE` holds nothing, so setup deletes and
-  recreates it rather than pointing at a teardown that cannot run: no configuration file was ever
-  written for it.
+  recreates it rather than pointing at teardown. A file may exist for it: on create, setup writes
+  the deployment's file as soon as CloudFormation accepts `CreateStack`, before the stack is
+  complete, so an interrupted create — Ctrl+C, a closed lid — never leaves a stack no file names.
+  Teardown resolves a deployment only through its file, so without one a re-run under another
+  name built a second deployment and left the first out of reach (`interactive-setup` D20).
+- **Setup is a walkthrough that records no progress; each step re-checks AWS.** On a terminal it
+  asks and waits at a step the user must do outside `baas`; unattended (`--non-interactive`, a
+  redirect, CI) the same steps exit 1 there. A waiting step is re-checked only when the user presses
+  Enter, never on a timer: the permission check is 14 `SimulatePrincipalPolicy` calls and IAM
+  throttles that API hard enough to turn the check off. Every prompt has an option that answers it,
+  which the repeat-command round-trip test pins. The deployer profile is stored only on evidence it
+  can deploy — a met check, or a stack operation that changed something — because a no-op re-run
+  under an identity that may not simulate "succeeds" while proving nothing. All of setup's AWS calls
+  go through `SetupAws`, faked by hand in tests.
 - **EC2 tags use the key `baas-role`, not `baas:role`.** `RunnerRole`'s `ec2:TerminateInstances`
   condition is scoped to it, so changing the key breaks self-termination.
 - **Root volume is 30 GB gp3, not the AL2023 default.** 8 GB is exhausted by profiling artifacts.
@@ -400,16 +412,20 @@ The watchdog is the only one that survives a deadlocked JVM.
   `config set --region`: set by hand it aimed a machine at a region with no deployment, and `run`
   then advised building an image there. Moving a deployment is a rebuild in the new region, after
   which every machine re-runs the same `config sync --deployment`.
-- **An account-shared deployment makes two concurrent `baas admin image build` runs reachable.**
-  The one-image invariant's ordering — repoint the pointer, then deregister the replaced AMI —
-  assumes a single builder, which per-identity naming supplied by accident. Two concurrent bakes
-  can have the second to finish deregister the AMI the first just published. Deliberately **not**
-  guarded; it needs its own change.
-- **A deployer policy is prefix-exact, so it covers one deployment only.** Two rendered documents
-  are ~8.5k non-whitespace characters against IAM's 5120-character *inline* budget, which is shared
-  across every inline policy on the principal — so a second deployment needs its policy attached as
-  customer-managed (6144 each), not inline alongside the first. Setup prints the one it needs and
-  creates nothing until it is attached.
+- **A build is waited for or adopted, never repeated — only two starts in the same seconds race.**
+  The CLI runs the whole build, so Ctrl+C or a closed lid mid-build used to leave Image Builder
+  finishing an AMI no pointer named and nothing retired, and a re-run started a second build.
+  `ImageBuilderService.publish` now looks at the pipeline's newest build first: still running, it
+  is waited for; finished but unpublished, it is adopted (tags, pointer, retire the replaced AMI).
+  Only a build of the recipe version the stack declares qualifies — one from before an extension
+  push is retired instead, or the runners would get the superseded extension. Two
+  `baas admin image build` runs started in the same seconds can still both start a build and have
+  the second deregister what the first published: deliberately not guarded.
+- **A deployer policy is prefix-exact, so it covers one deployment only.** Each is attached as its
+  own customer-managed `BaasCliDeployerPolicy-<deployment>` (6144 characters each): two rendered
+  documents are ~9k non-whitespace characters, far over IAM's 5120-character *inline* budget,
+  which is shared across every inline policy on the principal. Setup hands over the one it needs
+  and creates nothing until it is attached.
 - **The installer installs released artifacts only, and the repository copy refuses.**
   `scripts/install.sh` carries `BAAS_VERSION_DEFAULT`, rewritten at release time by `release.yml`'s
   `prepareCmd` and never committed back. A checkout copy holds the placeholder and exits naming
@@ -590,38 +606,40 @@ is no `cf-template-main.yaml` and no bootstrap stack.
   describe the runner image (`RunnerImageParameters.ALL`): the base, parent, extension and contract
   documents and their versions, and the label. Each component travels as a parameter value, so it
   must stay under CloudFormation's 4096-byte cap — unit-tested for base and contract, refused before
-  submission for an extension. Three more —
-  `GitHubOidcProviderArn`, `GitHubOrg`, `GitHubRepo` — declare the conditional federated principal
-  on `OperatorRole`'s trust policy and create no resource. `GitHubRepo` is a `CommaDelimitedList`
-  of **already-composed** `repo:<org>/<name>:*` subject patterns: `SetupCommand` builds them,
+  submission for an extension. Two more — `GitHubOrg`, `GitHubRepo` — declare the conditional
+  federated principal on `OperatorRole`'s trust policy and create no resource; the provider's ARN
+  is composed in the template from the account, since its issuer URL fixes it. `GitHubRepo` is a
+  `CommaDelimitedList` of **already-composed** `repo:<org>/<name>:*` subject patterns: setup builds them,
   because CloudFormation cannot iterate a list and every in-template trick for it leans on
   `Fn::Sub` re-scanning text substituted into it, which it does not do.
 - **`runner-image.yaml`** — the measurement environment's base: base version, pinned parent
   release, Corretto and async-profiler versions, kernel tunables. Ships in the JAR as
   `/templates/runner-image.yaml` because both `setup` and `build-image` render it at runtime.
-- **`cf-template-ci.yaml`** — the `GithubOidc` identity provider and **nothing else**. **Not
-  deployed by the CLI** — deploy by hand, with an identity above the deployer, since
-  `deployer-policy.json` scopes `iam:Get*`/`iam:List*` to roles and never to `oidc-provider/*`.
-  Deploy order inverts: the provider is account-global (one per issuer URL per account), so it
-  comes first and its ARN is handed to `baas admin deployment setup`; an account that already has one must
-  reuse that ARN rather than deploy this stack, which fails with `EntityAlreadyExists`.
-  `WorkflowRole` is deleted — GitHub Actions federates straight into `OperatorRole`, because a
+- **The GitHub OIDC identity provider is created by setup, never by a stack, and never modified or
+  deleted by `baas`.** It is account-global (one per issuer URL) and may serve other projects, so
+  it lives outside every deployment: setup creates it through the IAM API, with the
+  `sts.amazonaws.com` audience and no thumbprint, when federation is asked for and it is absent;
+  an existing one is reused, and one lacking that audience is left to an IAM administrator, with
+  the command printed. Teardown says it stays. The deployer policy's `GitHubOidcProvider`
+  statement grants only `Get` and `Create` on that one ARN. This reverses `baas-cli-core-ci-split`
+  (ADR 0008); `cf-template-ci.yaml` is deleted.
+  `WorkflowRole` is deleted too — GitHub Actions federates straight into `OperatorRole`, because a
   role-chained session is capped at 60 minutes by STS whatever `MaxSessionDuration` says, against
   a 7200 s default benchmark timeout. That failure was not an error but a red CI job with a good
   measurement, an un-terminated instance and a full EC2 bill.
 
 IAM is split deliberately: `deployer-policy.json` → `BaasCliDeployerPolicy`, elevated, only for
 `baas admin deployment setup`/`build-image`/`teardown`; `operator-policy.json` → the stack-created
-`BaasCliOperatorRole`, narrow, for `baas jobs`/`results`/`config`. `operator-policy.json` and `cf-template-ci.yaml` reach the
+`BaasCliOperatorRole`, narrow, for `baas jobs`/`results`/`config`. `operator-policy.json` reaches the
 **test** classpath only; the core template and the two deployer policy templates ship in the JAR
 because the CLI renders them at runtime.
 
-**The deployer policy is close to IAM's size ceiling.** It is attached as an inline policy on an
-IAM group, capped at 5120 non-whitespace characters, *shared across every inline policy on that
-group* — nothing else is currently attached to it, so the reserve below the cap is precautionary
-rather than protecting a known consumer. A customer-managed policy gets 6144 to itself. The
-rendered document sits at 4370 non-whitespace characters, and a
-`renderedPolicyLeavesRoomInAnInlinePolicyBudget` test holds it under 4608. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
+**The deployer policy has a size ceiling.** It is attached as the customer-managed
+`BaasCliDeployerPolicy-<deployment>`, which IAM caps at 6144 non-whitespace characters to itself (an
+inline policy gets 5120, shared across every inline policy on the principal, so two deployments'
+documents never fit inline side by side). The rendered document sits at about 4580 non-whitespace
+characters, and `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` holds it under 5632,
+keeping 512 in reserve. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
 `imagebuilder:Get*`, `dynamodb:Describe*`) rather than enumerated — naming every action
 CloudFormation's bucket read handler needs is what pushed it over. `Create` is deliberately *not*
 wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would grant `PutObject`,
@@ -638,8 +656,10 @@ it names is prefix-exact, so two developers cannot reach each other's stack, buc
 parameter. Attaching the file as-is grants nothing. There is no command that prints it:
 `baas admin deployment setup` renders it for the deployment it is about to create — `--region`
 included, since the region is in seven of its ARNs and conditions — and, when the caller's rights
-fall short, prints it on standard output and stops having created nothing. `--policy-file` also
-writes it to a file before the check, whatever it finds, then setup carries on. It is attached as a
+fall short, hands it over having created nothing: unattended it prints it on standard output and
+exits 1, so `setup > policy.json` works; on a terminal it saves it to a file or prints it, as the
+user chooses, and waits for Enter to check again. `--policy-file` also writes it to a file before
+the check, whatever it finds, then setup carries on. It is attached as a
 customer-managed `BaasCliDeployerPolicy-<deployment>`, and setup prints the IAM administrator's
 filled-in commands whenever it reports missing rights, a permission failure in stack events
 included.
