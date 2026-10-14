@@ -214,6 +214,29 @@ class SetupStepsTest {
         assertThat(run.aws.called("submitCreate:" + DERIVED)).isTrue();
     }
 
+    /**
+     * Spec: "A re-run continues after an administrator acted" — two separate runs, as two processes
+     * would be: the first stops at the permission step, an administrator attaches the policy, and
+     * the second carries on with nothing recorded between them but what AWS now says.
+     */
+    @Test
+    void aSecondRunContinuesOnceTheAdministratorActed() throws Exception {
+        var first = setup();
+        first.region = "us-east-1";
+        first.aws.preflights.clear();
+        first.aws.preflights.add(new SetupAws.Preflight.Denied(List.of("cloudformation:CreateStack")));
+
+        assertThat(first.run()).isEqualTo(1);
+        assertThat(first.hasFile(DERIVED)).isFalse();
+
+        var second = setup();
+        second.region = "us-east-1";
+
+        assertThat(second.run()).isZero();
+        assertThat(second.aws.calls).containsSubsequence("preflight", "stackStatus:" + DERIVED, "submitCreate:" + DERIVED);
+        assertThat(second.deploymentFile(DERIVED)).contains("us-east-1");
+    }
+
     @Test
     void missingRightsCanBePrintedInstead() throws Exception {
         var run = setup().interactive("", "", "us-east-1", "-", "", "", "", "");

@@ -267,6 +267,15 @@ public class RunCommand implements Callable<Integer> {
         }
     }
 
+    /** Why a job cannot launch on a deployment with no runner image, and the command that fixes it. */
+    static String noImageMessage(String deployment, String region) {
+        return """
+            Deployment %s has no runner image (%s).
+              Build one:  %s
+            Nothing was launched — the runner boots from a purpose-built AMI and \
+            there is no boot-time install path.""".formatted(deployment, region, Hints.command(deployment, "admin image build"));
+    }
+
     /** Where to look next, once a job exists; interactive terminals only (see {@link Hints}). */
     void hints(int exitCode, Consumer<String> sink) {
         // In the finally: a command built outside picocli (a unit test) has no spec to print through,
@@ -356,12 +365,7 @@ public class RunCommand implements Callable<Integer> {
                 new ImageBuilderService(imageBuilder, ec2, ssm), config.getPrefix());
 
             if (resolved.isEmpty()) {
-                logger.error("""
-                        Deployment {} has no runner image ({}).
-                          Build one:  {}
-                        Nothing was launched — the runner boots from a purpose-built AMI and \
-                        there is no boot-time install path.""",
-                    config.getPrefix(), factory.region(), Hints.command(config.getPrefix(), "admin image build"));
+                logger.error(noImageMessage(config.getPrefix(), factory.region()));
                 return 1;
             }
             runnerImage = resolved.get();

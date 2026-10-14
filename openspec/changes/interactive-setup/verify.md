@@ -1,6 +1,6 @@
 # Verify — interactive-setup
 
-Paid tests used: **8 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
+Paid tests used: **11 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
 
 ## 1. Blocking assumptions
 
@@ -259,7 +259,7 @@ inherited-SIGINT trap in background shells, which would make the check say nothi
 | Dimension | Status |
 |---|---|
 | Completeness | 45/45 tasks. 37 requirements over 4 specs, all with an implementation |
-| Correctness | 37/37 requirements mapped to code. 4 scenarios lack a test of their own (W3) |
+| Correctness | 37/37 requirements mapped to code. Every scenario has a unit test or a live check (W3 closed) |
 | Coherence | Design followed, with 4 recorded deviations (below) |
 
 Unit suite: 880 tests, 0 failures. CI on PR #95 green, both paid E2E jobs included.
@@ -351,20 +351,8 @@ Unit suite: 880 tests, 0 failures. CI on PR #95 green, both paid E2E jobs includ
   *Recommendation:* the next time the provider is absent (a new account, or after an IAM admin
   deletes it), run `setup --github-org … --github-repo …` and check `aws iam
   get-open-id-connect-provider` lists `sts.amazonaws.com`.
-- **W3** — Scenarios with no test of their own:
-  - *The option forces unattended on a terminal*: `SetupCommand.call`'s
-    `console.interactive() && !nonInteractive` is untested. No test drives `SetupCommand`
-    end-to-end with its injectable `awsFactory`/`consoleFor`/`answerReader`, since `FakeSetupAws`
-    is package-private to `setup/`.
-  - *A failed first create can also be torn down*: plausible, since the file exists and teardown
-    deletes a `ROLLBACK_COMPLETE` stack, but neither a test nor a live run covers it.
-  - *No image built yet* naming `baas --deployment <name> admin image build` in `RunCommand`.
-  - *A re-run continues after an administrator acted*, across two processes: covered live (13.1),
-    and within one process by `missingRightsAreSavedAndWaitedFor…`.
-
-  *Recommendation:* add a `SetupCommandTest` that runs `setup` through `BaasApp`'s command line
-  with a `CommandLine.IFactory` injecting a fake `SetupAws` and `Console.withFlags(…, true, …)`,
-  and assert that `--non-interactive` asks nothing.
+- **W3** — *closed 2026-10-14.* Four scenarios had no test of their own. Each now has a test
+  and a live run; see *W3 follow-up* below.
 
 ### Suggestions
 
@@ -373,5 +361,32 @@ Unit suite: 880 tests, 0 failures. CI on PR #95 green, both paid E2E jobs includ
 - `PolicyHandOver.attachThen` says "Nothing was created." unattended even after an update earlier
   in the same run. True for this run's resources, but it could say "Setup stopped here." instead.
 
-**Assessment:** no critical issues, 3 warnings (W1–W3). Ready for archive once the PR is merged,
+**Assessment:** no critical issues, 2 warnings open (W1, W2; W3 closed). Ready for archive once the PR is merged,
 with the warnings noted.
+
+
+## W3 follow-up (2026-10-14, on request)
+
+Unit suite: 884 tests, 0 failures.
+
+| Scenario | Unit test | Live check |
+|---|---|---|
+| The option forces unattended on a terminal | `SetupCommandTest.theOptionForcesUnattendedOnATerminal`, through `BaasApp`'s real command tree with a terminal console, a denying `SetupAws` and a line reader that counts reads: 0 reads, exit 1, the policy as the only payload. The control `withoutTheOptionATerminalIsAsked` reads lines | `expect` under a pseudo-terminal, failing on any prompt: `setup --non-interactive --deployer-aws-profile lynx` showed none and exited 1, the policy printed |
+| No image built yet (`baas run`) | `RunCommandTest.noImageNamesTheDeploymentsBuildCommand`, after extracting `RunCommand.noImageMessage` | Dev's pointer saved (`ami-0ac8369b05bf4024b`), deleted, then `baas run jmh`: exit 1, `Deployment baas-development has no runner image (us-east-1). Build one: baas --deployment baas-development admin image build`. No instance was launched. The pointer was restored to the same AMI |
+| A failed first create can also be torn down | none: teardown has no AWS seam | See below |
+| A re-run continues after an administrator acted (two processes) | `SetupStepsTest.aSecondRunContinuesOnceTheAdministratorActed`: two runs on one root. The first is denied (exit 1, no file); the second is met, creates, and writes the file | Not repeated live: it needs an IAM administrator between the runs. 13.1 covered the cross-process resume of an interrupted create |
+
+**The rolled-back create, live:**
+
+1. Dev was torn down.
+2. An interactive setup was driven by `expect`. At `Go ahead?` — after setup's names check — the
+   table `baas-development-results` was created by hand, then the plan confirmed.
+3. `Creating stack` was followed by the file written 30 ms later. The create failed on the taken
+   table name, and the stack ended `ROLLBACK_COMPLETE`, with the file holding the region and
+   `baas-admin`.
+4. `teardown --yes` exited 0:
+   - `Bucket baas-development does not exist; nothing to empty.`
+   - stack deleted (`DescribeStacks`: does not exist);
+   - the file removed, leaving only `baas-381492019823.yaml`.
+5. The hand-made table was deleted, and **paid 11** rebuilt dev with
+   `setup --non-interactive --build-image`.
