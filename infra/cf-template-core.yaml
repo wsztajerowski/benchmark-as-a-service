@@ -86,13 +86,10 @@ Parameters:
   # — and the failure mode is a red CI job with a good measurement, an un-terminated instance and a
   # full EC2 bill.
   #
-  # They create no resource. The identity provider is account-global and lives in the CI stack,
-  # deployed separately by a higher-privileged identity; this template only references its ARN.
-  GitHubOidcProviderArn:
-    Description: >-
-      ARN of the account's existing GitHub OIDC identity provider. Empty disables federation.
-    Type: String
-    Default: ""
+  # They create no resource. The identity provider is account-global: `baas admin deployment
+  # setup` creates it through the IAM API when it is absent and never modifies or deletes it, so it
+  # outlives any one deployment. Its ARN is fixed by the issuer URL, so it is composed here rather
+  # than passed in.
   GitHubOrg:
     Description: GitHub organisation or user owning the repositories allowed to assume the operator role.
     Type: String
@@ -109,10 +106,9 @@ Parameters:
     Default: ""
 
 Conditions:
-  # All three are required together: a provider ARN with no repository would admit every
-  # repository in the org, and an org with no provider has nothing to trust.
+  # Both are required together: an org with no repository would have nothing to scope the
+  # subject to, and a repository list names its org in every pattern anyway.
   FederateGitHub: !And
-    - !Not [!Equals [!Ref GitHubOidcProviderArn, ""]]
     - !Not [!Equals [!Ref GitHubOrg, ""]]
     - !Not [!Equals [!Join ["", !Ref GitHubRepo], ""]]
   HasRunnerImageExtension: !Not [!Equals [!Ref RunnerImageExtensionData, ""]]
@@ -628,7 +624,7 @@ Resources:
             - FederateGitHub
             - Effect: Allow
               Principal:
-                Federated: !Ref GitHubOidcProviderArn
+                Federated: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com"
               Action: sts:AssumeRoleWithWebIdentity
               Condition:
                 StringEquals:

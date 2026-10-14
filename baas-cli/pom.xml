@@ -120,8 +120,8 @@
             </resource>
         </resources>
         <!-- Everything the CLI does not read at runtime reaches the TEST classpath only:
-             cf-template-ci.yaml is deployed by hand and operator-policy.json is reference
-             documentation pinned by OperatorPolicyDriftTest. The bundled set is the core
+             operator-policy.json is reference documentation pinned by
+             OperatorPolicyDriftTest. The bundled set is the core
              template plus the two deployer policy templates above. -->
         <testResources>
             <testResource>
@@ -131,7 +131,6 @@
                 <directory>${project.basedir}/../infra</directory>
                 <targetPath>infra</targetPath>
                 <includes>
-                    <include>cf-template-ci.yaml</include>
                     <include>operator-policy.json</include>
                 </includes>
             </testResource>

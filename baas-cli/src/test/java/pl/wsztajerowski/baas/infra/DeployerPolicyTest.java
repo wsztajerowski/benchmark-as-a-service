@@ -45,19 +45,32 @@ class DeployerPolicyTest {
     }
 
     /**
-     * The identity provider stays out of the deployer's reach — it is account-global and created
-     * by a separate, higher-privileged identity. Editing a trust policy does not: deploying the
-     * core stack now writes {@code BaasCliOperatorRole}'s, so the grant is required.
+     * Setup creates the account's GitHub OIDC provider when it is absent, and never modifies or
+     * deletes it: it is account-global and may serve other projects. So the deployer may read and
+     * create that one provider and nothing else of it — no update, no delete, no other ARN.
+     * Editing a trust policy is needed too: deploying the core stack writes
+     * {@code BaasCliOperatorRole}'s.
      *
      * <p>It confers no escalation the policy did not already allow. {@code iam:CreateRole} writes
      * a trust policy too, which is why CLAUDE.md's accepted-risks table already records the
      * deployer as effectively account admin. That row is settled and is not reopened here.
      */
     @Test
-    void holdsNoCiStackPermissions() {
-        assertThat(InfraFixtures.actions(InfraFixtures.deployerPolicy()))
-            .as("the core/CI split exists so the local identity never creates the OIDC provider")
-            .noneMatch(action -> action.endsWith("OpenIDConnectProvider"));
+    @SuppressWarnings("unchecked")
+    void mayCreateTheGitHubProviderButNeverChangeIt() {
+        var policy = InfraFixtures.deployerPolicy();
+
+        assertThat(InfraFixtures.actions(policy))
+            .filteredOn(action -> action.contains("OpenIDConnectProvider"))
+            .as("create, never modify or delete: a shared provider is not ours to change")
+            .containsExactlyInAnyOrder("iam:CreateOpenIDConnectProvider", "iam:GetOpenIDConnectProvider");
+        var statements = (List<Map<String, Object>>) policy.get("Statement");
+        assertThat(statements)
+            .filteredOn(statement -> "GitHubOidcProvider".equals(statement.get("Sid")))
+            .singleElement()
+            .extracting(statement -> statement.get("Resource"))
+            .isEqualTo("arn:aws:iam::%s:oidc-provider/token.actions.githubusercontent.com"
+                .formatted(InfraFixtures.ACCOUNT_ID));
     }
 
     @Test
@@ -273,28 +286,26 @@ class DeployerPolicyTest {
     }
 
     /**
-     * The policy is attached as an inline policy on an IAM group. The hard cap is 5120
-     * non-whitespace characters, <em>shared across every inline policy on that group</em>. Nothing
-     * else is currently attached to that group, so the remaining reserve below the cap is
-     * precautionary rather than protecting a known consumer.
+     * The policy is attached as the customer-managed {@code BaasCliDeployerPolicy-<deployment>},
+     * which IAM caps at 6144 non-whitespace characters, to itself. (An inline policy gets 5120,
+     * shared across every inline policy on the principal, so two deployments' documents never fit
+     * inline side by side.) The budget keeps 512 of reserve below that cap.
      *
      * <p>Measured against a realistic deployment prefix ({@code baas-<accountId>}), not an
      * eight-character stand-in: {@code ${PREFIX}} appears thirteen times, so a short fixture
-     * understated the real size by roughly a hundred characters. The policy renders to 4219
-     * non-whitespace characters for a shared deployment and 4271 for a dev one — 389 spare under
-     * this 4608 budget, and 512 still reserved between this budget and the 5120 hard cap. Every
-     * character added to the prefix costs thirteen here, which is why the mode vocabulary is
-     * closed rather than a free-form name.
+     * understated the real size by roughly a hundred characters. With the GitHub provider
+     * statement the policy renders to about 4580 non-whitespace characters. Every character added
+     * to the prefix costs thirteen here.
      */
     @Test
-    void renderedPolicyLeavesRoomInAnInlinePolicyBudget() {
+    void renderedPolicyLeavesRoomInACustomerManagedPolicyBudget() {
         String rendered = new DeployerPolicyRenderer()
             .render(InfraFixtures.ACCOUNT_ID, InfraFixtures.REGION, InfraFixtures.PREFIX);
         int counted = rendered.replaceAll("\\s", "").length();
 
         assertThat(counted)
             .as("collapse a verb class to a wildcard, or drop an unused action, before adding more")
-            .isLessThanOrEqualTo(4608);
+            .isLessThanOrEqualTo(6144 - 512);
     }
 
     /**
