@@ -148,8 +148,8 @@ public class JobsShowSubcommand implements Callable<Integer> {
                 printView(console(), row, manifest, artifacts);
             }
         }
-        Hints.show(console(), logger, "measurements", "baas query --job-id " + jobId,
-            "files", "baas jobs download " + jobId);
+        Hints.show(console(), logger, "measurements", Hints.command(config.getPrefix(), "query --job-id " + jobId),
+            "files", Hints.command(config.getPrefix(), "jobs download " + jobId));
         return 0;
     }
 

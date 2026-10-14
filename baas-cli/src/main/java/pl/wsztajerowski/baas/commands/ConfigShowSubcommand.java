@@ -104,7 +104,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         try {
             return name.apply(config);
         } catch (IllegalStateException noDeployment) {
-            return "<no deployment> — run: baas config sync --deployment baas-<accountId>";
+            return "<no deployment> — run: baas --deployment baas-<accountId> config sync";
         }
     }
 }

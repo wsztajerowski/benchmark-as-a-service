@@ -229,6 +229,7 @@ class RunCommandDetachTest {
     void aDetachedLaunchIsReportedAsLaunchedNotCompleted() throws Exception {
         var command = command(true);
         command.summaryJobId = JOB.jobId();
+        command.summaryDeployment = "dev";
         command.summaryInstanceId = "i-1";
         command.afterLaunch(session, session.confirmLaunched("i-1"));
 
@@ -266,6 +267,7 @@ class RunCommandDetachTest {
     void aDetachedJobIsFollowedNotQueried() {
         var command = command(true);
         command.summaryJobId = JOB.jobId();
+        command.summaryDeployment = "dev";
         command.afterLaunch(session, session.confirmLaunched("i-1"));
         command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
         List<String> lines = new ArrayList<>();
@@ -273,21 +275,22 @@ class RunCommandDetachTest {
         command.hints(0, lines::add);
 
         assertThat(lines).containsExactly(
-            "→ follow it: baas jobs show " + JOB.jobId(),
-            "→ stop it: baas jobs terminate " + JOB.jobId());
+            "→ follow it: baas --deployment dev jobs show " + JOB.jobId(),
+            "→ stop it: baas --deployment dev jobs terminate " + JOB.jobId());
     }
 
     @Test
     void anAttachedSuccessStillPointsAtItsMeasurements() {
         var command = command(false);
         command.summaryJobId = JOB.jobId();
+        command.summaryDeployment = "dev";
         command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
         List<String> lines = new ArrayList<>();
 
         command.hints(0, lines::add);
 
         assertThat(lines).containsExactly(
-            "→ measurements: baas query --job-id " + JOB.jobId(),
-            "→ artifacts: baas jobs download " + JOB.jobId());
+            "→ measurements: baas --deployment dev query --job-id " + JOB.jobId(),
+            "→ artifacts: baas --deployment dev jobs download " + JOB.jobId());
     }
 }

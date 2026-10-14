@@ -38,7 +38,7 @@ class TeardownNoticeTest {
     void theImageNoticesSayWhatWasRetiredOrWhatIsLeft() {
         assertThat(TeardownCommand.imageRetiredNotice("baas-123456789012"))
             .contains("/baas-123456789012/runner/ami-id", "baas-123456789012-recipe-runner",
-                "baas admin image build");
+                "baas --deployment baas-123456789012 admin image build");
         assertThat(TeardownCommand.imageLeftoverNotice("baas-123456789012",
                 java.util.List.of("Runner AMI ami-1 was not deregistered (x): aws ec2 deregister-image --image-id ami-1")))
             .contains("partly retired", "  - Runner AMI ami-1", "aws ec2 deregister-image --image-id ami-1");
@@ -51,7 +51,7 @@ class TeardownNoticeTest {
      */
     @Test
     void theInFlightRefusalNamesEachJobAndHowToStopIt() {
-        String message = TeardownCommand.inFlightRefusal(java.util.List.of(
+        String message = TeardownCommand.inFlightRefusal("baas-123456789012", java.util.List.of(
             new pl.wsztajerowski.baas.infra.Ec2ProvisioningService.LiveRunner(
                 "i-0abc", "running", "20261003T000000000Z-a3f9c21b"),
             new pl.wsztajerowski.baas.infra.Ec2ProvisioningService.LiveRunner("i-0def", "pending", null)));
@@ -60,7 +60,7 @@ class TeardownNoticeTest {
             .contains("2 jobs are still in flight")
             .contains("20261003T000000000Z-a3f9c21b", "i-0abc", "running")
             .contains("(no job id tag)", "i-0def", "pending")
-            .contains("baas jobs terminate <jobId>")
+            .contains("baas --deployment baas-123456789012 jobs terminate <jobId>")
             .doesNotContain("terminate them manually");
     }
 
@@ -94,8 +94,15 @@ class TeardownNoticeTest {
 
     @Test
     void theSavedNoticeSaysHowToPushItBack() {
-        assertThat(TeardownCommand.extensionSavedNotice(Path.of("/h/.baas/runner-image-extension.p.yaml")))
-            .contains("baas admin image build --extension /h/.baas/runner-image-extension.p.yaml");
+        assertThat(TeardownCommand.extensionSavedNotice("p", Path.of("/h/.baas/runner-image-extension.p.yaml")))
+            .contains("baas --deployment p admin image build --extension /h/.baas/runner-image-extension.p.yaml");
+    }
+
+    /** Setup may create the provider; nothing deletes it, and teardown says so. */
+    @Test
+    void theProviderIsSaidToStay() {
+        assertThat(TeardownCommand.providerLeftNotice("dev"))
+            .contains("GitHub OIDC provider", "left in place", "account-wide");
     }
 
     // ─── U32: confirmation ───────────────────────────────────────────────────────
