@@ -10,31 +10,20 @@ runners it launches.
 ## Requirements
 
 ### Requirement: Core stack contains only CLI-owned infrastructure
-The core CloudFormation stack (template `cf-template-core.yaml`) SHALL contain the VPC, public subnet, internet gateway, S3 gateway endpoint, `RunnerSecurityGroup`, `S3MainBucket`, `RunnerRole`, and `RunnerInstanceProfile`. It SHALL NOT contain any GitHub OIDC provider resource or `WorkflowRole`. It MAY take GitHub organisation, repository and identity-provider ARN parameters, used solely to declare a conditional federated principal on `BaasCliOperatorRole`'s trust policy; it SHALL NOT create any other GitHub-related resource.
+The core CloudFormation stack (template `cf-template-core.yaml`) SHALL contain the VPC, public subnet, internet gateway, S3 gateway endpoint, `RunnerSecurityGroup`, `S3MainBucket`, `RunnerRole`, and `RunnerInstanceProfile`. It SHALL NOT contain any GitHub OIDC provider resource or `WorkflowRole`. It MAY take GitHub organisation and repository parameters, used solely to declare a conditional federated principal on `BaasCliOperatorRole`'s trust policy, naming the account's GitHub OIDC provider by an ARN composed from the stack's own account; it SHALL NOT take the provider's ARN as a parameter, and SHALL NOT create any other GitHub-related resource.
 
 #### Scenario: Deploying the core stack creates no GitHub-related resources
 - **WHEN** `baas admin deployment setup` deploys the core stack
 - **THEN** the resulting CloudFormation stack contains no `AWS::IAM::OIDCProvider` resource and no `WorkflowRole`
 
 #### Scenario: Federation parameters produce a trust statement, not a resource
-- **WHEN** the core stack is deployed with GitHub organisation, repository and provider ARN supplied
+- **WHEN** the core stack is deployed with GitHub organisation and repository supplied
 - **THEN** the only difference from a deploy without them is a statement on the operator role's
-  trust policy
+  trust policy, naming `oidc-provider/token.actions.githubusercontent.com` in the stack's account
 
-### Requirement: baas-cli never manages the CI stack
-No `baas` command SHALL create, update, delete, or read the CI stack (`cf-template-ci.yaml`, containing the GitHub OIDC identity provider). The CI stack SHALL be deployed and torn down independently, outside of `baas-cli`. Accepting the provider's ARN as an opaque parameter value SHALL NOT be considered managing or reading that stack.
-
-#### Scenario: No command references the CI stack
-- **WHEN** any `baas` subcommand executes
-- **THEN** it makes no CloudFormation or IAM identity-provider API call scoped to the CI stack
-
-#### Scenario: CI template is not bundled in the CLI
-- **WHEN** the `baas-cli` JAR is built
-- **THEN** `baas-cli/src/main/resources/templates/` contains only `cf-template-core.yaml`, and `cf-template-ci.yaml` is absent from the JAR's classpath resources
-
-#### Scenario: The provider ARN is passed through unresolved
-- **WHEN** `baas admin deployment setup` is given an identity-provider ARN
-- **THEN** it forwards the value to CloudFormation without calling IAM to look the provider up
+#### Scenario: No provider ARN parameter
+- **WHEN** `cf-template-core.yaml` is inspected
+- **THEN** it declares no parameter carrying an identity provider's ARN
 
 ### Requirement: RunnerRole S3 policy matches the bucket name
 `RunnerRole`'s S3 access policy SHALL reference the exact same bucket name as the `S3MainBucket`
@@ -65,11 +54,11 @@ holds the runner every later job of that version executes.
 - **THEN** `RunnerRole` holds no `s3:ListBucket` and no S3 action on the bucket resource itself
 
 ### Requirement: baas admin deployment setup is self-sufficient
-`baas admin deployment setup` SHALL accept `--region` and `--deployer-aws-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, render the deployer policy for that deployment and check the caller's rights against it, deploy or update the core stack, and write the result to that deployment's configuration file. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`. When the deployment's stack is in `ROLLBACK_COMPLETE` — a first create that failed and rolled back, which leaves no resources and cannot be updated — setup SHALL delete that stack, wait for the deletion to complete, and then create the stack as for a new deployment. It SHALL NOT direct the user to `teardown` for that state.
+`baas admin deployment setup` SHALL accept `--region` and `--deployer-aws-profile` directly as command-line options, resolve the deployment name as *A deployment is named by its prefix, derived from the account by default* states, apply defaults for any omitted option, render the deployer policy for that deployment and check the caller's rights against it, deploy or update the core stack, and write the deployment's configuration file as *Each deployment has one configuration file, named by the deployment* states. It SHALL NOT require any configuration file to pre-exist. It SHALL NOT expose a `--prefix` option: the name is given only by the global `--deployment`. It SHALL NOT accept `--aws-profile`. When the deployment's stack is in `ROLLBACK_COMPLETE` — a first create that failed and rolled back, which leaves no resources and cannot be updated — setup SHALL delete that stack, wait for the deletion to complete, and then create the stack as for a new deployment. It SHALL NOT direct the user to `teardown` for that state.
 
 #### Scenario: First run with no prior config
 - **WHEN** `baas admin deployment setup` runs and no deployment is configured
-- **THEN** the core stack is deployed using the default region and the account-derived prefix, and `~/.baas/deployments/<prefix>.yaml` is created with the deployment's prefix and the credential settings it needs
+- **THEN** the core stack is deployed using the default region and the account-derived prefix, and `~/.baas/deployments/<prefix>.yaml` is created with the deployment's region and the credential settings it needs
 
 #### Scenario: No --prefix option
 - **WHEN** `baas admin deployment setup --prefix foo` is invoked
@@ -77,11 +66,15 @@ holds the runner every later job of that version executes.
 
 #### Scenario: The deployer profile option is renamed
 - **WHEN** `baas admin deployment setup --aws-profile baas-admin` is invoked
-- **THEN** picocli reports an unknown option error, and `--deployer-aws-profile baas-admin` is accepted and stored as `aws.deployerProfile`
+- **THEN** picocli reports an unknown option error, and `--deployer-aws-profile baas-admin` is accepted and stored as `aws.deployerProfile` once there is evidence it can deploy
 
 #### Scenario: A failed first create is recovered by re-running setup
-- **WHEN** a first `baas admin deployment setup` failed, leaving the stack in `ROLLBACK_COMPLETE` and no configuration file, and setup is run again
-- **THEN** setup deletes the rolled-back stack, creates the stack anew, and writes the deployment's configuration file, without the user running any other command
+- **WHEN** a first `baas admin deployment setup` failed, leaving the stack in `ROLLBACK_COMPLETE` and the deployment's configuration file, and setup is run again
+- **THEN** setup deletes the rolled-back stack, creates the stack anew, and keeps the deployment's configuration file, without the user running any other command
+
+#### Scenario: A failed first create can also be torn down
+- **WHEN** a first create rolled back and the user decides not to retry
+- **THEN** `baas --deployment <name> admin deployment teardown --yes` deletes the rolled-back stack and the deployment's configuration file
 
 ### Requirement: Teardown safety gates
 `baas admin deployment teardown` SHALL abort if any EC2 instance tagged `baas-role=benchmark-runner` and
@@ -150,17 +143,6 @@ and results table, with every job and measurement in them, will be deleted and c
 #### Scenario: Setup succeeds end to end
 - **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin deployment setup`
 - **THEN** the stack deploys, including the results table, and the command exits 0
-
-### Requirement: Deployer policy holds no CI-stack permissions
-`BaasCliDeployerPolicy` SHALL NOT grant any OIDC-provider action, so the identity provider stays outside the deployer's reach and is created by a separate, higher-privileged identity. It SHALL grant `iam:UpdateAssumeRolePolicy`, scoped to the same role resources as its other IAM statements, because deploying the core stack now edits `BaasCliOperatorRole`'s trust policy. That grant confers no escalation the policy did not already allow, since `iam:CreateRole` writes a trust policy too.
-
-#### Scenario: No OIDC actions present
-- **WHEN** `infra/deployer-policy.json` is inspected
-- **THEN** it contains no action beginning `iam:` and ending `OpenIDConnectProvider`
-
-#### Scenario: The trust-policy edit is permitted and scoped
-- **WHEN** an identity holding only `BaasCliDeployerPolicy` deploys a core stack carrying federation parameters
-- **THEN** the deploy succeeds, and the policy's `iam:UpdateAssumeRolePolicy` grant names the same role resources as its role-creation statement rather than `Resource: "*"`
 
 ### Requirement: Deployer policy is resource-scoped
 `BaasCliDeployerPolicy`'s CloudFormation statement SHALL be scoped to `stack/<prefix>/*` and its IAM statement to the deployment's own role and instance-profile ARNs — `role/<prefix>-role-*` and `instance-profile/<prefix>-profile-*` — rather than `Resource: "*"`. Because the prefix is account-derived, the rendered policy SHALL reach only deployments in the caller's own account.
@@ -502,8 +484,8 @@ delete action.
 ### Requirement: Deployer policy covers the table lifecycle
 `BaasCliDeployerPolicy` SHALL grant `dynamodb:CreateTable`, `DescribeTable`, `UpdateTable`,
 `TagResource`, `ListTagsOfResource`, `DescribeTimeToLive`, and `DeleteTable`, scoped to the
-prefix-derived table ARN rather than `Resource: "*"`. The rendered policy SHALL remain within the inline
-policy budget already asserted by the existing renderer test.
+prefix-derived table ARN rather than `Resource: "*"`. The rendered policy SHALL remain within the
+budget *The deployer policy is sized as a customer-managed policy* states.
 
 #### Scenario: Setup creates the table under the deployer policy alone
 - **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin deployment setup`
@@ -515,7 +497,7 @@ policy budget already asserted by the existing renderer test.
 
 #### Scenario: Policy still fits the budget
 - **WHEN** the deployer policy is rendered
-- **THEN** its non-whitespace length remains under the asserted inline-policy limit
+- **THEN** its non-whitespace length remains under the asserted customer-managed budget
 
 ### Requirement: The table name is a stack output
 The core stack SHALL expose the results table name as a stack output, so the CLI can resolve it without
@@ -565,14 +547,14 @@ role.
 - **THEN** the session does not expire before the job completes and the instance is terminated
 
 ### Requirement: Federation parameters are carried forward, and revoked only on request
-`baas admin deployment setup` SHALL accept the GitHub organisation, repository list and OIDC provider ARN as
-options. When updating an existing stack it SHALL carry forward the deployed value of every
-parameter the caller did not name, rather than resubmitting a default in its place, so that a setup
-run for an unrelated reason cannot alter the federated trust. It SHALL provide an explicit option
-that revokes federation by submitting those parameters empty, and that option SHALL be the only way
-an update removes the federated trust statement. The deployed stack SHALL be the single source of
-truth for the federation values; the CLI SHALL NOT keep a second copy of them in its configuration
-file.
+`baas admin deployment setup` SHALL accept the GitHub organisation and repository list as options,
+and SHALL NOT accept the identity provider's ARN, which it derives. When updating an existing stack it
+SHALL carry forward the deployed value of every parameter the caller did not name, rather than
+resubmitting a default in its place, so that a setup run for an unrelated reason cannot alter the
+federated trust. It SHALL provide an explicit option that revokes federation by submitting those
+parameters empty, and that option SHALL be the only way an update removes the federated trust
+statement. The deployed stack SHALL be the single source of truth for the federation values; the CLI
+SHALL NOT keep a second copy of them in its configuration file.
 
 #### Scenario: An unrelated setup does not revoke CI access
 - **WHEN** `baas admin deployment setup` is run again, naming no federation options, on a deployment whose
@@ -598,26 +580,11 @@ file.
 #### Scenario: The values are read back from the stack, not from configuration
 - **WHEN** an operator asks which repository the deployment trusts
 - **THEN** the answer comes from the deployed stack's parameters, and the deployment's configuration file holds no
-  copy of the organisation, repository list or provider ARN
+  copy of the organisation or repository list
 
-### Requirement: The CI stack contains only the identity provider
-`cf-template-ci.yaml` SHALL declare the GitHub OIDC identity provider and nothing else. It SHALL
-take no parameter from, and produce no output consumed by, the core stack. Because the identity
-provider is account-global and the core stack's trust statement references it, the provider SHALL be
-deployed before `baas admin deployment setup` is first job with federation parameters.
-
-#### Scenario: No workload role remains in the CI stack
-- **WHEN** `infra/cf-template-ci.yaml` is inspected
-- **THEN** it declares no IAM role, and the only resource it declares is the OIDC identity provider
-
-#### Scenario: Deploy order is provider first
-- **WHEN** a deployment is set up from scratch with federation
-- **THEN** the identity provider exists before the core stack is deployed, and the core stack is
-  given its ARN
-
-#### Scenario: An existing account-global provider is reused
-- **WHEN** the identity provider for the workload-identity issuer already exists in the account
-- **THEN** its ARN is supplied to the core stack and no duplicate provider is created
+#### Scenario: A stack from before the change updates cleanly
+- **WHEN** setup updates a stack that still carries the removed provider-ARN parameter
+- **THEN** the update is not refused for naming a parameter the template no longer declares, and the federated trust is kept
 
 ### Requirement: Resource names follow one composition rule
 Every resource the core stack names SHALL be `<prefix>`, `<prefix>-<name>`, or
@@ -728,7 +695,8 @@ The working bucket and the results table SHALL carry `DeletionPolicy: Delete` an
 Delete`. `baas admin deployment teardown` SHALL empty the bucket — every object version and delete
 marker — then delete the core stack, so that the bucket, the results table and every other stack
 resource are removed, and then retire the runner image. A completed teardown SHALL leave no BaaS resource
-of the deployment in the account, and SHALL report no retained resource.
+of the deployment in the account, and SHALL report no retained resource of the deployment. The
+account's GitHub OIDC provider is not a resource of any deployment and SHALL be left in place.
 
 #### Scenario: Nothing is left after teardown
 - **WHEN** `baas admin deployment teardown --yes` completes
@@ -765,28 +733,34 @@ With `--policy-file <path>`, setup SHALL write the rendered policy to that path 
 check's result, whether or not rights are missing, and then continue exactly as it would without the
 option.
 
-When rights are missing it SHALL print the rendered policy to standard output, state on standard
-error which actions are missing and that the policy must be attached before re-running, name the file
-when `--policy-file` was given, create nothing, and exit non-zero. Whenever it reports missing rights
-it SHALL also print, on standard error, the commands an IAM administrator runs to attach the policy
-as a customer-managed policy named `BaasCliDeployerPolicy-<deployment>`, with the account, the policy
-name and the caller filled in: one set for a first attachment and one for publishing a new version
-of an existing policy.
+When rights are missing it SHALL state on standard error which actions are missing and that the
+policy must be attached, name the file when `--policy-file` was given, and create nothing until the
+check passes. A non-interactive run SHALL print the rendered policy to standard output and exit
+non-zero. An interactive run without `--policy-file` SHALL ask whether to print the policy or save it
+to a file, saving it as `policy.json` by default, and SHALL then wait for the user and check again, as
+`guided-setup` states. Whenever it reports missing rights it SHALL also print, on standard error, the
+commands an IAM administrator runs to attach the policy as a customer-managed policy named
+`BaasCliDeployerPolicy-<deployment>`, with the account, the policy name and the caller filled in: one
+set for a first attachment and one for publishing a new version of an existing policy.
 
 When rights are present, or cannot be checked, it SHALL proceed. A permission failure during the
 deployment SHALL still be reported together with the rendered policy, or with the path of the file
-when `--policy-file` was given, whether the failure comes back from an AWS API call made by setup or
-is reported by CloudFormation in the stack's events. There SHALL be no separate command that prints
-the policy, and no option to render it for another account.
+when `--policy-file` was given or the user saved it, whether the failure comes back from an AWS API
+call made by setup or is reported by CloudFormation in the stack's events. There SHALL be no separate
+command that prints the policy, and no option to render it for another account.
 
 #### Scenario: Missing rights stop setup before anything is created
-- **WHEN** an identity without the deployer policy runs `baas admin deployment setup`
+- **WHEN** an identity without the deployer policy runs `baas admin deployment setup --non-interactive`
 - **THEN** standard output holds the rendered policy JSON, standard error names the missing actions, no
   stack is created, and the exit code is non-zero
 
 #### Scenario: The policy can be handed over
 - **WHEN** `baas admin deployment setup > policy.json` runs for an identity lacking rights
 - **THEN** `policy.json` is a valid IAM policy document for that deployment, and nothing else
+
+#### Scenario: Missing rights are waited for interactively
+- **WHEN** an identity without the deployer policy runs `baas admin deployment setup` on a terminal and saves the policy
+- **THEN** no stack is created, `policy.json` holds the rendered policy, the administrator's commands are shown, and setup waits rather than exiting
 
 #### Scenario: Sufficient rights deploy as before
 - **WHEN** an identity holding the rendered policy runs `baas admin deployment setup`
@@ -797,11 +771,11 @@ the policy, and no option to render it for another account.
 - **THEN** picocli reports an unknown command error
 
 #### Scenario: A named deployment's policy names that deployment
-- **WHEN** `baas --deployment wiktor-dev admin deployment setup --region us-east-1` runs for an identity holding only the default deployment's policy
+- **WHEN** `baas --deployment wiktor-dev admin deployment setup --region us-east-1 --non-interactive` runs for an identity holding only the default deployment's policy
 - **THEN** the printed policy's resources are scoped to `wiktor-dev` in `us-east-1`, and nothing is created
 
 #### Scenario: A statement newer than the attached policy is caught
-- **WHEN** the attached policy lacks one statement the rendered policy has, such as `AssumeOwnOperatorRole`, and setup runs
+- **WHEN** the attached policy lacks one statement the rendered policy has, such as `AssumeOwnOperatorRole`, and setup runs non-interactively
 - **THEN** the check names that statement's missing action, nothing is created, and the exit code is non-zero
 
 #### Scenario: Wildcard actions and pattern resources are checked as written
@@ -813,7 +787,7 @@ the policy, and no option to render it for another account.
 - **THEN** `p.json` holds the rendered policy and the deployment is created or updated
 
 #### Scenario: The policy file is written when rights are missing
-- **WHEN** an identity without the deployer policy runs `baas admin deployment setup --policy-file p.json`
+- **WHEN** an identity without the deployer policy runs `baas admin deployment setup --policy-file p.json --non-interactive`
 - **THEN** `p.json` holds the rendered policy, standard error names the file and the administrator's commands, nothing is created, and the exit code is non-zero
 
 #### Scenario: The administrator's commands are filled in
@@ -822,18 +796,22 @@ the policy, and no option to render it for another account.
 
 #### Scenario: A permission failure inside the stack is reported with the policy
 - **WHEN** a deployment fails because CloudFormation reports a resource failed with a not-authorised reason
-- **THEN** setup's report names that resource and reason and also prints the rendered policy, or names the `--policy-file` path when one was given, and the exit code is non-zero
+- **THEN** setup's report names that resource and reason and also hands the rendered policy over, or names the policy file when there is one
 
 ### Requirement: A deployment is named by its prefix, derived from the account by default
 `baas admin deployment setup` SHALL create or update the deployment named by `--deployment`, using
 that name verbatim as the resource name prefix. When `--deployment` is absent and no deployment is
-configured on the machine, it SHALL derive the name from the caller's AWS account identifier as
-`baas-<accountId>`. When `--deployment` is absent and exactly one deployment is configured, it SHALL
-update that one. When two or more are configured, it SHALL require `--deployment`. The derived name
-SHALL NOT depend on which principal, role, session or permission set the caller is using.
+configured on the machine, a non-interactive run SHALL derive the name from the caller's AWS account
+identifier as `baas-<accountId>`, and an interactive run SHALL offer that name as the suggested
+answer to its name prompt, accepting any valid name instead. When `--deployment` is absent and exactly
+one deployment is configured, it SHALL update that one. When two or more are configured, a
+non-interactive run SHALL require `--deployment`, and an interactive run SHALL ask which one. The
+derived name SHALL NOT depend on which principal, role, session or permission set the caller is
+using, and no name SHALL be used that the user neither typed, accepted nor left to the
+non-interactive derivation.
 
 #### Scenario: Two identities on one account resolve the same default deployment
-- **WHEN** `baas admin deployment setup` is run with no `--deployment` on a machine with no configured deployment, by an IAM user and again by an SSO identity in the same AWS account and region
+- **WHEN** `baas admin deployment setup --non-interactive` is run with no `--deployment` on a machine with no configured deployment, by an IAM user and again by an SSO identity in the same AWS account and region
 - **THEN** both invocations derive the prefix `baas-<accountId>` and target the same stack, bucket and results table
 
 #### Scenario: Changing permission set does not fork the deployment
@@ -847,6 +825,10 @@ SHALL NOT depend on which principal, role, session or permission set the caller 
 #### Scenario: The default name is derivable without prior local state
 - **WHEN** a machine that has never configured a deployment holds credentials for the account
 - **THEN** the default deployment's prefix is computable from the caller's account identifier alone, with no value copied from another machine
+
+#### Scenario: The derived name is a suggestion interactively
+- **WHEN** an interactive setup with no deployment configured and no `--deployment` asks for the name
+- **THEN** `baas-<accountId>` is the default answer, and a typed `team-bench` is used instead
 
 ### Requirement: A deployment name satisfies every service that carries it
 `baas admin deployment setup` SHALL refuse, before any AWS call, a deployment name that some resource
@@ -885,28 +867,34 @@ SHALL fail as an unknown deployment.
 ### Requirement: Setup checks the stack's fixed names are free before creating it
 The core stack creates a bucket named `<prefix>` and a table named `<prefix>-results`; if either name is
 taken, the whole create rolls back. Before creating the stack — for a new deployment, and before
-recovering a stack in `ROLLBACK_COMPLETE` — `baas admin deployment setup` SHALL check both names, and
-SHALL refuse, creating and deleting nothing, exit non-zero, and name the cause and the remedy, when:
-a bucket of that name exists in the deployment's region and is accessible to the caller (a leftover of an
-earlier deployment: remove it with `aws s3 rb s3://<prefix> --force`, after saving anything it holds); a
-bucket of that name is owned by another account (choose another name with `--deployment`); or a table of
-that name exists in the region (a leftover: remove it with `aws dynamodb delete-table --table-name
-<prefix>-results`). The early bucket-region lookup SHALL treat only a bucket the caller can reach as the
-deployment's own, so that another account's bucket is never reported as this deployment living in
-another region. An update of an existing stack SHALL NOT run these checks: its bucket and table are its
-own.
+recovering a stack in `ROLLBACK_COMPLETE` — and after the deployer-permission check, `baas admin
+deployment setup` SHALL check both names, and SHALL create and delete nothing while either is taken.
+It SHALL name the cause and the remedy when: a bucket of that name exists in the deployment's region and
+is accessible to the caller (a leftover of an earlier deployment: remove it with `aws s3 rb s3://<prefix>
+--force`, after saving anything it holds); a bucket of that name is owned by another account (choose
+another name); or a table of that name exists in the region (a leftover: remove it with `aws dynamodb
+delete-table --table-name <prefix>-results`). A non-interactive run SHALL then exit non-zero. An
+interactive run SHALL wait for a leftover to be removed, and for a name owned by another account SHALL
+ask for another name, as `guided-setup` states. The early bucket-region lookup SHALL treat only a bucket
+the caller can reach as the deployment's own, so that another account's bucket is never reported as this
+deployment living in another region. An update of an existing stack SHALL NOT run these checks: its
+bucket and table are its own.
 
 #### Scenario: A leftover bucket is named before anything is created
-- **WHEN** `baas admin deployment setup` creates a deployment whose bucket name already exists in its region with no stack of that name
+- **WHEN** `baas admin deployment setup --non-interactive` creates a deployment whose bucket name already exists in its region with no stack of that name
 - **THEN** setup exits non-zero naming the bucket and `aws s3 rb s3://<prefix> --force`, and no stack is created
 
 #### Scenario: A leftover table is named before anything is created
-- **WHEN** `baas admin deployment setup` creates a deployment whose table `<prefix>-results` already exists
+- **WHEN** `baas admin deployment setup --non-interactive` creates a deployment whose table `<prefix>-results` already exists
 - **THEN** setup exits non-zero naming the table and `aws dynamodb delete-table`, and no stack is created
 
 #### Scenario: A name taken by another account
-- **WHEN** `baas --deployment wiktor-dev admin deployment setup` runs and a bucket named `wiktor-dev` belongs to another account
+- **WHEN** `baas --deployment wiktor-dev admin deployment setup --non-interactive` runs and a bucket named `wiktor-dev` belongs to another account
 - **THEN** setup exits non-zero saying the name is taken by another account and to choose another with `--deployment`, does not say the deployment lives in another region, and creates nothing
+
+#### Scenario: A name taken by another account, interactively
+- **WHEN** the same happens on an interactive run
+- **THEN** setup asks for another name instead of exiting, and creates nothing for `wiktor-dev`
 
 #### Scenario: A rolled-back stack with a leftover is not deleted
 - **WHEN** the stack is in `ROLLBACK_COMPLETE` because its bucket name was taken, and setup is run again
@@ -919,7 +907,7 @@ own.
 ### Requirement: The deployer may assume its own deployment's operator role
 The rendered deployer policy SHALL allow `sts:AssumeRole` on
 `arn:aws:iam::<account>:role/<prefix>-role-operator` for its own prefix only, and on no other role. It
-SHALL still fit the inline-policy budget test.
+SHALL still fit the customer-managed policy budget test.
 
 #### Scenario: An admin runs a job with no operator setup
 - **WHEN** a principal holding only the rendered deployer policy for `baas-123456789012` runs `baas run jmh -- MyBenchmark` with `aws.deployerProfile` set and no `aws.operatorProfile`
@@ -942,3 +930,63 @@ editing it replaces the group.
 #### Scenario: No operator-supplied group is accepted
 - **WHEN** the core template's parameters are inspected
 - **THEN** it declares no parameter naming an existing VPC, subnet or security group, and no condition choosing between created and supplied networking
+
+### Requirement: The CLI creates the GitHub OIDC provider and never modifies or deletes it
+When a deployment is set up with GitHub federation, `baas admin deployment setup` SHALL ensure the
+account's GitHub OIDC identity provider exists at
+`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, deriving that ARN from the
+caller's account. When it is absent, setup SHALL create it through the IAM API — outside the core
+stack — with the issuer URL and the client ID `sts.amazonaws.com` only, no thumbprint and no tags. When
+it exists, setup SHALL reuse it. An existing provider that does not list `sts.amazonaws.com` as a
+client ID SHALL NOT be modified: setup SHALL print the IAM administrator's
+`aws iam add-client-id-to-open-id-connect-provider` command with the ARN filled in, and wait
+interactively or exit 1 unattended. No `baas` command SHALL modify or delete the provider, since it is
+account-global and may serve other projects. A teardown of a deployment whose operator role trusted
+it SHALL say that the provider is left in place.
+
+#### Scenario: A missing provider is created
+- **WHEN** setup runs with `--github-org org --github-repo a` in an account with no GitHub OIDC provider
+- **THEN** the provider exists afterwards with client ID `sts.amazonaws.com`, it is not a resource of the core stack, and the operator role trusts it
+
+#### Scenario: An existing provider is reused
+- **WHEN** the provider already exists in the account with client ID `sts.amazonaws.com`
+- **THEN** setup creates no provider and the operator role trusts the existing one
+
+#### Scenario: A provider lacking the audience is left to an administrator
+- **WHEN** the existing provider lists only another client ID
+- **THEN** setup prints `aws iam add-client-id-to-open-id-connect-provider` with the provider's ARN and `sts.amazonaws.com`, does not call any IAM write on the provider, and waits interactively or exits 1 unattended
+
+#### Scenario: Teardown leaves the provider
+- **WHEN** `baas admin deployment teardown --yes` completes for a deployment with federation
+- **THEN** the provider still exists, and the teardown's output says it was left in place
+
+#### Scenario: The ARN option is gone
+- **WHEN** `baas admin deployment setup --oidc-provider-arn arn:aws:iam::1:oidc-provider/x` is invoked
+- **THEN** picocli reports an unknown option error
+
+### Requirement: Deployer policy may create the GitHub OIDC provider, and nothing more of it
+`BaasCliDeployerPolicy` SHALL grant `iam:GetOpenIDConnectProvider` and
+`iam:CreateOpenIDConnectProvider` on the one provider ARN
+`arn:aws:iam::<account>:oidc-provider/token.actions.githubusercontent.com`, and no other
+OIDC-provider action on any resource. It SHALL grant `iam:UpdateAssumeRolePolicy`, scoped to the same
+role resources as its other IAM statements, because deploying the core stack edits
+`BaasCliOperatorRole`'s trust policy. Neither grant confers an escalation the policy did not already
+allow, since `iam:CreateRole` writes a trust policy too.
+
+#### Scenario: Only create and read on the one provider
+- **WHEN** `infra/deployer-policy.json` is inspected
+- **THEN** its only actions ending `OpenIDConnectProvider` are `iam:GetOpenIDConnectProvider` and `iam:CreateOpenIDConnectProvider`, and their only resource is the `token.actions.githubusercontent.com` provider of the account
+
+#### Scenario: The trust-policy edit is permitted and scoped
+- **WHEN** an identity holding only `BaasCliDeployerPolicy` deploys a core stack carrying federation parameters
+- **THEN** the deploy succeeds, and the policy's `iam:UpdateAssumeRolePolicy` grant names the same role resources as its role-creation statement rather than `Resource: "*"`
+
+### Requirement: The deployer policy is sized as a customer-managed policy
+The deployer policy SHALL be attached as the customer-managed policy
+`BaasCliDeployerPolicy-<deployment>`, which IAM limits to 6144 non-whitespace characters, and the
+rendered document SHALL stay below 5632 non-whitespace characters, keeping a 512-character reserve.
+Setup's hand-over and the documentation SHALL describe only that attachment.
+
+#### Scenario: Policy fits the budget
+- **WHEN** the deployer policy is rendered
+- **THEN** its non-whitespace length is below 5632
