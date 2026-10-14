@@ -5,7 +5,7 @@ is the recipe version the command would have built (design, *adopted by recipe v
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Once the user has published the new deployer policy versions and deleted the old
+- [x] 1.1 Once the user has published the new deployer policy versions and deleted the old
   provider (user, 2026-10-14), confirm under `baas-admin` that `aws iam get-open-id-connect-provider`
   on `arn:aws:iam::381492019823:oidc-provider/token.actions.githubusercontent.com` answers
   `NoSuchEntity`. Done when `verify.md` records the answer; an `AccessDenied` means the policy is not
@@ -38,7 +38,7 @@ is the recipe version the command would have built (design, *adopted by recipe v
   with `!Sub` from `AWS::Partition` and `AWS::AccountId`. Verify with `CoreTemplateTest`: no parameter
   carries a provider ARN, and the trust statement names the composed ARN under the federation
   condition.
-- [ ] 2.4 Delete `infra/cf-template-ci.yaml` and every test reading it from the test classpath. Verify
+- [x] 2.4 Delete `infra/cf-template-ci.yaml` and every test reading it from the test classpath. Verify
   `mvn -pl baas-cli test` passes and `git grep cf-template-ci` finds only history docs (archived
   changes, ADRs).
 - [x] 2.5 Add a test that an update of a stack still listing `GitHubOidcProviderArn` sends no value
@@ -201,10 +201,10 @@ under a pseudo-terminal (`script`), and Ctrl+C checks in the foreground. Record 
   teardown), so setup creates the GitHub OIDC provider. Confirm that the provider exists with
   `sts.amazonaws.com`, that `OPERATOR_ROLE_ARN` is unchanged, and that one `workflow_dispatch` of the
   e2e CI workflow on the PR branch federates and passes. Record in `verify.md`.
-- [ ] 13.4 Manual: a second setup with federation on `baas-development` reuses the provider created in
+- [x] 13.4 Manual: a second setup with federation on `baas-development` reuses the provider created in
   13.3 with no IAM write. Then `baas admin deployment setup --non-interactive > policy.json` under
   `lynx` leaves only the policy on stdout and exits 1. Record in `verify.md`.
-- [ ] 13.5 Manual: tear down `baas-development` and confirm the teardown says the provider is left in
+- [x] 13.5 Manual: tear down `baas-development` and confirm the teardown says the provider is left in
   place, then recreate it for later work. Record in `verify.md`.
 
 ## 14. Verify
