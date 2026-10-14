@@ -196,7 +196,7 @@ under a pseudo-terminal (`script`), and Ctrl+C checks in the foreground. Record 
   while the build is in progress, and confirm it waits. Interrupt again, and once the build has
   finished unseen, re-run and confirm it adopts with no second build. Confirm no orphaned AMI remains
   (`aws ec2 describe-images --owners self`). Record in `verify.md`.
-- [ ] 13.3 Manual: tear down `baas-381492019823` and recreate it with `--non-interactive
+- [x] 13.3 Manual: tear down `baas-381492019823` and recreate it with `--non-interactive
   --build-image --github-org <org> --github-repo <repo>` (values read from its stack before the
   teardown), so setup creates the GitHub OIDC provider. Confirm that the provider exists with
   `sts.amazonaws.com`, that `OPERATOR_ROLE_ARN` is unchanged, and that one `workflow_dispatch` of the
@@ -209,6 +209,6 @@ under a pseudo-terminal (`script`), and Ctrl+C checks in the foreground. Record 
 
 ## 14. Verify
 
-- [ ] 14.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory: a
+- [x] 14.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory: a
   requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation
   from the design or these tasks.
