@@ -7,12 +7,15 @@ import software.amazon.awssdk.services.ec2.model.Ec2Exception;
 import software.amazon.awssdk.services.ec2.model.Tag;
 import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
 import software.amazon.awssdk.services.imagebuilder.model.Filter;
+import software.amazon.awssdk.services.imagebuilder.model.ImageSummary;
 import software.amazon.awssdk.services.imagebuilder.model.ImageStatus;
 import software.amazon.awssdk.services.imagebuilder.model.Ownership;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.ssm.SsmClient;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -58,20 +61,24 @@ public class ImageBuilderService {
     }
 
     /**
-     * Builds a new image and publishes it, retiring the one it replaces.
+     * Builds a new image and publishes it, retiring the one it replaces — or publishes a build of
+     * this same recipe version that an interrupted run left behind, instead of starting another.
      *
      * <p>Every step that could leave the account inconsistent is ordered so that a failure stops
      * before it does damage: a failed build throws before the pointer moves, and nothing is
      * deregistered until the pointer names the replacement.
      *
+     * @param recipeVersion the recipe version the stack declares now; a build found from another
+     *                      version was started before an extension push, and is retired rather
+     *                      than published
      * @return the AMI ID now published at {@code parameterName}
      */
-    public String publish(String pipelineArn, String parameterName,
-                          String imageVersion, String parentAmiId) throws InterruptedException {
+    public String publish(String pipelineArn, String parameterName, String imageVersion,
+                          String parentAmiId, String recipeVersion) throws InterruptedException {
         Optional<String> replaced = readPointer(parameterName);
         replaced.ifPresent(amiId -> logger.debug("Current runner AMI: {}", amiId));
 
-        String newAmiId = build(pipelineArn);
+        String newAmiId = adoptOrBuild(pipelineArn, recipeVersion, replaced);
         ensureIdentityTags(newAmiId, imageVersion, parentAmiId);
 
         writePointer(parameterName, newAmiId);
@@ -125,6 +132,100 @@ public class ImageBuilderService {
         }
     }
 
+    /** A build of the deployment's pipeline that has not finished yet. */
+    public record RunningBuild(String arn, String recipeVersion, Instant started) {}
+
+    /**
+     * The newest build of the pipeline when it is still in progress, else empty. Setup asks about
+     * it before {@link #publish} waits on it.
+     */
+    public Optional<RunningBuild> runningBuild(String pipelineArn) {
+        return newestBuild(pipelineArn)
+            .filter(image -> IN_PROGRESS.contains(image.state().status()))
+            .map(image -> new RunningBuild(image.arn(), recipeVersionOf(image), started(image)));
+    }
+
+    /**
+     * The CLI runs the whole build, so Ctrl+C or a closed lid mid-build used to leave Image Builder
+     * finishing an AMI that no pointer named and nothing retired — a snapshot billing indefinitely —
+     * and the re-run started a second build. So the pipeline's newest build is looked at first:
+     * still running, it is waited for; finished but unpublished, it is adopted. Only a build of the
+     * recipe version the stack declares now qualifies: an older one predates an extension push, and
+     * publishing it would put the wrong extension on the runners, so its AMI is retired instead.
+     * Two starts in the same seconds still race, as they always did.
+     */
+    String adoptOrBuild(String pipelineArn, String recipeVersion, Optional<String> published)
+            throws InterruptedException {
+        Optional<ImageSummary> newest = newestBuild(pipelineArn);
+        if (newest.isPresent()) {
+            ImageSummary image = newest.get();
+            boolean current = recipeVersion.equals(recipeVersionOf(image));
+            ImageStatus status = image.state().status();
+            if (IN_PROGRESS.contains(status)) {
+                if (current) {
+                    logger.info("A build of this image started at {} is still running; waiting for it instead of "
+                        + "starting another.", started(image));
+                    return await(image.arn());
+                }
+                logger.info("A build of superseded recipe version {} is still running; waiting for it to end so "
+                    + "its image can be retired.", recipeVersionOf(image));
+                retireSuperseded(image.arn());
+            } else if (SUCCEEDED.contains(status)) {
+                Optional<String> amiId = amiOf(image)
+                    .filter(ami -> published.map(p -> !p.equals(ami)).orElse(true))
+                    .filter(ami -> describeImage(ami).isPresent());
+                if (amiId.isPresent() && current) {
+                    logger.info("Adopting {}, built at {} by a run that did not publish it. No new build is needed.",
+                        amiId.get(), started(image));
+                    return amiId.get();
+                }
+                if (amiId.isPresent()) {
+                    logger.info("Retiring {}, an unpublished build of superseded recipe version {}",
+                        amiId.get(), recipeVersionOf(image));
+                    retireQuietly(amiId.get());
+                }
+            }
+        }
+        return build(pipelineArn);
+    }
+
+    /** Waits for a superseded build to end, then retires whatever it produced. */
+    private void retireSuperseded(String buildArn) throws InterruptedException {
+        try {
+            retireQuietly(await(buildArn));
+        } catch (IllegalStateException e) {
+            // A failed build has already retired its own output in await().
+            logger.debug("Superseded build ended without an image: {}", e.getMessage());
+        }
+    }
+
+    private Optional<ImageSummary> newestBuild(String pipelineArn) {
+        return imageBuilder.listImagePipelineImagesPaginator(r -> r.imagePipelineArn(pipelineArn))
+            .imageSummaryList().stream()
+            .filter(image -> image.state() != null)
+            .max(Comparator.comparing(ImageBuilderService::started));
+    }
+
+    /** {@code …:image/<recipe>/<recipe version>/<build>} → {@code <recipe version>}. */
+    static String recipeVersionOf(ImageSummary image) {
+        String[] segments = image.arn().split("/");
+        return segments.length >= 2 ? segments[segments.length - 2] : "";
+    }
+
+    private static Instant started(ImageSummary image) {
+        try {
+            return image.dateCreated() == null ? Instant.EPOCH : Instant.parse(image.dateCreated());
+        } catch (java.time.format.DateTimeParseException e) {
+            return Instant.EPOCH;
+        }
+    }
+
+    private static Optional<String> amiOf(ImageSummary image) {
+        return Optional.ofNullable(image.outputResources())
+            .flatMap(resources -> resources.amis().stream().findFirst())
+            .map(software.amazon.awssdk.services.imagebuilder.model.Ami::image);
+    }
+
     /**
      * Starts the pipeline and blocks until the build reaches a terminal state.
      *
@@ -135,7 +236,11 @@ public class ImageBuilderService {
         String buildArn = imageBuilder.startImagePipelineExecution(r -> r.imagePipelineArn(pipelineArn))
             .imageBuildVersionArn();
         logger.info("Image build started: {}", buildArn);
+        return await(buildArn);
+    }
 
+    /** Blocks until the build reaches a terminal state, retiring a failed build's output. */
+    private String await(String buildArn) throws InterruptedException {
         while (true) {
             var image = imageBuilder.getImage(r -> r.imageBuildVersionArn(buildArn)).image();
             ImageStatus status = image.state().status();
