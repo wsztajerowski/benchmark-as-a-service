@@ -91,13 +91,52 @@ class SetupStepsTest {
     // ─── Step 2: credentials ──────────────────────────────────────────────────────
 
     @Test
-    void anExpiredSessionIsWaitedForInteractively() throws Exception {
+    void anExpiredSessionIsCheckedAgainOnEnter() throws Exception {
         var run = setup().interactive("", "", "us-east-1", "", "", "", "", "");
         run.aws.identityFailures.add(FakeSetupAws.expiredSession());
 
         assertThat(run.run()).isZero();
         assertThat(run.aws.calls).filteredOn("callerIdentity"::equals).hasSize(2);
+        assertThat(run.asked("Deployer AWS profile (Enter to check again)")).isTrue();
+    }
+
+    @Test
+    void anotherProfileCanBeTypedAfterACredentialFailure() throws Exception {
+        var run = setup().interactive("", "baas-admin", "", "us-east-1", "", "", "", "", "");
+        run.aws.identityFailures.add(FakeSetupAws.noCredentials());
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.builtFor).contains("us-east-1/baas-admin");
+        assertThat(run.asked("Press Enter to check again")).isFalse();
+    }
+
+    @Test
+    void aClosedInputAfterACredentialFailureStopsWithExitOne() throws Exception {
+        var run = setup().interactive("");
+        run.aws.identityFailures.add(FakeSetupAws.noCredentials());
+
+        assertThat(run.run()).isEqualTo(1);
+        assertThat(run.aws.calls).filteredOn("callerIdentity"::equals).hasSize(1);
+    }
+
+    @Test
+    void aProfileGivenByOptionIsCheckedAgainWithoutBeingAsked() throws Exception {
+        var run = setup().interactive("", "us-east-1", "", "", "", "", "");
+        run.profile = "baas-admin";
+        run.aws.identityFailures.add(FakeSetupAws.expiredSession());
+
+        assertThat(run.run()).isZero();
         assertThat(run.asked("Press Enter to check again")).isTrue();
+        assertThat(run.asked("Deployer AWS profile")).isFalse();
+    }
+
+    @Test
+    void anEmptyCredentialChainIsOneLine() {
+        assertThat(CredentialsStep.explain(null, FakeSetupAws.noCredentials()))
+            .startsWith("Cannot use the default credentials: no credentials found\n")
+            .doesNotContain("ProfileFile(", "AwsCredentialsProviderChain(");
+        assertThat(CredentialsStep.explain("x", FakeSetupAws.missingProfile("x")))
+            .startsWith("Cannot use profile x: Profile file contained no credentials for profile 'x'\n");
     }
 
     @Test
