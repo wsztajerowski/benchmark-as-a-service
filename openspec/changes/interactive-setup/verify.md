@@ -1,6 +1,6 @@
 # Verify — interactive-setup
 
-Paid tests used: **6 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
+Paid tests used: **8 / 20** (see the running count under section 13) (image builds and `baas run` jobs; user's budget, 2026-10-14).
 
 ## 1. Blocking assumptions
 
@@ -249,3 +249,129 @@ inherited-SIGINT trap in background shells, which would make the check say nothi
   the account root plus `Federated: …:oidc-provider/token.actions.githubusercontent.com`. The
   repository variables `OPERATOR_ROLE_ARN` and `AWS_REGION` already match, so nothing changes on
   GitHub.
+- **CI half (paid 7–8):** PR #95's `e2e-cloud-test.yml` (run `38607340125`, success) federated from
+  GitHub Actions into the recreated `baas-381492019823-role-operator` through the reused provider.
+  The JMH job ran `jmh-with-async` on the freshly built AMI and the JCStress job ran in sanity mode;
+  both passed. Together with `build` and both `install.sh` checks, every check on the PR is green.
+
+## 14. `/opsx:verify` (2026-10-14)
+
+| Dimension | Status |
+|---|---|
+| Completeness | 45/45 tasks. 37 requirements over 4 specs, all with an implementation |
+| Correctness | 37/37 requirements mapped to code. 4 scenarios lack a test of their own (W3) |
+| Coherence | Design followed, with 4 recorded deviations (below) |
+
+Unit suite: 880 tests, 0 failures. CI on PR #95 green, both paid E2E jobs included.
+
+### Requirement → code → test
+
+`setup/` is `baas-cli/src/main/java/pl/wsztajerowski/baas/commands/admin/setup/`. Tests are in
+`SetupStepsTest` unless named otherwise.
+
+**guided-setup (new)**
+
+| Requirement | Code | Test (live) |
+|---|---|---|
+| Ordered series of probed steps | `SetupSteps.all`, `SetupWalkthrough` | `SetupWalkthroughTest.stepsRunInOrder…`, `aHealthyReRunChangesNothing` (13.1 re-run) |
+| Interactive on a terminal, unattended otherwise | `SetupWalkthrough.run` (Wait), `SetupCommand.call` | `aWaitingStepRunsAgainOnEachEnter`, `unattendedAWaitingStepStopsWithExitOne`, `aClosedInputStops…`, `SetupCommandTest.…ThereIsNoYes` (13.1, 13.4) |
+| Every prompt has an option | `SetupOptions`, each step asks only when its option is absent | `RepeatCommandTest` round trip through picocli |
+| Deployment chosen from files before AWS | `DeploymentStep` | `aNewDeploymentAsksAwsNothing…`, `severalDeployments…` |
+| Credentials shown before use | `CredentialsStep` | `anExpiredSession…`, `theStoredProfileIsTheDefault` |
+| A new name is suggested, never required | `NameAndRegionStep` | `theSuggestedNameIsTheDefault`, `anyValidNameIsAccepted…`, `anExistingDeploymentsNameAndRegionAreNotAsked` (13.5) |
+| Missing rights handed over, then waited for | `PermissionsStep`, `PolicyHandOver` | `missingRightsAreSavedAndWaitedFor…`, `…CanBePrintedInstead`, `thePolicyFileOptionAnswers…`, `aCheckThatCannotRun…` (13.4) |
+| A name another account holds is asked again | `NamesStep` | `aNameAnotherAccountHoldsIsAskedAgainAndCheckedAgain`, `…UnattendedExitsOne`, `aLeftoverIsNamed…` |
+| GitHub Actions step, never touching GitHub | `GitHubStep`, `DoneStep.nextSteps` | `federationSkipped…`, `theNextStepsAlwaysNameTheDeployment` (13.3) |
+| An update asks what can change | `GitHubStep.decide`, `CredentialsStep` | `aRepositoryIsAddedOnUpdate`, `unchangedFederationIsCarriedForward` |
+| The plan is confirmed on create or change | `PlanStep` | `decliningThePlanChangesNothing`, `aTemplateOnlyUpdateIsNotConfirmed` (13.5) |
+| A stack permission failure returns to step 4 | `StackStep.permissionFailure`, `SetupWalkthrough.outcome` | `aPermissionFailureInTheStack…` (two), `aDenialAtALaterStepHandsThePolicyOver` (13.4) |
+| The operator role is proven, with propagation | `OperatorRoleStep` | `aNewRoleIsGivenTimeToPropagate`, `aRoleThatStaysRefused…` |
+| The image is offered, never built by surprise | `ImageStep` | `aCurrentImageIsNotOffered`, `unattendedSetupNeverBuilds…`, `theOfferAcceptedBuilds…`, `theBuildImageOption…` (13.5) |
+| An interrupted run resumes | `CloudFormationService.awaitSettled`, `StackStep` | `aCreateStillInProgressIsWaitedFor…` (13.1) |
+| Ends with next steps and the repeat command | `DoneStep`, `RepeatCommand` | `RepeatCommandTest` (four cases) (13.5) |
+
+**core-stack-provisioning**
+
+| Requirement | Code | Test (live) |
+|---|---|---|
+| CLI creates the provider, never modifies or deletes it | `GitHubStep`, `StackStep`, `AwsSetupAws.createOidcProvider`, `TeardownCommand.providerLeftNotice` | `anAbsentProviderIsCreatedBeforeTheStack`, `anExistingProviderIsReused`, `aProviderWithoutTheAudience…`, `TeardownNoticeTest.theProviderIsSaidToStay`, `SetupCommandTest.rejectsRemoved…` (reuse 13.3/13.4, teardown note 13.5/13.3; create W2) |
+| Deployer policy may create the provider, nothing more | `deployer-policy.json` `GitHubOidcProvider` | `DeployerPolicyTest.mayCreateTheGitHubProviderButNeverChangeIt`, `DeployerPreflightTest` |
+| Sized as customer-managed | `DeployerPolicyTest` budget | `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` |
+| Core stack contains only CLI-owned infrastructure (MOD) | `cf-template-core.yaml` composed `Federated` | `CoreTemplateTest.theFederatedPrincipal…`, `noParameterCarriesTheProviderArn` (13.4 trust policy) |
+| Setup is self-sufficient (MOD) | `StackStep` rollback recovery, `DoneStep.save` | `aRolledBackFirstCreateIsDeletedAndCreatedAgain` (teardown of a rolled-back create: W3) |
+| Policy covers the table lifecycle (MOD) | policy | `DeployerPolicyTest` |
+| Federation carried forward, revoked on request (MOD) | `GitHubStep.forCreate/forUpdate`, `CloudFormationService` filter | `unchangedFederationIsCarriedForward`, `revocationSubmitsBothEmpty`, `CloudFormationServiceTest.theRemovedProviderArnParameterIsDropped…` (13.4) |
+| Setup renders the policy and stops (MOD) | `PermissionsStep`, `PolicyHandOver` | `missingRightsUnattendedPrintOnlyThePolicy…`, administrator-command tests (13.4) |
+| Named by its prefix (MOD) | `NameAndRegionStep` | `theDerivedNameIsTheAccountAlone`, `theSuggestedNameIsTheDefault` |
+| Fixed names checked before create (MOD) | `NamesStep` | `nameConflictsAreNamedWithTheirRemedy`, `aRolledBackStackWithALeftover…` |
+| Deployer may assume its operator role (MOD) | policy | `DeployerPolicyTest` |
+| Teardown removes every deployment resource (MOD) | `TeardownCommand` | existing tests, plus notice (13.1/13.3/13.5) |
+| 3 REMOVED (CI stack, no-OIDC policy, CI template) | file and statement deleted | `CiTemplateTest` deleted, `DeployerPolicyTest` |
+
+**cli-command-structure**
+
+| Requirement | Code | Test (live) |
+|---|---|---|
+| Profile stored only on evidence | `DoneStep.storeProfile`, `DoneStep.save` | `anUnverifiableIdentityDoesNotReplace…`, `aVerifiedIdentityIsStored…`, `aCreateIsItsOwnEvidence` (13.4 lynx) |
+| `baas run` requires a built image (MOD) | `RunCommand` no-image message via `Hints.command` | none (W3) |
+| Hints shown to people, with `--deployment` (MOD) | `Hints.command` at every site | `HelpAndHintsTest.aHintedCommand…`, `RunCommandDetachTest`, `TeardownNoticeTest`, `ImageCommandsTest` |
+| `--deployment` names a deployment (MOD) | `BaasApp` description, `DeploymentStep` choice | `HelpAndHintsTest.theDeploymentOptionStatesWhenItIsNeeded`, `severalDeploymentsAreOfferedAsAChoice` |
+| One file per deployment, written on accepted create (MOD) | `StackStep` → `DoneStep.save` | `theFileIsWrittenOnceTheCreateIsAccepted`, `aRefusedCreateLeavesNoFile`, `anUnprovenProfileIsNotInTheEarlyFile` (13.1 kill -9) |
+
+**runner-image-provisioning**
+
+| Requirement | Code | Test (live) |
+|---|---|---|
+| Exactly one image, also across an interrupted build (MOD) | `ImageBuilderService.adoptOrBuild`, `runningBuild` | six `ImageBuilderServiceTest` adoption cases (13.2: waited, adopted, one AMI) |
+
+### Deviations from the design
+
+1. **Step 8 waits with one poll loop** (`CloudFormationService.awaitSettled`), not the SDK
+   waiters. No waiter exists for `ROLLBACK_IN_PROGRESS` or `UPDATE_COMPLETE_CLEANUP_IN_PROGRESS`,
+   and the create and update waiters fail on rollback states (task 1.4).
+2. **The engine converts a later access denial into the policy hand-over**
+   (`SetupWalkthrough.outcome`). The design kept AWS knowledge out of the engine. This uses only
+   `DeployerPreflight.isAccessDenied`, a pure function, and was added after 13.4 found a denial
+   escaping bare.
+3. **`RunnerImageBuild` was extracted** from `ImageBuildSubcommand`, so setup's image step and
+   `admin image build` share one build path. The design named the port method `buildOrAdoptImage`;
+   it is `buildImage`, which adopts through `ImageBuilderService.publish`.
+4. Naming: `PreflightResult` is `SetupAws.Preflight`; `imageState` is `image(deployment)` returning
+   `SetupAws.Image`.
+
+### Warnings
+
+- **W1** — `JobSession`'s two stop-failure messages still print `baas jobs terminate <id>`
+  without `--deployment`. `JobSession` never learns the deployment's name (see 11.1).
+  *Recommendation:* pass the name in when `JobSession` is next touched.
+- **W2** — Setup's provider *creation* was not exercised live: the account's provider was not
+  deleted before 13.3, so the live runs cover reuse only. Creation is unit-tested
+  (`anAbsentProviderIsCreatedBeforeTheStack`), the grant is simulated as Met in every live run, and
+  the request shape follows the API reference (task 1.3).
+  *Recommendation:* the next time the provider is absent (a new account, or after an IAM admin
+  deletes it), run `setup --github-org … --github-repo …` and check `aws iam
+  get-open-id-connect-provider` lists `sts.amazonaws.com`.
+- **W3** — Scenarios with no test of their own:
+  - *The option forces unattended on a terminal*: `SetupCommand.call`'s
+    `console.interactive() && !nonInteractive` is untested. No test drives `SetupCommand`
+    end-to-end with its injectable `awsFactory`/`consoleFor`/`answerReader`, since `FakeSetupAws`
+    is package-private to `setup/`.
+  - *A failed first create can also be torn down*: plausible, since the file exists and teardown
+    deletes a `ROLLBACK_COMPLETE` stack, but neither a test nor a live run covers it.
+  - *No image built yet* naming `baas --deployment <name> admin image build` in `RunCommand`.
+  - *A re-run continues after an administrator acted*, across two processes: covered live (13.1),
+    and within one process by `missingRightsAreSavedAndWaitedFor…`.
+
+  *Recommendation:* add a `SetupCommandTest` that runs `setup` through `BaasApp`'s command line
+  with a `CommandLine.IFactory` injecting a fake `SetupAws` and `Console.withFlags(…, true, …)`,
+  and assert that `--non-interactive` asks nothing.
+
+### Suggestions
+
+- The closing text prints both `gh variable set` lines once per repository, so with several
+  repositories `AWS_REGION` repeats; a per-repo loop is still correct.
+- `PolicyHandOver.attachThen` says "Nothing was created." unattended even after an update earlier
+  in the same run. True for this run's resources, but it could say "Setup stopped here." instead.
+
+**Assessment:** no critical issues, 3 warnings (W1–W3). Ready for archive once the PR is merged,
+with the warnings noted.
