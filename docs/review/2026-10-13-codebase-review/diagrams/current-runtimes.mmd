@@ -1,4 +1,4 @@
-%% Today: the three runtimes and who owns which shared contract
+%% Today (7d9660a): the three runtimes and who owns which shared contract
 flowchart TB
   classDef mod fill:#e8f0fe,stroke:#3367d6,color:#111
   classDef sh fill:#fff4e5,stroke:#e8710a,color:#111
@@ -6,7 +6,7 @@ flowchart TB
   classDef gap fill:#fde7e9,stroke:#d33,color:#111
 
   subgraph LAPTOP["Laptop / CI"]
-    CLI["baas-cli<br/>67 classes, 10.8k lines<br/>commands + infra + jobs + results"]:::mod
+    CLI["baas-cli<br/>89 classes, 12.4k lines<br/>commands (+ admin.setup) + infra + jobs + results"]:::mod
   end
   MODEL["baas-model<br/>JobId · JobLayout prefix · JobStatus · TagKeys<br/>ResultKeys · MeasurementItemMapper · JobItemMapper"]:::mod
   subgraph EC2["EC2 runner instance"]
