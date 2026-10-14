@@ -584,4 +584,13 @@ class RunCommandTest {
         assertThatThrownBy(() -> new RunCommand().resolveTimings(config))
             .isInstanceOf(IllegalArgumentException.class);
     }
+
+    /** Spec: "No image built yet" — the fix names the deployment, so it works with two configured. */
+    @Test
+    void noImageNamesTheDeploymentsBuildCommand() {
+        assertThat(RunCommand.noImageMessage("wiktor-dev", "us-east-1"))
+            .contains("Deployment wiktor-dev has no runner image (us-east-1)")
+            .contains("baas --deployment wiktor-dev admin image build")
+            .doesNotContain("account");
+    }
 }
