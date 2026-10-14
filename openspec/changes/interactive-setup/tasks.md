@@ -10,76 +10,76 @@ is the recipe version the command would have built (design, *adopted by recipe v
   on `arn:aws:iam::381492019823:oidc-provider/token.actions.githubusercontent.com` answers
   `NoSuchEntity`. Done when `verify.md` records the answer; an `AccessDenied` means the policy is not
   published yet, and live work waits while code work continues.
-- [ ] 1.2 Confirm `ListImagePipelineImages` reports an in-progress build (status and version ARN)
+- [x] 1.2 Confirm `ListImagePipelineImages` reports an in-progress build (status and version ARN)
   and a finished one with its output AMI: run it read-only against `baas-development`'s pipeline,
   and check the API reference for in-progress entries. Done when `verify.md` holds the output and the
   citation. If in-progress builds are not listed, adoption needs another lookup, and the design is
   updated first.
-- [ ] 1.3 Confirm from the API reference that `GetOpenIDConnectProvider` on an absent provider answers
+- [x] 1.3 Confirm from the API reference that `GetOpenIDConnectProvider` on an absent provider answers
   `NoSuchEntity` to a caller allowed on that ARN, not `AccessDenied`, and that
   `CreateOpenIDConnectProvider` accepts `Url` plus `ClientIDList` with no `ThumbprintList`. Done when
   `verify.md` cites both.
-- [ ] 1.4 List the CloudFormation waiters the SDK in the build offers
+- [x] 1.4 List the CloudFormation waiters the SDK in the build offers
   (`CloudFormationWaiter` methods in the resolved `cloudformation` JAR) and map each `*_IN_PROGRESS`
   status to one. Done when `verify.md` holds the mapping; a status with no waiter gets a poll loop in
   the design.
 
 ## 2. Deployer policy and template (D4, D13)
 
-- [ ] 2.1 `infra/deployer-policy.json`: add the `GitHubOidcProvider` statement
+- [x] 2.1 `infra/deployer-policy.json`: add the `GitHubOidcProvider` statement
   (`iam:GetOpenIDConnectProvider`, `iam:CreateOpenIDConnectProvider` on
   `arn:aws:iam::${ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com`). Verify with a
   `DeployerPolicyTest` case asserting those are the only `*OpenIDConnectProvider` actions and that
   the one resource is that ARN, and delete the *No OIDC actions present* assertion.
-- [ ] 2.2 Rename `renderedPolicyLeavesRoomInAnInlinePolicyBudget` to a customer-managed name, move the
+- [x] 2.2 Rename `renderedPolicyLeavesRoomInAnInlinePolicyBudget` to a customer-managed name, move the
   budget to 5632 (6144 − 512), and rewrite its comment. Verify the test passes and prints the
   rendered length (~4581).
-- [ ] 2.3 `cf-template-core.yaml`: remove `GitHubOidcProviderArn` and compose the federated principal
+- [x] 2.3 `cf-template-core.yaml`: remove `GitHubOidcProviderArn` and compose the federated principal
   with `!Sub` from `AWS::Partition` and `AWS::AccountId`. Verify with `CoreTemplateTest`: no parameter
   carries a provider ARN, and the trust statement names the composed ARN under the federation
   condition.
 - [ ] 2.4 Delete `infra/cf-template-ci.yaml` and every test reading it from the test classpath. Verify
   `mvn -pl baas-cli test` passes and `git grep cf-template-ci` finds only history docs (archived
   changes, ADRs).
-- [ ] 2.5 Add a test that an update of a stack still listing `GitHubOidcProviderArn` sends no value
+- [x] 2.5 Add a test that an update of a stack still listing `GitHubOidcProviderArn` sends no value
   for it (the declared-parameter filter). Verify in `CloudFormationServiceTest`.
 
 ## 3. The `SetupAws` port (D9)
 
-- [ ] 3.1 Define `SetupAws` and its result types (`PreflightResult` = `Met | Denied(actions) |
+- [x] 3.1 Define `SetupAws` and its result types (`PreflightResult` = `Met | Denied(actions) |
   NotChecked`, `OidcProvider` = `Absent | Present(clientIds)`, image state), and `AwsSetupAws` over
   `DeployerPreflight`, `BucketProbe`, `CloudFormationService`, `ImageBuilderService`,
   `OperatorSession` and an `IamClient`. Verify it compiles, and that the adapter adds no logic beyond
   mapping, by review.
-- [ ] 3.2 Split `CloudFormationService.createStack` into `submitCreate` and `awaitCreate`, keeping
+- [x] 3.2 Split `CloudFormationService.createStack` into `submitCreate` and `awaitCreate`, keeping
   `createStack` as their composition. Verify the existing service tests pass, plus one asserting
   `submitCreate` returns before any waiter call.
-- [ ] 3.3 Write `FakeSetupAws` by hand (no Mockito), recording calls in order. Verify it is used by the
+- [x] 3.3 Write `FakeSetupAws` by hand (no Mockito), recording calls in order. Verify it is used by the
   first step test in section 5.
 
 ## 4. Engine and prompts
 
-- [ ] 4.1 `SetupStep`, its outcomes (`Met`, `Done`, `WaitForUser`, `Stop`, `GoTo`) and
+- [x] 4.1 `SetupStep`, its outcomes (`Met`, `Done`, `WaitForUser`, `Stop`, `GoTo`) and
   `SetupWalkthrough`. Verify with stub-step tests: steps run in order; `WaitForUser` re-runs the step
   once per line read and exits 1 when not interactive; `GoTo` resumes from the named step; nothing
   re-probes without a line read.
-- [ ] 4.2 `Prompter` (`ask`, `confirm`, `choose`) over `Console` and an injectable reader. A `null`
+- [x] 4.2 `Prompter` (`ask`, `confirm`, `choose`) over `Console` and an injectable reader. A `null`
   read takes the default for questions and *no* for confirmations. Verify with unit tests, including
   a closed stdin that never confirms.
-- [ ] 4.3 `SetupCommand`: add `--non-interactive` and `--build-image`; remove `--oidc-provider-arn`;
+- [x] 4.3 `SetupCommand`: add `--non-interactive` and `--build-image`; remove `--oidc-provider-arn`;
   reduce `validateFederationOptions` to org and repos together or neither; build the context and the
   steps and return the engine's exit code. Verify that picocli rejects `--oidc-provider-arn` and
   `--yes`, and that the federation-option tests are updated.
 
 ## 5. Steps 1–3: deployment, credentials, name and region (D14, D17)
 
-- [ ] 5.1 Step 1 from local files only: `--deployment`, the only one, a choice among several plus
+- [x] 5.1 Step 1 from local files only: `--deployment`, the only one, a choice among several plus
   "new" (interactive), or today's refusal (non-interactive). Verify with tests for each, asserting no
   `FakeSetupAws` call happens before step 2.
-- [ ] 5.2 Step 2: `callerIdentity`, showing the account and ARN, with the stored deployer profile as
+- [x] 5.2 Step 2: `callerIdentity`, showing the account and ARN, with the stored deployer profile as
   the default; unresolvable credentials or an expired session explained with the fixing command.
   Verify with tests for the shown identity and for an expired session (wait, or exit 1).
-- [ ] 5.3 Step 3: for a new deployment, the name prompt suggesting `baas-<account>` and accepting any
+- [x] 5.3 Step 3: for a new deployment, the name prompt suggesting `baas-<account>` and accepting any
   `DeploymentNameRule`-valid name, re-asking with the broken rule; the region prompt with
   "cannot be changed later"; for an existing one, shown only. Keep the bucket-in-another-region
   check here. Verify with tests: suggestion accepted, a custom name, an invalid name re-asked, an
@@ -87,64 +87,64 @@ is the recipe version the command would have built (design, *adopted by recipe v
 
 ## 6. Steps 4–5: permissions and names (D15, D17, D14)
 
-- [ ] 6.1 Step 4 on `Denied`: the print-or-save question (default `policy.json`, skipped by
+- [x] 6.1 Step 4 on `Denied`: the print-or-save question (default `policy.json`, skipped by
   `--policy-file`), the administrator's commands, wait, then one preflight per Enter. `NotChecked` is
   shown as not checked and continues. Non-interactive keeps stdout and exit 1. Verify with tests: saved,
   printed, attached-while-waiting, not checked, and the existing `setup > policy.json` test unchanged.
-- [ ] 6.2 Step 5 after step 4: a leftover bucket or table named with its command (wait, or exit 1);
+- [x] 6.2 Step 5 after step 4: a leftover bucket or table named with its command (wait, or exit 1);
   `Forbidden` after `Met` returns `GoTo(step 3)` interactively, or exits 1 naming `--deployment`;
   after `NotChecked`, today's caveat. Verify with tests, including that a re-asked name runs step 4
   again before step 5.
 
 ## 7. Step 6: GitHub Actions (D4, D10)
 
-- [ ] 7.1 Ask for federation on create; on update, show the current org and repositories (read from
+- [x] 7.1 Ask for federation on create; on update, show the current org and repositories (read from
   the stack) with "Change? [y/N]"; flags answer in advance; `--revoke-github-oidc` as today. Verify with
   tests: skipped, set on create, a repository added on update, defaults keep the stack's values.
-- [ ] 7.2 Provider probe: absent → create with `Url` and `ClientIDList` only; present with the audience
+- [x] 7.2 Provider probe: absent → create with `Url` and `ClientIDList` only; present with the audience
   → reuse; present without it → print `add-client-id-to-open-id-connect-provider`, then wait or exit 1,
   with no IAM write. Verify with `FakeSetupAws` tests asserting the exact calls in each case.
 
 ## 8. Steps 7–9: plan, stack, operator role (D10, D18, D19, D20)
 
-- [ ] 8.1 Step 7: show the plan (account, region, name, create or update, federation, about
+- [x] 8.1 Step 7: show the plan (account, region, name, create or update, federation, about
   $0.20/month) and confirm only on create or a changed answer; declining exits 1 with nothing changed;
   a template-only update proceeds unconfirmed. Verify with tests for all three.
-- [ ] 8.2 Step 8 probe: wait on any `*_IN_PROGRESS` status with the waiter from 1.4, then re-read; then
+- [x] 8.2 Step 8 probe: wait on any `*_IN_PROGRESS` status with the waiter from 1.4, then re-read; then
   create (absent or `ROLLBACK_COMPLETE`, recovery unchanged) or update. Verify with tests: an
   in-progress create is waited for, not updated; rollback recovery still deletes and recreates.
-- [ ] 8.3 On create: `submitCreate`, then save the file (region; the profile only after a `Met`
+- [x] 8.3 On create: `submitCreate`, then save the file (region; the profile only after a `Met`
   preflight), then `awaitCreate`. A refused create writes no file. Verify with tests: the file exists
   when the fake's await throws; no file when the submit throws; the profile is absent after a
   `NotChecked` preflight until the create completes.
-- [ ] 8.4 A `permissionFailure()` stack failure: hand the policy over (as 6.1), wait, then `GoTo(step 4)`
+- [x] 8.4 A `permissionFailure()` stack failure: hand the policy over (as 6.1), wait, then `GoTo(step 4)`
   without re-confirming the plan; non-interactive exit 1 as today; other failures exit 1 with the
   events. Verify with tests for each.
-- [ ] 8.5 Step 9: `assumeOperatorRole` with about 30 s of backoff retries, then handled as 8.4. Verify with
+- [x] 8.5 Step 9: `assumeOperatorRole` with about 30 s of backoff retries, then handled as 8.4. Verify with
   tests: success on the third attempt reports nothing; a lasting failure hands the policy over.
   Use an injectable sleeper so the test takes no real time.
 
 ## 9. Step 10: the runner image (D5, D19)
 
-- [ ] 9.1 `ImageBuilderService.publish`: list the pipeline's images first. Wait for an in-progress
+- [x] 9.1 `ImageBuilderService.publish`: list the pipeline's images first. Wait for an in-progress
   build of the current recipe version and then publish it. Adopt an available, unpublished one of
   that version, after checking its AMI exists. Retire a found build of another version and build.
   Otherwise build as today. Verify with unit tests over a fake `ImagebuilderClient` for each case,
   asserting `startImagePipelineExecution` is never called when adopting or waiting.
-- [ ] 9.2 Step 10: offer the build (default yes, about 15 min) only when the image is absent or older
+- [x] 9.2 Step 10: offer the build (default yes, about 15 min) only when the image is absent or older
   than the bundled base; non-interactive only with `--build-image`; a running build asks "started at
   HH:MM, wait?" interactively; "no" ends at step 11 naming `admin image build`. Verify with tests:
   current image not offered, scripted run not building, the offer accepted.
 
 ## 10. Step 11, the stored profile and the repeat command (D8, D11)
 
-- [ ] 10.1 Store the deployer profile only on evidence (a `Met` preflight, or a stack operation that
+- [x] 10.1 Store the deployer profile only on evidence (a `Met` preflight, or a stack operation that
   changed something), otherwise keep the old value and say so. Verify with tests mirroring the spec:
   `lynx` on a no-op update leaves `baas-admin`; a `Met` preflight stores; a create stores.
-- [ ] 10.2 Print the next steps (first run; the teammate's grant and `config sync`; the GitHub
+- [x] 10.2 Print the next steps (first run; the teammate's grant and `config sync`; the GitHub
   variables with federation; `admin image build` when no image was built), each with `--deployment`.
   Verify with a test on the closing text.
-- [ ] 10.3 `RepeatCommand.render` and its round-trip test through picocli: printed only on an
+- [x] 10.3 `RepeatCommand.render` and its round-trip test through picocli: printed only on an
   interactive run that created or changed something; `--region` only on create. Verify with tests on
   the create, update and no-change cases.
 

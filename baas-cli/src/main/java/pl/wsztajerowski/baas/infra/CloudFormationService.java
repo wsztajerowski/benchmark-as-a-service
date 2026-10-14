@@ -49,6 +49,16 @@ public class CloudFormationService {
      * {@code ROLLBACK_COMPLETE} refusal, which now lives on the update path.
      */
     public void createStack(String stackName, String templateBody, Map<String, String> params) {
+        submitCreate(stackName, templateBody, params);
+        awaitCreate(stackName);
+    }
+
+    /**
+     * Sends the create request and returns once CloudFormation has accepted it, before any resource
+     * exists. Setup writes the deployment's file between this and {@link #awaitCreate}, so an
+     * interrupted create still leaves a file naming the stack.
+     */
+    public void submitCreate(String stackName, String templateBody, Map<String, String> params) {
         List<Parameter> cfParams = params.entrySet().stream()
             .map(e -> Parameter.builder().parameterKey(e.getKey()).parameterValue(e.getValue()).build())
             .toList();
@@ -62,8 +72,32 @@ public class CloudFormationService {
             .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
             .build());
         logger.info("Creating stack {}...", stackName);
+    }
+
+    /** Waits for an accepted create, reporting a failure with the stack's events. */
+    public void awaitCreate(String stackName) {
         await(stackName, "create", () -> cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName)));
         logger.info("Stack {} deployed successfully.", stackName);
+    }
+
+    /**
+     * Waits until no operation is running on the stack, and returns the status it settled in, or
+     * empty once it is gone. A run interrupted mid-create, mid-update or mid-rollback leaves the
+     * stack {@code *_IN_PROGRESS}, and an update sent then is refused. The SDK's waiters cover only
+     * some of those states and fail on a rollback rather than returning it, so this polls instead.
+     */
+    public Optional<StackStatus> awaitSettled(String stackName, java.time.Duration poll) throws InterruptedException {
+        Optional<StackStatus> status = stackStatus(stackName);
+        boolean announced = false;
+        while (status.isPresent() && status.get().toString().endsWith("_IN_PROGRESS")) {
+            if (!announced) {
+                logger.info("Stack {} is {}: waiting for that to finish first...", stackName, status.get());
+                announced = true;
+            }
+            Thread.sleep(poll.toMillis());
+            status = stackStatus(stackName);
+        }
+        return status;
     }
 
     /**
@@ -76,7 +110,7 @@ public class CloudFormationService {
      * silently revokes CI's access. A deployed parameter the template no longer declares is not
      * sent at all.
      */
-    public void updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
+    public boolean updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
         Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
             "Stack '" + stackName + "' does not exist. Run `baas admin deployment setup` first."));
         // Setup sends every existing stack down this path, so this is where a failed first create
@@ -118,11 +152,12 @@ public class CloudFormationService {
         } catch (CloudFormationException e) {
             if (isNoUpdateNeeded(e)) {
                 logger.info("Stack {} is already up to date.", stackName);
-                return;
+                return false;
             }
             throw e;
         }
         logger.info("Stack {} updated successfully.", stackName);
+        return true;
     }
 
     /** A create that rolled back leaves a stack CloudFormation refuses to update; only deletion clears it. */
@@ -165,7 +200,7 @@ public class CloudFormationService {
     public static final class StackOperationException extends IllegalStateException {
         private final boolean permissionFailure;
 
-        StackOperationException(String message, boolean permissionFailure, Throwable cause) {
+        public StackOperationException(String message, boolean permissionFailure, Throwable cause) {
             super(message, cause);
             this.permissionFailure = permissionFailure;
         }

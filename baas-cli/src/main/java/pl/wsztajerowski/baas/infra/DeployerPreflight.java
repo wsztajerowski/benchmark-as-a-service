@@ -73,9 +73,20 @@ public class DeployerPreflight {
      * run at all
      */
     public List<String> simulate(String callerArn, String renderedPolicy) {
+        return check(callerArn, renderedPolicy).orElse(List.of());
+    }
+
+    /**
+     * {@link #simulate}, telling "nothing is denied" apart from "this could not be checked" — the
+     * walkthrough shows the second as not checked, never as met.
+     *
+     * @return the denied actions, empty when none is; {@link Optional#empty()} when the check could
+     * not run at all
+     */
+    public Optional<List<String>> check(String callerArn, String renderedPolicy) {
         Optional<String> principal = resolvePrincipalArn(callerArn);
         if (principal.isEmpty()) {
-            return List.of();
+            return Optional.empty();
         }
 
         List<Probe> probes = probes(renderedPolicy);
@@ -101,15 +112,15 @@ public class DeployerPreflight {
             }
             logger.debug("Simulated {} action(s) in {} call(s) for {}; denied: {}",
                 probes.size(), calls[0], principal.get(), denied);
-            return denied;
+            return Optional.of(denied);
         } catch (AwsServiceException e) {
             // A caller without iam:SimulatePrincipalPolicy simply gets no pre-check.
             logger.debug("Cannot simulate policies ({}) — relying on the real calls to fail instead.",
                 e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : e.getMessage());
-            return List.of();
+            return Optional.empty();
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return List.of();
+            return Optional.empty();
         }
     }
 
