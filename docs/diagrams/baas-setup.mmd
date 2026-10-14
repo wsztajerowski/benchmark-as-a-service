@@ -1,90 +1,81 @@
 sequenceDiagram
     actor User as CLI User
-    participant picocli as picocli CommandLine
-    participant SC as SetupCommand
-    participant STS as AWS STS
-    participant IAM as AWS IAM
-    participant S3 as AWS S3
-    participant DDB as AWS DynamoDB
-    participant CFSvc as CloudFormationService
-    participant CF as AWS CloudFormation
+    participant SC as SetupCommand + SetupWalkthrough
     participant FS as Local Filesystem
+    participant AWS as SetupAws (STS, IAM, S3, DynamoDB)
+    participant CF as AWS CloudFormation
+    participant IB as Image Builder
 
-    Note over User,FS: baas admin deployment setup -- needs the elevated BaasCliDeployerPolicy.<br/>Deploys the CORE stack only. cf-template-ci.yaml is deployed by hand.
-    User->>picocli: baas [--deployment D] admin deployment setup [--region] [--deployer-aws-profile]<br/>[--policy-file F] [--github-org --github-repo --oidc-provider-arn]
-    picocli->>SC: parse and bind options into fields
-    Note over SC: validate federation options before anything is loaded --<br/>a partial federation set -> exit 2. There are no networking options:<br/>every deployment uses the VPC its own stack creates
-    SC->>FS: ConfigService.load()
-    FS-->>SC: loadForSetup() -- deployments/D.yaml (or a new one named D), else the only one,<br/>else empty: the name is derived below. Two or more and no D: refused. D validated first, before any AWS call
-    Note over SC: apply --region / --deployer-aws-profile over config defaults
-    SC->>STS: sts.getCallerIdentity()
-    STS-->>SC: account id
-    Note over SC: prefix = D, the only configured one, else "baas-" + accountId<br/>stackName = bucketName = prefix<br/>tableName = prefix + "-results" (DeploymentNames)<br/>Nothing about the CALLER reaches the name -- a second<br/>deployment exists only because its name was typed.
-    SC->>S3: BucketProbe -- headBucket(bucketName) here, then again in the region a redirect names
-    Note over SC,S3: absent (404) / reachable in region X (200) / forbidden (403).<br/>From another region, ANY account's bucket answers 301 -- only its own<br/>region tells the caller's bucket (200) from another account's (403)
-    alt reachable in ANOTHER region
-        SC-->>User: the deployment lives there -- setup --region <it>, exit 1, no delete advice (U23)
+    Note over User,IB: baas admin deployment setup -- eleven steps, each checks reality first.<br/>On a terminal it asks and waits for Enter at a step the user must do outside baas.<br/>Unattended (--non-interactive, a redirect, CI) it exits 1 there. Nothing records progress.
+    User->>SC: baas [--deployment D] admin deployment setup [--region] [--deployer-aws-profile]<br/>[--policy-file F] [--github-org --github-repo | --revoke-github-oidc] [--build-image] [--non-interactive]
+    Note over SC: a partial federation set is a usage error, before anything is loaded
+
+    SC->>FS: 1. which deployment -- local files only, no AWS call
+    alt two or more configured and no D
+        SC-->>User: interactive - choose one, or a new one. Unattended - refused, exit 2
     end
-    Note over SC: BEFORE the preflight: a deployer's grants name one region, so elsewhere<br/>the preflight would print a policy inviting a second deployment
-    Note over SC: render the deployer policy for this account, region and deployment
-    opt --policy-file F
-        SC->>FS: write F -- before the check, whatever it finds. Unwritable -> exit 1, nothing created
+    SC->>AWS: 2. GetCallerIdentity with the deployer profile (stored one is the default)
+    alt credentials unusable or SSO expired
+        SC-->>User: aws configure / aws sso login -- wait, or exit 1
     end
-    loop every action of every Allow statement without a Condition
-        SC->>IAM: SimulatePrincipalPolicy(that action, its statement's resources as written)
+    Note over SC: 3. new deployment - name (baas-ACCOUNT suggested, any valid name) and region.<br/>Existing - both shown, never asked
+    SC->>AWS: BucketProbe -- a reachable bucket in another region means the deployment lives there
+    alt deployment lives in another region
+        SC-->>User: setup --region THERE, exit 1, no delete advice
     end
-    Note over SC,IAM: opportunistic -- a caller that may not simulate gets no check.<br/>Judged on the action's overall decision (per-resource results flag type mismatches)
+
+    SC->>AWS: 4. render the deployer policy, SimulatePrincipalPolicy (14 calls, Enter only)
     alt denied
-        SC-->>User: stderr names the denied actions and the IAM admin's commands<br/>(create-policy, attach, create-policy-version, BaasCliDeployerPolicy-prefix).<br/>STDOUT holds the policy (setup > policy.json still works) -- exit 1, nothing created
+        SC-->>User: saved to policy.json or printed (unattended - stdout), and the IAM admin's commands
+        User->>SC: Enter once attached -- check again
+    else not checked
+        Note over SC: shown as not checked, never met -- the run continues
     end
-    SC->>FS: load /templates/cf-template-core.yaml from the classpath
-    FS-->>SC: template body
 
-    SC->>CF: describeStacks(stackName) -- status?
-    alt stack absent, or ROLLBACK_COMPLETE (create)
-        SC->>DDB: describeTable(prefix-results) -- exists?
-        alt bucket reachable HERE, bucket forbidden, or table exists
-            SC-->>User: name the leftover and its removal (aws s3 rb / aws dynamodb delete-table),<br/>or for another account's bucket ask for another --deployment.<br/>Exit 1 -- nothing created, nothing deleted, a rolled-back stack left as it is (R16)
-        end
-        opt status ROLLBACK_COMPLETE
-            Note over SC: a failed first create: no resources, no config file written
-            SC->>CFSvc: deleteStack(stack) -- waits for DELETE_COMPLETE, then the create below (R1)
-        end
+    SC->>CF: 5. stack status -- for a create (absent or ROLLBACK_COMPLETE) check the names
+    SC->>AWS: BucketProbe and DescribeTable
+    alt bucket held by another account
+        SC-->>User: interactive - back to 3 for another name (then 4 again). Unattended - exit 1
+    else leftover bucket or table here
+        SC-->>User: name it and its removal command, delete nothing -- wait, or exit 1
     end
-    alt stack exists and updatable (update)
-        Note over SC: federation params carried forward unless named or revoked.
-        Note over SC: image parameters: only those the deployed stack lacks.<br/>Base, parent and extension are carried forward, so a plain<br/>setup never reverts an image or drops an extension
-        SC->>CFSvc: updateStackParameters(stack, template, changed params)
-        CFSvc->>CF: updateStack(named params + UsePreviousValue for every other deployed<br/>param the template still declares -- an undeclared one would refuse the update)
-        alt nothing changed
-            CF-->>CFSvc: "No updates are to be performed" -- reported as already up to date
-        else changes applied
-            CFSvc->>CF: waiter.waitUntilStackUpdateComplete()
-        end
-    else create
-        Note over SC: every image parameter is planned (parent resolved by<br/>DescribeImages in this region), never left at a template placeholder
-        SC->>CFSvc: createStack(stack, template, explicit params incl. federation or empty)
-        CFSvc->>CF: createStack(CAPABILITY_IAM, CAPABILITY_NAMED_IAM)
-        CFSvc->>CF: waiter.waitUntilStackCreateComplete()
-    end
-    opt the stack operation failed
-        CFSvc->>CF: describeStackEvents -- the current operation's root-cause events
-        alt a root cause is a denied permission
-            SC-->>User: the events, the policy on STDOUT (or the --policy-file path)<br/>and the IAM admin's commands -- exit 1
-        else any other cause
-            SC-->>User: the events only -- exit 1
+
+    Note over SC: 6. GitHub Actions - asked on a terminal, or from the options.<br/>Unchanged federation is carried forward
+    opt federation trusted
+        SC->>AWS: GetOpenIDConnectProvider(token.actions.githubusercontent.com in this account)
+        alt present without the sts.amazonaws.com audience
+            SC-->>User: never modified - the admin's add-client-id command -- wait, or exit 1
         end
     end
 
-    SC->>CF: describeStacks() -- OperatorRoleArn output, to print only
-    SC->>FS: ConfigService.save() -- deployments/<prefix>.yaml: aws.deployerProfile, resolved aws.region (the name is the file's)
-    SC->>FS: write ~/.baas/runner-image-extension.yaml (beside deployments/, never in it), only if absent
-    Note over SC,FS: nothing derivable or resolvable is stored
-
-    alt created
-        SC-->>User: BaasCliOperatorRole created -- your deployer credentials already operate it.<br/>A teammate: 1. grant sts:AssumeRole (see infra/README.md)<br/>2. baas --deployment <prefix> config sync --operator-aws-profile NAME<br/>Next: baas admin image build (~15 min)
-    else updated
-        SC-->>User: "Deployment <prefix> is deployed. Operator role: <arn>"
+    opt 7. interactive, and creating or an answer changed
+        SC-->>User: the plan - account, region, name, create or update, GitHub, about $0.20 a month
+        User->>SC: confirm (a no, or a closed input, changes nothing - exit 1)
     end
 
+    SC->>CF: 8. wait while the stack is *_IN_PROGRESS (an interrupted run)
+    opt provider absent
+        SC->>AWS: CreateOpenIDConnectProvider (Url, ClientIDList only)
+    end
+    alt create
+        SC->>CF: CreateStack (explicit federation and every image parameter)
+        SC->>FS: write deployments/D.yaml as soon as the create is accepted (region, profile if proven)
+        SC->>CF: wait for CREATE_COMPLETE
+    else update
+        SC->>CF: UpdateStack (changed params, UsePreviousValue for every other declared one)
+    end
+    alt a permission failure
+        SC-->>User: the policy and the admin's commands -- Enter returns to 4. Unattended - exit 1
+    end
+
+    SC->>AWS: 9. AssumeRole into D-role-operator, retried ~30 s for IAM propagation
+    SC->>IB: 10. image - running build? current image?
+    alt a build is running
+        SC->>IB: wait for it and publish it (asked first on a terminal)
+    else absent or older base
+        SC->>IB: offered (default yes), unattended only with --build-image - build or adopt, publish
+    end
+
+    SC->>FS: 11. deployments/D.yaml - the deployer profile only on evidence it can deploy
+    SC-->>User: next steps, each with --deployment D - first run, a teammate's grant and config sync,<br/>gh variable set lines, and on a changing interactive run the repeat command
     SC-->>User: exit 0

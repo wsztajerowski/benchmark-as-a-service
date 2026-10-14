@@ -11,7 +11,7 @@ C4Deployment
 
     Deployment_Node(iam, "AWS IAM (account-global)", "") {
         Container(roles, "Roles", "IAM", "<prefix>-role-operator (9000 s, root + optional GitHub OIDC trust), <prefix>-role-runner, image-build role")
-        Container(oidc, "GitHub OIDC provider", "cf-template-ci.yaml, by hand", "One per issuer per account")
+        Container(oidc, "GitHub OIDC provider", "created by setup when absent, never modified", "One per issuer per account")
     }
 
     Deployment_Node(region, "AWS region (default eu-central-1)", "a deployment: baas-<accountId>, or one named by --deployment") {

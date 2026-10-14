@@ -13,22 +13,20 @@ sequenceDiagram
         Note over IA,AWS: 0. One-time IAM
         Adm->>CLI: baas admin deployment setup [--region]
         CLI->>AWS: sts:GetCallerIdentity, SimulatePrincipalPolicy
-        CLI-->>Adm: rights missing -- the rendered policy JSON on stdout, exit 1, nothing created
+        CLI-->>Adm: rights missing -- the policy saved to policy.json, setup waits (unattended - stdout, exit 1)
         Adm->>IA: hand over the JSON
         IA->>AWS: [attach as customer-managed policy]
-        opt CI federation wanted
-            IA->>AWS: [deploy cf-template-ci.yaml, or reuse the account's GitHub OIDC provider]
-        end
+        Adm->>CLI: Enter -- the check runs again and setup carries on
     end
 
     rect rgb(240, 255, 240)
         Note over IA,AWS: 1. Install
-        Adm->>CLI: baas admin deployment setup [--region] [--deployer-aws-profile]<br/>[--github-org --github-repo --oidc-provider-arn]
-        CLI->>AWS: bucket-region check, then the policy step (SimulatePrincipalPolicy)
-        CLI->>AWS: CreateStack <prefix>, wait (~1.5 min)
-        CLI->>CFG: write aws.deployerProfile, aws.region (the name is the file's)
-        CLI-->>Adm: OperatorRole ARN + "your deployer credentials already operate it" + next: build-image
-        Adm->>CLI: baas admin image build
+        Adm->>CLI: (same run) the walkthrough continues [--github-org --github-repo]
+        CLI->>AWS: names free, GitHub OIDC provider created if CI is wanted and it is absent
+        CLI->>AWS: CreateStack <prefix>
+        CLI->>CFG: write aws.region, aws.deployerProfile once the create is accepted
+        CLI->>AWS: wait (~1.5 min), AssumeRole into the operator role
+        Adm->>CLI: accept the image offer (or later - baas admin image build)
         CLI->>AWS: preflight version, UpdateStack (image params), StartImagePipelineExecution
         CLI->>AWS: wait (~15 min), tag AMI, PutParameter /<prefix>/runner/ami-id, retire previous AMI
         Adm->>CLI: baas admin image show
