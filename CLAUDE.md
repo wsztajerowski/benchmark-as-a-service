@@ -40,8 +40,18 @@ the verbatim result JSON and profiling artifacts go to S3.
 |---|---|
 | `baas-cli` | **Your laptop.** Provisions infrastructure, launches runners, polls for results. `pl.wsztajerowski.baas.BaasApp` |
 | `benchmark-runner` | **The EC2 instance.** Executes benchmarks, uploads to S3, writes measurements to the results table. `pl.wsztajerowski.commands.TestWrapper` |
-| `baas-model` | The stored measurement shape, the key encoding and the tag vocabulary — shared by the CLI and the runner so the two cannot drift. No MongoDB dependency, enforced by the build |
+| `baas-model` | The one contract the CLI, the runner and the generated user-data read: the stored measurement shape, the key encoding, the tag vocabulary, the artifact names inside a job's prefix (`JobLayout`), the benchmark types (`BenchmarkType`) and the runner's option names (`RunnerArgs`). `model` imports no AWS SDK (`ModelBoundaryTest`); `model.dynamodb` holds the two item mappers and the job item's guard (`JobItemConditions`). No MongoDB dependency, enforced by the build |
 | `fake-jmh-benchmarks`, `fake-stress-tests` | Test fixtures |
+
+**`baas-cli`'s packages are the command tree's nouns over a small kernel** (ADR 0009). `baas` is the
+composition root and nothing imports it; the kernel — `cli`, `console`, `session`, `aws` — imports no
+slice; the slices — `jobs`, `results`, `deployment` (with `setup`), `image`, `config` — import each
+other only along deployment → jobs → {image, results}. Command classes import no AWS SDK type; `run`
+and setup reach AWS through a port each (`JobLaunch` over `RunAws`, `SetupSteps` over `SetupAws`),
+while the other commands still build their clients inline from a session's factory (ADR 0009, T2) —
+give one a port when its sequence needs a test. `SliceBoundaryTest` enforces the package rules and the
+import rule, reading import lines only; a new package fails it until it is given a place. Strict slice isolation was measured and rejected — setup builds and teardown retires
+the image, and `run` prints its own measurements.
 
 **The command tree is `baas [--deployment X] [admin] <noun> <verb>`, and its exceptions are aliases,
 never shapes.** Nouns: `jobs` (the execution), `results` (the measurements), `config`; under `admin`
@@ -156,7 +166,8 @@ The watchdog is the only one that survives a deadlocked JVM.
    the watchdog's too, ends `|| shutdown -h now`. That relies on the launch's
    `ShutdownBehavior=TERMINATE`, and needs no API call, permission or instance id
 2. Process `timeout` around `java -jar benchmark-runner.jar`
-3. CLI JVM shutdown hook (`RunCommand`) for Ctrl+C, registered *before* `RunInstances` so an
+3. CLI JVM shutdown hook (`RunCommand`, armed from `JobLaunch`'s `Listener.reserved` — after the
+   reservation, before the launch) for Ctrl+C, registered *before* `RunInstances` so an
    interrupt mid-launch can look the instance up by its `baas-job-id` tag. That lookup can
    miss — the instance may not exist yet, and `DescribeInstances` lags — so the instance covers it:
    its `running` write is refused over the recorded `cancelled`, and a refused `running` means it
@@ -536,9 +547,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   workflow. Accepted (2026-09-20) — cents per push, and a measurement per revision is worth
   having. `cancel-in-progress` stays `false` deliberately: cancelling mid-`baas run` can kill the
   CLI before its shutdown hook fires, leaving the shell watchdog as the only termination layer,
-  which is the red-CI-job-and-full-bill failure this design exists to remove. What is still uncovered in-process: `RunCommand.call()`'s success path is executed by no
-  JVM test (the JSON summary's shape is pinned against `printJobSummary`, and the wiring through
-  `call()` only on a path that fails before AWS).
+  which is the red-CI-job-and-full-bill failure this design exists to remove. In-process,
+  `JobLaunchTest` and `RunCommandLaunchTest` drive whole launches, success path included, against
+  `FakeRunAws`; what only this job proves is the real AWS behind the port.
 - **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
   `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
   table if you want one.
@@ -804,7 +815,8 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
 - **The instance writes only `status` and `instanceId`, and no timestamp**, with the key the CLI
   built (`JOB_SORT_KEY`). The shell never rebuilds the key from `CREATED_AT`, which is
   `Instant.toString()` and varies in width. Its guard expression is the CLI's own
-  (`DynamoDbJobRecorder.NOT_TERMINAL`), exported verbatim.
+  (`JobItemConditions.NOT_TERMINAL`, in `baas-model`), exported verbatim, and every attribute and
+  artifact name in the script is substituted from the model when the class loads.
 - **`vanished` is never stored**: a non-terminal status whose instance is not pending or running,
   once the job is older than `JobListing.VANISH_GRACE` (5 min). Before that, a job is still
   launching or not yet visible to `DescribeInstances`, and shows its stored status. `baas jobs
@@ -820,8 +832,11 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
 
 ## Adding a benchmark type
 
-A subcommand class in `commands/`, a service + builder in `services/`, an options record in
-`services/options/`, and registration in `TestWrapper`'s `subcommands` list.
+A `BenchmarkType` constant in `baas-model` (its name is the runner subcommand, the `baas run`
+argument and an entry in `run`'s help, and it names the process-output file), then on the runner a subcommand class in
+`commands/` named by that constant, a service + builder in `services/`, an options record in
+`options/`, and registration in `TestWrapper`'s `subcommands` list.
+`RunnerArgsContractTest` fails until the runner and the model agree.
 
 Storage is optional at runtime (no `--s3-bucket` → `LocalStorageService`); the results store is
 not. Exactly one of `--results-table` or `--mongo-connection-string` must be named, and
