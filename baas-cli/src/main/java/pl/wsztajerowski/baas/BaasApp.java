@@ -16,6 +16,8 @@ import pl.wsztajerowski.baas.commands.ResultsQuerySubcommand;
 import pl.wsztajerowski.baas.commands.RunCommand;
 import pl.wsztajerowski.baas.commands.JobsCommand;
 import pl.wsztajerowski.baas.commands.admin.AdminCommand;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
+import pl.wsztajerowski.baas.cli.Root;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.config.DeploymentSelectionException;
 
@@ -49,7 +51,7 @@ import java.nio.file.Path;
         "    jmh -- MyBenchmark -f 1              # note the -- separator"
     }
 )
-public class BaasApp implements Runnable {
+public class BaasApp implements Runnable, Root {
 
     /**
      * The version cannot be a constant {@code version = ...} attribute: it is read from the JAR
@@ -97,26 +99,20 @@ public class BaasApp implements Runnable {
         this.configRoot = configRoot;
     }
 
-    /** The {@code --deployment} the command line named, if any. */
-    public static java.util.Optional<String> deployment(CommandSpec spec) {
-        if (spec != null && spec.root().userObject() instanceof BaasApp app && app.deployment != null
-            && !app.deployment.isBlank()) {
-            return java.util.Optional.of(app.deployment.strip());
-        }
-        return java.util.Optional.empty();
+    @Override
+    public Path configRoot() {
+        return configRoot;
     }
 
-    /**
-     * The deployments a command works with, bound to the {@code --deployment} it was given. Resolved
-     * at call time, never in a field initialiser: fields are initialised while picocli builds the
-     * command tree, before {@code --deployment} is parsed. A command constructed outside a
-     * {@code BaasApp} tree (a unit test) gets the default root and no name.
-     */
-    public static ConfigService configService(CommandSpec spec) {
-        if (spec != null && spec.root().userObject() instanceof BaasApp app) {
-            return new ConfigService(app.configRoot, deployment(spec));
-        }
-        return new ConfigService(ConfigService.defaultRoot(), java.util.Optional.empty());
+    @Override
+    public java.util.Optional<String> deploymentOption() {
+        return deployment == null || deployment.isBlank()
+            ? java.util.Optional.empty() : java.util.Optional.of(deployment.strip());
+    }
+
+    @Override
+    public LoggingMixin rootLoggingMixin() {
+        return loggingMixin;
     }
 
     /**
@@ -175,7 +171,7 @@ public class BaasApp implements Runnable {
     }
 
     private int executionStrategy(ParseResult parseResult) {
-        if (loggingMixin.verbose) {
+        if (loggingMixin.verbose()) {
             System.setProperty(LoggingMixin.LEVEL_PROPERTY, "debug");
         }
         return new CommandLine.RunLast().execute(parseResult); // default execution strategy

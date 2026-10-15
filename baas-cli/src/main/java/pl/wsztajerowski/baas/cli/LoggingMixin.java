@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas;
+package pl.wsztajerowski.baas.cli;
 
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
@@ -9,11 +9,11 @@ import static picocli.CommandLine.Spec.Target.MIXEE;
 /* For details see: https://github.com/remkop/picocli/blob/main/picocli-examples/src/main/java/picocli/examples/logging_mixin_simple/ */
 public class LoggingMixin {
 
-    static final String LEVEL_PROPERTY = "org.slf4j.simpleLogger.log.pl.wsztajerowski";
+    public static final String LEVEL_PROPERTY = "org.slf4j.simpleLogger.log.pl.wsztajerowski";
 
     private @Spec(MIXEE) CommandSpec mixee; // spec of the command where the @Mixin is used
 
-    boolean verbose;
+    private boolean verbose;
 
     /**
      * Sets the specified verbosity on the LoggingMixin of the top-level command.
@@ -27,8 +27,8 @@ public class LoggingMixin {
         // We want to store the verbosity value in a single, central place,
         // so we find the top-level command,
         // and store the verbosity level on our top-level command's LoggingMixin.
-        if (mixee.root().userObject() instanceof BaasApp app) {
-            app.loggingMixin.verbose = verbose;
+        if (mixee.root().userObject() instanceof Root root) {
+            root.rootLoggingMixin().verbose = verbose;
         } else {
             this.verbose = verbose; // a command parsed on its own, outside the baas tree (tests)
         }
@@ -39,8 +39,8 @@ public class LoggingMixin {
      * where {@link #setVerbose} stores it — this instance's own field is set only outside the tree.
      */
     public boolean verbose() {
-        if (mixee != null && mixee.root().userObject() instanceof BaasApp app && app.loggingMixin != this) {
-            return app.loggingMixin.verbose;
+        if (mixee != null && mixee.root().userObject() instanceof Root root && root.rootLoggingMixin() != this) {
+            return root.rootLoggingMixin().verbose;
         }
         return verbose;
     }
@@ -60,7 +60,7 @@ public class LoggingMixin {
      * {@code BaasApp.executionStrategy}, remains authoritative and still catches anything missed
      * here for the loggers built later inside a command body.
      */
-    static void applyEarlyVerbosity(String[] args) {
+    public static void applyEarlyVerbosity(String[] args) {
         for (String arg : args) {
             // Stop at the JMH/JCStress separator: everything after it belongs to the runner, so a
             // `-v` there is the benchmark's own flag, not ours.

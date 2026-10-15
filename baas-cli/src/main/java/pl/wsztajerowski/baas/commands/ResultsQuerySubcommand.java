@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import pl.wsztajerowski.baas.console.Csv;
 
 import pl.wsztajerowski.baas.console.Json;
@@ -11,8 +13,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
@@ -61,7 +63,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     OperatorSession session() {
         if (session == null) {
-            session = OperatorSession.of(BaasApp.configService(spec));
+            session = OperatorSession.of(Invocation.configService(spec));
         }
         return session;
     }
@@ -144,7 +146,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     boolean watch;
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     /** Every other value used to fall through to the table, so a typo looked like a success. */
