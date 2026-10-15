@@ -1,4 +1,4 @@
-package pl.wsztajerowski.commands;
+package pl.wsztajerowski.infra;
 
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
 import pl.wsztajerowski.entities.jcstress.JCStressResultBuilder;
@@ -7,7 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 
 import static java.lang.Integer.parseInt;
-import static pl.wsztajerowski.commands.HtmlParser.getHtmlParser;
+import static pl.wsztajerowski.infra.HtmlParser.getHtmlParser;
 import static pl.wsztajerowski.entities.jcstress.JCStressResultBuilder.getJCStressResult;
 
 public class JCStressHtmlResultParser {
