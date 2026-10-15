@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
@@ -78,7 +80,7 @@ class ConfigSyncSubcommandTest {
 
         assertThat(parsed.subcommand().subcommand().commandSpec().userObject())
             .isInstanceOf(ConfigSyncSubcommand.class);
-        assertThat(BaasApp.deployment(parsed.subcommand().subcommand().commandSpec()))
+        assertThat(Invocation.deployment(parsed.subcommand().subcommand().commandSpec()))
             .contains("baas-123456789012-dev");
     }
 

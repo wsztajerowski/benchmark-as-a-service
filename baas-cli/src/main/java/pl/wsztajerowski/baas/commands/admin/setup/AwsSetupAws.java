@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.infra.DeployerSession;
+
 import pl.wsztajerowski.baas.config.CoreStack;
 
 import pl.wsztajerowski.baas.commands.admin.RunnerImageBuild;
@@ -39,7 +41,7 @@ public final class AwsSetupAws implements SetupAws {
     public AwsSetupAws(String region, String profile) {
         this.region = region;
         this.profile = profile;
-        this.factory = new AwsClientFactory(region, AwsClientFactory.profile(profile));
+        this.factory = DeployerSession.factory(region, profile);
     }
 
     @Override

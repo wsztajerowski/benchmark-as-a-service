@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import pl.wsztajerowski.baas.console.Elapsed;
 
 import pl.wsztajerowski.baas.console.Csv;
@@ -13,8 +15,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
@@ -74,7 +76,7 @@ public class JobsListSubcommand implements Callable<Integer> {
 
     OperatorSession session() {
         if (session == null) {
-            session = OperatorSession.of(BaasApp.configService(spec));
+            session = OperatorSession.of(Invocation.configService(spec));
         }
         return session;
     }

@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import pl.wsztajerowski.baas.model.JobLayout;
 
 import org.slf4j.Logger;
@@ -9,8 +11,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Parameters;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
@@ -55,7 +57,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
 
     OperatorSession session() {
         if (session == null) {
-            session = OperatorSession.of(BaasApp.configService(spec));
+            session = OperatorSession.of(Invocation.configService(spec));
         }
         return session;
     }
@@ -75,7 +77,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
     }
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     @Override

@@ -1,4 +1,5 @@
 package pl.wsztajerowski.baas;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

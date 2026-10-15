@@ -1,5 +1,9 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
+import pl.wsztajerowski.baas.infra.DeployerSession;
+
 import pl.wsztajerowski.baas.config.CoreStack;
 
 import pl.wsztajerowski.baas.config.DeploymentNames;
@@ -10,8 +14,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -52,7 +56,7 @@ public class TeardownCommand implements Callable<Integer> {
 
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     @Override
@@ -81,7 +85,7 @@ public class TeardownCommand implements Callable<Integer> {
      * the image — returning the command's exit code. Overridden by tests, which have no AWS.
      */
     int removeDeployment(BaasConfig config, String resolvedStack) {
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), AwsClientFactory.profile(config.getAws().getDeployerProfile()));
+        var factory = DeployerSession.factory(config);
 
         // Gate 1: no active jobs
         try (var ec2 = factory.ec2()) {

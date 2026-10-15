@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -7,8 +9,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 
@@ -61,7 +63,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     @Spec CommandSpec spec;
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     @Override
