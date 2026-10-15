@@ -1,0 +1,347 @@
+package pl.wsztajerowski.baas.aws;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.core.exception.SdkClientException;
+import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
+import software.amazon.awssdk.services.cloudformation.model.Capability;
+import software.amazon.awssdk.services.cloudformation.model.CloudFormationException;
+import software.amazon.awssdk.services.cloudformation.model.CreateStackRequest;
+import software.amazon.awssdk.services.cloudformation.model.DeleteStackRequest;
+import software.amazon.awssdk.services.cloudformation.model.DescribeStacksRequest;
+import software.amazon.awssdk.services.cloudformation.model.Output;
+import software.amazon.awssdk.services.cloudformation.model.Parameter;
+import software.amazon.awssdk.services.cloudformation.model.Stack;
+import software.amazon.awssdk.services.cloudformation.model.StackStatus;
+import software.amazon.awssdk.services.cloudformation.model.UpdateStackRequest;
+
+import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+public class CloudFormationService {
+
+    private static final Logger logger = LoggerFactory.getLogger(CloudFormationService.class);
+
+    private final CloudFormationClient cf;
+
+    public CloudFormationService(CloudFormationClient cf) {
+        this.cf = cf;
+    }
+
+    /** The core stack template, bundled into the CLI; setup and build-image submit the same one. */
+    public static String coreTemplate() throws IOException {
+        try (InputStream is = CloudFormationService.class.getResourceAsStream("/templates/cf-template-core.yaml")) {
+            if (is == null) throw new IllegalStateException("CF template not found in classpath");
+            return new String(is.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /**
+     * Creates the stack. Updates never come here: setup sends every existing stack through
+     * {@link #updateStackParameters}, which carries unnamed parameters forward. This used to be a
+     * create-or-update method whose update branch nothing could reach — including the friendly
+     * {@code ROLLBACK_COMPLETE} refusal, which now lives on the update path.
+     */
+    public void createStack(String stackName, String templateBody, Map<String, String> params) {
+        submitCreate(stackName, templateBody, params);
+        awaitCreate(stackName);
+    }
+
+    /**
+     * Sends the create request and returns once CloudFormation has accepted it, before any resource
+     * exists. Setup writes the deployment's file between this and {@link #awaitCreate}, so an
+     * interrupted create still leaves a file naming the stack.
+     */
+    public void submitCreate(String stackName, String templateBody, Map<String, String> params) {
+        List<Parameter> cfParams = params.entrySet().stream()
+            .map(e -> Parameter.builder().parameterKey(e.getKey()).parameterValue(e.getValue()).build())
+            .toList();
+
+        logger.debug("Stack parameters for {}: {}", stackName, params);
+
+        cf.createStack(CreateStackRequest.builder()
+            .stackName(stackName)
+            .templateBody(templateBody)
+            .parameters(cfParams)
+            .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
+            .build());
+        logger.info("Creating stack {}...", stackName);
+    }
+
+    /** Waits for an accepted create, reporting a failure with the stack's events. */
+    public void awaitCreate(String stackName) {
+        await(stackName, "create", () -> cf.waiter().waitUntilStackCreateComplete(r -> r.stackName(stackName)));
+        logger.info("Stack {} deployed successfully.", stackName);
+    }
+
+    /**
+     * Waits until no operation is running on the stack, and returns the status it settled in, or
+     * empty once it is gone. A run interrupted mid-create, mid-update or mid-rollback leaves the
+     * stack {@code *_IN_PROGRESS}, and an update sent then is refused. The SDK's waiters cover only
+     * some of those states and fail on a rollback rather than returning it, so this polls instead.
+     */
+    public Optional<StackStatus> awaitSettled(String stackName, java.time.Duration poll) throws InterruptedException {
+        Optional<StackStatus> status = stackStatus(stackName);
+        boolean announced = false;
+        while (status.isPresent() && status.get().toString().endsWith("_IN_PROGRESS")) {
+            if (!announced) {
+                logger.info("Stack {} is {}: waiting for that to finish first...", stackName, status.get());
+                announced = true;
+            }
+            Thread.sleep(poll.toMillis());
+            status = stackStatus(stackName);
+        }
+        return status;
+    }
+
+    /**
+     * Updates an existing stack, changing only the named parameters and carrying every other one
+     * forward with {@code UsePreviousValue}.
+     *
+     * <p>{@code baas admin image build} owns a few parameters and knows nothing about the rest. A
+     * plain create-style call would send only what it knows, and CloudFormation would fill the
+     * remainder from template defaults — which for the federation parameters means a build
+     * silently revokes CI's access. A deployed parameter the template no longer declares is not
+     * sent at all.
+     */
+    public boolean updateStackParameters(String stackName, String templateBody, Map<String, String> changed) {
+        Stack stack = describeStack(stackName).orElseThrow(() -> new IllegalStateException(
+            "Stack '" + stackName + "' does not exist. Run `baas --deployment " + stackName
+                + " admin deployment setup` first."));
+        // Setup sends every existing stack down this path, so this is where a failed first create
+        // has to be recognised, before CloudFormation answers with its own less useful rejection.
+        requireUpdatable(stack);
+
+        // Only what the new template declares: CloudFormation refuses the whole update when it is
+        // sent a parameter the template no longer has, and it drops an undeclared one by itself.
+        // Removing UseExistingVpc and its three companions (setup-prerequisites) is what made this
+        // matter — every existing stack still carries them.
+        Set<String> declared = declaredParameters(templateBody);
+        var keys = new java.util.LinkedHashSet<String>();
+        stack.parameters().stream()
+            .map(Parameter::parameterKey)
+            .filter(declared::contains)
+            .forEach(keys::add);
+        keys.addAll(changed.keySet());
+
+        List<Parameter> cfParams = keys.stream()
+            .map(key -> changed.containsKey(key)
+                ? Parameter.builder().parameterKey(key).parameterValue(changed.get(key)).build()
+                // Safe only because a key absent from the deployed stack is necessarily in
+                // `changed`: UsePreviousValue on a parameter with no previous value is rejected.
+                : Parameter.builder().parameterKey(key).usePreviousValue(true).build())
+            .toList();
+
+        logger.debug("Updating {} with changed parameters {} (others carried forward)",
+            stackName, changed.keySet());
+
+        try {
+            cf.updateStack(UpdateStackRequest.builder()
+                .stackName(stackName)
+                .templateBody(templateBody)
+                .parameters(cfParams)
+                .capabilities(Capability.CAPABILITY_IAM, Capability.CAPABILITY_NAMED_IAM)
+                .build());
+            logger.info("Updating stack {}...", stackName);
+            await(stackName, "update", () -> cf.waiter().waitUntilStackUpdateComplete(r -> r.stackName(stackName)));
+        } catch (CloudFormationException e) {
+            if (isNoUpdateNeeded(e)) {
+                logger.info("Stack {} is already up to date.", stackName);
+                return false;
+            }
+            throw e;
+        }
+        logger.info("Stack {} updated successfully.", stackName);
+        return true;
+    }
+
+    /** A create that rolled back leaves a stack CloudFormation refuses to update; only deletion clears it. */
+    private static void requireUpdatable(Stack stack) {
+        if (stack.stackStatus() == StackStatus.ROLLBACK_COMPLETE) {
+            throw new IllegalStateException(
+                "Stack '" + stack.stackName() + "' is in ROLLBACK_COMPLETE state and cannot be updated. " +
+                "Re-run setup, which deletes it and creates it again: baas --deployment " + stack.stackName()
+                + " admin deployment setup");
+        }
+    }
+
+    public void deleteStack(String stackName) {
+        cf.deleteStack(DeleteStackRequest.builder().stackName(stackName).build());
+        logger.info("Deleting stack {}...", stackName);
+        await(stackName, "delete", () -> cf.waiter().waitUntilStackDeleteComplete(r -> r.stackName(stackName)));
+        logger.info("Stack {} deleted.", stackName);
+    }
+
+    /**
+     * A failed waiter reports only that it reached a terminal state — the actual cause lives
+     * in the stack events. Without this, a single denied IAM action surfaces as an
+     * SdkClientException stack trace naming neither the resource nor the action, and the user
+     * has to go and run describe-stack-events by hand to learn anything at all.
+     */
+    private void await(String stackName, String operation, Runnable waiter) {
+        try {
+            waiter.run();
+        } catch (SdkClientException e) {
+            throw failureReport(stackName, operation, e);
+        }
+    }
+
+    /**
+     * A stack operation that failed, with whether its root cause is a permission the caller lacks.
+     * Setup hands over the deployer policy for that case alone — most failures (a taken name, a
+     * quota, an image version clash) have nothing to do with the policy, and printing it would
+     * point the reader at the wrong cause.
+     */
+    public static final class StackOperationException extends IllegalStateException {
+        private final boolean permissionFailure;
+
+        public StackOperationException(String message, boolean permissionFailure, Throwable cause) {
+            super(message, cause);
+            this.permissionFailure = permissionFailure;
+        }
+
+        public boolean permissionFailure() {
+            return permissionFailure;
+        }
+    }
+
+    /**
+     * Whether a stack event's reason is a denied permission, in any of the shapes CloudFormation
+     * relays from the services this stack calls: IAM's "is not authorized to perform", EC2's "You are
+     * not authorized to perform this operation" and {@code UnauthorizedOperation}, an
+     * {@code AccessDenied} code, and S3's "Access Denied" (setup-prerequisites task 1.2).
+     */
+    static boolean isPermissionFailure(String reason) {
+        String lower = reason.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("not authorized to perform") || lower.contains("accessdenied")
+            || lower.contains("access denied") || lower.contains("unauthorizedoperation");
+    }
+
+    private StackOperationException failureReport(String stackName, String operation, Throwable cause) {
+        var report = new StringBuilder("Stack " + stackName + " failed to " + operation + ".");
+        boolean permission = false;
+        try {
+            var events = cf.describeStackEvents(r -> r.stackName(stackName)).stackEvents();
+
+            // Scope to the operation that just failed. CloudFormation stamps every event of one
+            // stack operation — rollback included — with the same client request token, and the
+            // stack keeps its whole history. Without this the report replays failures from earlier
+            // deploys as though they were happening now: an already-fixed permission error was
+            // printed alongside the real cause, which is worse than printing nothing.
+            String currentOperation = events.isEmpty() ? null : events.getFirst().clientRequestToken();
+            var failures = events.stream()
+                .filter(event -> currentOperation == null
+                    || currentOperation.equals(event.clientRequestToken()))
+                .filter(event -> event.resourceStatusAsString() != null
+                    && event.resourceStatusAsString().endsWith("_FAILED"))
+                .filter(event -> event.resourceStatusReason() != null)
+                // Cascade noise: these name no cause and bury the one event that does.
+                .filter(event -> !event.resourceStatusReason().contains("Resource creation cancelled"))
+                .filter(event -> !event.resourceStatusReason().startsWith("The following resource(s) failed"))
+                .toList();
+
+            // Events come back newest-first, so the last one is the root cause.
+            permission = failures.stream().anyMatch(event -> isPermissionFailure(event.resourceStatusReason()));
+            for (int i = failures.size() - 1; i >= 0; i--) {
+                report.append(System.lineSeparator())
+                    .append("  ").append(failures.get(i).logicalResourceId())
+                    .append(": ").append(failures.get(i).resourceStatusReason());
+            }
+            if (failures.isEmpty()) {
+                report.append(System.lineSeparator())
+                    .append("  (no failure events reported — check the CloudFormation console)");
+            }
+        } catch (RuntimeException e) {
+            report.append(System.lineSeparator())
+                .append("  (could not read stack events: ").append(e.getMessage()).append(')');
+        }
+        return new StackOperationException(report.toString(), permission, cause);
+    }
+
+    /**
+     * The parameter names a template declares: the keys of its top-level {@code Parameters:} block.
+     * Read by indentation rather than by a YAML parser, because CloudFormation's short-form tags
+     * ({@code !Ref}, {@code !If}) need a custom constructor to parse at all; the only template this
+     * class submits is the bundled one, and a test pins this read against a full parse of it.
+     */
+    static Set<String> declaredParameters(String templateBody) {
+        Set<String> names = new java.util.LinkedHashSet<>();
+        boolean inParameters = false;
+        for (String line : templateBody.split("\\R")) {
+            if (line.isBlank() || line.stripLeading().startsWith("#")) {
+                continue;
+            }
+            boolean topLevel = !Character.isWhitespace(line.charAt(0));
+            if (topLevel) {
+                inParameters = line.startsWith("Parameters:");
+                continue;
+            }
+            var key = PARAMETER_KEY.matcher(line);
+            if (inParameters && key.matches()) {
+                names.add(key.group(1));
+            }
+        }
+        return names;
+    }
+
+    /** A key indented exactly two spaces under {@code Parameters:}. */
+    private static final java.util.regex.Pattern PARAMETER_KEY =
+        java.util.regex.Pattern.compile("^  ([A-Za-z0-9]+):\\s*(#.*)?$");
+
+    public Map<String, String> getStackOutputs(String stackName) {
+        return describeStack(stackName)
+            .map(stack -> stack.outputs().stream()
+                .collect(Collectors.toMap(Output::outputKey, Output::outputValue)))
+            .orElse(Map.of());
+    }
+
+    /**
+     * The parameters a deployed stack currently carries: setup reads the deployed image and
+     * federation values from them before an update.
+     */
+    public Map<String, String> getStackParameters(String stackName) {
+        return describeStack(stackName)
+            .map(stack -> stack.parameters().stream()
+                .collect(java.util.stream.Collectors.toMap(
+                    software.amazon.awssdk.services.cloudformation.model.Parameter::parameterKey,
+                    p -> p.parameterValue() == null ? "" : p.parameterValue())))
+            .orElseGet(Map::of);
+    }
+
+    /** The stack's status, or empty when there is no such stack. */
+    public Optional<StackStatus> stackStatus(String stackName) {
+        return describeStack(stackName).map(Stack::stackStatus);
+    }
+
+    public boolean stackExists(String stackName) {
+        return describeStack(stackName).isPresent();
+    }
+
+    private Optional<Stack> describeStack(String stackName) {
+        try {
+            var response = cf.describeStacks(DescribeStacksRequest.builder()
+                .stackName(stackName)
+                .build());
+            return response.stacks().stream().findFirst();
+        } catch (CloudFormationException e) {
+            if (isStackDoesNotExist(e)) {
+                return Optional.empty();
+            }
+            throw e;
+        }
+    }
+
+    private static boolean isNoUpdateNeeded(CloudFormationException e) {
+        return e.awsErrorDetails().errorMessage().contains("No updates are to be performed");
+    }
+
+    private static boolean isStackDoesNotExist(CloudFormationException e) {
+        return e.awsErrorDetails().errorMessage().contains("does not exist");
+    }
+}

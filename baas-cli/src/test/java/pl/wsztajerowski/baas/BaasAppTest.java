@@ -1,8 +1,10 @@
 package pl.wsztajerowski.baas;
-import pl.wsztajerowski.baas.cli.LoggingMixin;
 
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import java.io.PrintWriter;
 import java.io.StringWriter;
+import pl.wsztajerowski.baas.cli.BaasVersion;
+
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;

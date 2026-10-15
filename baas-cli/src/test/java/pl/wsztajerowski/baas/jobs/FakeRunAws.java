@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
-import pl.wsztajerowski.baas.config.CoreStack;
-import pl.wsztajerowski.baas.infra.RunnerImage;
+import pl.wsztajerowski.baas.session.CoreStack;
+import pl.wsztajerowski.baas.image.RunnerImage;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.results.ResultRow;

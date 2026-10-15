@@ -2,8 +2,8 @@ package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import pl.wsztajerowski.baas.config.CoreStack;
-import pl.wsztajerowski.baas.config.DeploymentNames;
+import pl.wsztajerowski.baas.session.CoreStack;
+import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.results.ResultRow;

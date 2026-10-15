@@ -1,13 +1,13 @@
 package pl.wsztajerowski.baas.jobs;
 
-import pl.wsztajerowski.baas.config.DeploymentNames;
-import pl.wsztajerowski.baas.infra.AwsClientFactory;
-import pl.wsztajerowski.baas.infra.CloudFormationService;
-import pl.wsztajerowski.baas.infra.Ec2ProvisioningService;
-import pl.wsztajerowski.baas.infra.ImageBuilderService;
-import pl.wsztajerowski.baas.infra.RunnerImage;
-import pl.wsztajerowski.baas.infra.RunnerJarResolver;
-import pl.wsztajerowski.baas.infra.S3UploadService;
+import pl.wsztajerowski.baas.session.DeploymentNames;
+import pl.wsztajerowski.baas.aws.AwsClientFactory;
+import pl.wsztajerowski.baas.aws.CloudFormationService;
+import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService;
+import pl.wsztajerowski.baas.image.ImageBuilderService;
+import pl.wsztajerowski.baas.image.RunnerImage;
+import pl.wsztajerowski.baas.jobs.RunnerJarResolver;
+import pl.wsztajerowski.baas.aws.S3UploadService;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
 

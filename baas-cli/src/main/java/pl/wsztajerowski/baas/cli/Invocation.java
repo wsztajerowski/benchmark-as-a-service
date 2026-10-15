@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas.cli;
 
 import picocli.CommandLine.Model.CommandSpec;
-import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.session.ConfigService;
 
 import java.util.Optional;
 

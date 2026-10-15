@@ -124,7 +124,7 @@ class DeploymentOptionTest {
     @Test
     void noEnvironmentVariableIsConsulted() throws Exception {
         String sources = java.nio.file.Files.readString(Path.of(
-            "src/main/java/pl/wsztajerowski/baas/config/ConfigService.java"))
+            "src/main/java/pl/wsztajerowski/baas/session/ConfigService.java"))
             + java.nio.file.Files.readString(Path.of("src/main/java/pl/wsztajerowski/baas/BaasApp.java"));
 
         assertThat(sources).doesNotContain("getenv").doesNotContain("BAAS_DEPLOYMENT");
