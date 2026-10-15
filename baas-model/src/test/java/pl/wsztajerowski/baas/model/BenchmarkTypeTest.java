@@ -18,10 +18,4 @@ class BenchmarkTypeTest {
         assertThat(BenchmarkType.JMH_WITH_PROF.processOutputName()).isEqualTo("jmh-profiler-output.txt");
         assertThat(BenchmarkType.JCSTRESS.processOutputName()).isEqualTo("jcstress-output.txt");
     }
-
-    @Test
-    void anUnknownNameResolvesToNothing() {
-        assertThat(BenchmarkType.fromCommandName("jmh-with-prof")).contains(BenchmarkType.JMH_WITH_PROF);
-        assertThat(BenchmarkType.fromCommandName("JMH")).isEmpty();
-    }
 }

@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static java.util.Objects.requireNonNull;
 import static java.nio.file.Files.list;
 import static java.text.MessageFormat.format;
 import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
@@ -37,7 +38,9 @@ public class JmhWithAsyncProfilerSubcommandService {
     private final AsyncProfilerOptions asyncProfilerOptions;
     private final Path outputPath;
 
-    JmhWithAsyncProfilerSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
+    public JmhWithAsyncProfilerSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JmhOptions jmhOptions, AsyncProfilerOptions asyncProfilerOptions) {
+        requireNonNull(storageService, "Please provide a storage service");
+        requireNonNull(resultsStore, "Please provide a results store");
         this.storageService = storageService;
         this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;

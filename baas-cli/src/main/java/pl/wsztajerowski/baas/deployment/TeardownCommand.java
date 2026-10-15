@@ -14,7 +14,6 @@ import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
 import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService;
@@ -50,13 +49,10 @@ public class TeardownCommand implements Callable<Integer> {
     boolean yes;
 
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService().load();
+        BaasConfig config = Invocation.configService(spec).load();
 
         // The named deployment, or the only one configured: load() refused anything ambiguous, so
         // with two deployments configured a teardown always names its target.
@@ -69,9 +65,9 @@ public class TeardownCommand implements Callable<Integer> {
 
         // Last: the deployment no longer exists, so a file naming it would only be one more
         // deployment every later command has to disambiguate from. The last one included.
-        configService().delete(resolvedStack);
+        Invocation.configService(spec).delete(resolvedStack);
         logger.info("Removed this machine's configuration for {}: {}", resolvedStack,
-            configService().fileOf(resolvedStack));
+            Invocation.configService(spec).fileOf(resolvedStack));
         return 0;
     }
 
@@ -106,7 +102,7 @@ public class TeardownCommand implements Callable<Integer> {
             Map<String, String> parameters = new CloudFormationService(cf).getStackParameters(resolvedStack);
             federated = !parameters.getOrDefault(CoreStack.PARAM_GITHUB_ORG, "").isBlank();
             String extension = parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
-            savedExtension = saveExtension(extension, configService().root(), resolvedStack);
+            savedExtension = saveExtension(extension, Invocation.configService(spec).root(), resolvedStack);
         } catch (IOException | RuntimeException e) {
             logger.error("Could not save the runner-image extension of {} ({}). Nothing was deleted.\n"
                 + "  Save it by hand with `{}`, then re-run teardown.",

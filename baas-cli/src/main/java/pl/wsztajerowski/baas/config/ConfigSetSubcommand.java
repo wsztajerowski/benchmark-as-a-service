@@ -10,7 +10,6 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 
 import java.util.concurrent.Callable;
 
@@ -60,9 +59,6 @@ public class ConfigSetSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() {
@@ -76,7 +72,7 @@ public class ConfigSetSubcommand implements Callable<Integer> {
                 BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS, watchdogMargin);
             return 2;
         }
-        BaasConfig config = configService().load();
+        BaasConfig config = Invocation.configService(spec).load();
 
         if (deployerProfile != null) config.getAws().setDeployerProfile(deployerProfile);
         if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
@@ -85,8 +81,8 @@ public class ConfigSetSubcommand implements Callable<Integer> {
         if (watchdogMargin != null) config.getEc2().setWatchdogMarginSeconds(watchdogMargin);
         if (gitResolveProject != null) config.getGit().setResolveProject(gitResolveProject);
 
-        configService().save(config);
-        logger.info("Configuration saved to {}", configService().fileOf(config.requirePrefix()));
+        Invocation.configService(spec).save(config);
+        logger.info("Configuration saved to {}", Invocation.configService(spec).fileOf(config.requirePrefix()));
         return 0;
     }
 }

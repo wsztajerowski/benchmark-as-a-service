@@ -14,7 +14,6 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
 import pl.wsztajerowski.baas.console.Hints;
@@ -137,9 +136,6 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         + "Needs an interactive terminal and the table format.")
     boolean watch;
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     /** Every other value used to fall through to the table, so a typo looked like a success. */
     static final List<String> FORMATS = List.of("table", "json", "csv");
