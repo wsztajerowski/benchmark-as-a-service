@@ -21,6 +21,13 @@ import java.util.function.LongSupplier;
  */
 public final class JobSession {
 
+    /**
+     * Bounds the status write that precedes a termination (see AwsClientFactory#dynamoDb(Duration)):
+     * a status write never holds a termination back. Used by every stop — Ctrl+C, the poll cap and
+     * {@code baas jobs terminate}.
+     */
+    public static final java.time.Duration STOP_WRITE_TIMEOUT = java.time.Duration.ofSeconds(5);
+
     private static final Logger logger = LoggerFactory.getLogger(JobSession.class);
 
     /** The EC2 operations a job needs, nothing more. */
