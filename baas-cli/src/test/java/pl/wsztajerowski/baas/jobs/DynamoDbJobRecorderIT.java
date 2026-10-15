@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -207,5 +208,14 @@ class DynamoDbJobRecorderIT {
 
     private static KeySchemaElement key(String name, KeyType type) {
         return KeySchemaElement.builder().attributeName(name).keyType(type).build();
+    }
+
+    /** The rules every recorder keeps, against the real table; see {@link JobRecorderContract}. */
+    @Nested
+    class Contract extends JobRecorderContract {
+        @Override
+        protected JobRecorder recorder() {
+            return recorder;
+        }
     }
 }
