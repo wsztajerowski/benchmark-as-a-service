@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.session;
 
 import pl.wsztajerowski.baas.aws.S3UploadService;
-
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.http.SdkHttpResponse;

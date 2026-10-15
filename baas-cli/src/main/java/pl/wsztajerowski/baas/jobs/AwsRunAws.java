@@ -3,10 +3,8 @@ package pl.wsztajerowski.baas.jobs;
 import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
-import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.image.ImageBuilderService;
 import pl.wsztajerowski.baas.image.RunnerImage;
-import pl.wsztajerowski.baas.jobs.RunnerJarResolver;
 import pl.wsztajerowski.baas.aws.S3UploadService;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsQueryService;
@@ -15,7 +13,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
+import java.util.function.Consumer;
 
 /** {@link RunAws} over the operator session's clients. */
 public final class AwsRunAws implements RunAws {
@@ -47,18 +45,12 @@ public final class AwsRunAws implements RunAws {
 
     @Override
     public void upload(Path file, String bucket, String key) {
-        withS3(s3 -> {
-            s3.upload(file, bucket, key);
-            return null;
-        });
+        withS3(s3 -> s3.upload(file, bucket, key));
     }
 
     @Override
     public void putText(String bucket, String key, String text) {
-        withS3(s3 -> {
-            s3.putText(bucket, key, text);
-            return null;
-        });
+        withS3(s3 -> s3.putText(bucket, key, text));
     }
 
     @Override
@@ -113,9 +105,9 @@ public final class AwsRunAws implements RunAws {
         }
     }
 
-    private <T> T withS3(Function<S3UploadService, T> action) {
+    private void withS3(Consumer<S3UploadService> action) {
         try (var s3 = factory.s3()) {
-            return action.apply(new S3UploadService(s3));
+            action.accept(new S3UploadService(s3));
         }
     }
 }

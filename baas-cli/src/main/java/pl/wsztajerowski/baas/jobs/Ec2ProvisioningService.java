@@ -2,7 +2,6 @@ package pl.wsztajerowski.baas.jobs;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.baas.jobs.JobSession;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 

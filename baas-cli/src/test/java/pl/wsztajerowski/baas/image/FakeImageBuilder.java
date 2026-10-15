@@ -1,7 +1,5 @@
 package pl.wsztajerowski.baas.image;
 
-import pl.wsztajerowski.baas.image.ImageBuilderService;
-
 import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
 import software.amazon.awssdk.services.imagebuilder.model.Component;
 import software.amazon.awssdk.services.imagebuilder.model.ComponentSummary;

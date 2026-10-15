@@ -1,7 +1,6 @@
 package pl.wsztajerowski.commands;
 
 import pl.wsztajerowski.baas.model.BenchmarkType;
-
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 

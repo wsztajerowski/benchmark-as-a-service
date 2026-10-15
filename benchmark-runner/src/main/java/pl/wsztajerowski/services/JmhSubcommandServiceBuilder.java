@@ -2,9 +2,8 @@ package pl.wsztajerowski.services;
 
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JmhOptions;
-
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JmhOptions;
 
 import static java.util.Objects.requireNonNull;
 

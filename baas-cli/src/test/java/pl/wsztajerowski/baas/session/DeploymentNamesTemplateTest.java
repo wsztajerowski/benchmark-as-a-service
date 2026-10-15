@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.session;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.session.DeploymentNames;
 
 import java.io.IOException;
 import java.io.InputStream;

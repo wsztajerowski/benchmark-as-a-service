@@ -5,8 +5,6 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.results.ResultRow;
-import pl.wsztajerowski.baas.results.ResultsTable;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

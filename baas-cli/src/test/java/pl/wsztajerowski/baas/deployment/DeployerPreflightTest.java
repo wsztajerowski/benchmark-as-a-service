@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.testsupport.InfraFixtures;
-
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.services.iam.IamClient;

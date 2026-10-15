@@ -1,12 +1,8 @@
 package pl.wsztajerowski.baas.deployment.setup;
 
 import pl.wsztajerowski.baas.session.DeploymentNames;
-import java.util.List;
-
 import pl.wsztajerowski.baas.session.DeployerSession;
-
 import pl.wsztajerowski.baas.session.CoreStack;
-
 import pl.wsztajerowski.baas.image.RunnerImageBuild;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.BucketProbe;
@@ -21,6 +17,7 @@ import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 import software.amazon.awssdk.services.dynamodb.model.ResourceNotFoundException;
 import software.amazon.awssdk.services.iam.model.NoSuchEntityException;
 
+import java.util.List;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.time.Duration;

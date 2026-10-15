@@ -1,9 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
-import java.util.Optional;
-
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -12,14 +9,13 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
-import pl.wsztajerowski.baas.jobs.JobPaths;
 
+import java.util.Optional;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.concurrent.Callable;

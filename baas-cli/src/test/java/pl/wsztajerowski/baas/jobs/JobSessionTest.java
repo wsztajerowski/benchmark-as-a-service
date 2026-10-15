@@ -36,6 +36,7 @@ class JobSessionTest {
         @Override
         public void reserve(JobItem job) {
             if (failReserve != null) throw failReserve;
+            if (status != null) throw new IllegalStateException("ConditionalCheckFailed: already reserved");
             writes.add("reserve");
             status = JobStatus.LAUNCHING;
         }

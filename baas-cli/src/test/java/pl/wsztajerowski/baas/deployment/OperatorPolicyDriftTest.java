@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.testsupport.InfraFixtures;
-
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

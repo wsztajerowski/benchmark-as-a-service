@@ -3,11 +3,6 @@ package pl.wsztajerowski.baas.session;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.AwsErrors;
 import pl.wsztajerowski.baas.aws.BucketProbe;
-
-import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
-import pl.wsztajerowski.baas.session.DeploymentNames;
-import pl.wsztajerowski.baas.session.DeploymentSelectionException;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.regions.Region;

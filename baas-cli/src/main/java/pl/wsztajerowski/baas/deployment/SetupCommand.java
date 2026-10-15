@@ -1,14 +1,12 @@
 package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.deployment.setup.AwsSetupAws;
 import pl.wsztajerowski.baas.deployment.setup.SetupAws;

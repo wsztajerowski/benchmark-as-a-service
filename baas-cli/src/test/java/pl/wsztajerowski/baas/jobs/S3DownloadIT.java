@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.aws.S3UploadService;
-
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

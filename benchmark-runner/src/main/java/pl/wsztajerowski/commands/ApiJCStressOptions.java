@@ -4,7 +4,7 @@ import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.FileUtils;
-import pl.wsztajerowski.services.options.JCStressOptions;
+import pl.wsztajerowski.options.JCStressOptions;
 
 import java.nio.file.Path;
 

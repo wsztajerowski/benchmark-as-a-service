@@ -8,6 +8,7 @@ import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The conditional-write rules every {@link JobRecorder} keeps, run against each implementation: the
@@ -24,6 +25,23 @@ public abstract class JobRecorderContract {
 
     private String status() {
         return recorder().read(JOB).map(JobItem::status).orElse(null);
+    }
+
+    @Test
+    void anUnreservedJobHasNoItemAndTakesNoWrite() {
+        assertThat(recorder().read(JOB)).isEmpty();
+        assertThat(recorder().launched(JOB, "i-1")).isEqualTo(JobRecorder.Write.REFUSED);
+        assertThat(recorder().stop(JOB, JobStatus.CANCELLED)).isEqualTo(JobRecorder.Write.REFUSED);
+        assertThat(recorder().launchFailed(JOB, "InsufficientInstanceCapacity")).isEqualTo(JobRecorder.Write.REFUSED);
+        assertThat(recorder().read(JOB)).isEmpty();
+    }
+
+    @Test
+    void aSecondReservationIsRefused() {
+        recorder().reserve(JOB);
+
+        assertThatThrownBy(() -> recorder().reserve(JOB)).isInstanceOf(RuntimeException.class);
+        assertThat(status()).isEqualTo(JobStatus.LAUNCHING);
     }
 
     @Test

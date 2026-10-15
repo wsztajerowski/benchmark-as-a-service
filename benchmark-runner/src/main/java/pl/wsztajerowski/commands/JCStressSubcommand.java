@@ -1,9 +1,7 @@
 package pl.wsztajerowski.commands;
 
 import pl.wsztajerowski.baas.model.BenchmarkType;
-
 import pl.wsztajerowski.baas.model.RunnerArgs;
-
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;

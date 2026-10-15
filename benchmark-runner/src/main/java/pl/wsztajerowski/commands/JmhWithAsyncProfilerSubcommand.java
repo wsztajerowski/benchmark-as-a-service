@@ -1,7 +1,6 @@
 package pl.wsztajerowski.commands;
 
 import pl.wsztajerowski.baas.model.BenchmarkType;
-
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
@@ -16,7 +15,7 @@ import static picocli.CommandLine.Spec;
 import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
-import static pl.wsztajerowski.services.options.AsyncProfilerOptions.asyncProfilerOptionsBuilder;
+import static pl.wsztajerowski.options.AsyncProfilerOptions.asyncProfilerOptionsBuilder;
 
 @Command(name = BenchmarkType.JMH_WITH_ASYNC_NAME, description = "Run JHM benchmarks with Async profiler")
 public class JmhWithAsyncProfilerSubcommand implements Runnable {

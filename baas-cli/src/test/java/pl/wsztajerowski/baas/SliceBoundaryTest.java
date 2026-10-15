@@ -27,8 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       deployment → jobs → {image, results}: setup builds the image and teardown retires it and
  *       finds in-flight runners; {@code run} looks up the image and prints its own measurements.
  *       {@code config} imports no slice.</li>
- *   <li>picocli belongs to commands, the root and {@code cli}; command classes do not touch the AWS
- *       SDK — they parse and print, and their use cases talk to AWS.</li>
+ *   <li>picocli belongs to commands, the root and {@code cli}; command classes import no AWS SDK type.
+ *       Only import lines are read — a fully qualified name in code passes unseen.</li>
  * </ul>
  *
  * A new top-level package fails here until it is given a place, which is the point.
@@ -37,7 +37,7 @@ class SliceBoundaryTest {
 
     private static final Path SOURCES = Path.of("src/main/java/pl/wsztajerowski/baas");
     private static final Pattern IMPORT = Pattern.compile(
-        "^import (?:static )?pl\\.wsztajerowski\\.baas\\.(?!model\\b)((?:[a-z]+\\.)*)([A-Z]\\w*)", Pattern.MULTILINE);
+        "^import (?:static )?pl\\.wsztajerowski\\.baas\\.(?!model\\b)((?:[a-z]+\\.)*)([A-Z]\\w*|\\*)", Pattern.MULTILINE);
 
     private static final String ROOT = "";
     private static final Set<String> KERNEL = Set.of("cli", "console", "session", "aws");
@@ -81,6 +81,10 @@ class SliceBoundaryTest {
         while (m.find()) {
             String path = m.group(1);
             String target = path.isEmpty() ? ROOT : path.substring(0, path.indexOf('.'));
+            // `import pl.wsztajerowski.baas.jobs.*;` names the package in its last segment.
+            if (m.group(2).equals("*") && path.isEmpty()) {
+                continue;
+            }
             if (!target.equals(source.unit())) {
                 found.add(target);
             }
@@ -140,14 +144,14 @@ class SliceBoundaryTest {
     @Test
     void picocliBelongsToCommandsTheRootAndCli() {
         List<String> offenders = sources().stream()
-            .filter(s -> s.text().contains("\nimport picocli."))
+            .filter(s -> s.text().contains("\nimport picocli.") || s.text().contains("\nimport static picocli."))
             .filter(s -> !isCommand(s) && !s.unit().equals(ROOT) && !s.unit().equals("cli"))
             .map(s -> s.unit() + "." + s.className()).toList();
         assertThat(offenders).isEmpty();
     }
 
     @Test
-    void commandClassesDoNotTouchTheAwsSdk() {
+    void commandClassesImportNoAwsSdkType() {
         List<String> offenders = sources().stream()
             .filter(SliceBoundaryTest::isCommand)
             .filter(s -> s.text().contains("\nimport software.amazon."))

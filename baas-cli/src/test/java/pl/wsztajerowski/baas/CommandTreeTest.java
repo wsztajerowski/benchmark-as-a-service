@@ -2,12 +2,10 @@ package pl.wsztajerowski.baas;
 
 import pl.wsztajerowski.baas.jobs.RunCommand;
 import pl.wsztajerowski.baas.results.ResultsQuerySubcommand;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

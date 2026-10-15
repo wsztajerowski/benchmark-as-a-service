@@ -106,6 +106,7 @@ public final class FakeRunAws implements RunAws {
         public void reserve(JobItem job) {
             events.add("reserve");
             if (reserveFailure != null) throw reserveFailure;
+            if (status != null) throw new IllegalStateException("ConditionalCheckFailed: already reserved");
             status = JobStatus.LAUNCHING;
         }
 
@@ -131,8 +132,8 @@ public final class FakeRunAws implements RunAws {
 
         @Override
         public Optional<JobItem> read(JobItem job) {
-            return Optional.of(new JobItem(job.jobId(), job.project(), job.createdAt(), job.resultPath(),
-                job.instanceType(), status, null, null, job.tags(), null));
+            return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
+                job.createdAt(), job.resultPath(), job.instanceType(), status, null, null, job.tags(), null));
         }
 
         @Override
@@ -146,7 +147,7 @@ public final class FakeRunAws implements RunAws {
         }
 
         private Write conditional(String next) {
-            if (JobStatus.isTerminal(status)) return Write.REFUSED;
+            if (status == null || JobStatus.isTerminal(status)) return Write.REFUSED;
             status = next;
             return Write.WRITTEN;
         }

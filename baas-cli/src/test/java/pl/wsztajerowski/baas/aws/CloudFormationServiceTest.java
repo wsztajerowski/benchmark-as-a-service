@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.aws;
 
 import pl.wsztajerowski.baas.testsupport.InfraFixtures;
-
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.cloudformation.model.CloudFormationException;

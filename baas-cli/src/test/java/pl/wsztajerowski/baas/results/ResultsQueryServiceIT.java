@@ -153,7 +153,7 @@ class ResultsQueryServiceIT {
     }
 
     /**
-     * What 2.5 is really about. {@code RunCommand.showResults} fetches by job id and prints the
+     * What 2.5 is really about. {@code JobLaunch.showResults} fetches by job id and prints the
      * table; before this change it printed "No results found." after a <em>successful</em> excluded
      * run, because the fetch itself dropped the rows. Asserting on the rendered summary rather than
      * only on the row count is what pins the user-visible half of that.

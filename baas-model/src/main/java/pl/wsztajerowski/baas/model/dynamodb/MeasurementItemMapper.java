@@ -1,11 +1,10 @@
 package pl.wsztajerowski.baas.model.dynamodb;
-import pl.wsztajerowski.baas.model.ResultKeys;
 
+import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JcstressSummary;
 import pl.wsztajerowski.baas.model.MeasurementKind;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
-
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.nio.charset.StandardCharsets;

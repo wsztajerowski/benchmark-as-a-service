@@ -1,4 +1,4 @@
-package pl.wsztajerowski.services.options;
+package pl.wsztajerowski.options;
 
 public record JmhWarmupOptions(
     Integer warmupIterations,

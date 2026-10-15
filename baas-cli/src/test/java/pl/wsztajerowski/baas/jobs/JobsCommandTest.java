@@ -5,7 +5,6 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
-import pl.wsztajerowski.baas.jobs.JobListing;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
