@@ -1,4 +1,4 @@
-package pl.wsztajerowski.commands;
+package pl.wsztajerowski.infra;
 
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;

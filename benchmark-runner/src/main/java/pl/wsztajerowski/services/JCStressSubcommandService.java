@@ -21,7 +21,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static pl.wsztajerowski.commands.JCStressHtmlResultParser.getJCStressHtmlResultParser;
+import static pl.wsztajerowski.infra.JCStressHtmlResultParser.getJCStressHtmlResultParser;
 import static pl.wsztajerowski.process.BenchmarkProcessBuilder.benchmarkProcessBuilder;
 
 public class JCStressSubcommandService {
