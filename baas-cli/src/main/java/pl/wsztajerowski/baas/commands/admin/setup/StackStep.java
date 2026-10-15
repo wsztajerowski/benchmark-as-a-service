@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.config.CoreStack;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.infra.CloudFormationService;
@@ -37,7 +39,7 @@ final class StackStep implements SetupStep {
                 logger.info("Created the account's GitHub OIDC provider {}", SetupAws.providerArn(context.caller.account()));
             }
             Map<String, String> parameters = new LinkedHashMap<>();
-            parameters.put("ResourceNamePrefix", stack);
+            parameters.put(CoreStack.PARAM_RESOURCE_NAME_PREFIX, stack);
             boolean rolledBack = status.isPresent() && status.get() == StackStatus.ROLLBACK_COMPLETE;
             if (status.isEmpty() || rolledBack) {
                 if (rolledBack) {
@@ -78,7 +80,7 @@ final class StackStep implements SetupStep {
             logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", e.getMessage());
             return permissionFailure(context);
         }
-        context.operatorRoleArn = aws.stackOutputs(stack).getOrDefault("OperatorRoleArn", "");
+        context.operatorRoleArn = aws.stackOutputs(stack).getOrDefault(CoreStack.OUTPUT_OPERATOR_ROLE_ARN, "");
         return SetupStep.next();
     }
 

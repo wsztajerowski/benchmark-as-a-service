@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.infra.BucketProbe;
@@ -30,7 +32,7 @@ final class NamesStep implements SetupStep {
             return SetupStep.next();
         }
         BucketProbe bucket = context.aws().bucket(context.deployment);
-        boolean tableExists = context.aws().tableExists(context.deployment + "-results");
+        boolean tableExists = context.aws().tableExists(DeploymentNames.of(context.deployment).resultsTable());
         Optional<String> conflict = nameConflict(bucket, tableExists, context.deployment, context.region);
         if (conflict.isEmpty()) {
             return SetupStep.next();
@@ -58,7 +60,7 @@ final class NamesStep implements SetupStep {
      * both are free.
      */
     static Optional<String> nameConflict(BucketProbe bucket, boolean tableExists, String deployment, String region) {
-        String table = deployment + "-results";
+        String table = DeploymentNames.of(deployment).resultsTable();
         if (bucket instanceof BucketProbe.Forbidden(String bucketRegion)) {
             return Optional.of("""
                 The bucket name %1$s is taken by another AWS account (it answers from %2$s and refuses \

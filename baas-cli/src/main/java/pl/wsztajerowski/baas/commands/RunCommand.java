@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.config.CoreStack;
+
 import pl.wsztajerowski.baas.model.BenchmarkType;
 
 import pl.wsztajerowski.baas.config.DeploymentNames;
@@ -189,7 +191,7 @@ public class RunCommand implements Callable<Integer> {
             outputs = new CloudFormationService(cf).getStackOutputs(config.stackName());
         }
         List<String> missing = new ArrayList<>();
-        for (String key : List.of("SubnetId", "SecurityGroupId")) {
+        for (String key : List.of(CoreStack.OUTPUT_SUBNET_ID, CoreStack.OUTPUT_SECURITY_GROUP_ID)) {
             String value = outputs.get(key);
             if (value == null || value.isBlank()) {
                 missing.add(key);
@@ -477,12 +479,12 @@ public class RunCommand implements Callable<Integer> {
         try {
             instanceId = ec2Instances.runInstance(
                 runnerImage.amiId(), resolvedInstanceType,
-                networking.get("SubnetId"), networking.get("SecurityGroupId"),
+                networking.get(CoreStack.OUTPUT_SUBNET_ID), networking.get(CoreStack.OUTPUT_SECURITY_GROUP_ID),
                 config.runnerInstanceProfile(),
                 userData, jobId, config.stackName());
         } catch (RuntimeException e) {
             recordLaunchFailure(factory, config, current, e, runnerImage.amiId(),
-                resolvedInstanceType, networking.get("SubnetId"));
+                resolvedInstanceType, networking.get(CoreStack.OUTPUT_SUBNET_ID));
             return 1;
         }
         summaryInstanceId = instanceId;
