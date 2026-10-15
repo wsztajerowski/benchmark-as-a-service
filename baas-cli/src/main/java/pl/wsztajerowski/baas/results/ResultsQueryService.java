@@ -5,7 +5,6 @@ import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
@@ -186,23 +185,11 @@ public class ResultsQueryService implements AutoCloseable {
     }
 
     /**
-     * The S3 prefix a job's artifacts were written to, or {@code null} when the index holds no such
-     * job. Read from the stored attribute rather than reconstructed, which is what keeps every
-     * historical path resolving after the layout changed — and why nothing needs a compatibility
-     * shim. {@code jobId-index} projects ALL, so each lookup is one query and no GetItem.
-     *
-     * <p>The job item is asked first, addressed exactly by {@code gsi1sk = JOB}: it exists for every
-     * job since job items did, including one that failed or never launched and so stored no
-     * measurement. A job from before that has only measurements, which the second query reads.
+     * The result path a job's first measurement records — for a job recorded before job items
+     * existed, its measurements are the only index entries under its id. {@code null} when there are
+     * none. {@code JobPaths} asks the job item first.
      */
-    public String resultPathForJob(String jobId) {
-        var fromJobItem = new DynamoDbJobRecorder(client, tableName).find(jobId)
-            .map(JobItem::resultPath);
-        if (fromJobItem.isPresent()) {
-            return fromJobItem.get();
-        }
-        // No job item: a job recorded before job items existed. Its measurements are the only
-        // index entries under its id, so the first one names the path.
+    public String resultPathFromMeasurements(String jobId) {
         var response = client.query(QueryRequest.builder()
             .tableName(tableName)
             .indexName(ResultKeys.JOB_ID_INDEX_NAME)

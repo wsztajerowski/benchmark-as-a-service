@@ -64,9 +64,9 @@ class JobsDiffCommandTest {
         var lookedUp = new java.util.ArrayList<String>();
         var diff = new JobsDiffSubcommand() {
             @Override
-            pl.wsztajerowski.baas.results.ResultsQueryService jobLookup(
+            pl.wsztajerowski.baas.jobs.JobPaths jobLookup(
                 BaasConfig config, pl.wsztajerowski.baas.infra.AwsClientFactory factory) {
-                return new pl.wsztajerowski.baas.results.ResultsQueryService(null, "t") {
+                return new pl.wsztajerowski.baas.jobs.JobPaths(null, "t") {
                     @Override
                     public String resultPathForJob(String jobId) {
                         lookedUp.add(jobId);

@@ -312,19 +312,24 @@ class ResultsQueryServiceIT {
     void aJobThatStoredNothingResolvesItsPathFromTheJobItem() {
         putJob("lynx-journal", "req-failed");
 
-        assertThat(service.resultPathForJob("req-failed")).isEqualTo("jobs/lynx-journal/req-failed");
+        assertThat(paths().resultPathForJob("req-failed")).isEqualTo("jobs/lynx-journal/req-failed");
     }
 
     @Test
     void aJobFromBeforeJobItemsStillResolvesFromItsMeasurements() {
         put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
 
-        assertThat(service.resultPathForJob("req-old")).isEqualTo("main/jmh/ts");
+        assertThat(paths().resultPathForJob("req-old")).isEqualTo("main/jmh/ts");
     }
 
     @Test
     void anUnknownJobIdResolvesToNoPath() {
-        assertThat(service.resultPathForJob("no-such-run")).isNull();
+        assertThat(paths().resultPathForJob("no-such-run")).isNull();
+    }
+
+    /** The job-side lookup diff and download use: the job item first, then the measurements. */
+    private pl.wsztajerowski.baas.jobs.JobPaths paths() {
+        return new pl.wsztajerowski.baas.jobs.JobPaths(client, tableName);
     }
 
     private void putJob(String project, String jobId) {

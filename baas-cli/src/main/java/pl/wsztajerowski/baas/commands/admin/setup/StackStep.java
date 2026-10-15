@@ -1,4 +1,5 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
+import pl.wsztajerowski.baas.infra.AwsErrors;
 
 import pl.wsztajerowski.baas.config.CoreStack;
 
@@ -74,7 +75,7 @@ final class StackStep implements SetupStep {
             logger.error(e.getMessage());
             return permissionFailure(context);
         } catch (RuntimeException e) {
-            if (!DeployerPreflight.isAccessDenied(e)) {
+            if (!AwsErrors.isAccessDenied(e)) {
                 throw e;
             }
             logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", e.getMessage());
