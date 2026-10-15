@@ -1,4 +1,5 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
+import pl.wsztajerowski.baas.infra.AwsErrors;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -65,7 +66,7 @@ final class SetupWalkthrough {
         try {
             return step.run(context);
         } catch (RuntimeException e) {
-            if (context.policy == null || !DeployerPreflight.isAccessDenied(e)) {
+            if (context.policy == null || !AwsErrors.isAccessDenied(e)) {
                 throw e;
             }
             logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", e.getMessage());

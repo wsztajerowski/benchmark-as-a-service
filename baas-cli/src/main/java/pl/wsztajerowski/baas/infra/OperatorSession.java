@@ -192,7 +192,7 @@ public final class OperatorSession {
     private String stalePolicyHint(SdkException failure, String name) {
         BaasConfig.AwsConfig settings = currentConfig().getAws();
         if (settings.getOperatorProfile() != null || settings.getDeployerProfile() == null
-            || !DeployerPreflight.isAccessDenied(failure)) {
+            || !AwsErrors.isAccessDenied(failure)) {
             return "";
         }
         return """

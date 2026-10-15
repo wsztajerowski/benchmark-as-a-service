@@ -17,7 +17,7 @@ import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
 import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.infra.S3UploadService;
-import pl.wsztajerowski.baas.results.ResultsQueryService;
+import pl.wsztajerowski.baas.jobs.JobPaths;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -89,8 +89,8 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
         // No separate table check: config.bucket() above has already required the deployment,
         // which is the only thing config.resultsTable() could fail on.
         String resolvedPath;
-        try (var results = new ResultsQueryService(factory.dynamoDb(), config.resultsTable())) {
-            resolvedPath = JobReference.resolve(resultPath, results::resultPathForJob);
+        try (var paths = new JobPaths(factory.dynamoDb(), config.resultsTable())) {
+            resolvedPath = JobReference.resolve(resultPath, paths::resultPathForJob);
         }
         // Before anything is written, so an unknown job leaves no partial directory behind.
         if (resolvedPath == null) {

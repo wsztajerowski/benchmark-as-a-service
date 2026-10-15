@@ -100,7 +100,7 @@ public final class RunnerImageExtension {
      * it would label one extension two ways. The same content yields the same hash everywhere.
      */
     public static String hash(String content) {
-        return RunnerJarResolver.sha256Hex(content.stripTrailing().getBytes(StandardCharsets.UTF_8)).substring(0, 8);
+        return Checksums.sha256Hex(content.stripTrailing().getBytes(StandardCharsets.UTF_8)).substring(0, 8);
     }
 
     /** {@code none} for no extension, its hash otherwise — the value a marker names. */

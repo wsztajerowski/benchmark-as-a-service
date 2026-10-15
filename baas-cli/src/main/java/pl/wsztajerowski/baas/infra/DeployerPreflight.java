@@ -29,24 +29,10 @@ public class DeployerPreflight {
     private static final Logger logger = LoggerFactory.getLogger(DeployerPreflight.class);
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    /** Error codes the SDK uses for "you are not allowed to do this", across services. */
-    private static final Set<String> ACCESS_DENIED_CODES =
-        Set.of("AccessDenied", "AccessDeniedException", "UnauthorizedOperation");
-
     private final IamClient iam;
 
     public DeployerPreflight(IamClient iam) {
         this.iam = iam;
-    }
-
-    public static boolean isAccessDenied(Throwable failure) {
-        for (Throwable current = failure; current != null; current = current.getCause()) {
-            if (current instanceof AwsServiceException aws && aws.awsErrorDetails() != null
-                && ACCESS_DENIED_CODES.contains(aws.awsErrorDetails().errorCode())) {
-                return true;
-            }
-        }
-        return false;
     }
 
     /**

@@ -24,7 +24,7 @@ import pl.wsztajerowski.baas.infra.OperatorSession;
 import pl.wsztajerowski.baas.infra.S3UploadService;
 import pl.wsztajerowski.baas.results.EnvironmentManifest;
 import pl.wsztajerowski.baas.results.PackagesDiff;
-import pl.wsztajerowski.baas.results.ResultsQueryService;
+import pl.wsztajerowski.baas.jobs.JobPaths;
 
 import java.util.List;
 import java.util.Map;
@@ -72,8 +72,8 @@ public class JobsDiffSubcommand implements Callable<Integer> {
     String jobB;
 
     /** Resolves a job id to its stored result path. Overridden by tests, which have no table. */
-    ResultsQueryService jobLookup(BaasConfig config, AwsClientFactory factory) {
-        return new ResultsQueryService(factory.dynamoDb(), config.resultsTable());
+    JobPaths jobLookup(BaasConfig config, AwsClientFactory factory) {
+        return new JobPaths(factory.dynamoDb(), config.resultsTable());
     }
 
     private ConfigService configService() {
