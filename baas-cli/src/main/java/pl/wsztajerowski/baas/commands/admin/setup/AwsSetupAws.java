@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.config.CoreStack;
+
 import pl.wsztajerowski.baas.commands.admin.RunnerImageBuild;
 import pl.wsztajerowski.baas.config.DeploymentNames;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -189,7 +191,7 @@ public final class AwsSetupAws implements SetupAws {
 
     @Override
     public Optional<RunningBuild> runningImageBuild(String deployment) {
-        String pipeline = stackOutputs(deployment).get("RunnerImagePipelineArn");
+        String pipeline = stackOutputs(deployment).get(CoreStack.OUTPUT_RUNNER_IMAGE_PIPELINE_ARN);
         if (pipeline == null || pipeline.isEmpty()) {
             return Optional.empty();
         }

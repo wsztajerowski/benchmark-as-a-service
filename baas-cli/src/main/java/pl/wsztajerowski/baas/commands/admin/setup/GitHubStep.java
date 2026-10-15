@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.config.CoreStack;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -119,8 +121,8 @@ final class GitHubStep implements SetupStep {
 
     /** The trust the stack declares now, read back from its parameters — the single source of truth. */
     static Optional<SetupContext.Federation> deployed(Map<String, String> parameters) {
-        String org = parameters.getOrDefault("GitHubOrg", "");
-        String patterns = parameters.getOrDefault("GitHubRepo", "");
+        String org = parameters.getOrDefault(CoreStack.PARAM_GITHUB_ORG, "");
+        String patterns = parameters.getOrDefault(CoreStack.PARAM_GITHUB_REPO, "");
         if (org.isBlank() || patterns.isBlank()) {
             return Optional.empty();
         }
@@ -161,13 +163,13 @@ final class GitHubStep implements SetupStep {
 
     private static Map<String, String> values(SetupContext.Federation federation) {
         Map<String, String> values = new LinkedHashMap<>();
-        values.put("GitHubOrg", federation.org());
-        values.put("GitHubRepo", subjectPatterns(federation.org(), federation.repos()));
+        values.put(CoreStack.PARAM_GITHUB_ORG, federation.org());
+        values.put(CoreStack.PARAM_GITHUB_REPO, subjectPatterns(federation.org(), federation.repos()));
         return values;
     }
 
     private static Map<String, String> none() {
-        return Map.of("GitHubOrg", "", "GitHubRepo", "");
+        return Map.of(CoreStack.PARAM_GITHUB_ORG, "", CoreStack.PARAM_GITHUB_REPO, "");
     }
 
     /**

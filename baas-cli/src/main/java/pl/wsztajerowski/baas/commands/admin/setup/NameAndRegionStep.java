@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.config.BaasConfig;
@@ -91,9 +93,6 @@ final class NameAndRegionStep implements SetupStep {
      * the results table silently rather than failing.
      */
     static String computePrefix(String accountId) {
-        if (accountId == null || !accountId.matches("\\d{12}")) {
-            throw new IllegalArgumentException("Expected a 12-digit AWS account id, got: " + accountId);
-        }
-        return "baas-" + accountId;
+        return DeploymentNames.defaultFor(accountId);
     }
 }

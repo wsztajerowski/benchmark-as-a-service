@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.config.CoreStack;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.config.DeploymentNames;
@@ -81,7 +83,7 @@ public final class RunnerImageBuild {
             // particular — is carried forward from the deployed stack.
             cloudFormation.updateStackParameters(prefix, CloudFormationService.coreTemplate(), plan.values());
 
-            String pipelineArn = cloudFormation.getStackOutputs(prefix).get("RunnerImagePipelineArn");
+            String pipelineArn = cloudFormation.getStackOutputs(prefix).get(CoreStack.OUTPUT_RUNNER_IMAGE_PIPELINE_ARN);
             if (pipelineArn == null || pipelineArn.isEmpty()) {
                 throw new IllegalStateException("Stack " + prefix + " has no RunnerImagePipelineArn output. Run `baas --deployment "
                     + prefix + " admin deployment setup` first.");
