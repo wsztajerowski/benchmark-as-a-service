@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin.setup;
 
+import pl.wsztajerowski.baas.config.DeploymentNames;
+
 import java.util.Objects;
 
 /**
@@ -33,7 +35,8 @@ final class PlanStep implements SetupStep {
 
     static String plan(SetupContext context) {
         String action = context.creating()
-            ? "create (stack and bucket " + context.deployment + ", table " + context.deployment + "-results)"
+            ? "create (stack and bucket " + DeploymentNames.of(context.deployment).bucket() + ", table "
+                + DeploymentNames.of(context.deployment).resultsTable() + ")"
             : "update";
         String github;
         if (context.revoke) {

@@ -34,6 +34,18 @@ public record DeploymentNames(String prefix) {
     }
 
     /** The core stack. Identical to the prefix — the stack is the deployment. */
+    /**
+     * The name a deployment gets when nobody types one: {@code baas-<accountId>}. Derived from the
+     * account and nothing about the calling principal, so every identity in one account resolves to
+     * the same deployment (finding A10).
+     */
+    public static String defaultFor(String accountId) {
+        if (accountId == null || !accountId.matches("\\d{12}")) {
+            throw new IllegalArgumentException("Expected a 12-digit AWS account id, got: " + accountId);
+        }
+        return "baas-" + accountId;
+    }
+
     public String stack() { return prefix; }
 
     public String bucket() { return prefix; }

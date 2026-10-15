@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.config.CoreStack;
+
 import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -103,7 +105,7 @@ public class TeardownCommand implements Callable<Integer> {
         boolean federated;
         try (var cf = factory.cloudFormation()) {
             Map<String, String> parameters = new CloudFormationService(cf).getStackParameters(resolvedStack);
-            federated = !parameters.getOrDefault("GitHubOrg", "").isBlank();
+            federated = !parameters.getOrDefault(CoreStack.PARAM_GITHUB_ORG, "").isBlank();
             String extension = parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
             savedExtension = saveExtension(extension, configService().root(), resolvedStack);
         } catch (IOException | RuntimeException e) {
@@ -116,7 +118,7 @@ public class TeardownCommand implements Callable<Integer> {
         // CloudFormation refuses to delete a non-empty bucket, so it is emptied first. A bucket that
         // cannot be emptied stops the teardown here, with the stack still whole, rather than
         // leaving a stack stuck in DELETE_FAILED.
-        String bucket = resolvedStack;
+        String bucket = DeploymentNames.of(resolvedStack).bucket();
         logger.info("Emptying S3 bucket: {}", bucket);
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).deleteAllObjects(bucket);
