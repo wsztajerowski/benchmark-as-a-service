@@ -1,9 +1,10 @@
 package pl.wsztajerowski.baas.console;
 
-import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+
+import java.util.Locale;
 
 /**
  * The JSON payloads' values, written the same way by every command. Payloads go to the

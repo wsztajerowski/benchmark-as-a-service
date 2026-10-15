@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
-import pl.wsztajerowski.baas.infra.RunnerImage;
+import pl.wsztajerowski.baas.image.RunnerImage;
 import pl.wsztajerowski.baas.results.ResultRow;
 
 import java.nio.file.Path;

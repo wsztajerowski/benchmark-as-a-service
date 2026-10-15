@@ -4,7 +4,6 @@ import pl.wsztajerowski.baas.model.TagKeys;
 
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.baas.model.JobItem;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
@@ -158,7 +157,7 @@ public class ResultsQueryService implements AutoCloseable {
      * naming one job by its id is a request for <em>that job</em>, not a query over the project's
      * history. Without this a job tagged {@code exclude_from_results=true} is invisible to every
      * assertion surface except {@code baas jobs download} — and {@link
-     * pl.wsztajerowski.baas.commands.RunCommand}'s own post-job summary, which calls this method,
+     * pl.wsztajerowski.baas.jobs.RunCommand}'s own post-job summary, which calls this method,
      * prints empty after a <em>successful</em> excluded job.
      *
      * <p>The filter's {@code #tags}, {@code #excluded} and {@code :excluded} entries go with it,
