@@ -47,11 +47,7 @@ public final class ResultsFilters {
 
     /** A {@code key=value} pair, both sides non-empty; anything else is a usage error. */
     public static String[] pair(String text) {
-        int eq = text == null ? -1 : text.indexOf('=');
-        if (eq <= 0 || eq == text.length() - 1) {
-            throw new IllegalArgumentException("Expected key=value, got '" + text + "'.");
-        }
-        return new String[]{text.substring(0, eq), text.substring(eq + 1)};
+        return TagKeys.parsePair(text);
     }
 
     /**

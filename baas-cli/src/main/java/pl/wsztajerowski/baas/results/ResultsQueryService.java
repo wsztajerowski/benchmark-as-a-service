@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.results;
 
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.TagKeys;
+
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
@@ -43,9 +45,9 @@ public class ResultsQueryService implements AutoCloseable {
      */
     private static final String MEASUREMENTS_ONLY = "begins_with(#pk, :resultPrefix)";
 
-    private static final String TAGS_ATTRIBUTE = "tags";
-    private static final String PROJECT_ATTRIBUTE = "project";
-    static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
+    private static final String TAGS_ATTRIBUTE = MeasurementItemMapper.TAGS;
+    private static final String PROJECT_ATTRIBUTE = MeasurementItemMapper.PROJECT;
+    static final String EXCLUDE_FROM_RESULTS = TagKeys.EXCLUDE_FROM_RESULTS;
     static final String EXCLUDED_VALUE = "true";
 
     private final DynamoDbClient client;

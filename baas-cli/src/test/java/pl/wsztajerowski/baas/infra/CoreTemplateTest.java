@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas.infra;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
 
 import java.util.List;

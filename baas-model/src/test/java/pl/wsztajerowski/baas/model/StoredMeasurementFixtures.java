@@ -3,16 +3,16 @@ package pl.wsztajerowski.baas.model;
 import java.time.Instant;
 import java.util.Map;
 
-final class StoredMeasurementFixtures {
+public final class StoredMeasurementFixtures {
 
     private StoredMeasurementFixtures() {}
 
-    static StoredMeasurement jmh() {
+    public static StoredMeasurement jmh() {
         return jmh(Map.of());
     }
 
     /** The same measurement as one variant of a {@code @Param} sweep. */
-    static StoredMeasurement jmh(Map<String, String> params) {
+    public static StoredMeasurement jmh(Map<String, String> params) {
         return new StoredMeasurement(
             "lynx-journal",
             "jmh-20260817_220706",
@@ -34,7 +34,7 @@ final class StoredMeasurementFixtures {
             "main/jmh/20260817_220706/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput");
     }
 
-    static StoredMeasurement jcstress() {
+    public static StoredMeasurement jcstress() {
         return new StoredMeasurement(
             "lynx-journal",
             "jcstress-20260817_221500",

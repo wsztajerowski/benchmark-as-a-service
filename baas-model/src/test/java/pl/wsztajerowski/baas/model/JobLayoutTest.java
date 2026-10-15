@@ -74,4 +74,13 @@ class JobLayoutTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("version");
     }
+
+    @Test
+    void anArtifactKeyJoinsTheResultPathOnce() {
+        String path = JobLayout.jobPrefix("lynx-journal", ID);
+        assertThat(JobLayout.artifactKey(path, JobLayout.ENVIRONMENT_NAME))
+            .isEqualTo("jobs/lynx-journal/" + ID + "/environment.json");
+        assertThat(JobLayout.artifactKey(path + "/", JobLayout.PACKAGES_NAME))
+            .isEqualTo("jobs/lynx-journal/" + ID + "/packages.txt");
+    }
 }

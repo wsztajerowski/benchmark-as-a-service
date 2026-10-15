@@ -22,10 +22,10 @@ import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 import java.util.List;
 import java.util.Map;
 
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.GSI1PK;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.GSI1SK;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.PK;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.SK;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.GSI1PK;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.GSI1SK;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.SK;
 import static pl.wsztajerowski.baas.model.ResultKeys.JOB_ID_INDEX_NAME;
 
 /**

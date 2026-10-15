@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
 import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -82,7 +84,7 @@ public class RunCommand implements Callable<Integer> {
 
     private static final Logger logger = LoggerFactory.getLogger(RunCommand.class);
 
-    private static final List<String> VALID_TYPES = List.of("jmh", "jmh-with-async", "jmh-with-prof", "jcstress");
+    private static final List<String> VALID_TYPES = BenchmarkType.commandNames();
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -593,7 +595,7 @@ public class RunCommand implements Callable<Integer> {
     private int poll(AwsClientFactory factory, BaasConfig config, JobSession current, int capSeconds)
         throws InterruptedException {
         JobItem job = current.job();
-        String logPath = "s3://" + config.bucket() + "/" + job.resultPath() + "/cloud-init-output.log";
+        String logPath = "s3://" + config.bucket() + "/" + JobLayout.artifactKey(job.resultPath(), JobLayout.BOOT_LOG_NAME);
         JobSession.Outcome outcome;
         try (var line = openStatusLine()) {
             outcome = current.await(capSeconds, 15_000, System::currentTimeMillis, Thread::sleep,
