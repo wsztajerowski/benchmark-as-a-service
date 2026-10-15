@@ -17,8 +17,8 @@ import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.PK;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.fromItem;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.fromItem;
 import static pl.wsztajerowski.baas.model.ResultKeys.PK_PREFIX;
 import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;

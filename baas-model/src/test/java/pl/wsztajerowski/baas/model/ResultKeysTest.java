@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.model;
 
+
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;

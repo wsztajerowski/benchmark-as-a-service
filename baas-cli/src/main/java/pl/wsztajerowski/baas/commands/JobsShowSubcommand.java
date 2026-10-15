@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.model.JobLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -100,7 +102,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
         return new Sources() {
             public Optional<JobItem> job(String id) { return recorder.find(id); }
             public Optional<String> liveInstance(String id) { return instances.findLive(id); }
-            public Optional<String> manifest(String path) { return storage.getObjectIfExists(bucket, path + "/environment.json"); }
+            public Optional<String> manifest(String path) { return storage.getObjectIfExists(bucket, JobLayout.artifactKey(path, JobLayout.ENVIRONMENT_NAME)); }
             public List<String> keys(String path) { return storage.listKeys(bucket, path + "/"); }
             public void close() {
                 dynamoDb.close();

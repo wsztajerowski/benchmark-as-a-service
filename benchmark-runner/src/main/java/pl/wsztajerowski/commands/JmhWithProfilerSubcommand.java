@@ -1,5 +1,7 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
@@ -9,7 +11,7 @@ import java.util.Map;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhWithProfilerSubcommandServiceBuilder.serviceBuilder;
 
-@Command(name = "jmh-with-prof", description = "Run JHM benchmarks with profiler")
+@Command(name = BenchmarkType.JMH_WITH_PROF_NAME, description = "Run JHM benchmarks with profiler")
 public class JmhWithProfilerSubcommand implements Runnable {
     @Mixin
     LoggingMixin loggingMixin;

@@ -6,10 +6,10 @@ import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.JobItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.JobStatus;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -189,7 +189,7 @@ class DynamoDbJobRecorderIT {
             .tableName(tableName)
             .key(JobItemMapper.key(target))
             .updateExpression("SET #status = :s")
-            .conditionExpression("attribute_exists(pk) AND " + DynamoDbJobRecorder.NOT_TERMINAL)
+            .conditionExpression("attribute_exists(pk) AND " + pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL)
             .expressionAttributeNames(Map.of("#status", "status"))
             .expressionAttributeValues(guardValuesWith(status)));
     }
@@ -197,7 +197,7 @@ class DynamoDbJobRecorderIT {
     /** The guard's values as user-data sends them, built from the same generated map. */
     private static Map<String, AttributeValue> guardValuesWith(String status) {
         Map<String, AttributeValue> values = new java.util.HashMap<>(Map.of(":s", AttributeValue.fromS(status)));
-        DynamoDbJobRecorder.NOT_TERMINAL_VALUES.forEach((k, v) -> values.put(k, AttributeValue.fromS(v)));
+        pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL_VALUES.forEach((k, v) -> values.put(k, AttributeValue.fromS(v)));
         return values;
     }
 

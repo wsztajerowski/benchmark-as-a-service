@@ -26,6 +26,13 @@ public final class TagKeys {
         PROJECT, TYPE, COMMIT, BRANCH, SOURCE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE,
         IMAGE_VERSION);
 
+    /**
+     * The convention a CI job uses to keep its measurements out of everyone's results: a row tagged
+     * {@code exclude_from_results=true} is filtered out server-side unless a query asks for it. Not in
+     * {@link #KNOWN} — it is a convention a caller sets, not a dimension anyone slices by.
+     */
+    public static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
+
     /** {@link #SOURCE} values baas run derives; a caller may supply any other. */
     public static final String SOURCE_CI = "ci";
     public static final String SOURCE_LOCAL = "local";
@@ -42,4 +49,16 @@ public final class TagKeys {
         List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
 
     private TagKeys() {}
+
+    /**
+     * A {@code key=value} tag pair, both sides non-empty; anything else is a usage error. Every
+     * command that takes a tag filter parses it here, so they reject the same inputs.
+     */
+    public static String[] parsePair(String text) {
+        int eq = text == null ? -1 : text.indexOf('=');
+        if (eq <= 0 || eq == text.length() - 1) {
+            throw new IllegalArgumentException("Expected key=value, got '" + text + "'.");
+        }
+        return new String[]{text.substring(0, eq), text.substring(eq + 1)};
+    }
 }

@@ -1,5 +1,7 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -57,7 +59,7 @@ public class JmhWithAsyncProfilerSubcommandService {
 
             logger.info("Saving benchmark process output on S3");
             storageService
-                .saveFile(outputPath.resolve("jmh-with-async-output.txt"), jmhOptions.outputOptions().processOutput());
+                .saveFile(outputPath.resolve(BenchmarkType.JMH_WITH_ASYNC.processOutputName()), jmhOptions.outputOptions().processOutput());
             // Covers async-profiler's own logs too: its output directory sits below the working
             // directory, so they land under logs/async-output/.
             JobLogs.upload(storageService, outputPath);

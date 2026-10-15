@@ -126,7 +126,7 @@ public class JobsListSubcommand implements Callable<Integer> {
         }
         try {
             if (excludeTags != null) {
-                excludeTags.forEach(pl.wsztajerowski.baas.results.ResultsFilters::pair);
+                excludeTags.forEach(pl.wsztajerowski.baas.model.TagKeys::parsePair);
             }
         } catch (IllegalArgumentException bad) {
             logger.error("--exclude-tag: {}", bad.getMessage());

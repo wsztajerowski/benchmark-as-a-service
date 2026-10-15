@@ -1,5 +1,7 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.JobLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.infra.StorageService;
@@ -43,7 +45,7 @@ final class JobLogs {
         for (Path file : find(start)) {
             Path relative = start.relativize(file);
             logger.info("Saving log file: {}", relative);
-            storageService.saveFile(outputPath.resolve("logs").resolve(relative), file);
+            storageService.saveFile(outputPath.resolve(JobLayout.LOGS_SEGMENT).resolve(relative), file);
         }
     }
 

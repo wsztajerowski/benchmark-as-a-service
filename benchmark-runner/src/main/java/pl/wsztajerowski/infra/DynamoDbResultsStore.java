@@ -2,7 +2,7 @@ package pl.wsztajerowski.infra;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.BatchWriteItemRequest;

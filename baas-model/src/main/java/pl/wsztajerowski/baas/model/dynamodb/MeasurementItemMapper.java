@@ -1,4 +1,10 @@
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.baas.model.dynamodb;
+import pl.wsztajerowski.baas.model.ResultKeys;
+
+import pl.wsztajerowski.baas.model.JcstressSummary;
+import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.SecondaryMetric;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
 
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
@@ -27,26 +33,26 @@ public final class MeasurementItemMapper {
     public static final String SK = "sk";
     public static final String GSI1PK = "gsi1pk";
     public static final String GSI1SK = "gsi1sk";
-    static final String PROJECT = "project";
-    static final String JOB_ID = "jobId";
-    static final String CREATED_AT = "createdAt";
+    public static final String PROJECT = "project";
+    public static final String JOB_ID = "jobId";
+    public static final String CREATED_AT = "createdAt";
     /** Public because a measurement always carries it and a job item never does, which is how a
      * reader of the job-ID index tells them apart without filtering on a key attribute. */
     public static final String KIND = "kind";
-    static final String BENCHMARK_CLASS = "benchmarkClass";
-    static final String BENCHMARK_METHOD = "benchmarkMethod";
-    static final String MODE = "mode";
-    static final String PARAMS = "params";
-    static final String SCORE = "score";
-    static final String SCORE_ERROR = "scoreError";
-    static final String SCORE_UNIT = "scoreUnit";
-    static final String SECONDARY_METRICS = "secondaryMetrics";
-    static final String JCSTRESS = "jcstress";
-    static final String TAGS = "tags";
-    static final String RESULT_PATH = "resultPath";
-    static final String RESULT_JSON_KEY = "resultJsonKey";
-    static final String ENVIRONMENT_JSON_KEY = "environmentJsonKey";
-    static final String PROFILER_OUTPUT_PATH = "profilerOutputPath";
+    public static final String BENCHMARK_CLASS = "benchmarkClass";
+    public static final String BENCHMARK_METHOD = "benchmarkMethod";
+    public static final String MODE = "mode";
+    public static final String PARAMS = "params";
+    public static final String SCORE = "score";
+    public static final String SCORE_ERROR = "scoreError";
+    public static final String SCORE_UNIT = "scoreUnit";
+    public static final String SECONDARY_METRICS = "secondaryMetrics";
+    public static final String JCSTRESS = "jcstress";
+    public static final String TAGS = "tags";
+    public static final String RESULT_PATH = "resultPath";
+    public static final String RESULT_JSON_KEY = "resultJsonKey";
+    public static final String ENVIRONMENT_JSON_KEY = "environmentJsonKey";
+    public static final String PROFILER_OUTPUT_PATH = "profilerOutputPath";
 
     private static final String TOTAL_TESTS = "totalTests";
     private static final String PASSED_TESTS = "passedTests";
