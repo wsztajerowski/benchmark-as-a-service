@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.infra;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.commands.RunCommand;
 import software.amazon.awssdk.services.ec2.model.Image;
 import software.amazon.awssdk.services.ec2.model.Tag;
 
@@ -30,7 +29,7 @@ class RunnerImageResolutionTest {
 
     @Test
     void aMissingPointerResolvesToNothing() {
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX))
+        assertThat(images().currentImage(pl.wsztajerowski.baas.config.DeploymentNames.of(PREFIX).amiPointer()))
             .as("with no image built, `baas run` must stop before provisioning anything")
             .isEmpty();
         assertThat(calls).isEmpty();
@@ -41,7 +40,7 @@ class RunnerImageResolutionTest {
     void aPointerNamingADeregisteredAmiResolvesToNothing() {
         ssm.parameters.put(POINTER, "ami-gone");
 
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX)).isEmpty();
+        assertThat(images().currentImage(pl.wsztajerowski.baas.config.DeploymentNames.of(PREFIX).amiPointer())).isEmpty();
     }
 
     @Test
@@ -49,7 +48,7 @@ class RunnerImageResolutionTest {
         ssm.parameters.put(POINTER, "ami-current");
         ec2.images.put("ami-current", tagged("ami-current", "1.2.0"));
 
-        assertThat(RunCommand.resolveRunnerImage(images(), PREFIX))
+        assertThat(images().currentImage(pl.wsztajerowski.baas.config.DeploymentNames.of(PREFIX).amiPointer()))
             .hasValueSatisfying(image -> {
                 assertThat(image.amiId()).isEqualTo("ami-current");
                 assertThat(image.imageVersion()).isEqualTo("1.2.0");

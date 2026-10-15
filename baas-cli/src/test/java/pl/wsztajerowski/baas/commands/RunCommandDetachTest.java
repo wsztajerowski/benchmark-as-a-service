@@ -6,6 +6,8 @@ import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.config.DeploymentNames;
+import pl.wsztajerowski.baas.jobs.JobLaunch;
 import pl.wsztajerowski.baas.jobs.JobRecorder;
 import pl.wsztajerowski.baas.jobs.JobSession;
 import pl.wsztajerowski.baas.model.JobItem;
@@ -24,8 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@code --detach}: everything up to the confirmed launch is the attached path, and after it the CLI
- * touches nothing. The launch itself needs AWS, so these drive the steps around it — the shutdown
- * hook, the branch after {@code confirmLaunched}, the summary and the hints — directly.
+ * touches nothing. These drive the steps around the launch — the shutdown hook, the branch after
+ * {@code confirmLaunched} (in {@link JobLaunch}, reporting to the command as its listener), the
+ * summary and the hints — directly; {@code JobLaunchTest} drives a whole launch.
  */
 class RunCommandDetachTest {
 
@@ -109,6 +112,11 @@ class RunCommandDetachTest {
     private final Instances instances = new Instances();
     private final JobSession session = new JobSession(JOB, recorder, recorder, instances);
 
+    /** The handler with the command as its listener — how a real launch reaches the command. */
+    private static JobLaunch launch(RunCommand command) {
+        return new JobLaunch(null, DeploymentNames.of("dev"), command);
+    }
+
     private RunCommand command(boolean detach) {
         var command = new RunCommand();
         command.detach = detach;
@@ -147,7 +155,7 @@ class RunCommandDetachTest {
         var command = command(true);
         var confirmation = session.confirmLaunched("i-1");
 
-        assertThat(command.afterLaunch(session, confirmation)).isZero();
+        assertThat(launch(command).afterLaunch(session, confirmation, command.detach)).isZero();
         assertThat(command.summaryJobStatus).isEqualTo(JobStatus.LAUNCHED);
         assertThat(session.ended()).isFalse();
     }
@@ -159,7 +167,7 @@ class RunCommandDetachTest {
         var confirmation = session.confirmLaunched("i-1");
 
         assertThat(confirmation).isEqualTo(JobSession.Confirmation.UNCONFIRMED);
-        assertThat(command.afterLaunch(session, confirmation)).isZero();
+        assertThat(launch(command).afterLaunch(session, confirmation, command.detach)).isZero();
         assertThat(command.summaryJobStatus).isEqualTo(JobStatus.LAUNCHING);
     }
 
@@ -170,7 +178,7 @@ class RunCommandDetachTest {
         var confirmation = session.confirmLaunched("i-1");
 
         assertThat(confirmation).isEqualTo(JobSession.Confirmation.CANCELLED_WHILE_LAUNCHING);
-        assertThat(command.afterLaunch(session, confirmation)).isEqualTo(1);
+        assertThat(launch(command).afterLaunch(session, confirmation, command.detach)).isEqualTo(1);
         assertThat(instances.terminated).containsExactly("i-1");
     }
 
@@ -179,7 +187,7 @@ class RunCommandDetachTest {
         var command = command(false);
         var confirmation = session.confirmLaunched("i-1");
 
-        assertThat(command.afterLaunch(session, confirmation)).isNull();
+        assertThat(launch(command).afterLaunch(session, confirmation, command.detach)).isNull();
     }
 
     // ─── the shutdown hook ───────────────────────────────────────────────────────
@@ -187,7 +195,7 @@ class RunCommandDetachTest {
     @Test
     void theHookLeavesADetachedJobAlone() {
         var command = command(true);
-        command.afterLaunch(session, session.confirmLaunched("i-1"));
+        launch(command).afterLaunch(session, session.confirmLaunched("i-1"), command.detach);
 
         command.onShutdown();
 
@@ -199,7 +207,7 @@ class RunCommandDetachTest {
     @Test
     void theHookStillCancelsAnAttachedJob() {
         var command = command(false);
-        command.afterLaunch(session, session.confirmLaunched("i-1"));
+        launch(command).afterLaunch(session, session.confirmLaunched("i-1"), command.detach);
 
         command.onShutdown();
 
@@ -231,7 +239,7 @@ class RunCommandDetachTest {
         command.summaryJobId = JOB.jobId();
         command.summaryDeployment = "dev";
         command.summaryInstanceId = "i-1";
-        command.afterLaunch(session, session.confirmLaunched("i-1"));
+        launch(command).afterLaunch(session, session.confirmLaunched("i-1"), command.detach);
 
         JsonNode parsed = summary(command, 0);
 
@@ -256,7 +264,7 @@ class RunCommandDetachTest {
     @Test
     void theSummaryKeepsTheDetachedStatusRatherThanTheSessionsEmptyEnd() {
         var command = command(true);
-        command.afterLaunch(session, session.confirmLaunched("i-1"));
+        launch(command).afterLaunch(session, session.confirmLaunched("i-1"), command.detach);
 
         command.recordEndStatus();
 
@@ -268,7 +276,7 @@ class RunCommandDetachTest {
         var command = command(true);
         command.summaryJobId = JOB.jobId();
         command.summaryDeployment = "dev";
-        command.afterLaunch(session, session.confirmLaunched("i-1"));
+        launch(command).afterLaunch(session, session.confirmLaunched("i-1"), command.detach);
         command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
         List<String> lines = new ArrayList<>();
 
