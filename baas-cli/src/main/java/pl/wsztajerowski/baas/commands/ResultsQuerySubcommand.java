@@ -1,5 +1,9 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.console.Csv;
+
+import pl.wsztajerowski.baas.console.Json;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -404,14 +408,16 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             // Null for every job recorded before the prebaked-image change. They stay flat even
             // though `tags` now repeats them: CI and anyone else's `jq '.[0].imageVersion'` reads
             // them there.
+            // The fields up to createdAt have always been quoted, an absent one as the string
+            // "null" (W5): String.valueOf keeps that, while every value is now escaped.
             out.printf(
-                "  {\"jobId\":\"%s\",\"benchmarkName\":\"%s\",\"benchmarkType\":\"%s\"," +
-                "\"mode\":\"%s\",\"score\":%s,\"scoreError\":%s,\"scoreUnit\":\"%s\"," +
-                "\"createdAt\":\"%s\",\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s}%s%n",
-                r.jobId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
-                jsonNumber(r.score()), jsonNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
-                jsonOrNull(r.imageVersion()), jsonOrNull(r.instanceType()), jsonObject(r.tags()),
-                jsonObject(r.params()), i < rows.size() - 1 ? "," : "");
+                "  {\"jobId\":%s,\"benchmarkName\":%s,\"benchmarkType\":%s," +
+                "\"mode\":%s,\"score\":%s,\"scoreError\":%s,\"scoreUnit\":%s," +
+                "\"createdAt\":%s,\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s}%s%n",
+                quoted(r.jobId()), quoted(r.benchmarkName()), quoted(r.benchmarkType()), quoted(r.mode()),
+                Json.number(r.score()), Json.number(r.scoreError()), quoted(r.scoreUnit()), quoted(r.createdAt()),
+                Json.string(r.imageVersion()), Json.string(r.instanceType()), Json.object(r.tags()),
+                Json.object(r.params()), i < rows.size() - 1 ? "," : "");
         }
         out.println("]");
     }
@@ -426,72 +432,16 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             // CSV column into two.
             out.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
                 r.jobId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
-                csvNumber(r.score()), csvNumber(r.scoreError()), r.scoreUnit(), r.createdAt(),
+                Csv.number(r.score()), Csv.number(r.scoreError()), r.scoreUnit(), r.createdAt(),
                 r.imageVersion() != null ? r.imageVersion() : "",
                 r.instanceType() != null ? r.instanceType() : "",
-                csvField(csvTags(r.tags())), csvField(csvTags(r.params())));
+                Csv.field(Csv.tags(r.tags())), Csv.field(Csv.tags(r.params())));
         }
     }
 
-    /** Every tag (or param), key-sorted, as {@code k=v;k=v}. */
-    static String csvTags(Map<String, String> tags) {
-        return new java.util.TreeMap<>(tags).entrySet().stream()
-            .map(e -> e.getKey() + "=" + e.getValue())
-            .collect(java.util.stream.Collectors.joining(";"));
-    }
 
-    /**
-     * RFC 4180 quoting. Tag values are free-form — the first CSV field that can carry a comma, a
-     * quote or a line break — so this one is always quoted, embedded quotes doubled.
-     */
-    static String csvField(String value) {
-        return "\"" + value.replace("\"", "\"\"") + "\"";
-    }
-
-    /** Key-sorted, so the same row always serialises identically. Tags and params alike. */
-    static String jsonObject(Map<String, String> tags) {
-        return new java.util.TreeMap<>(tags).entrySet().stream()
-            .map(e -> jsonString(e.getKey()) + ":" + jsonString(e.getValue()))
-            .collect(java.util.stream.Collectors.joining(",", "{", "}"));
-    }
-
-    /** Escapes what JSON requires; tag values are free-form, unlike the other fields. */
-    static String jsonString(String value) {
-        var out = new StringBuilder("\"");
-        for (char c : value.toCharArray()) {
-            switch (c) {
-                case '"' -> out.append("\\\"");
-                case '\\' -> out.append("\\\\");
-                case '\n' -> out.append("\\n");
-                case '\r' -> out.append("\\r");
-                case '\t' -> out.append("\\t");
-                default -> {
-                    if (c < 0x20) {
-                        out.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
-                    } else {
-                        out.append(c);
-                    }
-                }
-            }
-        }
-        return out.append('"').toString();
-    }
-
-    /** A missing tag is JSON null, not the string "null" — the two mean different things here. */
-    private static String jsonOrNull(String value) {
-        return value != null ? "\"" + value + "\"" : "null";
-    }
-
-    /** An unknown value is an empty cell, CSV's form of JSON's {@code null}; never a number. */
-    static String csvNumber(double value) {
-        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "";
-    }
-
-    /**
-     * JSON has no NaN or Infinity literal, and a single-iteration JMH run reports {@code NaN}
-     * score error routinely — emitting it produces a document {@code jq} refuses outright.
-     */
-    private static String jsonNumber(double value) {
-        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "null";
+    /** A field this payload has always quoted, absent included; see printJson. */
+    private static String quoted(Object value) {
+        return Json.string(String.valueOf(value));
     }
 }

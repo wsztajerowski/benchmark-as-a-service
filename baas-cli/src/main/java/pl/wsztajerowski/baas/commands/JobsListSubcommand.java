@@ -1,5 +1,11 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.console.Elapsed;
+
+import pl.wsztajerowski.baas.console.Csv;
+
+import pl.wsztajerowski.baas.console.Json;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -251,7 +257,7 @@ public class JobsListSubcommand implements Callable<Integer> {
                 json(job.jobId()), json(job.project()), json(row.status()), json(job.status()),
                 json(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
                 json(job.instanceType()), json(job.createdAt().toString()), json(job.resultPath()),
-                json(job.errorCode()), ResultsQuerySubcommand.jsonObject(job.tags()), i < rows.size() - 1 ? "," : "");
+                json(job.errorCode()), Json.object(job.tags()), i < rows.size() - 1 ? "," : "");
         }
         out.println("]");
     }
@@ -265,17 +271,17 @@ public class JobsListSubcommand implements Callable<Integer> {
                 job.jobId(), job.project(), row.status(), nullToEmpty(job.status()),
                 nullToEmpty(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
                 nullToEmpty(job.instanceType()), job.createdAt(), nullToEmpty(job.resultPath()),
-                nullToEmpty(job.errorCode()), ResultsQuerySubcommand.csvField(ResultsQuerySubcommand.csvTags(job.tags())));
+                nullToEmpty(job.errorCode()), Csv.field(Csv.tags(job.tags())));
         }
     }
 
     static String elapsed(Duration duration) {
         long seconds = Math.max(0, duration.getSeconds());
-        return RunCommand.formatElapsed(seconds);
+        return Elapsed.format(seconds);
     }
 
     private static String json(String value) {
-        return value == null ? "null" : ResultsQuerySubcommand.jsonString(value);
+        return Json.string(value);
     }
 
     private static String orDash(String value) {

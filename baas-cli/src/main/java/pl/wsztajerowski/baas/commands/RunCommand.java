@@ -1,5 +1,9 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.console.Elapsed;
+
+import pl.wsztajerowski.baas.console.Json;
+
 import pl.wsztajerowski.baas.config.CoreStack;
 
 import pl.wsztajerowski.baas.model.BenchmarkType;
@@ -444,7 +448,7 @@ public class RunCommand implements Callable<Integer> {
         var ec2Instances = new Ec2ProvisioningService(factory.ec2(), config.stackName());
         var current = new JobSession(job,
             new DynamoDbJobRecorder(factory.dynamoDb(), resolvedTable),
-            new DynamoDbJobRecorder(factory.dynamoDb(STOP_WRITE_TIMEOUT), resolvedTable),
+            new DynamoDbJobRecorder(factory.dynamoDb(JobSession.STOP_WRITE_TIMEOUT), resolvedTable),
             ec2Instances);
 
         // 6. Reserve the job before launching it. An instance without a record is exactly the
@@ -550,8 +554,6 @@ public class RunCommand implements Callable<Integer> {
         return 0;
     }
 
-    /** Bounds the status write that precedes a termination; see AwsClientFactory#dynamoDb(Duration). */
-    static final java.time.Duration STOP_WRITE_TIMEOUT = java.time.Duration.ofSeconds(5);
 
     /**
      * A launch that failed leaves no instance and so no boot log. What there is to keep is in the
@@ -678,12 +680,7 @@ public class RunCommand implements Callable<Integer> {
     }
 
     public static String formatElapsed(long seconds) {
-        long h = seconds / 3600;
-        long m = seconds % 3600 / 60;
-        long s = seconds % 60;
-        return h > 0
-            ? String.format(Locale.ROOT, "%dh %02dm %02ds", h, m, s)
-            : String.format(Locale.ROOT, "%dm %02ds", m, s);
+        return Elapsed.format(seconds);
     }
 
     private Console console() {
@@ -923,17 +920,9 @@ public class RunCommand implements Callable<Integer> {
         console().printf(
             "{\"jobId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
                 + "\"jobStatus\":%s,\"exitCode\":%d,\"instanceId\":%s}%n",
-            jsonString(summaryJobId), jsonString(summaryProject), jsonString(summaryResultPath),
-            exitCode != 0 ? "failed" : detached ? "launched" : "completed", jsonString(summaryJobStatus), exitCode,
-            jsonString(summaryInstanceId));
-    }
-
-    /** A JSON string literal, or the {@code null} literal — absent is not the empty string. */
-    private static String jsonString(String value) {
-        if (value == null) {
-            return "null";
-        }
-        return '"' + value.replace("\\", "\\\\").replace("\"", "\\\"") + '"';
+            Json.string(summaryJobId), Json.string(summaryProject), Json.string(summaryResultPath),
+            exitCode != 0 ? "failed" : detached ? "launched" : "completed", Json.string(summaryJobStatus), exitCode,
+            Json.string(summaryInstanceId));
     }
 
     private static boolean isTruthy(String value) {

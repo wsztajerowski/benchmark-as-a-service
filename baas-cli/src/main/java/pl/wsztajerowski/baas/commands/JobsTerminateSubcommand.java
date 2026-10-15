@@ -64,7 +64,7 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
         BaasConfig config = session().config();
         var factory = session().factory();
         try (var dynamoDb = factory.dynamoDb();
-             var quickDynamoDb = factory.dynamoDb(RunCommand.STOP_WRITE_TIMEOUT);
+             var quickDynamoDb = factory.dynamoDb(pl.wsztajerowski.baas.jobs.JobSession.STOP_WRITE_TIMEOUT);
              var ec2 = factory.ec2()) {
             return new JobTermination(
                 new DynamoDbJobRecorder(dynamoDb, config.resultsTable()),
