@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.console.Json;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -96,7 +98,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
     }
 
     private static String json(String value) {
-        return value == null ? "null" : ResultsQuerySubcommand.jsonString(value);
+        return Json.string(value);
     }
 
     private static String orDash(String value) {
