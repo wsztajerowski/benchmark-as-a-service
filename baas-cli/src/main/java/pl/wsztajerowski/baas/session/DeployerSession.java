@@ -2,8 +2,6 @@ package pl.wsztajerowski.baas.session;
 
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 
-import pl.wsztajerowski.baas.session.BaasConfig;
-
 /**
  * The deployer's clients — the {@code OperatorSession} counterpart for {@code baas admin}. Unlike
  * the operator, the deployer's credentials are used as they are: the deployer policy grants what

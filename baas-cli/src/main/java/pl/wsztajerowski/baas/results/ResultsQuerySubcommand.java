@@ -1,13 +1,10 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.session.GitProject;
-
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import pl.wsztajerowski.baas.console.Csv;
-
 import pl.wsztajerowski.baas.console.Json;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -15,7 +12,6 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;
@@ -23,11 +19,6 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.session.OperatorSession;
-import pl.wsztajerowski.baas.results.ResultRow;
-import pl.wsztajerowski.baas.results.ResultsFilters;
-import pl.wsztajerowski.baas.results.ResultsGrouping;
-import pl.wsztajerowski.baas.results.ResultsQueryService;
-import pl.wsztajerowski.baas.results.ResultsTable;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -180,7 +171,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         }
         try {
             if (excludeTags != null) {
-                excludeTags.forEach(ResultsFilters::pair);
+                excludeTags.forEach(TagKeys::parsePair);
             }
         } catch (IllegalArgumentException bad) {
             logger.error("--exclude-tag: {}", bad.getMessage());

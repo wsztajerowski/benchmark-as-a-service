@@ -13,10 +13,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The runner's packages layer one way: {@code commands} (picocli, the composition of each benchmark
- * type) on top, imported by nothing; services, results, process and infra below it; and the root
- * package's helpers at the bottom, importing none of them. This is what keeps the package graph
- * acyclic — a parser placed in {@code commands} and a working directory anchored on
- * {@code TestWrapper} each closed a cycle once.
+ * type) on top, imported by nothing; services, results, process and infra below it; and two leaves,
+ * the root package's helpers and the {@code options} records, importing no runner package. A parser
+ * placed in {@code commands}, a working directory anchored on {@code TestWrapper}, and options
+ * records kept under {@code services} each closed a cycle once.
  */
 class RunnerLayeringTest {
 
@@ -44,6 +44,15 @@ class RunnerLayeringTest {
             .filter(f -> !SOURCES.relativize(f).startsWith("commands"))
             .filter(f -> read(f).contains("\nimport pl.wsztajerowski.commands.")
                 || read(f).contains("\nimport static pl.wsztajerowski.commands."))
+            .map(f -> SOURCES.relativize(f).toString()).toList();
+        assertThat(offenders).isEmpty();
+    }
+
+    @Test
+    void theOptionsRecordsImportNoRunnerPackage() {
+        List<String> offenders = javaFiles().stream()
+            .filter(f -> SOURCES.relativize(f).startsWith("options"))
+            .filter(f -> read(f).lines().anyMatch(l -> l.matches("import (static )?pl\\.wsztajerowski\\.(?!baas\\.|options\\.)[a-z]+.*")))
             .map(f -> SOURCES.relativize(f).toString()).toList();
         assertThat(offenders).isEmpty();
     }

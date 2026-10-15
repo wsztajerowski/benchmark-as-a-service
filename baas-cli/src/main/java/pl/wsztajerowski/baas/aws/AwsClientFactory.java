@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.ssm.SsmClient;
 import software.amazon.awssdk.services.sts.StsClient;
+
 import java.time.Duration;
 import java.util.function.Supplier;
 

@@ -2,7 +2,6 @@ package pl.wsztajerowski.baas;
 
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;

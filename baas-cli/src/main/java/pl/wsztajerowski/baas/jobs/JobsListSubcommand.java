@@ -1,13 +1,9 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import pl.wsztajerowski.baas.console.Elapsed;
-
 import pl.wsztajerowski.baas.console.Csv;
-
 import pl.wsztajerowski.baas.console.Json;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -15,7 +11,6 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
@@ -25,10 +20,7 @@ import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.session.OperatorSession;
-import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService;
 import pl.wsztajerowski.baas.model.TagKeys;
-import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
-import pl.wsztajerowski.baas.jobs.JobListing;
 
 import java.time.Duration;
 import java.time.Instant;

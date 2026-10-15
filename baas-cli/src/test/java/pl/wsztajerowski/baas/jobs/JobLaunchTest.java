@@ -43,6 +43,7 @@ class JobLaunchTest {
         String instanceId;
         String detachedStatus;
         JobSession session;
+        StatusLine statusLine;
         List<ResultRow> printed;
 
         @Override
@@ -69,7 +70,7 @@ class JobLaunchTest {
 
         @Override
         public StatusLine openStatusLine() {
-            return null;
+            return statusLine;
         }
 
         @Override
@@ -85,7 +86,7 @@ class JobLaunchTest {
     private JobLaunch.Request request(Path runnerJar, boolean detach) throws Exception {
         Path benchmarkJar = Files.writeString(dir.resolve("b.jar"), "jar");
         return new JobLaunch.Request("jmh", List.of("MyBenchmark", "-f", "1"), benchmarkJar, runnerJar,
-            "c5.2xlarge", "lynx-journal", "dev-results", 600, 900,
+            "c5.2xlarge", "lynx-journal", 600, 900,
             Map.of("project", "lynx-journal", "type", "jmh", "source", "local"), detach, "7.1.1",
             "Wiktor-Sztajerowski/benchmark-as-a-service");
     }
@@ -199,8 +200,23 @@ class JobLaunchTest {
         assertThat(aws.events).noneMatch(e -> e.startsWith("stop "));
     }
 
+    /** The line is redrawn while the job runs and closed before its results are shown. */
     @Test
-    void progressIsLoggedWhenNoStatusLineIsShown() throws Exception {
+    void aStatusLineIsRedrawnWhilePollingAndClosedAtTheEnd() throws Exception {
+        var out = new java.io.StringWriter();
+        var originalErr = System.err;
+        listener.statusLine = pl.wsztajerowski.baas.console.Console
+            .withFlags(new java.io.PrintWriter(out), true, true).openStatusLine();
+
+        int exit = launch().run(request(null, false));
+
+        assertThat(exit).isZero();
+        assertThat(out.toString()).contains("running · 0m 00s elapsed · i-1");
+        assertThat(System.err).as("closing the line restores standard error").isSameAs(originalErr);
+    }
+
+    @Test
+    void pollsUntilTheJobEnds() throws Exception {
         List<String> slept = new ArrayList<>();
         int exit = new JobLaunch(aws, DEV, listener, () -> 0L, millis -> slept.add("slept " + millis), 7)
             .run(request(null, false));

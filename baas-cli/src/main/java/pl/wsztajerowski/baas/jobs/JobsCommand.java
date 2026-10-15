@@ -1,6 +1,5 @@
 package pl.wsztajerowski.baas.jobs;
 
-
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;

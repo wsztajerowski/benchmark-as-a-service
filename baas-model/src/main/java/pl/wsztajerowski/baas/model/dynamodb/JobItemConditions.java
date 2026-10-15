@@ -32,7 +32,11 @@ public final class JobItemConditions {
             + String.join(", ", NOT_TERMINAL_VALUES.keySet().stream().filter(k -> !k.equals(FAILED_PREFIX_VALUE)).toList())
             + ") OR begins_with(#status, " + FAILED_PREFIX_VALUE + ")))";
 
-    /** The item exists — a write never creates a job item; only the CLI's reservation does. */
+    /**
+     * The item exists — a write never creates a job item; only the CLI's reservation does. This is
+     * user-data's spelling; the CLI's recorder writes the same check through an attribute-name
+     * placeholder, {@code attribute_exists(#pk)}, which its other conditions also use.
+     */
     public static final String EXISTS = "attribute_exists(" + MeasurementItemMapper.PK + ")";
 
     private JobItemConditions() {

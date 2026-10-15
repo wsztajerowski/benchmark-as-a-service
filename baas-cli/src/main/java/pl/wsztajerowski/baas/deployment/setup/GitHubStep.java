@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.deployment.setup;
 
 import pl.wsztajerowski.baas.session.CoreStack;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 

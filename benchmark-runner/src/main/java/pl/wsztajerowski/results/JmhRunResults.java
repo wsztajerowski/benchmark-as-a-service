@@ -1,13 +1,12 @@
 package pl.wsztajerowski.results;
 
 import pl.wsztajerowski.baas.model.JobLayout;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jmh.JmhResult;
 import pl.wsztajerowski.infra.StorageService;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
 
 import java.nio.file.Path;
 import java.time.Instant;

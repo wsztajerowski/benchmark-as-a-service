@@ -1,11 +1,8 @@
 package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import pl.wsztajerowski.baas.session.DeployerSession;
-
 import pl.wsztajerowski.baas.session.CoreStack;
-
 import pl.wsztajerowski.baas.session.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,7 +11,6 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Option;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.session.BaasConfig;

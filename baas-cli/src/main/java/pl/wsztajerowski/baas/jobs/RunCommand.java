@@ -1,16 +1,9 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.session.GitProject;
-
 import pl.wsztajerowski.baas.cli.Invocation;
-
-import pl.wsztajerowski.baas.console.Elapsed;
-
 import pl.wsztajerowski.baas.console.Json;
-
-
 import pl.wsztajerowski.baas.model.BenchmarkType;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -19,7 +12,6 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.BaasVersion;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
@@ -33,10 +25,6 @@ import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsTable;
-import pl.wsztajerowski.baas.jobs.JobSession;
-import pl.wsztajerowski.baas.jobs.AwsRunAws;
-import pl.wsztajerowski.baas.jobs.RunAws;
-import pl.wsztajerowski.baas.jobs.JobLaunch;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -97,6 +85,9 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         return operatorSession;
     }
 
+    /** Replaced in tests, so a test JVM does not exit with a hook per launch it drove. */
+    Consumer<Thread> shutdownHooks = Runtime.getRuntime()::addShutdownHook;
+
     /** Replaced in tests: the AWS a launch talks to, given the operator session's clients. */
     Function<AwsClientFactory, RunAws> awsFactory = AwsRunAws::new;
 
@@ -123,7 +114,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     volatile boolean detached;
 
     @Parameters(index = "0", paramLabel = "<type>",
-        description = "Benchmark type: jmh, jmh-with-async, jmh-with-prof, jcstress.")
+        completionCandidates = BenchmarkTypes.class,
+        description = "Benchmark type: ${COMPLETION-CANDIDATES}.")
     String benchmarkType;
 
     @Parameters(index = "1..*", paramLabel = "PARAMS",
@@ -286,7 +278,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
         // Same reasoning as resolveProject() above, and deliberately before the runner-image lookup
         // and the upload: a job that cannot say where its measurements go is going to fail anyway.
-        String resolvedTable = resolveResultsTable(config);
+        // The launch reads the table from the deployment's names; this only refuses an unconfigured one early.
+        resolveResultsTable(config);
         String resolvedInstanceType = instanceType != null ? instanceType : config.getEc2().getDefaultInstanceType();
         Timings timings = resolveTimings(config);
         // Before any AWS call, like every other check on what the caller typed: a reserved or
@@ -308,7 +301,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
         summaryDeployment = config.getPrefix();
         var request = new JobLaunch.Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar,
-            resolvedInstanceType, resolvedProject, resolvedTable, resolvedTimeout, resolvedWallClock,
+            resolvedInstanceType, resolvedProject, resolvedTimeout, resolvedWallClock,
             runnerTags, detach, BaasVersion.current(), BaasVersion.sourceRepo());
         return new JobLaunch(awsFactory.apply(operatorSession().factory()), config.names(), this).run(request);
     }
@@ -360,10 +353,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         return console;
     }
 
-    /** Shared with {@code baas results query}, which must resolve the same partition. */
-    static String projectFromToplevel(String toplevel) {
-        return GitProject.fromToplevel(toplevel);
-    }
 
     /**
      * {@code --project}, else — only when the operator enabled {@code git.resolveProject} — the
@@ -541,7 +530,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     @Override
     public void reserved(JobSession reserved) {
         session = reserved;
-        Runtime.getRuntime().addShutdownHook(new Thread(this::onShutdown));
+        shutdownHooks.accept(new Thread(this::onShutdown));
     }
 
     @Override
@@ -618,5 +607,13 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     private static boolean isTruthy(String value) {
         return value != null && !value.isBlank() && !"false".equalsIgnoreCase(value.strip());
+    }
+
+    /** The {@code <type>} help lists the model's types, so it cannot fall behind them. */
+    static final class BenchmarkTypes implements Iterable<String> {
+        @Override
+        public java.util.Iterator<String> iterator() {
+            return BenchmarkType.commandNames().iterator();
+        }
     }
 }

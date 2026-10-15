@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.deployment.setup;
 
 import pl.wsztajerowski.baas.aws.CloudFormationService;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import pl.wsztajerowski.baas.TestDeployments;

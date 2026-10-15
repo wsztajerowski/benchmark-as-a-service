@@ -1,9 +1,7 @@
 package pl.wsztajerowski.services;
 
 import pl.wsztajerowski.baas.model.BenchmarkType;
-
 import pl.wsztajerowski.baas.model.JobLayout;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -13,8 +11,8 @@ import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.process.BenchmarkProcessBuilder;
 import pl.wsztajerowski.results.JCStressMeasurementMapper;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JCStressOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JCStressOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;

@@ -2,10 +2,8 @@ package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
-
 import pl.wsztajerowski.baas.image.RunnerImageParameters;
 import pl.wsztajerowski.baas.testsupport.InfraFixtures;
-
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

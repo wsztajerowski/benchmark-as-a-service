@@ -39,16 +39,12 @@ public final class ResultsFilters {
         if (pairs == null || pairs.isEmpty()) {
             return rows;
         }
-        List<String[]> parsed = pairs.stream().map(ResultsFilters::pair).toList();
+        List<String[]> parsed = pairs.stream().map(TagKeys::parsePair).toList();
         return rows.stream()
             .filter(row -> parsed.stream().noneMatch(kv -> kv[1].equals(tagOf.apply(row, kv[0]))))
             .toList();
     }
 
-    /** A {@code key=value} pair, both sides non-empty; anything else is a usage error. */
-    public static String[] pair(String text) {
-        return TagKeys.parsePair(text);
-    }
 
     /**
      * A regular expression, found anywhere in the name — {@code --benchmark-name Queue} is expected

@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.image;
 
 import pl.wsztajerowski.baas.aws.Checksums;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.dataformat.yaml.YAMLFactory;

@@ -1,7 +1,6 @@
 package pl.wsztajerowski.commands;
 
 import pl.wsztajerowski.baas.model.RunnerArgs;
-
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -10,8 +9,8 @@ import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.ResultsStoreBuilder;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.S3Options;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.S3Options;
 
 import java.net.URI;
 import java.nio.file.Path;

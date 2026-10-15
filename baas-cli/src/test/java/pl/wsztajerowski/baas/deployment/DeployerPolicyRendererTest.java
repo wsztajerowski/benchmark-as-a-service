@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.aws.AwsErrors;
-
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;

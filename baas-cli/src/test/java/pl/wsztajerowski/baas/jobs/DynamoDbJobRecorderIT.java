@@ -37,8 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The job item's conditional writes against a real DynamoDB: the guard that keeps the first
  * terminal status, the {@code launching}-only {@code launched}, and the reservation as the only
- * write that creates an item. These are the rules the in-memory fake in {@code JobSessionTest}
- * imitates, so this is what keeps that fake honest.
+ * write that creates an item. These are the rules {@link JobRecorderContract} states;
+ * its nested {@code Contract} runs them here, and the two in-memory recorders run them too.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class DynamoDbJobRecorderIT {

@@ -1,6 +1,5 @@
 package pl.wsztajerowski.baas.jobs;
 
-
 import com.fasterxml.jackson.databind.JsonNode;
 import pl.wsztajerowski.baas.BaasApp;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -20,10 +19,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code --format json} exists because the job id reaches only {@code logger.info} → stderr with a
  * timestamp prefix, so a continuous-integration job cannot correlate a job it launched.
  *
- * <p>The success path cannot be driven without provisioning an instance — CLAUDE.md records that
- * {@code RunCommand.call()} is executed by no test — so the object's shape is pinned against
- * {@link RunCommand#printJobSummary} directly, and the wiring that prints it on failure is driven
- * through {@code call()} on a path that fails before any AWS call.
+ * <p>The object's shape is pinned against {@link RunCommand#printJobSummary} directly, and the wiring
+ * that prints it on failure is driven through {@code call()} on a path that fails before any AWS
+ * call; {@code RunCommandLaunchTest} drives {@code call()} through whole launches.
  */
 class RunCommandSummaryTest {
 

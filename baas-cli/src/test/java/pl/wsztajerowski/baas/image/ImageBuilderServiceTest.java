@@ -1,6 +1,5 @@
 package pl.wsztajerowski.baas.image;
 
-
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.ec2.model.BlockDeviceMapping;
 import software.amazon.awssdk.services.ec2.model.EbsBlockDevice;

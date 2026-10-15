@@ -1,6 +1,6 @@
 package pl.wsztajerowski.process;
 
-import pl.wsztajerowski.services.options.JmhOptions;
+import pl.wsztajerowski.options.JmhOptions;
 
 import static pl.wsztajerowski.process.BenchmarkProcessBuilder.benchmarkProcessBuilder;
 

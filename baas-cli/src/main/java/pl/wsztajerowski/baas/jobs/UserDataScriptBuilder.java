@@ -375,8 +375,9 @@ public class UserDataScriptBuilder {
         for (var name : names.entrySet()) {
             rendered = rendered.replace(name.getKey(), name.getValue());
         }
-        if (rendered.matches("(?s).*@[A-Z_]+@.*")) {
-            throw new IllegalStateException("user-data template holds a name with no value");
+        var unfilled = java.util.regex.Pattern.compile("@[A-Z_]+@").matcher(rendered);
+        if (unfilled.find()) {
+            throw new IllegalStateException("user-data template holds a name with no value: " + unfilled.group());
         }
         return rendered;
     }

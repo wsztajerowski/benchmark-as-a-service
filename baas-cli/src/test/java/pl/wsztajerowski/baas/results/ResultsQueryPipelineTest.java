@@ -6,8 +6,6 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.results.ResultRow;
-import pl.wsztajerowski.baas.results.ResultsQueryService;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.image.RunnerImageRenderer;
-
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JobStatus;

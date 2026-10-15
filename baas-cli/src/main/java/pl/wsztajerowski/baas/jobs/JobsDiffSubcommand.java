@@ -1,9 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import pl.wsztajerowski.baas.model.JobLayout;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -11,7 +9,6 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.Parameters;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;
@@ -22,9 +19,6 @@ import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
-import pl.wsztajerowski.baas.jobs.EnvironmentManifest;
-import pl.wsztajerowski.baas.jobs.PackagesDiff;
-import pl.wsztajerowski.baas.jobs.JobPaths;
 
 import java.util.List;
 import java.util.Map;

@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas;
-import pl.wsztajerowski.baas.cli.BaasVersion;
 
+import pl.wsztajerowski.baas.cli.BaasVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -16,7 +16,6 @@ import pl.wsztajerowski.baas.results.ResultsCommand;
 import pl.wsztajerowski.baas.results.ResultsQuerySubcommand;
 import pl.wsztajerowski.baas.jobs.RunCommand;
 import pl.wsztajerowski.baas.jobs.JobsCommand;
-import pl.wsztajerowski.baas.AdminCommand;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.cli.Root;
 import pl.wsztajerowski.baas.session.ConfigService;

@@ -1,8 +1,7 @@
 package pl.wsztajerowski.baas.model.dynamodb;
+
 import pl.wsztajerowski.baas.model.ResultKeys;
-
 import pl.wsztajerowski.baas.model.JobItem;
-
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.time.Instant;

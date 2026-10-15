@@ -1,6 +1,5 @@
 package pl.wsztajerowski.baas.image;
 
-
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.ec2.model.Image;
 import software.amazon.awssdk.services.ec2.model.Tag;
@@ -12,8 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * `baas run` resolves its AMI before it uploads or launches anything, so every failure here costs
- * nothing. These assert the resolution itself; that it runs first is visible in {@code RunCommand}
- * as the step numbering, and provable only by the fact that nothing below it can be reached.
+ * nothing. These assert the resolution itself; that it runs first is pinned by
+ * {@code JobLaunchTest.withNoRunnerImageNothingIsUploadedOrReserved}.
  */
 class RunnerImageResolutionTest {
 

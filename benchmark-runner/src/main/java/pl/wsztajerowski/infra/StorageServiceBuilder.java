@@ -2,7 +2,7 @@ package pl.wsztajerowski.infra;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.services.options.S3Options;
+import pl.wsztajerowski.options.S3Options;
 import software.amazon.awssdk.services.s3.S3Client;
 
 import java.net.URI;
