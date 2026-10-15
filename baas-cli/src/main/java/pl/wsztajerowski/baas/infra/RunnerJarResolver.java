@@ -142,13 +142,6 @@ public final class RunnerJarResolver {
         }
     }
 
-    public static String sha256Hex(byte[] bytes) {
-        try {
-            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (NoSuchAlgorithmException e) {
-            throw new IllegalStateException("SHA-256 unavailable", e);
-        }
-    }
 
     /**
      * An absent checksum is a failure, not a skip. Treating it as one would let the single moment
@@ -162,7 +155,7 @@ public final class RunnerJarResolver {
         }
         // `sha256sum <file>` prints "<hex>  <name>"; only the first field is the digest.
         String expected = publishedSha256.strip().split("\\s+", 2)[0].toLowerCase();
-        String actual = sha256Hex(jar);
+        String actual = Checksums.sha256Hex(jar);
         if (!expected.equals(actual)) {
             throw new IllegalStateException(
                 "Runner JAR checksum mismatch: expected " + expected + ", got " + actual

@@ -36,14 +36,14 @@ class RunnerJarResolverTest {
 
     @Test
     void aMatchingChecksumPasses() {
-        assertThatCode(() -> RunnerJarResolver.verify(PAYLOAD, RunnerJarResolver.sha256Hex(PAYLOAD)))
+        assertThatCode(() -> RunnerJarResolver.verify(PAYLOAD, Checksums.sha256Hex(PAYLOAD)))
             .doesNotThrowAnyException();
     }
 
     /** sha256sum's own output is lowercase with a trailing newline; other tools shout. */
     @Test
     void theChecksumComparisonIgnoresCaseAndSurroundingWhitespace() {
-        String upper = RunnerJarResolver.sha256Hex(PAYLOAD).toUpperCase();
+        String upper = Checksums.sha256Hex(PAYLOAD).toUpperCase();
 
         assertThatCode(() -> RunnerJarResolver.verify(PAYLOAD, "  " + upper + "  \n"))
             .doesNotThrowAnyException();
@@ -52,14 +52,14 @@ class RunnerJarResolverTest {
     /** A `sha256sum <file>` line is "<hex>  <name>"; only the first field is the digest. */
     @Test
     void theChecksumComparisonAcceptsASha256sumLine() {
-        String line = RunnerJarResolver.sha256Hex(PAYLOAD) + "  benchmark-runner.jar\n";
+        String line = Checksums.sha256Hex(PAYLOAD) + "  benchmark-runner.jar\n";
 
         assertThatCode(() -> RunnerJarResolver.verify(PAYLOAD, line)).doesNotThrowAnyException();
     }
 
     @Test
     void sha256HexIsLowercaseAndFixedWidth() {
-        assertThat(RunnerJarResolver.sha256Hex(PAYLOAD))
+        assertThat(Checksums.sha256Hex(PAYLOAD))
             .hasSize(64)
             .matches("[0-9a-f]{64}");
     }

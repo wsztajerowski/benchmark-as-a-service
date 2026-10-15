@@ -48,10 +48,10 @@ class DeployerPolicyRendererTest {
             .awsErrorDetails(AwsErrorDetails.builder().errorCode("AccessDenied").build())
             .build();
 
-        assertThat(DeployerPreflight.isAccessDenied(new RuntimeException("wrapped", denied)))
+        assertThat(AwsErrors.isAccessDenied(new RuntimeException("wrapped", denied)))
             .as("the SDK exception is usually buried under a CloudFormation or CLI-level failure")
             .isTrue();
-        assertThat(DeployerPreflight.isAccessDenied(new RuntimeException("unrelated"))).isFalse();
+        assertThat(AwsErrors.isAccessDenied(new RuntimeException("unrelated"))).isFalse();
     }
 
     /**
