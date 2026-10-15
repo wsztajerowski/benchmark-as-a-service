@@ -4,7 +4,7 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.LoggingMixin;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 
 /**
  * Subcommands only, like every other group: a group with an action of its own would make a

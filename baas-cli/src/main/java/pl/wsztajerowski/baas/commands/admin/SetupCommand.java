@@ -1,13 +1,15 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.ParameterException;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.commands.admin.setup.AwsSetupAws;
 import pl.wsztajerowski.baas.commands.admin.setup.SetupAws;
 import pl.wsztajerowski.baas.commands.admin.setup.SetupOptions;
@@ -106,9 +108,9 @@ public class SetupCommand implements Callable<Integer> {
         // Before anything is loaded, resolved or deployed.
         validateFederationOptions();
         Console console = consoleFor.apply(spec.commandLine().getOut());
-        var options = new SetupOptions(BaasApp.deployment(spec), region, deployerProfile, policyFile,
+        var options = new SetupOptions(Invocation.deployment(spec), region, deployerProfile, policyFile,
             githubOrg, githubRepos, revokeGithubOidc, buildImage);
-        return SetupSteps.run(options, BaasApp.configService(spec), console,
+        return SetupSteps.run(options, Invocation.configService(spec), console,
             console.interactive() && !nonInteractive, answerReader, awsFactory);
     }
 

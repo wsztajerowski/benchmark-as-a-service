@@ -4,7 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
-import pl.wsztajerowski.baas.LoggingMixin;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 
 @Command(
     name = "config",

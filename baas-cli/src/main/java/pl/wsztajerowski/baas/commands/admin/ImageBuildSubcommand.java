@@ -1,5 +1,9 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
+import pl.wsztajerowski.baas.infra.DeployerSession;
+
 import pl.wsztajerowski.baas.config.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -8,8 +12,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.infra.AwsClientFactory;
@@ -71,7 +75,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
     @Spec CommandSpec spec;
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     @Override
@@ -101,7 +105,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         // Deployer credentials, like every other `baas admin` subcommand: building an image needs
         // imagebuilder:*, ssm:PutParameter and a widened iam:PassRole, none of which an operator
         // holds. See RunCommand for the other half of that split.
-        var factory = new AwsClientFactory(region, AwsClientFactory.profile(config.getAws().getDeployerProfile()));
+        var factory = DeployerSession.factory(region, config.getAws().getDeployerProfile());
 
         RunnerImageBuild.Result result;
         try {

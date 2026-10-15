@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import pl.wsztajerowski.baas.console.Json;
 
 import org.slf4j.Logger;
@@ -9,8 +11,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Table;
@@ -59,7 +61,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
             logger.error("Unknown --format '{}'. Valid: {}.", format, String.join(", ", FORMATS));
             return 2;
         }
-        List<BaasConfig> deployments = BaasApp.configService(spec).all();
+        List<BaasConfig> deployments = Invocation.configService(spec).all();
         if (format.equalsIgnoreCase("json")) {
             printJson(deployments);
         } else {

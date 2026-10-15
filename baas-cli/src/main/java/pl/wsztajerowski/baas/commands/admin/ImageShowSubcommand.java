@@ -1,5 +1,9 @@
 package pl.wsztajerowski.baas.commands.admin;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
+import pl.wsztajerowski.baas.infra.DeployerSession;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -7,8 +11,8 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.LoggingMixin;
+
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
@@ -42,7 +46,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
 
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     @Override
@@ -51,7 +55,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
         String prefix = config.requirePrefix();
 
         // Deployer credentials, consistent with every other `baas admin` subcommand.
-        var factory = new AwsClientFactory(config.getAws().resolveRegion(), AwsClientFactory.profile(config.getAws().getDeployerProfile()));
+        var factory = DeployerSession.factory(config);
         String parameterName = config.amiParameterPath();
         var console = Console.of(spec.commandLine().getOut());
 

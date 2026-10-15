@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.cli.Invocation;
+
 import pl.wsztajerowski.baas.console.Elapsed;
 
 import pl.wsztajerowski.baas.console.Json;
@@ -17,9 +19,9 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-import pl.wsztajerowski.baas.BaasApp;
+
 import pl.wsztajerowski.baas.BaasVersion;
-import pl.wsztajerowski.baas.LoggingMixin;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.config.BaasConfig;
 import pl.wsztajerowski.baas.config.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
@@ -241,7 +243,7 @@ public class RunCommand implements Callable<Integer> {
     }
 
     private ConfigService configService() {
-        return BaasApp.configService(spec);
+        return Invocation.configService(spec);
     }
 
     @Override
