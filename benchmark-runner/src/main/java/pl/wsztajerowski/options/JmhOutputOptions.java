@@ -1,4 +1,5 @@
-package pl.wsztajerowski.services.options;
+package pl.wsztajerowski.options;
+
 import java.nio.file.Path;
 
 public record JmhOutputOptions(

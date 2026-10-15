@@ -1,17 +1,11 @@
 package pl.wsztajerowski.baas.image;
 
 import pl.wsztajerowski.baas.session.CoreStack;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
-import pl.wsztajerowski.baas.image.ImageBuilderService;
-import pl.wsztajerowski.baas.image.ParentImageResolver;
-import pl.wsztajerowski.baas.image.RunnerImageExtension;
-import pl.wsztajerowski.baas.image.RunnerImageParameters;
-import pl.wsztajerowski.baas.image.RunnerImageRenderer;
 
 import java.io.IOException;
 import java.util.Map;

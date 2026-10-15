@@ -12,9 +12,9 @@ import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.lang.reflect.Method;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import java.lang.reflect.Method;
 
 /**
  * How {@code baas results query} uses the {@code Console}: machine formats stay plain on any

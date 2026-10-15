@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -10,14 +9,10 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.session.OperatorSession;
-import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService;
-import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
-import pl.wsztajerowski.baas.jobs.JobTermination;
 
 import java.util.concurrent.Callable;
 import java.util.function.BooleanSupplier;

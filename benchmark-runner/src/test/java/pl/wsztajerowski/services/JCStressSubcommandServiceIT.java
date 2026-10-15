@@ -10,8 +10,8 @@ import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.entities.MongoMeasurementDocument;
 import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JCStressOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JCStressOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,7 +26,7 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
-import static pl.wsztajerowski.services.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
+import static pl.wsztajerowski.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
 class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
 

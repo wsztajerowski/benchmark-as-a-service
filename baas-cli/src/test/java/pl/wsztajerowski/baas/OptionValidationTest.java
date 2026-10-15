@@ -3,8 +3,6 @@ package pl.wsztajerowski.baas;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
-import pl.wsztajerowski.baas.TestDeployments;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;

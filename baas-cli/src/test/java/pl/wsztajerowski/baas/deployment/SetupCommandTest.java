@@ -1,12 +1,10 @@
 package pl.wsztajerowski.baas.deployment;
 
 import pl.wsztajerowski.baas.aws.BucketProbe;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
-
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;

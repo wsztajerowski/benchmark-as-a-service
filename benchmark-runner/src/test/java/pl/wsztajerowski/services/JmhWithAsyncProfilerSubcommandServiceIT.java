@@ -10,9 +10,9 @@ import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
 import pl.wsztajerowski.entities.MongoMeasurementDocument;
 import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
-import pl.wsztajerowski.services.options.AsyncProfilerOptions;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JmhOptions;
+import pl.wsztajerowski.options.AsyncProfilerOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -26,11 +26,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
 import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
-import static pl.wsztajerowski.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhIterationOptions.jmhIterationOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhJvmOptions.jmhJvmOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhOutputOptions.jmhOutputOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
+import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
+import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
+import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
+import static pl.wsztajerowski.options.JmhOutputOptions.jmhOutputOptionsBuilder;
+import static pl.wsztajerowski.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
 
 @EnabledIfEnvironmentVariable(named = "ASYNC_PATH", matches = ".*")
 class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMongoBaseIT {

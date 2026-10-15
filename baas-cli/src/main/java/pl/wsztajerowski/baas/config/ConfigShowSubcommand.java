@@ -1,12 +1,10 @@
 package pl.wsztajerowski.baas.config;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;

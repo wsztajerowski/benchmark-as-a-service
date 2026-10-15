@@ -1,10 +1,9 @@
 package pl.wsztajerowski.baas.image;
 
-import java.util.regex.Pattern;
-
 import org.junit.jupiter.api.Test;
 import org.yaml.snakeyaml.Yaml;
 
+import java.util.regex.Pattern;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;

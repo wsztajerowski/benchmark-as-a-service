@@ -1,11 +1,8 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.session.CoreStack;
-import pl.wsztajerowski.baas.jobs.UserDataScriptBuilder;
 import pl.wsztajerowski.baas.model.JobItem;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
-import java.util.ArrayList;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.session.DeploymentNames;
@@ -17,6 +14,7 @@ import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.results.ResultRow;
 
+import java.util.ArrayList;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.List;
@@ -40,7 +38,7 @@ public final class JobLaunch {
 
     /** What the command resolved from its options and the deployment's configuration. */
     public record Request(String benchmarkType, List<String> benchmarkParams, Path benchmarkJar, Path runnerJar,
-                          String instanceType, String project, String resultsTable, int timeoutSeconds,
+                          String instanceType, String project, int timeoutSeconds,
                           int watchdogSeconds, Map<String, String> runnerTags, boolean detach,
                           String cliVersion, String sourceRepo) {
         public Request {
@@ -166,14 +164,14 @@ public final class JobLaunch {
             request.benchmarkType(), jobId, resultPath, createdAt, benchmarkJarKey,
             request.timeoutSeconds(), request.watchdogSeconds(),
             runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            request.resultsTable(), job.sortKey(), request.benchmarkParams(), request.runnerTags());
+            deployment.resultsTable(), job.sortKey(), request.benchmarkParams(), request.runnerTags());
         // The script is what actually decides whether a job works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);
 
         var instances = aws.instances(prefix);
-        var current = new JobSession(job, aws.recorder(request.resultsTable()),
-            aws.stopRecorder(request.resultsTable()), instances);
+        var current = new JobSession(job, aws.recorder(deployment.resultsTable()),
+            aws.stopRecorder(deployment.resultsTable()), instances);
 
         // 5. Reserve the job before launching it. An instance without a record is exactly the
         //    invisible job `baas jobs` exists to show, so a reservation that cannot be written
@@ -217,7 +215,7 @@ public final class JobLaunch {
         }
 
         // 8. Poll, then report.
-        return poll(current, request.resultsTable(), request.watchdogSeconds());
+        return poll(current, deployment.resultsTable(), request.watchdogSeconds());
     }
 
     /**

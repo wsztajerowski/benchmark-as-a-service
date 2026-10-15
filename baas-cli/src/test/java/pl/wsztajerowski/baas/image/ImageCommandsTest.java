@@ -6,7 +6,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.image.RunnerImageParameters;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

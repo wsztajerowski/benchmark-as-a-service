@@ -1,9 +1,7 @@
 package pl.wsztajerowski.baas.image;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import pl.wsztajerowski.baas.session.DeployerSession;
-
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -11,17 +9,12 @@ import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
-
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
-import pl.wsztajerowski.baas.image.ImageBuilderService;
-import pl.wsztajerowski.baas.image.RunnerImageExtension;
-import pl.wsztajerowski.baas.image.RunnerImageParameters;
-import pl.wsztajerowski.baas.image.RunnerImageRenderer;
 
 import java.util.concurrent.Callable;
 

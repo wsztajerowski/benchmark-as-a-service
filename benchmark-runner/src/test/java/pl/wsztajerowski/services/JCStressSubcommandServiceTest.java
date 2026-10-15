@@ -2,7 +2,7 @@ package pl.wsztajerowski.services;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -12,7 +12,7 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static pl.wsztajerowski.services.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
+import static pl.wsztajerowski.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
 class JCStressSubcommandServiceTest {
 

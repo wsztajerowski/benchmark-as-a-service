@@ -1,14 +1,13 @@
 package pl.wsztajerowski.baas.results;
 
-import java.nio.file.Path;
 import pl.wsztajerowski.baas.BaasApp;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.results.ResultsQueryService;
 
+import java.nio.file.Path;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.util.ArrayList;

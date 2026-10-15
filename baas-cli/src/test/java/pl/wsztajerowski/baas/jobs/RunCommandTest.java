@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.session.GitProject;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import pl.wsztajerowski.baas.session.BaasConfig;
@@ -18,19 +17,19 @@ class RunCommandTest {
 
     @Test
     void derivesProjectFromTheRepositoryDirectoryName() {
-        assertThat(RunCommand.projectFromToplevel("/Users/dev/workspace/lynx-journal"))
+        assertThat(pl.wsztajerowski.baas.session.GitProject.fromToplevel("/Users/dev/workspace/lynx-journal"))
             .isEqualTo("lynx-journal");
     }
 
     @Test
     void stripsATrailingSeparatorFromTheToplevel() {
-        assertThat(RunCommand.projectFromToplevel("/Users/dev/workspace/lynx-journal/"))
+        assertThat(pl.wsztajerowski.baas.session.GitProject.fromToplevel("/Users/dev/workspace/lynx-journal/"))
             .isEqualTo("lynx-journal");
     }
 
     @Test
     void rejectsAnEmptyToplevel() {
-        assertThat(RunCommand.projectFromToplevel("")).isNull();
+        assertThat(pl.wsztajerowski.baas.session.GitProject.fromToplevel("")).isNull();
     }
 
     /**

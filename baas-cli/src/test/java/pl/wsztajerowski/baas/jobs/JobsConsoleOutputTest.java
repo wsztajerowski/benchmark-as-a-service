@@ -2,6 +2,7 @@ package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.jobs.EnvironmentManifest.Difference;
 
 import java.io.PrintStream;
 import java.io.PrintWriter;
@@ -10,7 +11,6 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import pl.wsztajerowski.baas.jobs.EnvironmentManifest.Difference;
 
 /**
  * How {@code baas run} and {@code baas jobs diff} use the {@code Console}: the job summary stays

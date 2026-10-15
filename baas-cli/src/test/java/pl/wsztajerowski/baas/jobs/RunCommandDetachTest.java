@@ -7,9 +7,6 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.session.DeploymentNames;
-import pl.wsztajerowski.baas.jobs.JobLaunch;
-import pl.wsztajerowski.baas.jobs.JobRecorder;
-import pl.wsztajerowski.baas.jobs.JobSession;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 

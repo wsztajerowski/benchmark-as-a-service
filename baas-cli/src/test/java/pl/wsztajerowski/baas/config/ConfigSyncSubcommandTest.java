@@ -1,7 +1,6 @@
 package pl.wsztajerowski.baas.config;
 
 import pl.wsztajerowski.baas.cli.Invocation;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;

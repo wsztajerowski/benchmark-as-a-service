@@ -1,8 +1,9 @@
 package pl.wsztajerowski.baas.model;
 
 /**
- * The {@code benchmark-runner} options user-data passes. The CLI renders them into the script and
- * the runner declares them in its picocli annotations; both read the names from here, so a renamed
+ * The {@code benchmark-runner} options the CLI and the runner share: user-data passes all but
+ * {@link #PROJECT} (the project travels as a tag), and the runner declares them in its picocli
+ * annotations; both read the names from here, so a renamed
  * option fails to compile on one side instead of failing a paid job on the instance. Constants, not
  * an enum, because annotation attributes need compile-time constants.
  */

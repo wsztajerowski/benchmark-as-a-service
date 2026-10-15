@@ -5,7 +5,6 @@ import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.image.RunnerImageExtension;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;

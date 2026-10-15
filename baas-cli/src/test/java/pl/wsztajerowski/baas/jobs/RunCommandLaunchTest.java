@@ -8,7 +8,6 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.session.OperatorSession;
-import pl.wsztajerowski.baas.jobs.FakeRunAws;
 import pl.wsztajerowski.baas.model.JobStatus;
 
 import java.io.PrintWriter;
@@ -33,6 +32,7 @@ class RunCommandLaunchTest {
 
     private final FakeRunAws aws = new FakeRunAws();
     private final StringWriter out = new StringWriter();
+    private int armedHooks;
 
     private int run(String... args) {
         var config = new BaasConfig();
@@ -42,6 +42,7 @@ class RunCommandLaunchTest {
         command.operatorSession = OperatorSession.adopting(config, null, Map.of());
         command.awsFactory = factory -> aws;
         command.console = Console.plain(new PrintWriter(out));
+        command.shutdownHooks = hook -> armedHooks++;
         return new CommandLine(command).execute(args);
     }
 
@@ -68,6 +69,7 @@ class RunCommandLaunchTest {
         assertThat(summary.get("instanceId").asText()).isEqualTo("i-1");
         assertThat(summary.get("resultPath").asText()).isEqualTo("jobs/lynx-journal/" + summary.get("jobId").asText());
         assertThat(aws.uploads).hasSize(2);
+        assertThat(armedHooks).as("the hook is armed once the job is reserved").isEqualTo(1);
     }
 
     @Test
@@ -99,5 +101,6 @@ class RunCommandLaunchTest {
 
         assertThat(exit).isNotZero();
         assertThat(aws.events).isEmpty();
+        assertThat(armedHooks).isZero();
     }
 }
