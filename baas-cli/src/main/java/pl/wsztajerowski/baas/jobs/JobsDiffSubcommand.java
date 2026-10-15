@@ -11,7 +11,6 @@ import picocli.CommandLine.Spec;
 import picocli.CommandLine.Parameters;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
@@ -70,9 +69,6 @@ public class JobsDiffSubcommand implements Callable<Integer> {
         return new JobPaths(factory.dynamoDb(), config.resultsTable());
     }
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() {

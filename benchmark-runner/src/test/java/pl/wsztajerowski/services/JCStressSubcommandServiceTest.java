@@ -24,16 +24,15 @@ class JCStressSubcommandServiceTest {
     @Test
     void aProcessThatWroteNoReportFailsNamingItsExitCode(@TempDir Path tmp) {
         List<Path> saved = new ArrayList<>();
-        var sut = JCStressSubcommandServiceBuilder.serviceBuilder()
-            .withBenchmarkPath(tmp.resolve("absent.jar"))
-            .withCommonOptions(new CommonSharedOptions(tmp.resolve("result"), "req-1", Instant.now(), "p", Map.of()))
-            .withStorageService((storagePath, localPath) -> saved.add(storagePath))
-            .withResultsStore(measurements -> { throw new AssertionError("nothing should be stored"); })
-            .withJCStressOptions(jcStressOptionsBuilder()
+        var sut = new JCStressSubcommandService(
+            (storagePath, localPath) -> saved.add(storagePath),
+            measurements -> { throw new AssertionError("nothing should be stored"); },
+            new CommonSharedOptions(tmp.resolve("result"), "req-1", Instant.now(), "p", Map.of()),
+            tmp.resolve("absent.jar"),
+            jcStressOptionsBuilder()
                 .withReportPath(tmp.resolve("report"))
                 .withProcessOutput(tmp.resolve("jcstress-output.txt"))
-                .build())
-            .build();
+                .build());
 
         assertThatThrownBy(sut::executeCommand)
             .hasMessageContaining("exit code 1")
@@ -57,16 +56,15 @@ class JCStressSubcommandServiceTest {
     }
 
     private static JCStressSubcommandService serviceWith(Path tmp, String mode) {
-        return JCStressSubcommandServiceBuilder.serviceBuilder()
-            .withBenchmarkPath(tmp.resolve("tests.jar"))
-            .withCommonOptions(new CommonSharedOptions(tmp.resolve("result"), "req-1", Instant.now(), "p", Map.of()))
-            .withStorageService((storagePath, localPath) -> { })
-            .withResultsStore(measurements -> { })
-            .withJCStressOptions(jcStressOptionsBuilder()
+        return new JCStressSubcommandService(
+            (storagePath, localPath) -> { },
+            measurements -> { },
+            new CommonSharedOptions(tmp.resolve("result"), "req-1", Instant.now(), "p", Map.of()),
+            tmp.resolve("tests.jar"),
+            jcStressOptionsBuilder()
                 .withReportPath(tmp.resolve("report"))
                 .withProcessOutput(tmp.resolve("jcstress-output.txt"))
                 .withMode(mode)
-                .build())
-            .build();
+                .build());
     }
 }

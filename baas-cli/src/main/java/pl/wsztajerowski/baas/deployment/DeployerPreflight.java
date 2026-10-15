@@ -57,7 +57,7 @@ public class DeployerPreflight {
      * @return actions the simulator reported as denied, in policy order; empty when it could not
      * run at all
      */
-    public List<String> simulate(String callerArn, String renderedPolicy) {
+    List<String> simulate(String callerArn, String renderedPolicy) {
         return check(callerArn, renderedPolicy).orElse(List.of());
     }
 

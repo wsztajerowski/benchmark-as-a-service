@@ -11,7 +11,6 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
 
@@ -59,9 +58,6 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
         return session;
     }
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() {

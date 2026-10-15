@@ -54,7 +54,7 @@ public class RunnerImageRenderer {
     }
 
     /** The lowest {@code java.specification.version} the contract accepts. */
-    public int javaFloor() {
+    int javaFloor() {
         return javaFloor;
     }
 

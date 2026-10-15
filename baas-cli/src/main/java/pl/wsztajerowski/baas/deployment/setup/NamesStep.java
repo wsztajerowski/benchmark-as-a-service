@@ -4,7 +4,6 @@ import pl.wsztajerowski.baas.session.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.aws.BucketProbe;
-import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 
 import java.util.Optional;
 
@@ -83,9 +82,5 @@ final class NamesStep implements SetupStep {
                 Nothing was deployed.""".formatted(table, region));
         }
         return Optional.empty();
-    }
-
-    static boolean rolledBack(SetupContext context) {
-        return context.stackStatus.isPresent() && context.stackStatus.get() == StackStatus.ROLLBACK_COMPLETE;
     }
 }

@@ -12,8 +12,6 @@
     <artifactId>benchmark-runner</artifactId>
     <name>Benchmark runner</name>
 
-    <properties>
-    </properties>
 
     <dependencies>
         <dependency>

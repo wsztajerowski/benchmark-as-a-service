@@ -25,7 +25,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
-import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
 class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
@@ -51,13 +50,12 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 .withSplitCompilationModes(false)
                 .withProcessOutput(tempDirectory.resolve("jcstress.txt"))
                 .build();
-        JCStressSubcommandService sut = serviceBuilder()
-            .withResultsStore(new MongoResultsStore(datastore()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", LAUNCH_INSTANT, "test-project", Collections.emptyMap()))
-            .withJCStressOptions(jcStressOptions)
-            .withBenchmarkPath(Path.of("target", "fake-stress-tests.jar").toAbsolutePath())
-            .build();
+        JCStressSubcommandService sut = new JCStressSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            new MongoResultsStore(datastore()),
+            new CommonSharedOptions(Path.of("test-1"), "req-1", LAUNCH_INSTANT, "test-project", Collections.emptyMap()),
+            Path.of("target", "fake-stress-tests.jar").toAbsolutePath(),
+            jcStressOptions);
 
         // when
         sut.executeCommand();

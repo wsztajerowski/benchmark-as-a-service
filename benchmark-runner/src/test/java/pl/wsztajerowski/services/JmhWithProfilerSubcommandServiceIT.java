@@ -47,17 +47,11 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
         Path result = Files.createTempFile("results", "jmh.json");
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path profileResults = Files.createTempDirectory("prof-results");
-        JmhWithProfilerSubcommandService sut = JmhWithProfilerSubcommandServiceBuilder.serviceBuilder()
-            .withResultsStore(new MongoResultsStore(datastore()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(profileResults, "req-1", Instant.now(), "test-project", Map.of()))
-            .withProfilerOptions(Map.of(
-                "gc", "churn=false;alloc=false",
-                "comp", "",
-                "cl", "",
-                "jfr", "stackDepth=20")
-            )
-            .withJmhOptions( new JmhOptions(
+        JmhWithProfilerSubcommandService sut = new JmhWithProfilerSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            new MongoResultsStore(datastore()),
+            new CommonSharedOptions(profileResults, "req-1", Instant.now(), "test-project", Map.of()),
+            new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
@@ -72,8 +66,12 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
                 jmhIterationOptionsBuilder()
                     .withIterations(1)
                     .build(),
-                jmhJvmOptionsBuilder().build()))
-            .build();
+                jmhJvmOptionsBuilder().build()),
+            Map.of(
+                "gc", "churn=false;alloc=false",
+                "comp", "",
+                "cl", "",
+                "jfr", "stackDepth=20"));
 
         // when
         sut.executeCommand();
@@ -115,12 +113,11 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
         Path result = Files.createTempFile("results", "jmh.json");
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path profileResults = Files.createTempDirectory("prof-results");
-        JmhWithProfilerSubcommandService sut = JmhWithProfilerSubcommandServiceBuilder.serviceBuilder()
-            .withResultsStore(new MongoResultsStore(datastore()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(profileResults, "req-gc-only", Instant.now(), "test-project", Map.of()))
-            .withProfilerOptions(Map.of("gc", ""))
-            .withJmhOptions( new JmhOptions(
+        JmhWithProfilerSubcommandService sut = new JmhWithProfilerSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            new MongoResultsStore(datastore()),
+            new CommonSharedOptions(profileResults, "req-gc-only", Instant.now(), "test-project", Map.of()),
+            new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
@@ -135,8 +132,8 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithS3AndMongoBas
                 jmhIterationOptionsBuilder()
                     .withIterations(1)
                     .build(),
-                jmhJvmOptionsBuilder().build()))
-            .build();
+                jmhJvmOptionsBuilder().build()),
+            Map.of("gc", ""));
 
         // when
         sut.executeCommand();

@@ -834,7 +834,7 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
 
 A `BenchmarkType` constant in `baas-model` (its name is the runner subcommand, the `baas run`
 argument and an entry in `run`'s help, and it names the process-output file), then on the runner a subcommand class in
-`commands/` named by that constant, a service + builder in `services/`, an options record in
+`commands/` named by that constant, a service in `services/`, an options record in
 `options/`, and registration in `TestWrapper`'s `subcommands` list.
 `RunnerArgsContractTest` fails until the runner and the model agree.
 

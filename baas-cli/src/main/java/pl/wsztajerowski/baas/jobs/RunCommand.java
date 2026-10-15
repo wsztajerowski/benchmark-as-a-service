@@ -15,7 +15,6 @@ import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.BaasVersion;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
@@ -80,7 +79,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     OperatorSession operatorSession() {
         if (operatorSession == null) {
-            operatorSession = OperatorSession.of(configService());
+            operatorSession = OperatorSession.of(Invocation.configService(spec));
         }
         return operatorSession;
     }
@@ -185,9 +184,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         return "json".equalsIgnoreCase(format);
     }
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() throws Exception {

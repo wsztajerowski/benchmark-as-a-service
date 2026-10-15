@@ -1,5 +1,7 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.services.JCStressSubcommandService;
 import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.RunnerArgs;
 import picocli.CommandLine.Command;
@@ -9,8 +11,6 @@ import picocli.CommandLine.Option;
 import java.nio.file.Path;
 
 import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
-import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
-import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 
 @Command(name = BenchmarkType.JCSTRESS_NAME, description = "Run JCStress performance tests")
 public class JCStressSubcommand implements Runnable {
@@ -28,13 +28,12 @@ public class JCStressSubcommand implements Runnable {
 
     @Override
     public void run() {
-        serviceBuilder()
-            .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
-            .withJCStressOptions(apiJCStressOptions.getValues())
-            .withBenchmarkPath(benchmarkPath)
-            .withStorageService(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
-            .withResultsStore(apiCommonSharedOptions.buildResultsStore())
-            .build()
-            .executeCommand();
+        // In the order the builder used to evaluate them: the request options can refuse the run
+        // (no project) before any client is built or any storage line is logged.
+        var common = apiCommonSharedOptions.getRequestOptions();
+        var jcstress = apiJCStressOptions.getValues();
+        var storage = StorageService.of(apiCommonSharedOptions.getS3Options());
+        var store = apiCommonSharedOptions.buildResultsStore();
+        new JCStressSubcommandService(storage, store, common, benchmarkPath, jcstress).executeCommand();
     }
 }

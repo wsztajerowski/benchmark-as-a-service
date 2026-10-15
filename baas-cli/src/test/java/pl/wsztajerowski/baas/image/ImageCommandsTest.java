@@ -83,15 +83,15 @@ class ImageCommandsTest {
     /** Building it would replace the newer component, and the older one registers cleanly. */
     @Test
     void buildImageRefusesABaseOlderThanTheDeployments() {
-        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
+        assertThat(RunnerImageBuild.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
             .contains("1.3.0", "1.4.0", "baas-123456789012", "Upgrade the CLI", "Nothing was changed");
     }
 
     @Test
     void buildImageAllowsTheSameOrANewerBaseAndAFirstBuild() {
-        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", "1.3.0", "p")).isNull();
-        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.4.0", "1.3.0", "p")).isNull();
-        assertThat(ImageBuildSubcommand.olderBaseRefusal("1.3.0", null, "p"))
+        assertThat(RunnerImageBuild.olderBaseRefusal("1.3.0", "1.3.0", "p")).isNull();
+        assertThat(RunnerImageBuild.olderBaseRefusal("1.4.0", "1.3.0", "p")).isNull();
+        assertThat(RunnerImageBuild.olderBaseRefusal("1.3.0", null, "p"))
             .as("a stack with no image parameter yet has nothing to downgrade")
             .isNull();
     }
