@@ -1,8 +1,13 @@
 package pl.wsztajerowski.baas.infra;
 
+import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
+import pl.wsztajerowski.baas.model.RunnerArgs;
 import pl.wsztajerowski.baas.model.TagKeys;
-import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemConditions;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.ResultKeys;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -24,7 +29,7 @@ public class UserDataScriptBuilder {
     static final int USER_DATA_LIMIT_BYTES = 16 * 1024;
 
     // Static script body — variables are prepended by build()
-    private static final String SCRIPT_BODY = withoutCommentLines("""
+    private static final String SCRIPT_BODY = withoutCommentLines(withContractNames("""
         # Job status lives on the job item (pk = JOB) in the results table, not in S3. Defined
         # first, before anything else runs: the watchdog below is a forked subshell, which sees
         # only the functions defined before the fork, and `job_status timed-out` runs in it. A
@@ -46,18 +51,18 @@ public class UserDataScriptBuilder {
           local status="$1" attempts="${2:-3}" update names values err rc
           if [[ -n "${INSTANCE_ID}" ]]; then
             update='SET #status = :s, #instanceId = if_not_exists(#instanceId, :iid)'
-            names='{"#status":"status","#instanceId":"instanceId"}'
+            names='{"#status":"@STATUS@","#instanceId":"@INSTANCE_ID@"}'
             values='{":s":{"S":"'"${status}"'"},":iid":{"S":"'"${INSTANCE_ID}"'"},'"${JOB_STATUS_GUARD_VALUES}"'}'
           else
             update='SET #status = :s'
-            names='{"#status":"status"}'
+            names='{"#status":"@STATUS@"}'
             values='{":s":{"S":"'"${status}"'"},'"${JOB_STATUS_GUARD_VALUES}"'}'
           fi
           err=$(AWS_RETRY_MODE=standard AWS_MAX_ATTEMPTS="${attempts}" aws dynamodb update-item \
             --region "${AWS_REGION}" --table-name "${RESULTS_TABLE}" \
-            --key '{"pk":{"S":"JOB"},"sk":{"S":"'"${JOB_SORT_KEY}"'"}}' \
+            --key '{"@PK@":{"S":"@JOB_PARTITION@"},"@SK@":{"S":"'"${JOB_SORT_KEY}"'"}}' \
             --update-expression "${update}" \
-            --condition-expression "attribute_exists(pk) AND ${JOB_STATUS_GUARD}" \
+            --condition-expression "@EXISTS@ AND ${JOB_STATUS_GUARD}" \
             --expression-attribute-names "${names}" \
             --expression-attribute-values "${values}" \
             --cli-connect-timeout 5 --cli-read-timeout 10 2>&1 >/dev/null)
@@ -87,7 +92,7 @@ public class UserDataScriptBuilder {
           # This path never reaches the normal upload below, and it is exactly the
           # case a user needs the log for — ship it before the instance disappears.
           aws s3 cp /var/log/cloud-init-output.log \\
-            "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
+            "s3://${S3_BUCKET}/${RESULT_PATH}/@BOOT_LOG@" || true
           aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
         ) &
 
@@ -104,7 +109,7 @@ public class UserDataScriptBuilder {
         if [[ $? -eq 2 ]]; then
           echo "Job already has an outcome, or has no job item: not starting the benchmark."
           aws s3 cp /var/log/cloud-init-output.log \\
-            "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
+            "s3://${S3_BUCKET}/${RESULT_PATH}/@BOOT_LOG@" || true
           aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
           exit 0
         fi
@@ -225,8 +230,8 @@ public class UserDataScriptBuilder {
         # stay readable.
         rpm -qa | sort > /app/packages.txt
 
-        aws s3 cp /app/environment.json "s3://${S3_BUCKET}/${RESULT_PATH}/environment.json"
-        aws s3 cp /app/packages.txt "s3://${S3_BUCKET}/${RESULT_PATH}/packages.txt"
+        aws s3 cp /app/environment.json "s3://${S3_BUCKET}/${RESULT_PATH}/@ENVIRONMENT@"
+        aws s3 cp /app/packages.txt "s3://${S3_BUCKET}/${RESULT_PATH}/@PACKAGES@"
 
         # The runner JAR comes from the bucket and nowhere else. It used to be resolved at boot
         # from an unpinned upstream "newest release" pointer, so two jobs a week apart could
@@ -259,19 +264,19 @@ public class UserDataScriptBuilder {
         # the observed value in charge even if a reserved key ever slips past the
         # CLI-side guard above.
         timeout "${BENCHMARK_TIMEOUT}" java -jar /app/benchmark-runner.jar "${BENCHMARK_TYPE}" \\
-          --job-id     "${JOB_ID}" \\
-          --created-at     "${CREATED_AT}" \\
-          --result-path    "${RESULT_PATH}" \\
-          --s3-bucket      "${S3_BUCKET}" \\
-          --benchmark-path /app/benchmark-under-test.jar \\
-          --results-table  "${RESULTS_TABLE}" \\
+          @JOB_ID_FLAG@     "${JOB_ID}" \\
+          @CREATED_AT_FLAG@     "${CREATED_AT}" \\
+          @RESULT_PATH_FLAG@    "${RESULT_PATH}" \\
+          @S3_BUCKET_FLAG@      "${S3_BUCKET}" \\
+          @BENCHMARK_PATH_FLAG@ /app/benchmark-under-test.jar \\
+          @RESULTS_TABLE_FLAG@  "${RESULTS_TABLE}" \\
           "${RUNNER_TAGS_ARRAY[@]}" \\
-          --tag "imageVersion=${IMAGE_VERSION_ACTUAL}" \\
-          --tag "instanceType=${INSTANCE_TYPE}" \\
-          --tag "jdk=${JDK_VERSION}" \\
-          --tag "jvmVendor=${JVM_VENDOR_RAW}" \\
-          --tag "cpuModel=${CPU_MODEL_RAW}" \\
-          --tag "cpuArch=${CPU_ARCH}" \\
+          @TAG_FLAG@ "@IMAGE_VERSION_TAG@=${IMAGE_VERSION_ACTUAL}" \\
+          @TAG_FLAG@ "@INSTANCE_TYPE_TAG@=${INSTANCE_TYPE}" \\
+          @TAG_FLAG@ "@JDK_TAG@=${JDK_VERSION}" \\
+          @TAG_FLAG@ "@JVM_VENDOR_TAG@=${JVM_VENDOR_RAW}" \\
+          @TAG_FLAG@ "@CPU_MODEL_TAG@=${CPU_MODEL_RAW}" \\
+          @TAG_FLAG@ "@CPU_ARCH_TAG@=${CPU_ARCH}" \\
           "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 
@@ -282,13 +287,13 @@ public class UserDataScriptBuilder {
         # Ship the boot log before self-terminating — the instance is about to disappear
         # and this is the only record of what went wrong on a failed job.
         aws s3 cp /var/log/cloud-init-output.log \\
-          "s3://${S3_BUCKET}/${RESULT_PATH}/cloud-init-output.log" || true
+          "s3://${S3_BUCKET}/${RESULT_PATH}/@BOOT_LOG@" || true
 
         # Self-termination, with the watchdog left armed: if this request fails, the watchdog
         # is what remains. The instance is launched with shutdown behaviour TERMINATE, so an OS
         # shutdown terminates it without an API call, a permission or an instance id.
         aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
-        """);
+        """));
 
     public String build(String region, String bucket, String benchmarkType,
                         String jobId, String resultPath, String createdAt,
@@ -297,7 +302,7 @@ public class UserDataScriptBuilder {
                         String runnerJarS3Key, String resultsTableName, String jobSortKey,
                         List<String> benchmarkParams, Map<String, String> runnerTags) {
         List<String> tagArgs = runnerTags.entrySet().stream()
-            .flatMap(e -> Stream.of("--tag", e.getKey() + "=" + e.getValue()))
+            .flatMap(e -> Stream.of(RunnerArgs.TAG, e.getKey() + "=" + e.getValue()))
             .toList();
 
         String script = "#!/bin/bash\n" +
@@ -325,7 +330,7 @@ public class UserDataScriptBuilder {
             // Instant.toString(), whose width varies, so a key the shell rebuilt from it would
             // address a different item from the one the CLI reserved.
             export("JOB_SORT_KEY", jobSortKey) +
-            export("JOB_STATUS_GUARD", DynamoDbJobRecorder.NOT_TERMINAL) +
+            export("JOB_STATUS_GUARD", JobItemConditions.NOT_TERMINAL) +
             export("JOB_STATUS_GUARD_VALUES", guardValues()) +
             array("BENCHMARK_PARAMS_ARRAY", benchmarkParams) +
             array("RUNNER_TAGS_ARRAY", tagArgs) +
@@ -335,6 +340,47 @@ public class UserDataScriptBuilder {
         return Base64.getEncoder().encodeToString(script.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * Every name the script shares with another runtime, taken from {@code baas-model} rather than
+     * spelled here: the artifact names the CLI's readers look for, the job item's key and attribute
+     * names the CLI's recorder writes, the runner's option names and the observed tag keys. The
+     * script's text is the same either way; what changes is that a rename in the model reaches the
+     * instance instead of compiling cleanly and failing a paid job. Done once, at class load.
+     */
+    private static String withContractNames(String body) {
+        Map<String, String> names = new java.util.LinkedHashMap<>();
+        names.put("@BOOT_LOG@", JobLayout.BOOT_LOG_NAME);
+        names.put("@ENVIRONMENT@", JobLayout.ENVIRONMENT_NAME);
+        names.put("@PACKAGES@", JobLayout.PACKAGES_NAME);
+        names.put("@PK@", MeasurementItemMapper.PK);
+        names.put("@SK@", MeasurementItemMapper.SK);
+        names.put("@JOB_PARTITION@", ResultKeys.JOB_PARTITION_KEY);
+        names.put("@STATUS@", JobItemMapper.STATUS);
+        names.put("@INSTANCE_ID@", JobItemMapper.INSTANCE_ID);
+        names.put("@EXISTS@", JobItemConditions.EXISTS);
+        names.put("@JOB_ID_FLAG@", RunnerArgs.JOB_ID);
+        names.put("@CREATED_AT_FLAG@", RunnerArgs.CREATED_AT);
+        names.put("@RESULT_PATH_FLAG@", RunnerArgs.RESULT_PATH);
+        names.put("@S3_BUCKET_FLAG@", RunnerArgs.S3_BUCKET);
+        names.put("@BENCHMARK_PATH_FLAG@", RunnerArgs.BENCHMARK_PATH);
+        names.put("@RESULTS_TABLE_FLAG@", RunnerArgs.RESULTS_TABLE);
+        names.put("@TAG_FLAG@", RunnerArgs.TAG);
+        names.put("@IMAGE_VERSION_TAG@", TagKeys.IMAGE_VERSION);
+        names.put("@INSTANCE_TYPE_TAG@", TagKeys.INSTANCE_TYPE);
+        names.put("@JDK_TAG@", TagKeys.JDK);
+        names.put("@JVM_VENDOR_TAG@", TagKeys.JVM_VENDOR);
+        names.put("@CPU_MODEL_TAG@", TagKeys.CPU_MODEL);
+        names.put("@CPU_ARCH_TAG@", TagKeys.CPU_ARCH);
+        String rendered = body;
+        for (var name : names.entrySet()) {
+            rendered = rendered.replace(name.getKey(), name.getValue());
+        }
+        if (rendered.matches("(?s).*@[A-Z_]+@.*")) {
+            throw new IllegalStateException("user-data template holds a name with no value");
+        }
+        return rendered;
+    }
+
     private static String withoutCommentLines(String body) {
         return body.lines()
             .filter(line -> !line.stripLeading().startsWith("#"))
@@ -342,11 +388,11 @@ public class UserDataScriptBuilder {
     }
 
     /**
-     * The values {@link DynamoDbJobRecorder#NOT_TERMINAL} names, as the body of a JSON object, so
+     * The values {@link JobItemConditions#NOT_TERMINAL} names, as the body of a JSON object, so
      * the shell's guard reads the same terminal set the CLI's does — from {@link JobStatus}.
      */
     static String guardValues() {
-        return DynamoDbJobRecorder.NOT_TERMINAL_VALUES.entrySet().stream()
+        return JobItemConditions.NOT_TERMINAL_VALUES.entrySet().stream()
             .map(e -> "\"" + e.getKey() + "\":{\"S\":\"" + e.getValue() + "\"}")
             .collect(java.util.stream.Collectors.joining(","));
     }

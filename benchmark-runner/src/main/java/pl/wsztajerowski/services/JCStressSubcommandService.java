@@ -1,5 +1,9 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
+import pl.wsztajerowski.baas.model.JobLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -72,7 +76,7 @@ public class JCStressSubcommandService {
 
         logger.info("Saving test outputs on S3");
         storageService
-            .saveFile(outputPath.resolve("jcstress-output.txt"), jcStressOptions.processOutput());
+            .saveFile(outputPath.resolve(BenchmarkType.JCSTRESS.processOutputName()), jcStressOptions.processOutput());
         JobLogs.upload(storageService, outputPath);
 
         // Not fatal on its own: whether JCStress exits non-zero for failed tests is not something
@@ -109,7 +113,7 @@ public class JCStressSubcommandService {
             commonOptions.createdAt(),
             commonOptions.tags(),
             outputPath.toString(),
-            outputPath.resolve("environment.json").toString()));
+            outputPath.resolve(JobLayout.ENVIRONMENT_NAME).toString()));
 
         logger.info("Storing JCStress summary for request {}", commonOptions.jobId());
         resultsStore.write(measurements);

@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.commands;
 
+import pl.wsztajerowski.baas.model.JobLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -122,8 +124,8 @@ public class JobsDiffSubcommand implements Callable<Integer> {
             // Same AMI, same packages: user-data installs nothing, so the lists are read only when
             // the images differ.
             if (!a.amiId().equals(b.amiId())) {
-                var listA = storage.getObjectIfExists(bucket, pathA + "/packages.txt");
-                var listB = storage.getObjectIfExists(bucket, pathB + "/packages.txt");
+                var listA = storage.getObjectIfExists(bucket, JobLayout.artifactKey(pathA, JobLayout.PACKAGES_NAME));
+                var listB = storage.getObjectIfExists(bucket, JobLayout.artifactKey(pathB, JobLayout.PACKAGES_NAME));
                 if (listA.isPresent() && listB.isPresent()) {
                     packages = PackagesDiff.of(listA.get(), listB.get());
                 } else {
@@ -196,7 +198,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
     }
 
     private Optional<EnvironmentManifest> fetch(S3UploadService storage, String bucket, String jobId, String resultPath) {
-        String key = resultPath + "/environment.json";
+        String key = JobLayout.artifactKey(resultPath, JobLayout.ENVIRONMENT_NAME);
         var body = storage.getObjectIfExists(bucket, key);
         if (body.isEmpty()) {
             logger.error("Job {} has no environment.json (s3://{}/{}): a job whose instance never booted "

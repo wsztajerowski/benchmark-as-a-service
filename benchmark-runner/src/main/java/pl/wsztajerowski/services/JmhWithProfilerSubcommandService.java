@@ -1,5 +1,7 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -59,7 +61,7 @@ public class JmhWithProfilerSubcommandService {
 
             logger.info("Saving benchmark profiler(s) process output on S3");
             storageService
-                .saveFile(outputPath.resolve("jmh-profiler-output.txt"), jmhOptions.outputOptions().processOutput());
+                .saveFile(outputPath.resolve(BenchmarkType.JMH_WITH_PROF.processOutputName()), jmhOptions.outputOptions().processOutput());
             JobLogs.upload(storageService, outputPath);
 
             if (exitCode != 0) {

@@ -1,5 +1,7 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.RunnerArgs;
+
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -22,7 +24,7 @@ public class ApiJmhOptions {
 
     Path benchmarkPath = getWorkingDirectory().resolve("jmh-benchmarks.jar");
 
-    @Option(names = "--benchmark-path", description = "Path to benchmark jar (default: ${DEFAULT-VALUE})")
+    @Option(names = RunnerArgs.BENCHMARK_PATH, description = "Path to benchmark jar (default: ${DEFAULT-VALUE})")
     public void setBenchmarkPath(Path path) {
         if(!Files.exists(path)){
             throw new ParameterException(spec.commandLine(),

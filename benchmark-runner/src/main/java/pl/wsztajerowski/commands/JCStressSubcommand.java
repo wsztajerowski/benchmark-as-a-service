@@ -1,5 +1,9 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
+import pl.wsztajerowski.baas.model.RunnerArgs;
+
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Option;
@@ -10,7 +14,7 @@ import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JCStressSubcommandServiceBuilder.serviceBuilder;
 
-@Command(name = "jcstress", description = "Run JCStress performance tests")
+@Command(name = BenchmarkType.JCSTRESS_NAME, description = "Run JCStress performance tests")
 public class JCStressSubcommand implements Runnable {
     @Mixin
     LoggingMixin loggingMixin;
@@ -21,7 +25,7 @@ public class JCStressSubcommand implements Runnable {
     @Mixin
     private ApiJCStressOptions apiJCStressOptions;
 
-    @Option(names = "--benchmark-path", description = "Path to JCStress benchmark jar (default: ${DEFAULT-VALUE})")
+    @Option(names = RunnerArgs.BENCHMARK_PATH, description = "Path to JCStress benchmark jar (default: ${DEFAULT-VALUE})")
     Path benchmarkPath = getWorkingDirectory().resolve("stress-tests.jar");
 
     @Override

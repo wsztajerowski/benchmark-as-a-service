@@ -1,12 +1,14 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 
 import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
 import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
 
-@Command(name = "jmh", description = "Run JHM benchmarks")
+@Command(name = BenchmarkType.JMH_NAME, description = "Run JHM benchmarks")
 public class JmhSubcommand implements Runnable {
     @Mixin LoggingMixin loggingMixin;
 

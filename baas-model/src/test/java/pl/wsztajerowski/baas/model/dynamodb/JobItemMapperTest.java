@@ -1,4 +1,9 @@
-package pl.wsztajerowski.baas.model;
+package pl.wsztajerowski.baas.model.dynamodb;
+import pl.wsztajerowski.baas.model.ResultKeys;
+
+import pl.wsztajerowski.baas.model.StoredMeasurementFixtures;
+import pl.wsztajerowski.baas.model.JobStatus;
+import pl.wsztajerowski.baas.model.JobItem;
 
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;

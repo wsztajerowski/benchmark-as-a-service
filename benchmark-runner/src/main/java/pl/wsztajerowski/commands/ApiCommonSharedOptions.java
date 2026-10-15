@@ -1,5 +1,7 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.RunnerArgs;
+
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -20,24 +22,24 @@ import java.util.Optional;
 
 @Command
 public class ApiCommonSharedOptions {
-    @Option(names = "--tag")
+    @Option(names = RunnerArgs.TAG)
     Map<String, String> tags;
 
-    @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
+    @Option(names = RunnerArgs.RESULT_PATH, description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
     Path resultPath;
 
-    @Option(names = {"-id","--job-id"}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
+    @Option(names = {"-id", RunnerArgs.JOB_ID}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
     String jobId;
 
-    @Option(names = "--created-at",
+    @Option(names = RunnerArgs.CREATED_AT,
         description = "The job's instant, supplied by the launching CLI so the job identifier and the "
             + "stored timestamp cannot disagree. Default: now.")
     String createdAt;
 
-    @Option(names = "--project", description = "Project name; composes the results partition key.")
+    @Option(names = RunnerArgs.PROJECT, description = "Project name; composes the results partition key.")
     String project;
 
-    @Option(names = "--results-table", description = "DynamoDB table holding benchmark measurements.")
+    @Option(names = RunnerArgs.RESULTS_TABLE, description = "DynamoDB table holding benchmark measurements.")
     String resultsTableName;
 
     @Option(names = "--dynamodb-endpoint",
@@ -54,7 +56,7 @@ public class ApiCommonSharedOptions {
     ApiS3Options s3Options;
 
     static class ApiS3Options {
-        @Option(names = "--s3-bucket", required = true, description = "S3 bucket name where benchmark will be placed.")
+        @Option(names = RunnerArgs.S3_BUCKET, required = true, description = "S3 bucket name where benchmark will be placed.")
         String s3BucketName;
 
         @Option(names = "--s3-service-endpoint",

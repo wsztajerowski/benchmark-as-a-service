@@ -1,5 +1,7 @@
 package pl.wsztajerowski.results;
 
+import pl.wsztajerowski.baas.model.JobLayout;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
@@ -39,11 +41,11 @@ public final class JmhRunResults {
         Function<JmhResult, String> profilerOutputPath) {
 
         Path outputPath = commonOptions.resultPath();
-        Path resultJsonKey = outputPath.resolve("jmh-result.json");
+        Path resultJsonKey = outputPath.resolve(JobLayout.RESULT_JSON_NAME);
         logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
         storageService.saveFile(resultJsonKey, machineReadableOutput);
 
-        String environmentJsonKey = outputPath.resolve("environment.json").toString();
+        String environmentJsonKey = outputPath.resolve(JobLayout.ENVIRONMENT_NAME).toString();
         // One timestamp per job, not one per result: the sort key already separates measurements
         // by class, method and mode, and a per-result clock read would make two results from the
         // same job differ by a stray millisecond. The instant comes from whoever named the job, so

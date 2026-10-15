@@ -2,7 +2,6 @@ package pl.wsztajerowski.baas.infra;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
 import pl.wsztajerowski.baas.model.JobStatus;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
@@ -257,20 +256,55 @@ class UserDataScriptBuilderTest {
         assertThat(script).doesNotContain("${CREATED_AT}#");
     }
 
+    /**
+     * The instance's {@code update-item} addresses the item the CLI reserved: the key's attribute
+     * names and partition value are the ones {@code JobItemMapper.key} builds, and the attributes it
+     * sets are the mapper's. Rendered from the model, so a rename there reaches the shell — a key
+     * the shell spelled itself would make every {@code running} write a refusal, and every job would
+     * ship its boot log and terminate unstarted.
+     */
+    @Test
+    void theInstancesStatusWriteAddressesTheItemTheCliReserved() {
+        String script = script();
+        var key = pl.wsztajerowski.baas.model.dynamodb.JobItemMapper.key(java.time.Instant.parse("2026-08-20T17:44:32.812Z"),
+            "20260820T174432812Z-a3f9c21b");
+        var names = new java.util.ArrayList<>(key.keySet());
+        assertThat(names).hasSize(2);
+        String partition = key.get(pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK).s();
+        assertThat(script).contains("--key '{\"" + pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK
+            + "\":{\"S\":\"" + partition + "\"},\"" + pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.SK
+            + "\":{\"S\":\"'\"${JOB_SORT_KEY}\"'\"}}'");
+        assertThat(names).containsExactlyInAnyOrder(pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK,
+            pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.SK);
+        assertThat(script).contains("\"#status\":\"" + pl.wsztajerowski.baas.model.dynamodb.JobItemMapper.STATUS + "\"")
+            .contains("\"#instanceId\":\"" + pl.wsztajerowski.baas.model.dynamodb.JobItemMapper.INSTANCE_ID + "\"");
+        assertThat(script).doesNotContainPattern("@[A-Z_]+@");
+    }
+
+    /** The artifact names the CLI's readers look for are the ones the instance uploads. */
+    @Test
+    void theInstanceUploadsItsArtifactsUnderTheModelsNames() {
+        String script = script();
+        for (String name : java.util.List.of(pl.wsztajerowski.baas.model.JobLayout.BOOT_LOG_NAME,
+            pl.wsztajerowski.baas.model.JobLayout.ENVIRONMENT_NAME, pl.wsztajerowski.baas.model.JobLayout.PACKAGES_NAME)) {
+            assertThat(script).contains("\"s3://${S3_BUCKET}/${RESULT_PATH}/" + name + "\"");
+        }
+    }
+
     /** The shell's guard is the CLI's own expression and values, so "terminal" means one thing. */
     @Test
     void theTerminalGuardIsTheCLIsOwn() {
         String script = script();
 
-        assertThat(script).contains("export JOB_STATUS_GUARD='" + pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder.NOT_TERMINAL + "'");
+        assertThat(script).contains("export JOB_STATUS_GUARD='" + pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL + "'");
         assertThat(script).contains("--condition-expression \"attribute_exists(pk) AND ${JOB_STATUS_GUARD}\"");
         // Every terminal status the model defines reaches the shell's guard, and nothing else does.
         String values = UserDataScriptBuilder.guardValues();
         JobStatus.EXACT_TERMINAL.forEach(status -> assertThat(values).contains("{\"S\":\"" + status + "\"}"));
         assertThat(values).contains("\":failedPrefix\":{\"S\":\"failed:\"}");
         assertThat(values.split("\\},")).hasSize(JobStatus.EXACT_TERMINAL.size() + 1);
-        assertThat(DynamoDbJobRecorder.NOT_TERMINAL_VALUES.keySet())
-            .allSatisfy(placeholder -> assertThat(DynamoDbJobRecorder.NOT_TERMINAL).contains(placeholder));
+        assertThat(pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL_VALUES.keySet())
+            .allSatisfy(placeholder -> assertThat(pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL).contains(placeholder));
     }
 
     /**
