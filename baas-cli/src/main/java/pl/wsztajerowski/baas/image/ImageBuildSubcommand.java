@@ -11,7 +11,6 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -33,23 +32,6 @@ import java.util.concurrent.Callable;
 )
 public class ImageBuildSubcommand implements Callable<Integer> {
 
-    /**
-     * Why this CLI must not build, or {@code null} when it may. A CLI bundling an older base than
-     * the deployment's would submit that base and replace the newer component — the older version
-     * no longer exists once replaced, so nothing else refuses it — silently moving every later
-     * result onto the older environment. There is no override: rebuilding a historical base is
-     * done from a checkout of that commit, as re-measuring a past environment always was.
-     */
-    static String olderBaseRefusal(String bundledBase, String deployedBase, String deployment) {
-        if (deployedBase == null || RunnerImageParameters.compareVersions(bundledBase, deployedBase) >= 0) {
-            return null;
-        }
-        return """
-            This CLI bundles runner-image base %s, but deployment %s is built on %s.
-              Building would move every later result onto the older environment.
-              Upgrade the CLI first:  ~/.local/share/baas/install.sh --update
-            Nothing was changed.""".formatted(bundledBase, deployment, deployedBase);
-    }
 
     private static final Logger logger = LoggerFactory.getLogger(ImageBuildSubcommand.class);
 
@@ -62,13 +44,10 @@ public class ImageBuildSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() throws Exception {
-        BaasConfig config = configService().load();
+        BaasConfig config = Invocation.configService(spec).load();
 
         String prefix = config.requirePrefix();
         String region = config.getAws().resolveRegion();
@@ -93,7 +72,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         // Deployer credentials, like every other `baas admin` subcommand: building an image needs
         // imagebuilder:*, ssm:PutParameter and a widened iam:PassRole, none of which an operator
         // holds. See RunCommand for the other half of that split.
-        var factory = DeployerSession.factory(region, config.getAws().getDeployerProfile());
+        var factory = DeployerSession.factory(config);
 
         RunnerImageBuild.Result result;
         try {

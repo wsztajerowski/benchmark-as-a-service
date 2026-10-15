@@ -1,5 +1,15 @@
 package pl.wsztajerowski.baas.image;
 
+import software.amazon.awssdk.services.ssm.model.DeleteParameterRequest;
+
+import software.amazon.awssdk.services.ssm.model.ParameterType;
+
+import software.amazon.awssdk.services.ssm.model.PutParameterRequest;
+
+import software.amazon.awssdk.services.ssm.model.ParameterNotFoundException;
+
+import software.amazon.awssdk.services.ssm.model.GetParameterRequest;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.ec2.Ec2Client;
@@ -418,7 +428,7 @@ public class ImageBuilderService {
         });
 
         try {
-            new SsmService(ssm).deleteParameter(parameterName);
+            deleteParameter(parameterName);
         } catch (SdkException e) {
             leftovers.add("AMI pointer " + parameterName + " was not deleted (" + e.getMessage() + "): "
                 + "aws ssm delete-parameter --name " + parameterName);
@@ -496,10 +506,34 @@ public class ImageBuilderService {
     }
 
     Optional<String> readPointer(String parameterName) {
-        return new SsmService(ssm).getParameterOptional(parameterName);
+        return getParameterOptional(parameterName);
     }
 
     void writePointer(String parameterName, String amiId) {
-        new SsmService(ssm).putStringParameter(parameterName, amiId);
+        putStringParameter(parameterName, amiId);
+    }
+
+    // The pointer's three SSM operations. Plain String parameters: the AMI id is read by every
+    // `baas run` and is not a secret, so a SecureString would only add kms:Decrypt to the operator.
+    private Optional<String> getParameterOptional(String name) {
+        try {
+            return Optional.of(ssm.getParameter(GetParameterRequest.builder().name(name).withDecryption(true).build())
+                .parameter().value());
+        } catch (ParameterNotFoundException e) {
+            return Optional.empty();
+        }
+    }
+
+    private void putStringParameter(String name, String value) {
+        ssm.putParameter(PutParameterRequest.builder()
+            .name(name).value(value).type(ParameterType.STRING).overwrite(true).build());
+    }
+
+    private void deleteParameter(String name) {
+        try {
+            ssm.deleteParameter(DeleteParameterRequest.builder().name(name).build());
+        } catch (ParameterNotFoundException ignored) {
+            // Already gone: what a delete is for.
+        }
     }
 }

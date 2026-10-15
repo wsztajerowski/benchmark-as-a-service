@@ -7,7 +7,6 @@ import picocli.CommandLine.Model.CommandSpec;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 
 import java.util.concurrent.Callable;
@@ -23,14 +22,11 @@ public class ConfigShowSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService().load();
-        String dump = render(config, configService().fileOf(config.requirePrefix()));
+        BaasConfig config = Invocation.configService(spec).load();
+        String dump = render(config, Invocation.configService(spec).fileOf(config.requirePrefix()));
 
         // Every value above is local. `config show` makes no AWS call at all now that the masked
         // Mongo connection string — the one field that had to be read from SSM — is gone, so it

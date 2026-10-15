@@ -19,6 +19,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static java.util.Objects.requireNonNull;
 import static pl.wsztajerowski.infra.JCStressHtmlResultParser.getJCStressHtmlResultParser;
 import static pl.wsztajerowski.process.BenchmarkProcessBuilder.benchmarkProcessBuilder;
 
@@ -31,7 +32,9 @@ public class JCStressSubcommandService {
 
     private final JCStressOptions jcStressOptions;
 
-    JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+    public JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+        requireNonNull(storageService, "Please provide a storage service");
+        requireNonNull(resultsStore, "Please provide a results store");
         this.storageService = storageService;
         this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;

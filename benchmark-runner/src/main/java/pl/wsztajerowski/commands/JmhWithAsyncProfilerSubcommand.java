@@ -1,5 +1,7 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandService;
 import pl.wsztajerowski.baas.model.BenchmarkType;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
@@ -13,8 +15,6 @@ import static picocli.CommandLine.Model.CommandSpec;
 import static picocli.CommandLine.ParameterException;
 import static picocli.CommandLine.Spec;
 import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
-import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
-import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.options.AsyncProfilerOptions.asyncProfilerOptionsBuilder;
 
 @Command(name = BenchmarkType.JMH_WITH_ASYNC_NAME, description = "Run JHM benchmarks with Async profiler")
@@ -63,20 +63,20 @@ public class JmhWithAsyncProfilerSubcommand implements Runnable {
 
     @Override
     public void run() {
-        serviceBuilder()
-            .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
-            .withJmhOptions(apiJmhOptions.getJmhOptions())
-            .withAsyncProfilerOptions(asyncProfilerOptionsBuilder()
-                .withAsyncPath(asyncPath)
-                .withAsyncInterval(asyncInterval)
-                .withAsyncEvent(asyncEvent)
-                .withAsyncOutputType(asyncOutputType)
-                .withAsyncOutputPath(asyncOutputPath)
-                .withAsyncAdditionalOptions(asyncAdditionalParams)
-                .build())
-            .withResultsStore(apiCommonSharedOptions.buildResultsStore())
-            .withStorageService(getS3ServiceBuilder().withS3Options(apiCommonSharedOptions.getS3Options()).build())
-            .build()
-            .executeCommand();
+        // In the order the builder used to evaluate them: the request options can refuse the run
+        // (no project) before any client is built or any storage line is logged.
+        var common = apiCommonSharedOptions.getRequestOptions();
+        var jmh = apiJmhOptions.getJmhOptions();
+        var async = asyncProfilerOptionsBuilder()
+            .withAsyncPath(asyncPath)
+            .withAsyncInterval(asyncInterval)
+            .withAsyncEvent(asyncEvent)
+            .withAsyncOutputType(asyncOutputType)
+            .withAsyncOutputPath(asyncOutputPath)
+            .withAsyncAdditionalOptions(asyncAdditionalParams)
+            .build();
+        var store = apiCommonSharedOptions.buildResultsStore();
+        var storage = StorageService.of(apiCommonSharedOptions.getS3Options());
+        new JmhWithAsyncProfilerSubcommandService(storage, store, common, jmh, async).executeCommand();
     }
 }

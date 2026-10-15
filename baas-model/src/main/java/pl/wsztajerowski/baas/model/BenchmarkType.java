@@ -2,7 +2,6 @@ package pl.wsztajerowski.baas.model;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Optional;
 
 /**
  * The benchmark types: what {@code baas run <type>} accepts, the {@code benchmark-runner}
@@ -42,9 +41,5 @@ public enum BenchmarkType {
     /** Every command name, in declaration order. */
     public static List<String> commandNames() {
         return Arrays.stream(values()).map(BenchmarkType::commandName).toList();
-    }
-
-    public static Optional<BenchmarkType> fromCommandName(String name) {
-        return Arrays.stream(values()).filter(t -> t.commandName.equals(name)).findFirst();
     }
 }

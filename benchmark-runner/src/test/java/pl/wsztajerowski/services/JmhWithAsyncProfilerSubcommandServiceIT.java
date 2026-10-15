@@ -25,7 +25,6 @@ import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
-import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
 import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
 import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
@@ -49,11 +48,11 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         Path result = Files.createTempFile("results", "jmh.json");
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path asyncOutput = Files.createTempDirectory("async-outputs");
-        JmhWithAsyncProfilerSubcommandService sut = serviceBuilder()
-            .withResultsStore(new MongoResultsStore(datastore()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
-            .withJmhOptions( new JmhOptions(
+        JmhWithAsyncProfilerSubcommandService sut = new JmhWithAsyncProfilerSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            new MongoResultsStore(datastore()),
+            new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()),
+            new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
@@ -68,15 +67,14 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
                 jmhIterationOptionsBuilder()
                     .withIterations(1)
                     .build(),
-                jmhJvmOptionsBuilder().build()))
-            .withAsyncProfilerOptions(AsyncProfilerOptions.asyncProfilerOptionsBuilder()
+                jmhJvmOptionsBuilder().build()),
+            AsyncProfilerOptions.asyncProfilerOptionsBuilder()
                 .withAsyncPath(Path.of(System.getenv("ASYNC_PATH")))
                 .withAsyncOutputType("flamegraph")
                 .withAsyncOutputPath(asyncOutput)
                 .withAsyncInterval(9990)
                 .withAsyncEvent("cpu")
-                .build())
-            .build();
+                .build());
 
         // when
         sut.executeCommand();

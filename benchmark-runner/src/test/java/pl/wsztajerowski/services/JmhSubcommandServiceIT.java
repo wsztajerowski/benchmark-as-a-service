@@ -24,7 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
 import static pl.wsztajerowski.MongoDbTestHelpers.all;
-import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
 import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
 import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
 import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
@@ -46,10 +45,11 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         Path result = Files.createTempFile("results", "jmh.json");
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
-        JmhSubcommandService sut = serviceBuilder()
-            .withResultsStore(new MongoResultsStore(datastore()))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
-            .withJmhOptions( new JmhOptions(
+        JmhSubcommandService sut = new JmhSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            new MongoResultsStore(datastore()),
+            new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()),
+            new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
@@ -64,9 +64,7 @@ class JmhSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 jmhIterationOptionsBuilder()
                     .withIterations(1)
                     .build(),
-                jmhJvmOptionsBuilder().build()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .build();
+                jmhJvmOptionsBuilder().build()));
 
         // when
         sut.executeCommand();

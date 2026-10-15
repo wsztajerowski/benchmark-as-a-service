@@ -10,7 +10,6 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
 import pl.wsztajerowski.baas.session.OperatorSession;
@@ -36,9 +35,6 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     /** The AWS calls behind the session. Overridden by tests, which have no AWS. */
     OperatorSession.Aws aws() {
@@ -66,7 +62,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
     public Integer call() {
         BaasConfig config;
         try {
-            config = configService().loadForSync();
+            config = Invocation.configService(spec).loadForSync();
         } catch (IllegalStateException e) {
             logger.error(e.getMessage());
             return 2;
@@ -102,14 +98,14 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         }
 
         config.getAws().setRegion(region);
-        configService().save(config);
+        Invocation.configService(spec).save(config);
 
         logger.info("""
             Adopted deployment {} in {}.
               Config: {}
               Bucket: {}
               Table:  {}""",
-            name, region, configService().fileOf(name), config.bucket(), config.resultsTable());
+            name, region, Invocation.configService(spec).fileOf(name), config.bucket(), config.resultsTable());
         return 0;
     }
 }

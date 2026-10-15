@@ -12,7 +12,6 @@ import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
 
@@ -37,13 +36,10 @@ public class ImageShowSubcommand implements Callable<Integer> {
     @Spec CommandSpec spec;
 
 
-    private ConfigService configService() {
-        return Invocation.configService(spec);
-    }
 
     @Override
     public Integer call() {
-        BaasConfig config = configService().load();
+        BaasConfig config = Invocation.configService(spec).load();
         String prefix = config.requirePrefix();
 
         // Deployer credentials, consistent with every other `baas admin` subcommand.
