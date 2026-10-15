@@ -1,23 +1,24 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.session.CoreStack;
+import pl.wsztajerowski.baas.jobs.UserDataScriptBuilder;
+import pl.wsztajerowski.baas.model.JobItem;
+import software.amazon.awssdk.awscore.exception.AwsServiceException;
+import java.util.ArrayList;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.baas.config.CoreStack;
-import pl.wsztajerowski.baas.config.DeploymentNames;
+import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
-import pl.wsztajerowski.baas.infra.RunnerImage;
-import pl.wsztajerowski.baas.infra.UserDataScriptBuilder;
+import pl.wsztajerowski.baas.image.RunnerImage;
 import pl.wsztajerowski.baas.model.JobId;
-import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.results.ResultRow;
-import software.amazon.awssdk.awscore.exception.AwsServiceException;
 
 import java.nio.file.Path;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.LongSupplier;
@@ -253,7 +254,7 @@ public final class JobLaunch {
      * to {@code running} first — still reports {@code launched}: {@code baas jobs show} is where the
      * current status is read, and a re-read here would be stale a second later anyway.
      */
-    public Integer afterLaunch(JobSession current, JobSession.Confirmation confirmation, boolean detach) {
+    Integer afterLaunch(JobSession current, JobSession.Confirmation confirmation, boolean detach) {
         if (confirmation == JobSession.Confirmation.CANCELLED_WHILE_LAUNCHING) {
             return 1;
         }

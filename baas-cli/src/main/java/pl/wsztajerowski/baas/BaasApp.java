@@ -1,4 +1,5 @@
 package pl.wsztajerowski.baas;
+import pl.wsztajerowski.baas.cli.BaasVersion;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,16 +11,16 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.ScopeType;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.ParseResult;
-import pl.wsztajerowski.baas.commands.ConfigCommand;
-import pl.wsztajerowski.baas.commands.ResultsCommand;
-import pl.wsztajerowski.baas.commands.ResultsQuerySubcommand;
-import pl.wsztajerowski.baas.commands.RunCommand;
-import pl.wsztajerowski.baas.commands.JobsCommand;
-import pl.wsztajerowski.baas.commands.admin.AdminCommand;
+import pl.wsztajerowski.baas.config.ConfigCommand;
+import pl.wsztajerowski.baas.results.ResultsCommand;
+import pl.wsztajerowski.baas.results.ResultsQuerySubcommand;
+import pl.wsztajerowski.baas.jobs.RunCommand;
+import pl.wsztajerowski.baas.jobs.JobsCommand;
+import pl.wsztajerowski.baas.AdminCommand;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.cli.Root;
-import pl.wsztajerowski.baas.config.ConfigService;
-import pl.wsztajerowski.baas.config.DeploymentSelectionException;
+import pl.wsztajerowski.baas.session.ConfigService;
+import pl.wsztajerowski.baas.session.DeploymentSelectionException;
 
 import java.nio.file.Path;
 

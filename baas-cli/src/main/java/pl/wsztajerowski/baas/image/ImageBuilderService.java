@@ -1,0 +1,505 @@
+package pl.wsztajerowski.baas.image;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import software.amazon.awssdk.services.ec2.Ec2Client;
+import software.amazon.awssdk.services.ec2.model.Ec2Exception;
+import software.amazon.awssdk.services.ec2.model.Tag;
+import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
+import software.amazon.awssdk.services.imagebuilder.model.Filter;
+import software.amazon.awssdk.services.imagebuilder.model.ImageSummary;
+import software.amazon.awssdk.services.imagebuilder.model.ImageStatus;
+import software.amazon.awssdk.services.imagebuilder.model.Ownership;
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.services.ssm.SsmClient;
+
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Builds and publishes the single runner AMI.
+ *
+ * <p>The ordering in {@link #publish} is the part that matters: the pointer is repointed
+ * <em>before</em> the replaced image is retired. Retiring first would aim
+ * {@code /<prefix>/runner/ami-id} at a deregistered AMI for the whole ~15-minute build, failing
+ * every job launched in that window.
+ */
+public class ImageBuilderService {
+
+    private static final Logger logger = LoggerFactory.getLogger(ImageBuilderService.class);
+
+    /** Terminal states — anything else means the build is still in flight. */
+    private static final List<ImageStatus> SUCCEEDED = List.of(ImageStatus.AVAILABLE);
+    /**
+     * The only statuses worth waiting on. Listing these rather than the failures means a status
+     * this code has not met — {@code DEPRECATED}, {@code DISABLED}, or one newer than the SDK
+     * ({@code UNKNOWN_TO_SDK_VERSION}) — ends the wait instead of polling forever. A build stuck
+     * inside one of them still ends: Image Builder enforces its own timeouts.
+     */
+    private static final List<ImageStatus> IN_PROGRESS = List.of(
+        ImageStatus.PENDING, ImageStatus.CREATING, ImageStatus.BUILDING,
+        ImageStatus.TESTING, ImageStatus.DISTRIBUTING, ImageStatus.INTEGRATING);
+
+    private final ImagebuilderClient imageBuilder;
+    private final Ec2Client ec2;
+    private final SsmClient ssm;
+    private final Duration pollInterval;
+
+    public ImageBuilderService(ImagebuilderClient imageBuilder, Ec2Client ec2, SsmClient ssm) {
+        this(imageBuilder, ec2, ssm, Duration.ofSeconds(30));
+    }
+
+    ImageBuilderService(ImagebuilderClient imageBuilder, Ec2Client ec2, SsmClient ssm, Duration pollInterval) {
+        this.imageBuilder = imageBuilder;
+        this.ec2 = ec2;
+        this.ssm = ssm;
+        this.pollInterval = pollInterval;
+    }
+
+    /**
+     * Builds a new image and publishes it, retiring the one it replaces — or publishes a build of
+     * this same recipe version that an interrupted run left behind, instead of starting another.
+     *
+     * <p>Every step that could leave the account inconsistent is ordered so that a failure stops
+     * before it does damage: a failed build throws before the pointer moves, and nothing is
+     * deregistered until the pointer names the replacement.
+     *
+     * @param recipeVersion the recipe version the stack declares now; a build found from another
+     *                      version was started before an extension push, and is retired rather
+     *                      than published
+     * @return the AMI ID now published at {@code parameterName}
+     */
+    public String publish(String pipelineArn, String parameterName, String imageVersion,
+                          String parentAmiId, String recipeVersion) throws InterruptedException {
+        Optional<String> replaced = readPointer(parameterName);
+        replaced.ifPresent(amiId -> logger.debug("Current runner AMI: {}", amiId));
+
+        String newAmiId = adoptOrBuild(pipelineArn, recipeVersion, replaced);
+        ensureIdentityTags(newAmiId, imageVersion, parentAmiId);
+
+        writePointer(parameterName, newAmiId);
+        logger.info("Published {} to {}", newAmiId, parameterName);
+
+        // Only after the repoint. The remaining race — a job that read the old ID before this
+        // write and calls RunInstances after the deregister — is accepted: single-operator
+        // scale, and it fails loudly as InvalidAMIID.NotFound rather than silently.
+        replaced
+            .filter(previous -> !previous.equals(newAmiId))
+            .ifPresent(this::retireQuietly);
+
+        return newAmiId;
+    }
+
+    /**
+     * A build that fails in its test stage — the contract rejecting what an extension did — has
+     * already registered its AMI, and Image Builder leaves it. Nothing else ever names it, so it
+     * would bill for its snapshot indefinitely. The pointer has not moved, so this can only ever be
+     * an image no job uses. Found live: the first contract failure left one.
+     */
+    private void retireFailedOutput(software.amazon.awssdk.services.imagebuilder.model.Image image) {
+        if (image.outputResources() == null) {
+            return;
+        }
+        image.outputResources().amis().stream()
+            .map(software.amazon.awssdk.services.imagebuilder.model.Ami::image)
+            .filter(amiId -> amiId != null && describeImage(amiId).isPresent())
+            .forEach(amiId -> {
+                logger.info("Retiring {}, produced by the failed build", amiId);
+                retireQuietly(amiId);
+            });
+    }
+
+    /**
+     * Retirement is cleanup, and by this point the pointer already names the replacement — so a
+     * failure here must not fail a command whose paid work has succeeded.
+     *
+     * <p>The usual cause is an AMI someone already removed by hand, which leaves nothing to do
+     * anyway; reporting that as a failed build invites a second ~15-minute rebuild for no reason.
+     * Same argument as the snapshot loop inside {@link #retire}, one level up.
+     */
+    private void retireQuietly(String amiId) {
+        try {
+            retire(amiId);
+        } catch (SdkException e) {
+            // SdkException, not Ec2Exception: a timeout or an expired session never reaches EC2
+            // and arrives as a client-side exception, and it is just as harmless here.
+            logger.warn("Could not retire replaced image {}: {}. The new image is published and "
+                + "in use; the old one may need removing by hand.", amiId, e.getMessage());
+        }
+    }
+
+    /** A build of the deployment's pipeline that has not finished yet. */
+    public record RunningBuild(String arn, String recipeVersion, Instant started) {}
+
+    /**
+     * The newest build of the pipeline when it is still in progress, else empty. Setup asks about
+     * it before {@link #publish} waits on it.
+     */
+    public Optional<RunningBuild> runningBuild(String pipelineArn) {
+        return newestBuild(pipelineArn)
+            .filter(image -> IN_PROGRESS.contains(image.state().status()))
+            .map(image -> new RunningBuild(image.arn(), recipeVersionOf(image), started(image)));
+    }
+
+    /**
+     * The CLI runs the whole build, so Ctrl+C or a closed lid mid-build used to leave Image Builder
+     * finishing an AMI that no pointer named and nothing retired — a snapshot billing indefinitely —
+     * and the re-run started a second build. So the pipeline's newest build is looked at first:
+     * still running, it is waited for; finished but unpublished, it is adopted. Only a build of the
+     * recipe version the stack declares now qualifies: an older one predates an extension push, and
+     * publishing it would put the wrong extension on the runners, so its AMI is retired instead.
+     * Two starts in the same seconds still race, as they always did.
+     */
+    String adoptOrBuild(String pipelineArn, String recipeVersion, Optional<String> published)
+            throws InterruptedException {
+        Optional<ImageSummary> newest = newestBuild(pipelineArn);
+        if (newest.isPresent()) {
+            ImageSummary image = newest.get();
+            boolean current = recipeVersion.equals(recipeVersionOf(image));
+            ImageStatus status = image.state().status();
+            if (IN_PROGRESS.contains(status)) {
+                if (current) {
+                    logger.info("A build of this image started at {} is still running; waiting for it instead of "
+                        + "starting another.", started(image));
+                    return await(image.arn());
+                }
+                logger.info("A build of superseded recipe version {} is still running; waiting for it to end so "
+                    + "its image can be retired.", recipeVersionOf(image));
+                retireSuperseded(image.arn());
+            } else if (SUCCEEDED.contains(status)) {
+                Optional<String> amiId = amiOf(image)
+                    .filter(ami -> published.map(p -> !p.equals(ami)).orElse(true))
+                    .filter(ami -> describeImage(ami).isPresent());
+                if (amiId.isPresent() && current) {
+                    logger.info("Adopting {}, built at {} by a run that did not publish it. No new build is needed.",
+                        amiId.get(), started(image));
+                    return amiId.get();
+                }
+                if (amiId.isPresent()) {
+                    logger.info("Retiring {}, an unpublished build of superseded recipe version {}",
+                        amiId.get(), recipeVersionOf(image));
+                    retireQuietly(amiId.get());
+                }
+            }
+        }
+        return build(pipelineArn);
+    }
+
+    /** Waits for a superseded build to end, then retires whatever it produced. */
+    private void retireSuperseded(String buildArn) throws InterruptedException {
+        try {
+            retireQuietly(await(buildArn));
+        } catch (IllegalStateException e) {
+            // A failed build has already retired its own output in await().
+            logger.debug("Superseded build ended without an image: {}", e.getMessage());
+        }
+    }
+
+    private Optional<ImageSummary> newestBuild(String pipelineArn) {
+        return imageBuilder.listImagePipelineImagesPaginator(r -> r.imagePipelineArn(pipelineArn))
+            .imageSummaryList().stream()
+            .filter(image -> image.state() != null)
+            .max(Comparator.comparing(ImageBuilderService::started));
+    }
+
+    /** {@code …:image/<recipe>/<recipe version>/<build>} → {@code <recipe version>}. */
+    static String recipeVersionOf(ImageSummary image) {
+        String[] segments = image.arn().split("/");
+        return segments.length >= 2 ? segments[segments.length - 2] : "";
+    }
+
+    private static Instant started(ImageSummary image) {
+        try {
+            return image.dateCreated() == null ? Instant.EPOCH : Instant.parse(image.dateCreated());
+        } catch (java.time.format.DateTimeParseException e) {
+            return Instant.EPOCH;
+        }
+    }
+
+    private static Optional<String> amiOf(ImageSummary image) {
+        return Optional.ofNullable(image.outputResources())
+            .flatMap(resources -> resources.amis().stream().findFirst())
+            .map(software.amazon.awssdk.services.imagebuilder.model.Ami::image);
+    }
+
+    /**
+     * Starts the pipeline and blocks until the build reaches a terminal state.
+     *
+     * @throws IllegalStateException carrying Image Builder's own failure reason, which is the only
+     *                               thing that says why a bake failed
+     */
+    public String build(String pipelineArn) throws InterruptedException {
+        String buildArn = imageBuilder.startImagePipelineExecution(r -> r.imagePipelineArn(pipelineArn))
+            .imageBuildVersionArn();
+        logger.info("Image build started: {}", buildArn);
+        return await(buildArn);
+    }
+
+    /** Blocks until the build reaches a terminal state, retiring a failed build's output. */
+    private String await(String buildArn) throws InterruptedException {
+        while (true) {
+            var image = imageBuilder.getImage(r -> r.imageBuildVersionArn(buildArn)).image();
+            ImageStatus status = image.state().status();
+
+            if (SUCCEEDED.contains(status)) {
+                return image.outputResources().amis().stream()
+                    .findFirst()
+                    .map(ami -> ami.image())
+                    .orElseThrow(() -> new IllegalStateException(
+                        "Image build " + buildArn + " reported AVAILABLE but distributed no AMI"));
+            }
+            if (!IN_PROGRESS.contains(status)) {
+                retireFailedOutput(image);
+                throw new IllegalStateException("Image build %s: %s%s".formatted(
+                    image.state().statusAsString(), buildArn,
+                    image.state().reason() != null ? " — " + image.state().reason() : ""));
+            }
+
+            logger.info("Building image ({})...", image.state().statusAsString());
+            Thread.sleep(pollInterval.toMillis());
+        }
+    }
+
+    /**
+     * Fails when the declared version is already registered carrying different content.
+     *
+     * <p>Image Builder components are immutable at a version, so this would otherwise surface as a
+     * stack-update rejection roughly a minute in, naming the resource and not the fix.
+     */
+    public void preflightVersion(String componentName, String imageVersion, String renderedComponent) {
+        registeredComponentData(componentName, imageVersion).ifPresent(registered -> {
+            // stripTrailing, not equals: Image Builder drops the trailing newline when it stores a
+            // component document, and renderComponent() ends with one because its template is a
+            // Java text block. Comparing exactly reported "content differs" for content that was
+            // identical, and blocked every build on a fresh deployment — `baas admin deployment setup`
+            // registers the component, so `build-image` always finds a stored copy to compare
+            // against. Only trailing whitespace is forgiven; a real edit still fails.
+            if (!registered.stripTrailing().equals(renderedComponent.stripTrailing())) {
+                throw new IllegalStateException("""
+                    Recipe version %s is already registered and its content differs.
+                    Bump imageVersion in infra/runner-image.yaml.
+
+                    An Image Builder component is immutable at a given version, so the edit you made \
+                    cannot be published under the version it still declares."""
+                    .formatted(imageVersion));
+            }
+            logger.debug("Version {} is registered with identical content — rebuilding it as-is", imageVersion);
+        });
+    }
+
+    /**
+     * The component document registered at this version, or empty when the version is new.
+     *
+     * <p>Deliberately without {@code byName}: that flag collapses every version of a component into
+     * a single summary row whose ARN ends in a literal {@code x.x.x} and which carries no version
+     * at all. Filtering that by version matches nothing, so the preflight silently concludes the
+     * version is unregistered and lets the build proceed into a stack update that Image Builder
+     * then rejects — which is the failure this method exists to prevent. Found by running it.
+     *
+     * <p>Paginated defensively rather than to fix an observed failure. {@code ListComponents} caps
+     * a page at 25, and reading only the first page is the same shape of blindness as
+     * {@code byName} above — it cannot distinguish "not registered" from "not on this page". In
+     * this design that gap is currently unreachable: {@code Version} is a replacement property on
+     * {@code AWS::ImageBuilder::Component}, so every bump has CloudFormation create the new
+     * version and delete its predecessor, leaving exactly one registered at a time. The preflight
+     * works precisely because that one is the current one. Paginating costs nothing at one version
+     * and stops the gap opening if components are ever retained.
+     */
+    Optional<String> registeredComponentData(String componentName, String imageVersion) {
+        var versions = imageBuilder.listComponentsPaginator(r -> r
+                .owner("Self")
+                .filters(Filter.builder().name("name").values(componentName).build()))
+            .componentVersionList();
+
+        return versions.stream()
+            .filter(version -> imageVersion.equals(version.version()))
+            .findFirst()
+            .flatMap(version -> imageBuilder
+                .listComponentBuildVersions(r -> r.componentVersionArn(version.arn()))
+                .componentSummaryList().stream()
+                .findFirst()
+                .map(summary -> imageBuilder.getComponent(r -> r.componentBuildVersionArn(summary.arn()))
+                    .component().data()));
+    }
+
+    /**
+     * The AMI's tags are set by the stack's DistributionConfiguration, so this is a backstop for an
+     * image built before those tags existed. Without them {@code baas admin image show} has no identity
+     * to report and {@code baas run} has no {@code imageVersion} to tag results with.
+     */
+    void ensureIdentityTags(String amiId, String imageVersion, String parentAmiId) {
+        var existing = describeImage(amiId).orElseThrow(() -> new IllegalStateException(
+            "Image build produced " + amiId + ", but it cannot be described"));
+
+        if (imageVersion.equals(existing.imageVersion()) && parentAmiId.equals(existing.parentAmiId())) {
+            return;
+        }
+        logger.debug("Applying identity tags to {}", amiId);
+        ec2.createTags(r -> r.resources(amiId).tags(
+            Tag.builder().key(RunnerImage.VERSION_TAG).value(imageVersion).build(),
+            Tag.builder().key(RunnerImage.PARENT_TAG).value(parentAmiId).build()));
+    }
+
+    /**
+     * Deregisters an AMI and deletes the snapshots behind it. Snapshot IDs have to be collected
+     * first — once the AMI is deregistered its block device mapping is no longer readable, and the
+     * snapshots would sit there billing indefinitely.
+     *
+     * @return the snapshots that could not be deleted, each already logged; empty when all went
+     */
+    public List<String> retire(String amiId) {
+        List<String> snapshots = ec2.describeImages(r -> r.imageIds(amiId)).images().stream()
+            .flatMap(image -> image.blockDeviceMappings().stream())
+            .filter(mapping -> mapping.ebs() != null && mapping.ebs().snapshotId() != null)
+            .map(mapping -> mapping.ebs().snapshotId())
+            .toList();
+
+        // Not "replaced": teardown retires through here too, and there nothing replaced it.
+        logger.info("Retiring image {} ({} snapshot(s))", amiId, snapshots.size());
+        ec2.deregisterImage(r -> r.imageId(amiId));
+
+        List<String> failed = new ArrayList<>();
+        for (String snapshotId : snapshots) {
+            try {
+                ec2.deleteSnapshot(r -> r.snapshotId(snapshotId));
+            } catch (Ec2Exception e) {
+                // A leaked snapshot costs cents a month and is visible in the console; failing the
+                // whole command here would strand a build that has already succeeded.
+                logger.warn("Could not delete snapshot {} of retired image {}: {}",
+                    snapshotId, amiId, e.getMessage());
+                failed.add(snapshotId);
+            }
+        }
+        return failed;
+    }
+
+    /**
+     * Removes everything {@code build-image} created outside the stack, for a deployment being
+     * torn down: the AMI the pointer names (with its snapshots), the pointer itself, and every
+     * Image Builder record of the deployment's recipe.
+     *
+     * <p>Every step catches its own failure and carries on, because by the time this runs the
+     * stack is already gone and the teardown has succeeded. A leftover is a cost leak, not a
+     * correctness problem — except the pointer, which is what would let a later setup launch an
+     * inherited image. So the pointer is deleted even when its AMI could not be retired.
+     *
+     * @return one line per leftover, naming it and the command that removes it; empty when
+     *         nothing is left
+     */
+    public List<String> retireDeployment(String parameterName, String recipeName) {
+        List<String> leftovers = new ArrayList<>();
+
+        Optional<String> pointed = Optional.empty();
+        try {
+            pointed = readPointer(parameterName);
+        } catch (SdkException e) {
+            leftovers.add("Could not read " + parameterName + " (" + e.getMessage() + "); any AMI it "
+                + "names is left: aws ssm get-parameter --name " + parameterName);
+        }
+        pointed.ifPresent(amiId -> {
+            try {
+                if (describeImage(amiId).isPresent()) {
+                    // Collected so teardown's closing notice cannot claim snapshots it left.
+                    retire(amiId).forEach(snapshotId -> leftovers.add("Snapshot " + snapshotId
+                        + " of retired AMI " + amiId + " was not deleted: "
+                        + "aws ec2 delete-snapshot --snapshot-id " + snapshotId));
+                } else {
+                    logger.debug("Pointer {} names {}, which is already gone", parameterName, amiId);
+                }
+            } catch (SdkException e) {
+                leftovers.add("Runner AMI " + amiId + " was not deregistered (" + e.getMessage() + "): "
+                    + "aws ec2 deregister-image --image-id " + amiId
+                    + ", then delete its snapshots");
+            }
+        });
+
+        try {
+            new SsmService(ssm).deleteParameter(parameterName);
+        } catch (SdkException e) {
+            leftovers.add("AMI pointer " + parameterName + " was not deleted (" + e.getMessage() + "): "
+                + "aws ssm delete-parameter --name " + parameterName);
+        }
+
+        leftovers.addAll(deleteImageRecords(recipeName));
+        return leftovers;
+    }
+
+    /**
+     * Every build version of every image version named after the recipe. Records cost nothing,
+     * but they are the last trace of the deployment and they number the next deployment's
+     * builds — after the 2026-10-01 wipe the first rebuild came out as {@code /2}.
+     */
+    private List<String> deleteImageRecords(String recipeName) {
+        List<String> leftovers = new ArrayList<>();
+        List<String> builds = new ArrayList<>();
+        try {
+            imageBuilder.listImagesPaginator(r -> r
+                    .owner(Ownership.SELF)
+                    .filters(Filter.builder().name("name").values(recipeName).build()))
+                .imageVersionList()
+                .forEach(version -> imageBuilder.listImageBuildVersionsPaginator(r -> r
+                        .imageVersionArn(version.arn()))
+                    .imageSummaryList()
+                    .forEach(build -> builds.add(build.arn())));
+        } catch (SdkException e) {
+            leftovers.add("Could not list Image Builder records of " + recipeName + " (" + e.getMessage()
+                + "): aws imagebuilder list-images --owner Self");
+            return leftovers;
+        }
+        for (String build : builds) {
+            try {
+                imageBuilder.deleteImage(r -> r.imageBuildVersionArn(build));
+            } catch (SdkException e) {
+                leftovers.add("Image Builder record " + build + " was not deleted (" + e.getMessage()
+                    + "): aws imagebuilder delete-image --image-build-version-arn " + build);
+            }
+        }
+        logger.debug("Deleted {} of {} Image Builder record(s) of {}",
+            builds.size() - leftovers.size(), builds.size(), recipeName);
+        return leftovers;
+    }
+
+    /** The published image, or empty when no build has completed or the AMI is gone. */
+    public Optional<RunnerImage> currentImage(String parameterName) {
+        return readPointer(parameterName).flatMap(this::describeImage);
+    }
+
+    /** Empty when the AMI does not exist — which is how {@code baas run} refuses a dangling pointer. */
+    public Optional<RunnerImage> describeImage(String amiId) {
+        try {
+            return ec2.describeImages(r -> r.imageIds(amiId)).images().stream()
+                .findFirst()
+                .map(image -> {
+                    var tags = image.tags().stream()
+                        .collect(java.util.stream.Collectors.toMap(Tag::key, Tag::value, (a, b) -> a));
+                    return new RunnerImage(
+                        image.imageId(),
+                        tags.get(RunnerImage.VERSION_TAG),
+                        tags.get(RunnerImage.PARENT_TAG),
+                        image.creationDate());
+                });
+        } catch (Ec2Exception e) {
+            // A pointer naming a deregistered AMI is InvalidAMIID.NotFound, which is a normal
+            // state to report — not an error to propagate. Nothing else is: a denied describe
+            // reported as "no image" sends the operator to rebuild an image that is there.
+            String code = e.awsErrorDetails() != null ? e.awsErrorDetails().errorCode() : null;
+            if (code == null || !code.startsWith("InvalidAMIID")) {
+                throw e;
+            }
+            logger.debug("Cannot describe {}: {}", amiId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    Optional<String> readPointer(String parameterName) {
+        return new SsmService(ssm).getParameterOptional(parameterName);
+    }
+
+    void writePointer(String parameterName, String amiId) {
+        new SsmService(ssm).putStringParameter(parameterName, amiId);
+    }
+}
