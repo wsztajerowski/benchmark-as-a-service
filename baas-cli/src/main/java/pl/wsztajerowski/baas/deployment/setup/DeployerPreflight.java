@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas.deployment;
+package pl.wsztajerowski.baas.deployment.setup;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;

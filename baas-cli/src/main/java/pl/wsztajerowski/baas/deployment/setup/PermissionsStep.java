@@ -2,7 +2,6 @@ package pl.wsztajerowski.baas.deployment.setup;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import pl.wsztajerowski.baas.deployment.DeployerPolicyRenderer;
 
 /**
  * Step 4: the deployer policy, rendered for this deployment and checked against the caller's

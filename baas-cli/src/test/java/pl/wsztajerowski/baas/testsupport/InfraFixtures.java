@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.testsupport;
 
-import pl.wsztajerowski.baas.deployment.DeployerPolicyRenderer;
+import pl.wsztajerowski.baas.deployment.setup.DeployerPolicyRenderer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.yaml.snakeyaml.LoaderOptions;
 import org.yaml.snakeyaml.Yaml;
