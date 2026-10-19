@@ -7,7 +7,6 @@ import pl.wsztajerowski.baas.image.RunnerImageBuild;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.BucketProbe;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
-import pl.wsztajerowski.baas.deployment.DeployerPreflight;
 import pl.wsztajerowski.baas.image.ImageBuilderService;
 import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.image.ParentImageResolver;
