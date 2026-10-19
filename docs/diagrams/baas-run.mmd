@@ -1,7 +1,9 @@
 sequenceDiagram
     actor User as CLI User
-    participant RC as RunCommand
-    participant Sub as OS Subprocess
+    participant RC as RunCommand<br/>(implements JobLaunch.Listener)
+    participant JL as JobLaunch
+    participant JS as JobSession
+    participant Port as RunAws port<br/>(AwsRunAws in production)
     participant S3 as AWS S3
     participant SSM as AWS SSM
     participant EC2 as AWS EC2
@@ -9,75 +11,93 @@ sequenceDiagram
     participant DDB as DynamoDB results table
     participant GH as GitHub Releases (laptop only)
 
-    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--tag k=v] [--format json] [--detach] [--config-path]
-    Note over RC: validate type in {jmh, jmh-with-async, jmh-with-prof, jcstress}<br/>ConfigService.load() -- deployments/D.yaml for --deployment D, else the only one configured
-    Note over RC: an unreleased CLI (0.0.0-semantically-released) names no<br/>release to pin the runner JAR to, so it exits 1 naming<br/>--runner-jar -- before any upload. baas run builds nothing.
-    opt no --project and git.resolveProject enabled
-        RC->>Sub: git rev-parse --path-format=absolute --git-common-dir (in the JAR's directory)
-        Sub-->>RC: repo root -> project name, or "not a git repository"
+    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--tag k=v] [--format json] [--detach]
+    Note over RC: execute() -- before any AWS call:<br/>--format text or json, else exit 2. type in BenchmarkType.commandNames(), else exit 2.<br/>An unreleased CLI (BaasVersion.isReleased() false) without --runner-jar -> exit 1. baas run builds nothing.
+    RC->>RC: OperatorSession.of(Invocation.configService(spec)).config()
+    Note over RC: resolveProject -- --project, or GitProject.repositoryName of the JAR's directory<br/>when git.resolveProject is on, else IllegalStateException naming --project.<br/>resolveResultsTable, instanceType, resolveTimings -> watchdogBound = timeout + margin (margin >= 60).<br/>buildRunnerTags: project, type, source + every --tag. A machine-observed key or project is REJECTED.<br/>--benchmark-jar missing on disk -> exit 1.
+    RC->>JL: new JobLaunch(awsFactory.apply(operatorSession.factory()), config.names(), this).run(Request)
+
+    JL->>Port: currentImage(/<prefix>/runner/ami-id)
+    Port->>SSM: getParameter (ImageBuilderService.currentImage)
+    Port->>EC2: describeImages(amiId) -- baas-image-version tag
+    alt no pointer or no image
+        JL-->>RC: noImageMessage (names admin image build), 1 -- nothing uploaded
     end
-    Note over RC: resolve project AND results table BEFORE any AWS call.<br/>No --project and nothing derived -> exit 1 naming --project.<br/>No deployment in config and no operator-role session -> exit 1 naming `baas config sync`<br/>(with no file, the caller is identified first: an operator role names the deployment).<br/>No option discards measurements: every job records its status<br/>in the results table, so every job needs one.<br/>branch/commit are never derived: only --tag supplies them.<br/>watchdog bound = timeout + margin (margin >= 60).
-    Note over RC: the --benchmark-jar option is required, and checked for existence here --<br/>before the runner-image lookup and before any upload.<br/>Missing -> exit 1 naming --benchmark-jar. Nothing is built.
-    RC->>SSM: ssm.getParameter(/<prefix>/runner/ami-id)
-    SSM-->>RC: amiId, or ParameterNotFound
-    RC->>EC2: ec2.describeImages(amiId)
-    EC2-->>RC: image + tags (baas-image-version), or InvalidAMIID.NotFound
-    Note over RC: no image -> exit 1 naming `baas admin image build`.<br/>Checked before any upload, so a missing image costs two API<br/>calls rather than a wasted upload. There is no fallback to<br/>AL2023 + yum.
-    Note over RC: ONE clock read: jobInstant = Instant.now().<br/>jobId = JobId.generate(jobInstant) -- 20260820T174432812Z-a3f9c21b<br/>resultPath = JobLayout.jobPrefix(project, jobId)<br/>= jobs/<project>/<jobId>.<br/>The same instant travels on as --created-at, so the prefix<br/>name and the stored createdAt cannot disagree.
-    RC->>CF: describeStacks(prefix) -- SubnetId, SecurityGroupId, BEFORE any upload<br/>(a missing deployment fails here, having uploaded nothing)
-    RC->>S3: s3.putObject(bucket, jobs/<project>/<jobId>/input/benchmark.jar)
-    S3-->>RC: PutObjectResponse
+    JL->>Port: stackOutputs(<prefix>)
+    Port->>CF: describeStacks -- SubnetId, SecurityGroupId
+    Note over JL: resolveNetworking: a missing output throws, before any upload
+    Note over JL: ONE clock read: jobInstant = Instant.now()<br/>jobId = JobId.generate(jobInstant), resultPath = JobLayout.jobPrefix(project, jobId)
+    JL->>RC: Listener.named(jobId, resultPath)
+    JL->>Port: upload(benchmark JAR, JobLayout.benchmarkJarKey)
+    Port->>S3: putObject jobs/<project>/<jobId>/input/benchmark.jar
     alt --runner-jar given
-        RC->>S3: s3.putObject(bucket, jobs/<project>/<jobId>/input/runner.jar)
-    else pinned to this CLI's own version
-        RC->>S3: headObject(releases/<version>/benchmark-runner.jar)
+        JL->>Port: upload(runner JAR, JobLayout.runnerJarOverrideKey)
+        Port->>S3: putObject jobs/<project>/<jobId>/input/runner.jar
+    else pinned to this CLI's version
+        JL->>Port: pinnedRunnerJar(bucket, version, sourceRepo)
+        Port->>S3: RunnerJarResolver.resolve -- head releases/<version>/benchmark-runner.jar
         opt absent
-            RC->>GH: GET releases/download/v<version>/benchmark-runner.jar + .sha256
-            GH-->>RC: jar + published checksum
-            Note over RC: verify. A mismatch uploads nothing and launches nothing.
-            RC->>S3: putObject(releases/<version>/benchmark-runner.jar)<br/>If-None-Match: *
-            alt 412 or 409 -- another launch seeded it first
-                S3-->>RC: refused. Not an error: the existing object is used
-            end
-            Note over RC: Never overwrites a present object, so a corrupt<br/>one needs deleting, under deployer credentials.
+            Port->>GH: fetch benchmark-runner.jar + .sha256
+            Note over Port: verify -- a mismatch throws, nothing launched
+            Port->>S3: putObject If-None-Match * (412/409 = another launch seeded it)
         end
     end
-    Note over RC: buildRunnerTags(): project, commit, branch, type, source + every --tag.<br/>A --tag naming a machine-observed key (imageVersion,<br/>instanceType, jdk, cpuModel, cpuArch, type) is REJECTED --<br/>those come from the instance, so a result's tags can never<br/>disagree with its own environment.json.<br/>source is derived (ci when CI/GITHUB_ACTIONS is set, else local)<br/>but NOT reserved: how a job was triggered is not observed on<br/>the instance, so --tag source=nightly wins instead of failing.
-    Note over RC: UserDataScriptBuilder.build() -- installs NOTHING.<br/>The toolchain is baked into the AMI.<br/>Script captures environment.json + packages.txt and uploads<br/>them BEFORE the benchmark, so a crash still leaves a record,<br/>copies benchmark-runner.jar from the bucket -- the instance<br/>reaches NO host outside the account,<br/>carries the results table name in user-data (no credential,<br/>so no SSM round trip -- RunnerRole grants the access),<br/>defines job_status() BEFORE the watchdog forks (a subshell sees only<br/>functions defined before it), records running after the watchdog --<br/>a refused running write (run already cancelled) ships the boot log<br/>and self-terminates WITHOUT starting the benchmark,<br/>runs: timeout N java -jar benchmark-runner.jar type<br/>--results-table T --tag ... <br/>records completed or failed:N on the job item (the watchdog records timed-out)<br/>using JOB_SORT_KEY as built by the CLI, never rebuilt in the shell<br/>self-terminates the EC2 instance, never killing the watchdog first,<br/>and falls back to shutdown -h now if that request fails
-    RC->>DDB: UpdateItem pk=JOB sk=createdAt#jobId -- status launching + identity + CLI-side tags<br/>condition attribute_not_exists(pk)
-    Note over RC: reservation fails -> exit 1, NOTHING is launched.<br/>An instance without a record is the invisible job `baas jobs` exists to show.
-    Note over RC: register JVM shutdown hook NOW, before RunInstances: on Ctrl+C it records<br/>cancelled (5 s timeout) and terminates -- the instance id, or, if RunInstances<br/>has not returned yet, whatever instance carries this job's baas-job-id tag.<br/>That lookup can miss: the instance then finds its running write refused<br/>and terminates itself without starting the benchmark.<br/>Does nothing once the job has an outcome (the instance terminates itself).
-    RC->>EC2: ec2.runInstances(amiId, instanceType, subnetId, sgId, instanceProfile, userData, jobId)
-    Note over EC2: min=1 max=1, clientToken=jobId (a retried request starts no second instance)<br/>shutdownBehavior=TERMINATE<br/>IMDSv2 required<br/>tags: ONLY project=baas, baas-role=benchmark-runner,<br/>baas-job-id=jobId, baas-deployment=prefix -- no caller --tag ever reaches the instance
-    alt RunInstances fails
-        RC->>DDB: UpdateItem status launch-failed + AWS error code (best effort)
-        RC->>S3: putObject(jobs/<project>/<jobId>/launch-error.txt) (best effort)
-        RC-->>User: the launch error, exit 1 -- `baas jobs download <jobId>` fetches launch-error.txt
+    Note over JL: new UserDataScriptBuilder().build(...) with job.sortKey() from ResultKeys --<br/>installs nothing, see the instance-side diagram
+    JL->>JS: new JobSession(job, recorder, stopRecorder (5 s client), instances)
+    JL->>JS: reserve()
+    JS->>DDB: UpdateItem status launching + identity, condition attribute_not_exists(pk)
+    alt reservation fails
+        JL-->>RC: 1 -- NOTHING is launched
     end
-    EC2-->>RC: instanceId
-    RC->>DDB: UpdateItem status launched + instanceId -- only while still launching (best effort)
-    Note over RC: refused because the job is already terminal (cancelled while launching)<br/>-> terminate the instance just launched, exit 1
-    opt --detach (ADR 0007)
-        Note over RC: launch confirmed -> set the detached flag: from here the shutdown hook<br/>leaves the job alone. NO poll -- everything below is the attached run.<br/>The instance ends the job itself: completed / failed:N, or timed-out from its watchdog.<br/>Follow it: baas jobs show jobId -- stop it: baas jobs terminate jobId
-        RC-->>User: exit 0 -- with --format json: status launched,<br/>jobStatus launched (or launching if that write was lost)
+    JL->>RC: Listener.reserved(session)
+    Note over RC: shutdownHooks.accept(new Thread(onShutdown)) -- armed BEFORE RunInstances:<br/>on any JVM exit, a session not ended and not detached gets stop(cancelled)
+    JL->>Port: instances.runInstance(ami, type, subnet, sg, profile, userData, jobId, prefix)
+    Port->>EC2: RunInstances -- Ec2ProvisioningService: clientToken = jobId, IMDSv2 required,<br/>tags only project=baas, baas-role, baas-job-id, baas-deployment
+    alt RunInstances throws
+        JL->>JS: recordLaunchFailed(errorCode)
+        JS->>DDB: UpdateItem launch-failed + errorCode, never over a terminal status (best effort)
+        JL->>Port: putText(JobLayout.launchErrorKey) -- launch-error.txt (best effort)
+        JL-->>RC: 1
     end
-    loop poll every 15 seconds
-        RC->>DDB: GetItem(pk=JOB, sk) ConsistentRead
-        DDB-->>RC: launched, running, or a terminal status
-        RC->>EC2: describeInstances(instanceId) -- state
-        Note over RC: instance gone with no terminal status -> re-read once, then<br/>measurements stored ? "final status lost" : vanished -- both exit 1.<br/>Poll cap (= watchdog bound) -> record timed-out, terminate, exit 1.
-        alt interactive terminal and no --format json
-            RC-->>User: status line on STDOUT, redrawn in place:<br/>state · elapsed · instanceId (log lines scroll above it)
-        else redirected, piped, CI or --format json
-            RC-->>User: log line "Still running (state)... elapsed: Ns" on stderr, as before
+    EC2-->>JL: instanceId
+    JL->>RC: Listener.launched(instanceId)
+    JL->>JS: confirmLaunched(instanceId)
+    JS->>DDB: UpdateItem launched + instanceId, only while status = launching
+    Note over JS: WRITTEN -> CONFIRMED. Write failed -> UNCONFIRMED (the instance records itself).<br/>REFUSED -> strong re-read: endsItself or running -> CONFIRMED,<br/>another terminal status (cancelled) -> terminate the instance, CANCELLED_WHILE_LAUNCHING
+    alt CANCELLED_WHILE_LAUNCHING
+        JL-->>RC: 1
+    else --detach (ADR 0007)
+        JL->>RC: Listener.detached(launched, or launching if unconfirmed)
+        Note over RC: detached = true -- from here onShutdown leaves the job alone.<br/>The instance ends the job itself. Follow it: jobs show. Stop it: jobs terminate.
+        JL-->>RC: 0 -- NO poll
+    end
+
+    JL->>RC: Listener.openStatusLine() -- null under --format json (log lines instead)
+    loop JobSession.await, every 15 s
+        JS->>DDB: GetItem ConsistentRead
+        alt terminal status stored
+            Note over JS: finish -- a cancelled written elsewhere also terminates a live instance.<br/>completed, failed:N, timed-out (the watchdog's) are left to end themselves.
+        else instance terminated or shutting-down
+            JS->>DDB: re-read once
+            Note over JS: still no terminal status -> measurements stored (Port.jobRows) ?<br/>status-lost : vanished -- both exit 1
+        else elapsed > watchdog bound (the poll cap)
+            JS->>DDB: one last read, then stop(timed-out) -- JobStop: write under 5 s, then terminate
+        else still going
+            JS->>EC2: describeInstances(instanceId) -- state
+            JS->>JL: progress(state, elapsed)
+            JL-->>User: StatusLine.update on STDOUT when interactive, else "Still running (state)... elapsed" on stderr
         end
     end
-    Note over RC: completed -> show results. failed:N, timed-out, cancelled -> exit 1.<br/>A cancelled written elsewhere (baas jobs terminate)<br/>also terminates a still-live instance. A timed-out it did not write<br/>is the watchdog's: that instance ships its log and ends itself.<br/>A benchmark that already ran is never reported as failed<br/>because the summary could not be fetched.
-    RC->>DDB: Query on jobId-index (gsi1pk = jobId), filter attribute_exists(kind)
-    Note over DDB: NO exclusion filter on this path -- naming one job by its id is a<br/>request for THAT job. The project sweep still drops<br/>exclude_from_results=true rows server-side.
-    DDB-->>RC: one item per measurement
-    RC-->>User: print BENCHMARK | JOB_ID | TYPE | MODE | SCORE | ERROR | UNIT and exit 0<br/>naming the jobId, which is what `baas jobs download <jobId>` takes
-    opt --format json
-        RC-->>User: one object on STDOUT (diagnostics stay on the logger/stderr):<br/>{jobId, project, resultPath, status, exitCode, instanceId}
+    alt completed
+        JL->>Port: jobRows(table, jobId)
+        Port->>DDB: ResultsQueryService.queryByJobId -- jobId-index, attribute_exists(kind), no exclusion filter
+        JL->>RC: Listener.printResults(rows, jobId)
+        RC-->>User: ResultsTable on stdout (with --format json only a log line)
+    else failed:N, timed-out, cancelled, vanished, status-lost
+        JL-->>RC: logs the runner log path -- exit 1
     end
-    Note over RC,User: The summary prints on the FAILURE path too, with status "failed",<br/>while the command still exits non-zero -- a failed job is precisely<br/>when CI needs the id, to baas jobs download it and surface<br/>cloud-init-output.log. A job that died before being named reports<br/>null fields rather than no output at all.
+    JL-->>RC: exit code
+    opt --format json -- in call()'s finally, on the failure path too
+        RC-->>User: printJobSummary -- {jobId, project, resultPath, status, jobStatus, exitCode, instanceId}
+    end
+    Note over RC,User: hints (interactive only): detached -> jobs show / jobs terminate,<br/>completed -> query --job-id / jobs download, otherwise -> jobs show / jobs download

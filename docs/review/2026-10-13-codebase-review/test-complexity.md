@@ -1,184 +1,238 @@
 # Test complexity and quality review (branch `codebase-review`, 2026-10-13)
 
-Re-verified against 7d9660a on 2026-10-14.
+Re-checked against slice-architecture (post-refactor) on 2026-10-15.
+
+Re-verified against 7d9660a on 2026-10-14. This pass reads the final tree at `a8be1a0` (`git log --oneline 0308fb8..a8be1a0`, ADR 0009; the last commit applies the simplification review, deleting `SsmService`, `StorageServiceBuilder` and the runner's `*ServiceBuilder` classes). Every file:line below is at `a8be1a0`. Test counts come from the run measured on that commit, not from a new build: baas-model 82 unit; benchmark-runner 49 unit + 18 IT; baas-cli 932 unit + 49 IT; all green.
 
 ## Summary
 
-1. The unit suite is still in good shape: fast (957 baas-model + baas-cli tests, 0 skipped, 34 s wall including compile, offline), no Mockito anywhere, short behaviour-named methods (longest is 45 lines), and the riskiest artefacts (user-data, CloudFormation template, IAM policies) are tested by what they *do*. The user-data tests run the script in bash against a fake `aws`. They do not grep for spellings.
-2. The gap is still at the **command orchestration layer**, but it is now smaller. `interactive-setup` (7d9660a) put every AWS call setup makes behind one port, `SetupAws`, and `SetupStepsTest` drives the whole walkthrough against `FakeSetupAws`, asserting call order (`containsSubsequence`). So setup's sequencing is now tested. `RunCommand.execute` (~200 lines), `TeardownCommand.removeDeployment` (~73) and the image build (`RunnerImageBuild.run`, ~60, new) still run in no JVM test, because they take a concrete `AwsClientFactory` that builds real SDK clients. The run and teardown ordering invariants (reserve before launch, hook before RunInstances, save the extension, then empty the bucket, then delete the stack, then retire the image) are still proven only by the paid e2e or not at all.
-3. With no shared seam, each command test still invents one. The five idioms remain: a picocli `IFactory` plus an anonymous subclass or field replacement, field pokes (66), static helpers on the command, SDK-interface fakes (8), and ports (`JobRecorder`, `JobSession.Instances`, `OperatorSession.Aws`, `JobsShowSubcommand.Sources`, and now `SetupAws`). The `IFactory` boilerplate is now copy-pasted into 7 files. `SetupRun` shows what a shared harness could look like, but it serves setup alone.
-4. Fixtures are duplicated: 2 in-memory `JobRecorder`s with no contract test binding them to the DynamoDB one, and now a 224-line `FakeSetupAws` plus a second hand-written `SetupAws` in `SetupCommandTest`, with no contract against the untested 218-line `AwsSetupAws`. There are also 6 private `ResultRow` builders over a 9–11-argument positional record, `JobItem`'s 10-argument constructor at 13 sites, and the LocalStack pin written 6 times. Global-state tests (System.err swap, Locale and TimeZone defaults) are safe only because nothing runs in parallel. The new setup suites add no JVM-global state.
-5. One new finding, T13: a setup test writes `policy.json` into the surefire working directory (`baas-cli/`), and that file has already been committed by accident.
-6. For a boundary refactor: baas-model, the template and policy suites, `JobSessionTest`/`JobTerminationTest`, `UserDataScriptBuilderTest`, `CommandTreeTest` and now `SetupStepsTest`/`SetupWalkthroughTest` would **protect** it. `RunCommandTest`'s static-helper tests, every `IFactory`+override harness, and the field-poking `RunCommand*Test`s would **obstruct** it. They break on a pure move because they address code by its location (class, package-private method name, field), not by behaviour.
+1. The unit suite is still in good shape. It is fast and offline, has no Mockito, uses short behaviour-named methods (the longest is 44 lines), and tests the riskiest artefacts (user-data, CloudFormation template, IAM policies) by what they *do*.
+2. **The main gap of the original review is closed for `baas run`.** The refactor moved `RunCommand.execute`'s AWS sequence into `JobLaunch` over one port, `RunAws`, with `AwsRunAws` as the real adapter. `JobLaunchTest` drives a whole launch against the recording `FakeRunAws` and pins the order: image → stack outputs → upload → pinned runner → reserve → hook → `runInstance`. It also pins every early-exit branch. `RunCommandLaunchTest` drives `RunCommand.call()` through picocli to a completed, detached and refused launch, without registering real JVM hooks (`RunCommand.shutdownHooks`). T1 is fixed.
+3. **The `JobRecorder` fakes now share a contract.** `JobRecorderContract` (7 cases) runs against `DynamoDbJobRecorder` (Docker-gated IT), `FakeRunAws`'s recorder and `JobSessionTest.FakeRecorder`. One in-memory recorder is still unbound: `RunCommandDetachTest.Recorder`, which breaks two of the contract's rules. The `SetupAws` and now `RunAws` adapters (`AwsSetupAws`, `AwsRunAws`) still have no test. T4 is narrowed, not closed.
+4. **Teardown and image build are unchanged.** `TeardownCommand.removeDeployment` and `RunnerImageBuild.run` still build their clients from a concrete `AwsClientFactory` (`DeployerSession.factory`). Their ordering invariants still run in no JVM test (T2). The refactor did make the fix cheaper: `RunnerImageBuild` now sits in `image` beside `FakeEc2`/`FakeImageBuilder`/`FakeSsm`.
+5. **The cross-runtime contract gained real tests.** `RunnerArgsContractTest` parses user-data's argv for every `BenchmarkType` through the real `TestWrapper`. `SliceBoundaryTest`, `ModelBoundaryTest` and `RunnerLayeringTest` pin package edges. `PayloadWritersTest` pins JSON/CSV under `pl-PL`. The runner's JMH option mapping and its JCStress HTML parser are still untested (T3).
+6. Every other finding (T5–T13) is still open. Most were only moved, because the slice refactor relocated nearly every test file. T13 still writes `baas-cli/policy.json`, and the file is still committed.
+7. For the next refactor: the new port tests (`JobLaunchTest`, `JobRecorderContract`, `RunnerArgsContractTest`, the boundary tests) join the **protect** side. `RunCommandTest`'s statics, the seven `IFactory` harnesses and the field-poking `RunCommand*Test`s are still on the **obstruct** side. `RunCommandLaunchTest` adds four more field writes.
 
 ## Index
 
-| ID | Title | Necessity | Effort | Status at 7d9660a |
+| ID | Title | Necessity | Effort | Status after slice-architecture (`a8be1a0`) |
 |---|---|---|---|---|
-| T1 | `RunCommand.execute` has no injectable AWS seam, so its step order is pinned only by the paid e2e | Should | M | Valid, relocated |
-| T2 | Admin command sequencing (teardown, image build) is untested because `AwsClientFactory` is built inline | Should | S | Changed: setup now tested through `SetupAws` |
-| T3 | Benchmark-runner `commands` package has 0.16 test/code; JMH option forwarding and the JCStress HTML parser have no unit test | Should | S | Valid |
-| T4 | Hand-written stateful fakes re-implement the real rules with no contract test (`JobRecorder` ×2, now `SetupAws`) | Should | S | Valid, extended |
-| T5 | No common command-test harness: 5 seam idioms, `IFactory` boilerplate ×7 | Could | S | Changed: `SetupRun` is a template, but the copies grew |
-| T6 | Positional records and builders rebuilt by private helpers in every test class | Could | S | Valid, relocated |
-| T7 | `Thread.sleep(100)` followed by an assertion on thread state in `JobSessionTest` | Could | XS | Valid |
-| T8 | `DeployerPreflightTest` pins the exact call count (now 14) to today's policy shape | Could | XS | Valid, relocated (and fired once) |
-| T9 | Global-state mutation (System.err, Locale, TimeZone) without `@ResourceLock` | Could | XS | Valid |
-| T10 | Test isolation from `~/.baas`/`~/.aws` exists only in the surefire config | Could | XS | Valid, relocated |
-| T11 | LocalStack pin duplicated ×6, one container per IT class, stale `java.wonderland` label | Could | XS | Valid |
-| T12 | Every IT is `disabledWithoutDocker`: a Docker-less `mvn verify` silently skips all store/S3 tests | Could | XS | Valid |
-| T13 | A setup test writes `policy.json` into `baas-cli/`, and it was committed | Should | XS | New at 7d9660a |
+| T1 | `RunCommand.execute` has no injectable AWS seam, so its step order is pinned only by the paid e2e | Should | M | **Fixed by the refactor** |
+| T2 | Admin command sequencing (teardown, image build) is untested because `AwsClientFactory` is built inline | Should | S | Open, relocated |
+| T3 | Runner `commands` layer is nearly untested; JMH option forwarding and the JCStress HTML parser have no unit test | Should | S | Open, changed: argv contract now tested |
+| T4 | Hand-written stateful fakes re-implement the real rules with no contract test | Should | S | Open, changed: two of three in-memory `JobRecorder`s now bound; detach `Recorder`, `AwsSetupAws`, `AwsRunAws` not |
+| T5 | No common command-test harness: 5 seam idioms, `IFactory` boilerplate ×7 | Could | S | Open, relocated |
+| T6 | Positional records and builders rebuilt by private helpers in every test class | Could | S | Open, relocated |
+| T7 | `Thread.sleep(100)` followed by an assertion on thread state in `JobSessionTest` | Could | XS | Open, relocated |
+| T8 | `DeployerPreflightTest` pins the exact call count (14) to today's policy shape | Could | XS | Open, relocated |
+| T9 | Global-state mutation (System.err, Locale, TimeZone) without `@ResourceLock` | Could | XS | Open, relocated (one new site) |
+| T10 | Test isolation from `~/.baas`/`~/.aws` exists only in the surefire config | Could | XS | Open, relocated |
+| T11 | LocalStack pin duplicated ×6, one container per IT class, stale `java.wonderland` label | Could | XS | Open, relocated |
+| T12 | Every IT is `disabledWithoutDocker`: a Docker-less `mvn verify` silently skips all store/S3 tests | Could | XS | Open, changed: now also skips the contract's only real binding |
+| T13 | A setup test writes `policy.json` into `baas-cli/`, and it was committed | Should | XS | Open, relocated |
 
-No finding was resolved or withdrawn by `interactive-setup`; see the two sections at the end.
+No finding is withdrawn.
 
 ## Metrics
 
-| Metric | Value at 7d9660a (dabbc55 in brackets) | Source |
+All figures are at `a8be1a0`. Figures in brackets are from 7d9660a.
+
+| Metric | Value | Source |
 |---|---|---|
-| baas-cli main / test lines | 12 379 / 14 730 (1.19) [10 762 / 13 465, 1.25] | `wc -l` |
-| baas-model main / test | 897 / 954 (1.06) [unchanged] | |
-| benchmark-runner main / test | 3 068 / 1 920 (0.63) [unchanged] | |
-| Per-package ratio, baas-cli | `infra` 3306/6026 (1.82), `commands` 3130/3204 (1.02), `commands/admin` 890/706 (0.79), `commands/admin/setup` 1870/1384 (0.74, of which 326 are the `FakeSetupAws`+`SetupRun` harness), `jobs` 844/990, `results` 861/915, `config` 642/594, `console` 493/373 [`commands/admin` was 1318/973 before the split] | |
-| Test methods | 978 `@Test` + 14 `@ParameterizedTest` across all three modules [914 + 14]; baas-cli 847, baas-model 73, runner 58 | grep |
-| Unit run (baas-model + baas-cli) | 957 tests, 0 skipped, 0 failed, 34.2 s wall (71 s user CPU) [892, 28.5 s / 62 s] | `mvn -q -o -pl baas-model,baas-cli -am test` |
-| Slowest classes | `UserDataScriptBuilderTest` 5.1 s (bash subprocesses), `DeploymentOptionTest` 0.91 s, `CoreTemplateTest` 0.65 s, `DeployerPreflightTest` 0.58 s (a real 250 ms backoff sleep, `DeployerPreflight.java:151`), `CloudFormationServiceTest` 0.47 s. The new setup suites are cheap: `SetupStepsTest` 60 tests in 0.32 s, because `SetupRun` records sleeps instead of sleeping | surefire XML |
-| Largest test classes | `UserDataScriptBuilderTest` 1098, `CoreTemplateTest` 782, `SetupStepsTest` 721 (new), `RunCommandTest` 596, `ImageBuilderServiceTest` 590, `JobSessionTest` 503, `DeployerPolicyTest` 449 [`SetupCommandTest` 448 → 202] | |
-| Longest test methods | `ResultsProjectSelectionTest.java:151` 45 lines, `UserDataScriptBuilderTest.java:910` 42, `JobsDiffCommandTest.java:60` 37 (almost all `IFactory` setup) [unchanged] | awk |
-| Mean size | ~17 baas-cli test lines per baas-cli test method, helpers included (the dabbc55 figure of ~14.7 divided by all three modules' methods) | |
-| Mockito | **none** (0 `mock(`, 0 `when(`) | grep |
-| Hand-rolled SDK fakes | 8: `FakeEc2`, `FakeImageBuilder`, `FakeSsm`, `CapturingEc2`, `FakeCloudFormation` + `DeployedStack`, `FakeIam`, `RecordingDynamoDbClient` (runner) | |
-| Port fakes | `JobRecorder` ×2, `JobSession.Instances` ×2, `OperatorSession.Aws` ×2, `JobsShowSubcommand.Sources` ×1, `SetupAws` ×2 (`FakeSetupAws`, `SetupCommandTest.DeniedAws`) | |
-| Anonymous command subclasses or field-replaced commands via `IFactory` | 7 files [6]; the new one is `SetupCommandTest.java:162` | |
-| Direct field assignments into commands | 66 (RunCommandSummaryTest 20, RunCommandDetachTest 14, ConsoleOutputTest 11, RunCommandTest 9, SetupCommandTest 3 …) [65]. `SetupStepsTest`'s 19 writes go to the `SetupRun` harness, not to a command | grep |
-| String/message assertions | 286 `.contains("…")` [258], 76 `hasMessageContaining`; heaviest `UserDataScriptBuilderTest` (56), `SetupStepsTest` (33, plus 14 `asked("…")` prompt-text checks); `SetupCommandTest` fell from 20 to 2 | |
-| Tests capturing logger output via `System.setErr` | 6 classes (the dabbc55 count of 7 was off by one; the list in T9 is complete) | |
+| baas-cli main / test lines | 12 821 / 15 737 (1.23), 101 / 93 files [12 379 / 14 730, 1.19] | `wc -l` |
+| baas-model main / test | 1 068 / 1 074 (1.01), 16 / 13 files [897 / 954]. The model grew by the contract types moved into it | |
+| benchmark-runner main / test | 2 849 / 2 050 (0.72), 48 / 28 files [3 068 / 1 920]. The drop is the five deleted builders | |
+| Per-package ratio, baas-cli (main/test, package only) | `jobs` 4137/5284 (1.28), `deployment` 709/2161, `deployment/setup` 1923/1436 (0.75, of which 339 are `FakeSetupAws`+`SetupRun`), `image` 1702/1942 (1.14), `results` 1102/1412, `session` 1045/980, `aws` 728/481 (0.66), `console` 607/439, `config` 460/515, `cli` 182/29, root 247/880, `testsupport` –/178. The old `commands`/`infra` split no longer exists | |
+| Runner `commands` package | 663 / 210 (0.32) [0.16]. The increase is `RunnerArgsContractTest` (75 lines) | |
+| Test methods | 1 033 `@Test` + 14 `@ParameterizedTest` [978 + 14]: baas-cli 888 + 14, baas-model 82, runner 63 | grep |
+| Executed tests | baas-model 82; runner 49 unit + 18 IT; baas-cli 932 unit + 49 IT, all green. Measured at `a8be1a0` by the caller; Maven was not re-run for this pass. The executed count exceeds the declared count because contract suites run once per binding | given |
+| Slowest classes | Not re-measured (no build in this pass). The 7d9660a profile still applies structurally: `UserDataScriptBuilderTest` runs bash, and `DeployerPreflight.java:147` holds the real 250 ms backoff sleep. `JobLaunchTest` passes a no-op sleeper and a zero interval, so the new launch tests do not wait | |
+| Largest test classes | `UserDataScriptBuilderTest` 1133, `CoreTemplateTest` 784, `SetupStepsTest` 760, `RunCommandTest` 597, `ImageBuilderServiceTest` 590, `JobSessionTest` 504, `DeployerPolicyTest` 451 | `wc -l` |
+| Longest test methods | `ResultsProjectSelectionTest.java:151` 44 lines, `UserDataScriptBuilderTest.java:946` 41, `JobsDiffCommandTest.java:61` 36 (almost all `IFactory` setup), `JobSessionTest.java:309` 32 | awk |
+| Mockito | **none** (no `org.mockito` import) | grep |
+| Hand-rolled SDK fakes | 8: `FakeEc2`, `FakeImageBuilder`, `FakeSsm` (now package `image`, beside their consumers), `CapturingEc2` (`jobs`), `FakeCloudFormation` + `DeployedStack` (`aws/CloudFormationServiceTest`), `FakeIam` (`deployment/DeployerPreflightTest`), `RecordingDynamoDbClient` (runner) | |
+| Port fakes | `RunAws` ×1 (`FakeRunAws`, new). `JobRecorder` ×3: `FakeRunAws`'s and `JobSessionTest.FakeRecorder` are contract-bound, `RunCommandDetachTest.Recorder` is not. `JobSession.Instances` ×3 (`FakeRunAws`, `JobSessionTest.FakeInstances`, `RunCommandDetachTest.Instances`). `OperatorSession.Aws` ×2. `JobsShowSubcommand.Sources` ×1. `SetupAws` ×2 (`FakeSetupAws`, `SetupCommandTest.DeniedAws`) | |
+| Contract suites | `JobRecorderContract` (new, 7 cases × 3 bindings, one Docker-gated); runner `ResultsStoreContractTest` (2 bindings, both Docker-gated) | |
+| Structural tests | `SliceBoundaryTest` (161 lines, 6 rules), `ModelBoundaryTest` (41), `RunnerLayeringTest` (68). All three are new. The implementation review (I2, I3) covers what they do not see | |
+| `IFactory` harnesses | 7 files, unchanged in number | grep |
+| Direct field assignments into commands | 70 [66]: `RunCommandSummaryTest` 20, `RunCommandDetachTest` 14, `RunCommandTest` 9, `JobsConsoleOutputTest` 8, `ResultsProjectSelectionTest` 4, `RunCommandLaunchTest` 4 (new), `ResultsConsoleOutputTest` 3, `SetupCommandTest` 3, … | grep |
+| String/message assertions | 298 `.contains("…")` [286], 76 `hasMessageContaining`; heaviest `UserDataScriptBuilderTest` 60, `SetupStepsTest` 34 (plus 17 `asked("…")`) | |
+| Tests capturing logger output via `System.setErr` | 6 classes (list in T9) | |
 | Tests writing outside their `@TempDir` | 1: `SetupCommandTest#withoutTheOptionATerminalIsAsked` writes `baas-cli/policy.json` (T13) | |
-| Assertions on captured SDK request objects | 18, in 4 files (`OperatorSessionTest` 8, `Ec2ProvisioningServiceTest` 6, `DeployerPreflightTest` 3, `ParentImageResolverTest` 1) | |
-| Production classes not named in any test | baas-cli: `StatusLine`, `Watch`, `JobStop` (covered indirectly through `JobSession`/`JobTermination`), `SsmService`, `ConfigListSubcommand` (driven by argv), and new: `AwsSetupAws` (218, the real `SetupAws` adapter), `RunnerImageBuild` (96, the image-build sequence shared by `admin image build` and setup); runner: `ApiJmhOptions` (203), `JCStressHtmlResultParser` (128), `HtmlParser`, `JmhWithAsyncProfilerSubcommand`, `JmhWithProfilerSubcommand`, `JmhSubcommand`, `TestWrapper`, `JmhBenchmarkProcessBuilderFactory`, `StorageServiceBuilder` | grep -w |
-| Naming | consistent behavioural sentences (`aRefusedRunningWriteShipsTheLogAndTerminatesInsteadOfRunningTheBenchmark`), with rationale in Javadoc and finding IDs cited; the setup tests cite spec scenarios by name | |
+| Production classes named in no test | baas-cli: `AwsRunAws` (113, new adapter), `AwsSetupAws` (220), `RunnerImageBuild.run` (the class is now named, by `ImageCommandsTest.java:86-94` for `olderBaseRefusal`, which moved into it), `Watch`, `JobStop` (covered through `JobSession`/`JobTermination`), `ConfigListSubcommand` (driven by argv), `DeployerSession`. `StatusLine` is now named (`JobLaunchTest`). Runner: `ApiJmhOptions` (204), `JCStressHtmlResultParser` (128), `HtmlParser`, `JmhBenchmarkProcessBuilderFactory`. `SsmService` and `StorageServiceBuilder` no longer exist. `TestWrapper` and the four subcommands are now exercised by `RunnerArgsContractTest` (parse only) | grep -w |
 
 ## Findings
 
-### T1: `RunCommand.execute` has no injectable AWS seam · Should · M · Valid, relocated
-- **Location:** `baas-cli/src/main/java/pl/wsztajerowski/baas/commands/RunCommand.java:300-496` (execute), `:593-640` (poll and results), `:94-98` (`operatorSession()` → `OperatorSession.of`), `infra/AwsClientFactory.java:27-111` (concrete, `build(XClient.builder())` at `:61-85`).
-- **Evidence:** CLAUDE.md already says the success path of `call()` is uncovered. The cause is structural. Every AWS step is reached through `operatorSession().factory().<client>()`, and `AwsClientFactory` builds real SDK clients, so no test can substitute one. The tests therefore cover only the pieces around the launch. `RunCommandDetachTest.java:25-28` says so: "The launch itself needs AWS, so these drive the steps around it … directly". Of the CLAUDE.md invariants that live in this method, three have no in-JVM test:
-  - the precondition order: format, type, runner JAR, project, table, tags, then JAR existence before any AWS call (`:302-346`);
-  - "a reservation that cannot be written launches nothing" (`:446-458`);
-  - "hook registered *before* RunInstances" (`:466`).
-  At 7d9660a `interactive-setup` only reworded hints here (`Hints.command`, the new `noImageMessage` at `:271` and `summaryDeployment`); the seam is unchanged.
-- **Recommendation:** extract the AWS-touching steps behind one port, the way `JobsShowSubcommand.Sources` (`JobsShowSubcommand.java:78`), `JobSession.Instances` and now `SetupAws` already work: `resolveImage`, `networking`, `upload`, `recorder`, `instances`, `launch`. Then one test can assert the sequence of calls and the stop-at-first-failure behaviour, and N3 becomes testable. `SetupAws` + `FakeSetupAws` + `SetupRun` is now an in-repo worked example of exactly this shape (a port answering in domain terms, a recording fake, `containsSubsequence` on the call log). Don't fake `AwsClientFactory`'s SDK clients for this: the SDK fakes would pin which API calls are made rather than what the step decides.
+### T1: `RunCommand.execute` has no injectable AWS seam · Should · M · **Fixed by the refactor**
+- **Was:** every AWS step in `RunCommand.execute` went through `operatorSession().factory()`. As a result, three invariants had no in-JVM test: the precondition order, "a reservation that cannot be written launches nothing", and "hook before RunInstances". CLAUDE.md recorded that `call()`'s success path ran in no JVM test.
+- **Now:**
+  - `RunCommand.execute` (`jobs/RunCommand.java:241-303`) resolves options and hands a `JobLaunch.Request` to `new JobLaunch(awsFactory.apply(operatorSession().factory()), config.names(), this)` (`:302`). `awsFactory` (`:91`) and `shutdownHooks` (`:88`, used at `:529`) are the test seams.
+  - Every AWS call is on `RunAws` (`jobs/RunAws.java:16-53`). `AwsRunAws` is the real adapter.
+  - `JobLaunchTest` (`jobs/JobLaunchTest.java`, 11 tests) runs against `FakeRunAws`, which logs each call:
+    - Step order, each step strictly after the previous: `aCompletedJobRunsEveryStepInOrderAndShowsItsMeasurements` (`:101-119`).
+    - No image, nothing uploaded or reserved: `:145-152`.
+    - Missing networking fails before any upload: `:154-162`.
+    - A failed reservation launches nothing and arms no hook: `:164-171`.
+    - Refused launch, detach, ended-before-confirm: `:173-202`.
+    - Status line and polling: `:204-227`.
+  - `RunCommandLaunchTest` (`jobs/RunCommandLaunchTest.java:58-105`) runs `call()` through picocli for three cases: completed (exit 0, one JSON summary, hook armed once), detached and refused. It also covers a reserved tag that is refused before any AWS call (`aws.events` empty).
+- **Residual, tracked elsewhere:**
+  - `AwsRunAws` is untested pure delegation (see T4).
+  - Of the precondition order before AWS, only the reserved-tag case is driven through `call()`. The other checks (format, type, unreleased build, project, table) are unit-tested as statics in `RunCommandTest`, which keeps them on the obstruct list.
 
-### T2: Admin command sequencing is untested · Should · S · Changed
-- **Location:** `commands/admin/TeardownCommand.java:81-153` (`removeDeployment`: save extension → empty bucket → delete stack → retire image, each stopping the rest), `ImageBuildSubcommand.java:104-108` delegating to the new `RunnerImageBuild.java:36-95`. Each still builds a concrete client factory inline (`TeardownCommand.java:82`, `ImageBuildSubcommand.java:104`), and `RunnerImageBuild.run` takes `AwsClientFactory` as its parameter type. Setup is no longer in this list.
-- **What changed at 7d9660a:** setup's sequencing is now tested. `SetupCommand.call` shrank to a 10-line delegation (`SetupCommand.java:104-113`) into `SetupSteps.run` over a `SetupAws` port (`commands/admin/setup/SetupAws.java`). `SetupStepsTest` (60 tests) drives the walkthrough against `FakeSetupAws`, which records every call in order, and asserts on that log. Examples: preflight before any stack call and `submitCreate` (`SetupStepsTest.java:236`), `awaitSettled` before `update` (`:494`), delete-then-recreate of a `ROLLBACK_COMPLETE` stack (`:504`), a later denial re-running the preflight (`:550`), and nothing asked of AWS before the credentials step (`:54`, `:80`, `:88`).
-- **What has not changed:** teardown and image build. `TeardownConfigFileTest.java:56-77` still replaces `removeDeployment` wholesale (override at `:63`) with a constant exit code. "Teardown retires the image only after the stack is gone" and "a teardown that cannot save the extension deletes nothing" could still be reordered without a red build. The image build moved out of `ImageBuildSubcommand` into `RunnerImageBuild` so setup's image step could share it (`AwsSetupAws.java:205`). That sequence (stack exists → older-base refusal → `requireCurrent` → parent resolve → `preflightVersion` before the stack update → `updateStackParameters` → `publish`) is named in no test. `ImageBuilderServiceTest` grew from 474 to 590 lines to cover waiting for and adopting an interrupted build, so the service under the sequence is still well tested. The order the caller uses is not, and setup's `FakeSetupAws.buildImage` stands in for all of it as one call.
-- **Recommendation:** narrower now. Give teardown and image build the setup treatment. That could mean a `TeardownAws` port, or reusing `SetupAws` (it already has `stackParameters`, `deleteStack` and an image notion), plus a recording fake. Then write one ordering test per invariant. Change `RunnerImageBuild.run` to take the clients or a small port rather than `AwsClientFactory`, so it can run against the existing `FakeImageBuilder`/`FakeEc2`/`FakeSsm` plus a fake CloudFormation, and assert "preflight before update, update before publish".
+### T2: Admin command sequencing is untested · Should · S · Open, relocated
+- **Location:**
+  - `deployment/TeardownCommand.java:78-150` (`removeDeployment`). It saves the extension at `:99-111`, empties the bucket at `:113-124`, deletes the stack at `:127-129` and retires the image at `:134-138`. Clients are built from `DeployerSession.factory(config)` at `:79`.
+  - `image/ImageBuildSubcommand.java:75-79` builds the factory (now `DeployerSession.factory(config)`) and delegates to `image/RunnerImageBuild.java:32-91`, whose `run(AwsClientFactory, …)` signature is unchanged. Setup reaches the same method through `deployment/setup/AwsSetupAws.java:207`.
+  - `deployment/TeardownConfigFileTest.java:56-67` still replaces `removeDeployment` wholesale (override at `:63`).
+- **Evidence:** The refactor moved and renamed these classes but did not change their seams. `a8be1a0` moved `olderBaseRefusal` into `RunnerImageBuild` (`:100`) and its test follows it, but `run` itself is still reached only through a real factory.
+  - Teardown's order is not pinned. "A teardown that cannot save the extension deletes nothing" and "retire the image only after the stack is gone" can still be reordered without a red build.
+  - The build sequence in `RunnerImageBuild.run` is not pinned either: stack exists → older-base refusal → `requireCurrent` → parent resolve → `preflightVersion` (`:73`) before `updateStackParameters` (`:78`) → pipeline output → `publish`.
+  - `FakeSetupAws.buildImage` still stands in for all of it as one call.
+- **What changed that helps:**
+  - `RunnerImageBuild` and the three image SDK fakes now share the package `image`, so a package-private test can use the fakes directly.
+  - `RunAws`/`FakeRunAws`/`JobLaunchTest` is a second in-repo example (after `SetupAws`) of the port-plus-recording-fake shape this finding asks for.
+- **Recommendation:** Unchanged in substance. Give teardown a port, in the shape of `RunAws`, with a recording fake and one ordering test per invariant. Change `RunnerImageBuild.run` to take a small port or the four clients rather than `AwsClientFactory`. Then test it in `image` against `FakeImageBuilder`/`FakeEc2`/`FakeSsm` and a CloudFormation fake, asserting "preflight before update, update before publish".
 
-### T3: Runner command layer is nearly untested · Should · S · Valid
-- **Location:** `benchmark-runner/src/main/java/pl/wsztajerowski/commands/ApiJmhOptions.java` (203 lines, picocli → JMH options), `JmhWithAsyncProfilerSubcommand.java` (81), `JmhWithProfilerSubcommand.java`, `JmhSubcommand.java`, `TestWrapper.java`, `JCStressHtmlResultParser.java` (128) and `HtmlParser.java` (72). benchmark-runner is untouched by `dabbc55..7d9660a`.
-- **Evidence:** `commands` has a 0.16 test/code ratio. Its only tests are `ApiCommonSharedOptionsTest` (113 lines) and `JCStressSubcommandTest.java:15-21` (one parse test). The HTML parser runs only inside `JCStressSubcommandServiceIT`, which needs Docker and Mongo and runs real JCStress. A dropped or renamed JMH flag (`-wi`, `-f`, `-prof`) would pass every unit test and surface only in a paid job's numbers. That is the false-green class the Necessity scale calls *Must*, held down to *Should* only because the e2e runs `jmh-with-async`.
-- **Recommendation:** (a) table tests that `parseArgs` each subcommand and assert the resulting JMH `Options`/argv; (b) a checked-in JCStress `index.html` fixture for `JCStressHtmlResultParser`. Neither needs Docker. Keep these separate from C4 (`retire-mongodb`), which moves the ITs but adds no unit coverage here.
+### T3: Runner command layer is nearly untested · Should · S · Open, changed
+- **Location:** `benchmark-runner/src/main/java/pl/wsztajerowski/commands/ApiJmhOptions.java` (204 lines, picocli → JMH options), `JmhWithAsyncProfilerSubcommand.java` (82), `JmhWithProfilerSubcommand.java` (40), `JmhSubcommand.java` (29); since `a8be1a0` the subcommands construct their services directly, with no builders, `infra/JCStressHtmlResultParser.java` (128), `infra/HtmlParser.java` (72).
+- **What changed:** `commands/RunnerArgsContractTest.java` (new, 75 lines) builds user-data's argv from `baas-model`'s `RunnerArgs`/`TagKeys` constants for every `BenchmarkType`, parses it through the real `TestWrapper`, and asserts the common options (`:47-65`). It also asserts that the runner's subcommands are exactly `BenchmarkType.commandNames()` (`:67-74`). A renamed common option or subcommand now fails a build. The `commands` test/code ratio rose from 0.16 to 0.32.
+- **Still open:** Nothing asserts what a JMH flag *becomes*. `-wi`, `-f`, `-prof`, `-bm` passed through `ApiJmhOptions` to JMH `Options` are untested, so a dropped mapping still passes every unit test and surfaces only in a paid job's numbers. `JCStressHtmlResultParser` and `HtmlParser` still run only inside the Docker+Mongo `JCStressSubcommandServiceIT`.
+- **Recommendation:** Narrower. (a) Add per-subcommand table tests from parsed args to the resulting JMH `Options`/argv; `RunnerArgsContractTest` already supplies the parsing half. (b) Add a checked-in JCStress `index.html` fixture for the parser.
 
-### T4: Hand-written stateful fakes with no contract · Should · S · Valid, extended
-- **Location:** `baas-cli/src/test/java/pl/wsztajerowski/baas/jobs/JobSessionTest.java:26` (`FakeRecorder`, reused by `JobTerminationTest.java:10`), `commands/RunCommandDetachTest.java:39-86` (`Recorder`), `:89-106` (`Instances`, a second copy of `JobSessionTest.java:95`). New at 7d9660a: `commands/admin/setup/FakeSetupAws.java` (224 lines) against `main/.../commands/admin/setup/AwsSetupAws.java` (218 lines, no test).
-- **Evidence:** Both `JobRecorder` fakes re-implement "first outcome wins / refuse over a terminal status" by hand (`RunCommandDetachTest.java:50-69`). The real rule is a DynamoDB condition expression (`DynamoDbJobRecorder.NOT_TERMINAL`), checked only by the Docker-gated `DynamoDbJobRecorderIT`. If the real expression changes, every fake-backed test stays green. The runner already solves this for its store: `ResultsStoreContractTest` runs against both adapters.
-  `FakeSetupAws` repeats the pattern at a larger scale. It encodes CloudFormation state transitions that the 60 `SetupStepsTest` cases rely on: `awaitSettled` maps `*_IN_PROGRESS` to `*_COMPLETE` or `ROLLBACK_COMPLETE` (`FakeSetupAws.java:97-110`), a failed `awaitCreate` leaves `ROLLBACK_COMPLETE` (`:147-155`), `update` merges parameters and returns `updateChanges` (`:157-169`), and `buildImage` makes the image current (`:206-215`). `AwsSetupAws` is the adapter that must behave the same, and nothing checks that it does. The risk is lower than for `JobRecorder`, because `AwsSetupAws` delegates to services that are tested (`CloudFormationServiceTest` gained 49 lines, `ImageBuilderServiceTest` 116). But the mapping itself (for example "an update with no changes answers `false`") is asserted only against the fake.
-- **Recommendation:** add one shared `InMemoryJobRecorder` in the test sources and an abstract `JobRecorderContract`, extended by a unit test (in-memory) and by `DynamoDbJobRecorderIT`. Delete the second `Recorder`/`Instances`. For `SetupAws`, a full contract is not worth LocalStack (no IAM/CloudFormation there). Two cheaper steps would help: a short `AwsSetupAwsTest` over the existing SDK fakes (`FakeCloudFormation`, `FakeIam`) for the status and "no changes" mappings, and Javadoc on each `SetupAws` method stating the transition the fake implements.
+### T4: Hand-written stateful fakes with no contract · Should · S · Open, changed
+- **What the refactor fixed:**
+  - `jobs/JobRecorderContract.java:18-89` states the conditional-write rules in 7 cases. It covers an unreserved job taking no write and reading empty, a second reservation being refused, `launched` only over `launching`, and the first terminal status winning.
+  - It is bound to `DynamoDbJobRecorder` (`DynamoDbJobRecorderIT.java:213-220`, nested `Contract`), `FakeRunAws`'s recorder (`FakeRunAwsRecorderTest`) and `JobSessionTest.FakeRecorder` (`JobSessionFakeRecorderTest`).
+  - `FakeRunAws`'s recorder (`FakeRunAws.java:104-153`) now refuses a second reservation and every write before one, so it matches the table on these rules.
+  - This resolves the original core of T4 and implementation-review I4.
+- **Still open:**
+  1. **`RunCommandDetachTest.Recorder`** (`jobs/RunCommandDetachTest.java:39-86`) is a third in-memory `JobRecorder`, not bound to the contract. It would fail three cases:
+     - `launchFailed` (`:59-62`) returns `WRITTEN` over a terminal status.
+     - `reserve` (`:45-47`) never refuses.
+     - `read` (`:72-75`) is never empty.
+     The same file also has a third `JobSession.Instances` (`:89-106`).
+  2. **`AwsSetupAws`** (`deployment/setup/AwsSetupAws.java`, 220 lines) against `FakeSetupAws` (237 lines). This is unchanged. The CloudFormation state transitions that `SetupStepsTest`'s 64 tests rely on are asserted only against the fake.
+  3. **`AwsRunAws`** (`jobs/AwsRunAws.java`, 113 lines, new) against `FakeRunAws`. This is low risk: every method is a one-line delegation to a tested service (`ImageBuilderService.currentImage`, `CloudFormationService.getStackOutputs`, `RunnerJarResolver`, `DynamoDbJobRecorder`, `Ec2ProvisioningService`), and its recorder is the contract-bound one. It is listed for completeness, not as a gap worth a test.
+  4. The contract's only real binding is Docker-gated (see T12).
+- **Recommendation:**
+  - Bind `RunCommandDetachTest.Recorder` to `JobRecorderContract` and fix it until it passes. Better still, delete it and its `Instances` in favour of `JobSessionTest.FakeRecorder`/`FakeInstances`, which are package-visible in `jobs` (the same package).
+  - For `SetupAws`, the 7d9660a recommendation stands: a short `AwsSetupAwsTest` over the SDK fakes for the status and "no changes" mappings.
 
-### T5: No common command-test harness · Could · S · Changed
-- **Location:** `IFactory` + anonymous override or field replacement in `ResultsQueryPipelineTest.java:63`, `ResultsProjectSelectionTest.java:159`, `JobsShowCommandTest.java:45`, `JobsDiffCommandTest.java:83`, `ConfigSyncSubcommandTest.java:191`, `admin/TeardownConfigFileTest.java:56`, and new at 7d9660a, `admin/SetupCommandTest.java:158-181`.
-- **Evidence:** Testing a new `jobs <verb>` today takes these steps:
-  1. Write a deployment file (`TestDeployments.write`).
-  2. Hand-write a ~20-line `CommandLine.IFactory` that intercepts one class.
-  3. Subclass the command anonymously, overriding a package-private hook. The command must *have* one, and each picks its own: `sources`, `openResults`, `jobLookup`, `removeDeployment`, `aws`/`stackOutputs`, and now three replaceable fields on `SetupCommand` (`awsFactory`, `consoleFor`, `answerReader`, `SetupCommand.java:97-102`).
-  4. Return either a port fake or an anonymous subclass of a concrete service built with a `null` client. `new ResultsQueryService(null, table) {…}` appears at `ResultsQueryPipelineTest.java:73`, `ResultsProjectSelectionTest.java:31,169` and `JobsDiffCommandTest.java:69`.
-  5. Set `command.console`.
-  6. Wire `setOut`/`setErr`.
-  7. Swap `System.err` to see log lines.
+### T5: No common command-test harness · Could · S · Open, relocated
+- **Location:** `IFactory` plus an anonymous override or field replacement, in 7 files:
+  - `results/ResultsQueryPipelineTest.java:61`
+  - `results/ResultsProjectSelectionTest.java:158`
+  - `jobs/JobsShowCommandTest.java:44`
+  - `jobs/JobsDiffCommandTest.java:83`
+  - `config/ConfigSyncSubcommandTest.java:192`
+  - `deployment/TeardownConfigFileTest.java:56`
+  - `deployment/SetupCommandTest.java:161`
 
-  That is 40+ lines before the first assertion. The longest test methods in the suite consist almost entirely of this setup.
+  `new ResultsQueryService(null, …) {…}` subclassing appears at `results/ResultsProjectSelectionTest.java:30,168` and `results/ResultsQueryPipelineTest.java:71`. `JobsDiffCommandTest` no longer does this.
+- **Evidence:** The seven-step recipe from 7d9660a still holds for every noun except `run`.
+  - `RunCommandLaunchTest` avoids `IFactory`, because `RunCommand` now exposes two function seams (`awsFactory`, `shutdownHooks`). It still sets four fields directly (`RunCommandLaunchTest.java:42-45`), so it is the field-poke idiom with a better port behind it.
+  - `SetupRun` is still package-private to `deployment.setup`. `SetupCommandTest`, now in `deployment`, still hand-writes `DeniedAws` (`SetupCommandTest.java:133-156`) because it cannot reach `FakeSetupAws`.
+  - `InfraFixtures` became public in `testsupport`, which shows that sharing test fixtures across slices is acceptable, but no command harness moved there.
+- **Recommendation:** Unchanged. Add a `TestCli` in `testsupport`, modelled on `SetupRun`, and adopt one convention: one port hook per command, as `RunCommand.awsFactory` now is. Make `FakeSetupAws` reachable from `SetupCommandTest` so `DeniedAws` can go.
 
-  **What changed at 7d9660a.** `SetupRun` (102 lines) is not a sixth seam style. It is the port idiom done properly. It holds a recording port fake, scripted answers, captured output and prompts, recorded sleeps, and a `run()` that returns the exit code. Each of the 60 `SetupStepsTest` cases is 5–15 lines because of it. It is the best template in the repository for the `TestCli` recommended below. It does not count as that harness, for two reasons. It bypasses picocli entirely: it builds `SetupContext` directly (`SetupRun.java:85-86`), so option parsing is covered separately by `SetupCommandTest`. And it is package-private to `commands/admin/setup`. That second limit already caused a duplicate. `SetupCommandTest`, one package up, needed a `SetupAws` for its two through-the-tree tests and could not reach `FakeSetupAws`. So it hand-wrote `DeniedAws` (`SetupCommandTest.java:133-156`): 19 methods, 16 of them `throw new AssertionError("not reached")`. It also added the seventh copy of the `IFactory` boilerplate. Its closed-input `answerReader` is what causes T13.
-- **Recommendation:** add a `TestCli` helper, e.g. `TestCli.in(dir).with(JobsShowSubcommand.class, cmd).run("jobs","show",id) → Run(exit,out,err)`, plus one convention: each command exposes a single `Ports ports(BaasConfig)` hook. Model its result and recording on `SetupRun`. Make `FakeSetupAws` reachable from `SetupCommandTest` (move it, or give it a `strict()` mode that fails on unscripted calls), which would delete `DeniedAws`. Subclassing concrete services with a `null` client breaks as soon as a constructor validates its argument.
+### T6: Positional constructors rebuilt in every test · Could · S · Open, relocated
+- **Location:**
+  - Private `ResultRow` builders: `results/ResultsGroupingTest.java:12,18,23`, `results/ResultsFiltersTest.java:12`, `results/ResultsConsoleOutputTest.java:42` (formerly `ConsoleOutputTest.java:47`), `console/TableTest.java:119` and `results/ResultsFormatTest.java:38`. They target the 9/10/11-argument constructors of `results/ResultRow.java:14,35,46`.
+  - `new JobItem(` with 10 positional arguments: 13 test sites in 9 files. These include the new `FakeRunAws` and `JobRecorderContract.java:22`, plus `JobLaunch.java:160` in main.
+  - `UserDataScriptBuilder.build` with 16 positional arguments: `jobs/UserDataScriptBuilder.java:298-303`, called from `JobLaunch.java:162-167` and 4 times in `UserDataScriptBuilderTest` (`:39`, `:173`, `:421`, …).
+- **Evidence:** As before. `JobLaunch.Request` (13 positional components, built in `JobLaunchTest.java:86-92` and `RunCommand.execute`) is a new instance of the same shape.
+- **Recommendation:** Unchanged: shared builders (`TestRows`, `TestJobs`) and a parameter record for `UserDataScriptBuilder.build`.
 
-### T6: Positional constructors rebuilt in every test · Could · S · Valid, relocated
-- **Location:** private `ResultRow` builders in `results/ResultsGroupingTest.java:12,18,23`, `results/ResultsFiltersTest.java:12`, `commands/ConsoleOutputTest.java:47`, `console/TableTest.java:119` and `commands/ResultsFormatTest.java:40`, against the 9/10/11-argument constructors of `ResultRow` (`results/ResultRow.java:14`). `new JobItem(` takes 10 positional arguments and appears at 13 sites in 8 test files (the dabbc55 count of 11 in 7 was low; nothing was added since). `UserDataScriptBuilder.build` takes 16 positional arguments (`UserDataScriptBuilderTest.java:38-46`, `RunCommand.java:428-433`).
-- **Evidence:** When `params` was added to `ResultRow`, overloads were added to keep these helpers compiling. A positional `String, String, String` list (region, bucket, type, jobId, path, createdAt, key) can be transposed silently. The setup code does better: the 8-argument `SetupOptions` and 7-argument `SetupContext` are each built once, in `SetupRun.options()`/`run()`, so they don't need builders.
-- **Recommendation:** shared test-data builders (`TestRows.row().benchmark(…).mode(…)`, `TestJobs.job().status(…)`) and a parameter record for `UserDataScriptBuilder.build`. This is also what lets the T1 refactor land without editing 30 call sites.
+### T7: Sleep-based concurrency assertion · Could · XS · Open, relocated
+- **Location:** `jobs/JobSessionTest.java:329-330` (`Thread.sleep(100)`, then `getState()` must be BLOCKED or WAITING).
+- **Evidence and recommendation:** unchanged. Poll the state with a deadline, or count down a latch in the fake.
 
-### T7: Sleep-based concurrency assertion · Could · XS · Valid
-- **Location:** `jobs/JobSessionTest.java:328-329`.
-- **Evidence:** The test runs `second.start(); Thread.sleep(100);` and then asserts that `second.getState()` is BLOCKED or WAITING. On a loaded CI runner the thread may still be RUNNABLE after 100 ms, which gives a false red. Every other wait in the class uses latches.
-- **Recommendation:** poll the state until it is BLOCKED or WAITING, with a deadline, or have the fake count down a latch when it enters the lock.
+### T8: Exact call count pinned to the policy's shape · Could · XS · Open, relocated
+- **Location:** `deployment/DeployerPreflightTest.java:98-106` (`hasSize(14)` at `:105`). The probed-statement list is at `:40-43`.
+- **Evidence and recommendation:** unchanged. Assert `≤ 2 × statements.size()` derived from the rendered policy, and derive the statement list from the unconditioned statements.
 
-### T8: Exact call count pinned to the policy's shape · Could · XS · Valid, relocated
-- **Location:** `infra/DeployerPreflightTest.java:97-105` (`assertThat(iam.requests).hasSize(14)` at `:104`).
-- **Evidence:** The test guards the 56→13-call speed-up (`1c97606`), but it couples to the rendered policy. Adding any statement to `deployer-policy.json` breaks a test whose intent is "at most two calls per statement", as its own name says. **This has now happened once.** `interactive-setup` added the `GitHubOidcProvider` statement (`infra/deployer-policy.json`, +9 lines). It then had to edit the pin from 13 to 14, and the probed-statement list at `:39-41`, in a change that had nothing to do with preflight speed.
-- **Recommendation:** assert `≤ 2 × statements.size()`, derived from the rendered policy. The statement-name list at `:39-41` can likewise be derived from the unconditioned statements.
+### T9: Global JVM state without resource locks · Could · XS · Open, relocated
+- **Location:**
+  - `System.setErr`: `DeploymentOptionTest.java:36,71`, `OptionValidationTest.java:37`, `jobs/RunCommandSummaryTest.java:41`, `image/RunnerImageExtensionCommandsTest.java:78`, `results/ResultsConsoleOutputTest.java:34,90` (formerly `ConsoleOutputTest`) and `console/StatusLineTest.java:33`.
+  - `Locale.setDefault`: `results/ResultsFormatTest.java:61,107,176`, `console/ConsoleTest.java:83`, and new, `console/PayloadWritersTest.java:37`.
+  - `TimeZone.setDefault`: `baas-model/.../ResultKeysTest.java:160`.
+  - `System.clearProperty`: `BaasAppTest.java:109,115`.
+- **Evidence:** Still no `junit-platform.properties` and no `@ResourceLock` anywhere. Every site restores the value in `finally`, so serial execution is safe. The refactor added one site (`PayloadWritersTest`) and removed none.
+- **Recommendation:** unchanged.
 
-### T9: Global JVM state without resource locks · Could · XS · Valid
-- **Location:** `System.setErr` in `DeploymentOptionTest.java:36,71`, `OptionValidationTest.java:39`, `RunCommandSummaryTest.java:42`, `admin/RunnerImageExtensionCommandsTest.java:79`, `ConsoleOutputTest.java:39,181` and `console/StatusLineTest.java:33`. `Locale.setDefault` in `ResultsFormatTest.java:63,109,178` and `console/ConsoleTest.java:83`. `TimeZone.setDefault` in `baas-model/.../ResultKeysTest.java:160`. `System.clearProperty` in `BaasAppTest.java:107`.
-- **Evidence:** These are correct today only because no `junit-platform.properties` exists, so execution is sequential. Turning on parallel execution, the usual fix once the suite grows, would turn them into intermittent failures. SimpleLogger has no writer to inject (`RunCommandSummaryTest.java:33-35`), so swapping System.err is unavoidable. The new setup suites add no JVM-global state. Console, prompter input and sleeper are injected through `SetupContext`, and output is read from the `Console`, not from SimpleLogger. One setup test does depend on the process working directory, though (T13).
-- **Recommendation:** add `@ResourceLock(Resources.SYSTEM_ERR / LOCALE / TIME_ZONE / SYSTEM_PROPERTIES)` to these classes. It costs nothing now and records the constraint.
+### T10: Home and credential isolation exists only in surefire · Could · XS · Open, relocated
+- **Location:**
+  - `baas-cli/pom.xml:141-167` (`user.home` at `:146`, `excludedEnvironmentVariables` at `:152-162`, still without `AWS_CONFIG_FILE`/`AWS_SHARED_CREDENTIALS_FILE`).
+  - `new BaasApp()` → `ConfigService.defaultRoot()` (`BaasApp.java:93-95`). It *executes* in `jobs/RunCommandSummaryTest.java:45` and `results/ResultsConsoleOutputTest.java:35`. It only parses in `jobs/RunCommandDetachTest.java:133,143`, `jobs/JobsDiffCommandTest.java:14,25,51`, `image/ImageCommandsTest.java`, `BaasAppTest`, `HelpAndHintsTest`, `AdminProfileOptionTest` and `config/ConfigSetOptionsTest`.
+- **Evidence and recommendation:** unchanged. The new `RunCommandLaunchTest` does it right: it adopts a session from an in-memory `BaasConfig` and never reads `~/.baas`.
 
-### T10: Home and credential isolation exists only in surefire · Could · XS · Valid, relocated
-- **Location:** `baas-cli/pom.xml:141-167` (`user.home` at `:146`, `excludedEnvironmentVariables` at `:152-162`). `new BaasApp()` (real `ConfigService.defaultRoot()`, `BaasApp.java:89-91`) is used in `RunCommandSummaryTest.java:46`, `RunCommandDetachTest.java:128,138`, `BaasAppTest`, `HelpAndHintsTest` (now 4 sites, including the new `theDeploymentOptionStatesWhenItIsNeeded`, which parses only) and `ConfigSetOptionsTest`. The new `SetupCommandTest` terminal tests correctly use `new BaasApp(root)`.
-- **Evidence:** Under surefire, `user.home` and the AWS variables are redirected or removed. Run from an IDE, these tests see the developer's real `~/.baas` and `~/.aws`. `AWS_CONFIG_FILE` and `AWS_SHARED_CREDENTIALS_FILE` are still not in the exclusion list, so a developer who sets them gives the no-deployment path a real credential source. That path is exercised by `DeploymentOptionTest#onlyARealFailurePointsAtTheStackTrace` (still the second-slowest class). The surefire config isolates the home directory but not the working directory, which is how T13 slipped through.
-- **Recommendation:** add both variables to `excludedEnvironmentVariables`, and use `new BaasApp(tempDir)` everywhere the test executes, not only parses.
+### T11: LocalStack setup duplicated · Could · XS · Open, relocated
+- **Location:**
+  - The literal `"localstack/localstack:4.14.0"` appears in `jobs/RunnerJarResolverIT.java:30`, `jobs/S3DownloadIT.java:32`, `aws/S3UploadServiceIT.java:26`, `results/ResultsQueryServiceIT.java:47` and `jobs/DynamoDbJobRecorderIT.java:48`. In the runner it is `benchmark-runner/.../TestcontainersWithS3BaseIT.java:28,31`, with the stale `java.wonderland` label at `:32`.
+  - The results-table schema is hand-built in `DynamoDbJobRecorderIT.java:56-75`, `ResultsQueryServiceIT` and `TestcontainersWithDynamoDbBaseIT`. These copies are still safe, because they use the `baas-model` constants.
+- **Recommendation:** unchanged. A shared `LocalStackFixture` would now fit naturally in `testsupport`.
 
-### T11: LocalStack setup duplicated · Could · XS · Valid
-- **Location:** `"localstack/localstack:4.14.0"` appears literally in `RunnerJarResolverIT.java:30`, `S3DownloadIT.java:31`, `S3UploadServiceIT.java:26`, `ResultsQueryServiceIT.java:48` and `DynamoDbJobRecorderIT.java:47`, plus `benchmark-runner/.../TestcontainersWithS3BaseIT.java:28` (as `LOCAL_STACK_VERSION`, used at `:31`). That base class also carries a stale `withLabel("java.wonderland.testcontainer", …)` at `:32`. The results-table schema is hand-built in three places: `DynamoDbJobRecorderIT.java:63-74`, `ResultsQueryServiceIT` and `TestcontainersWithDynamoDbBaseIT`. Each uses the `ResultKeys`/`MeasurementItemMapper` constants, and `CoreTemplateTest` pins the template to them, so the schema copies are safe. No IT changed in `dabbc55..7d9660a`.
-- **Evidence:** CLAUDE.md's LocalStack pin has to be edited in six places, and each baas-cli IT class starts its own container (5 starts).
-- **Recommendation:** a shared `LocalStackFixture` holding the image constant, one singleton container and a `createResultsTable(client)` helper.
+### T12: ITs skip silently without Docker · Could · XS · Open, changed
+- **Location:** `@Testcontainers(disabledWithoutDocker = true)` at `results/ResultsQueryServiceIT.java:42`, `aws/S3UploadServiceIT.java:21`, `jobs/RunnerJarResolverIT.java:23`, `jobs/S3DownloadIT.java:27`, `jobs/DynamoDbJobRecorderIT.java:43` and `benchmark-runner/.../TestcontainersWithS3BaseIT.java:25`. CI runs `mvn -B clean verify` with Docker (`ci-pr-build.yml:49`).
+- **What changed:** The stakes are higher. `DynamoDbJobRecorderIT.Contract` is the only binding that ties `JobRecorderContract` to the real condition expressions. Without Docker the contract still runs green against the two in-memory recorders, which *look* verified. A rule changed in `DynamoDbJobRecorder.NOT_TERMINAL` and mirrored wrongly in the fakes would pass locally. CLAUDE.md still documents only the `ASYNC_PATH` gate.
+- **Recommendation:** unchanged. Fail rather than skip when `CI` is set, or document the gate beside `ASYNC_PATH`.
 
-### T12: ITs skip silently without Docker · Could · XS · Valid
-- **Location:** `@Testcontainers(disabledWithoutDocker = true)` on all 5 baas-cli ITs and `benchmark-runner/.../TestcontainersWithS3BaseIT.java:25`.
-- **Evidence:** This is the same failure mode as the documented `ASYNC_PATH` gate. A `mvn verify` on a machine with Docker stopped (the Docker-disk-full case in memory) reports green with every DynamoDB condition-expression test and every S3 test skipped. CI (`ci-pr-build.yml:49`) has Docker, so this is a local false green only. CLAUDE.md was edited at 7d9660a but still documents only the `ASYNC_PATH` gate.
-- **Recommendation:** fail instead of skip when `CI` is set, or document the gate next to `ASYNC_PATH` in CLAUDE.md.
-
-### T13: A setup test writes `policy.json` into `baas-cli/`, and it was committed · Should · XS · New
-- **Location:** `baas-cli/src/test/java/pl/wsztajerowski/baas/commands/admin/SetupCommandTest.java:196-201` (`withoutTheOptionATerminalIsAsked`), through its harness `onATerminal` (`:158-181`, `answerReader` at `:170` always returns `null`). The write happens in `commands/admin/setup/PolicyHandOver.java:31-48`, with the relative default `DEFAULT_FILE = "policy.json"` at `:18`. The artefact is `baas-cli/policy.json` (214 lines), added by `6eebcb8` ("test(cli): cover the four setup scenarios that had no test", now `daeaea9` on next-release).
-- **Evidence:** The test runs setup on a console that claims to be a terminal, without `--non-interactive`, with `--region us-east-1`, against `DeniedAws`, whose preflight is always `Denied`. That sends setup into `PolicyHandOver.handOver`, which asks "Save the deployer policy to a file, or type - to print it [policy.json]". `Prompter.ask` treats a closed input (`null`) the same as an empty line and returns the default (`Prompter.java:24-30`). So `handOver` writes to `Path.of("policy.json")`, which resolves against the JVM working directory. Under surefire that is the module directory, `baas-cli/`, not the test's `@TempDir root`.
-  - **The checked-in file matches this test's inputs exactly:** account `123456789012`, region `us-east-1`, deployment `baas-123456789012` (`arn:aws:cloudformation:us-east-1:123456789012:stack/baas-123456789012`).
-  - **No other test writes it.** The sibling `theOptionForcesUnattendedOnATerminal` (`:183-193`) is non-interactive and prints the policy instead. The `SetupStepsTest` cases that reach the same prompt all answer with a path under `root` or with `-` (e.g. `SetupStepsTest.java:204-205`, `:242`, `:542`). The `[policy.json]` prompt assertion at `SetupStepsTest.java:211` is answered with `root.resolve("p.json")`.
-  - **Every `mvn test` rewrites it, and nothing ignores it.** No `.gitignore` entry covers the file. That is how it reached a commit: a test run plus a broad `git add`, the same failure as the JCStress `*.bin.gz` files CLAUDE.md mentions.
-  - **It is working-directory global state**, a form of what T9 covers.
-- **Recommendation:** make the default resolve somewhere the test controls. Either `SetupContext`/`Prompter` resolves a relative answer against an injectable base directory, with `SetupRun` and `onATerminal` passing the `@TempDir`, or `onATerminal` answers the policy prompt with `root.resolve("policy.json")` (or `-`) rather than a closed input. Delete `baas-cli/policy.json` from the tree, and add it to `.gitignore` as a backstop, so a future regression cannot be committed silently. Optionally, assert in the test that no `policy.json` appears in `Path.of("")`.
+### T13: A setup test writes `policy.json` into `baas-cli/`, and it was committed · Should · XS · Open, relocated
+- **Location:**
+  - The test is `baas-cli/src/test/java/pl/wsztajerowski/baas/deployment/SetupCommandTest.java:196-201` (`withoutTheOptionATerminalIsAsked`). Its harness `onATerminal` is at `:158-181`, and `answerReader` at `:169` always returns `null`.
+  - The write happens in `deployment/setup/PolicyHandOver.java`. `DEFAULT_FILE = "policy.json"` is at `:18`, the prompt at `:32-33`, and `Path.of(answer)` at `:38`.
+  - The file is `baas-cli/policy.json`.
+- **Evidence:**
+  - **The file is still tracked:** `git ls-files` lists it at `a8be1a0`, and only `daeaea9` added it.
+  - **No ignore rule covers it:** `git check-ignore` finds no match.
+  - **Every test run still rewrites it.** The worktree copy's mtime is from today's in-progress build, yet `git diff` is empty, because the test renders identical bytes each time.
+  - The mechanism is unchanged, only moved: a closed input answers the `[policy.json]` prompt with the default, which resolves against surefire's working directory.
+- **Recommendation:** unchanged. Have `onATerminal` answer the prompt with a path under `root` (or `-`), or resolve relative answers against an injectable base. `git rm` the file and add it to `.gitignore`.
 
 ## Refactor safety: which suites protect and which obstruct
 
-A "boundary refactor" here means moving rules out of picocli command classes into domain or service classes behind ports, without changing behaviour.
+A "boundary refactor" here means moving rules between classes or packages without changing behaviour. The slice-architecture refactor was one. It confirmed this section's predictions: the suites listed as protecting survived it with only package moves, while `RunCommandDetachTest`, `RunCommandSummaryTest` and the `IFactory` harnesses had to be edited alongside the code.
 
-**Protect** these. They assert outcomes at stable boundaries and survive a move unchanged:
-- **baas-model, all of it** (`ResultKeysTest`, `MeasurementItemMapperTest`, `JobItemMapperTest`, `JobLayoutTest`, `JobIdTest`, `TagKeysTest`, …). These are pure functions on the shared contract.
-- **Artefact suites:** `CoreTemplateTest`, `DeployerPolicyTest`, `OperatorPolicyDriftTest`, `DeploymentNamesTemplateTest`, `RunnerImageRendererTest`. They assert on the rendered YAML and JSON and on what a policy *grants* (`InfraFixtures.grants`, wildcard-aware), never on Java structure. (`CiTemplateTest` was deleted along with `cf-template-ci.yaml` at 7d9660a.)
-- **`UserDataScriptBuilderTest`** asserts on the generated script and executes it in bash. The only coupling is the 16-argument `build(...)` signature at 4 call sites (T6).
-- **`JobSessionTest`, `JobTerminationTest` and `JobListingTest`** test through ports (`JobRecorder`, `Instances`, `Sleeper`). This is the model to copy.
-- **`SetupStepsTest`, `SetupWalkthroughTest` and `PrompterTest`** (new at 7d9660a) are the second model to copy. `SetupStepsTest` drives the full walkthrough through `SetupRun` and the `SetupAws` port, and asserts on the call log, the deployment file, prompts and output. Steps can be split, merged or reordered internally without touching most of it. `SetupWalkthroughTest` tests the step engine (wait, go-to, retry) with synthetic steps and no AWS at all. Three limits apply:
-  - About 25 calls in `SetupStepsTest` and `RepeatCommandTest` reach package-private statics on step classes: `NamesStep.nameConflict` ×5, `NameAndRegionStep.computePrefix` ×4, `DoneStep.nextSteps` ×3, `PolicyHandOver.administratorCommands` ×3, `RepeatCommand.tokens` ×3, `GitHubStep.deployed` ×2, and single calls to `CredentialsStep.explain`, `NameAndRegionStep.bucketBlocksSetup`, `GitHubStep.subjectPatterns`, `RepeatCommand.render` and `DoneStep.writeExtensionStarter`. These pin which step owns a helper.
-  - The 33 `.contains("…")` and 14 `asked("…")` assertions pin output and prompt wording, so rewording the walkthrough reddens them. This is intended for a guided UX, but it is a cost.
-  - `SetupRun` constructs `SetupContext`'s 7-argument constructor directly, though in one place only.
-- **`ImageBuilderServiceTest`, `RunnerImageResolutionTest` and `ParentImageResolverTest`** use stateful in-memory SDK fakes (`FakeImageBuilder` keeps components, images and pipelines, and now running builds). They protect a move of the service, though not a change of which AWS API it calls. That coupling is intended: the `byName` preflight invariant is about the API call.
-- **`CommandTreeTest`, `BaasAppTest` and `HelpAndHintsTest`** pin the `baas [--deployment] [admin] <noun> <verb>` shape, which the refactor must keep.
-- **`SetupCommandTest`** has moved to this side. At 7d9660a it holds option-validation and parse tests (`validateFederationOptions`, removed-option rejections), plus two through-the-tree tests of `--non-interactive`. It no longer calls helper methods on `SetupCommand`. Only its `IFactory` harness, which writes `awsFactory`/`consoleFor`/`answerReader` (`:168-170`), is location-coupled; see also T13.
-- **`ResultsGroupingTest`, `ResultsFiltersTest`, `EnvironmentManifestTest`, `PackagesDiffTest` and `BaasConfigYamlTest`** test pure logic.
+**Protect** these. They assert outcomes at stable boundaries:
+- **baas-model, all of it.** This now includes `ModelBoundaryTest`, which keeps the model free of the runtimes it serves.
+- **Artefact suites:** `CoreTemplateTest`, `CoreStackTemplateTest`, `DeployerPolicyTest`, `OperatorPolicyDriftTest`, `DeploymentNamesTemplateTest`, `RunnerImageRendererTest`. They assert on rendered YAML/JSON and on what a policy grants (`testsupport/InfraFixtures`, now public and shared across slices).
+- **`UserDataScriptBuilderTest`** (bash execution) and **`RunnerArgsContractTest`** (new) together pin the CLI-to-runner argv contract from both ends, through the same `baas-model` constants. The only coupling is the 16-argument `build(...)` (T6).
+- **`JobLaunchTest`** (new) is the model for a use case behind a port. It asserts on the call log and the listener, so steps can move inside `JobLaunch` without breaking it. It is coupled to the event-string vocabulary of `FakeRunAws` (`"reserve"`, `"hook armed"`, …), which is an intended cost.
+- **`JobRecorderContract`** and its three bindings, plus `JobSessionTest`, `JobTerminationTest` and `JobListingTest` (ports: `JobRecorder`, `Instances`, `Sleeper`).
+- **`SetupStepsTest`, `SetupWalkthroughTest` and `PrompterTest`.** The three limits from 7d9660a still apply: about 25 package-private static calls on step classes, 34 `.contains` plus 17 `asked(…)` wording checks, and `SetupRun` building `SetupContext` directly.
+- **`ImageBuilderServiceTest`, `RunnerImageResolutionTest` and `ParentImageResolverTest`** (stateful SDK fakes, now co-located in `image`).
+- **`CommandTreeTest`, `BaasAppTest` and `HelpAndHintsTest`** (the command-tree shape).
+- **`SliceBoundaryTest`, `ModelBoundaryTest` and `RunnerLayeringTest`** (new) pin the package edges ADR 0009 sets, so a later move cannot silently reintroduce a slice cycle. Their known blind spots (import lines only; the runner's middle packages) are implementation-review I2/I3.
+- **`PayloadWritersTest`** (new) pins JSON/CSV formatting under `pl-PL` on the shared writers, independently of which command prints.
+- **`SetupCommandTest`** (option validation), except its `IFactory` harness. **`ResultsGroupingTest`, `ResultsFiltersTest`, `EnvironmentManifestTest`, `PackagesDiffTest`, `BaasConfigYamlTest`** (pure logic).
 
-**Obstruct** these. They address code by its *location*, so a pure move turns them red without any behaviour change:
-- **`RunCommandTest`** (most of its ~46 tests) calls package-private statics on the command: `RunCommand.requireValidProject` `:64,71,91`, `resolveResultsTable` `:110-129`, `projectFromToplevel` `:19-31`, `RESERVED_TAG_KEYS` `:97`, `watchdogBound` `:454-466`, the new `noImageMessage` `:591`, and sets `command.project` `:81`. These are exactly the rules a refactor would move into a `JobRequest`/`RunPlan` class. The fix is mechanical, but the tests give no safety while it happens.
-- **The `IFactory` + override harnesses** (T5 list, now 7) depend on package-private hook names or fields (`openResults`, `sources`, `jobLookup`, `removeDeployment`, `aws`, `stackOutputs`, and `SetupCommand.awsFactory`/`consoleFor`/`answerReader`) and on subclassing concrete `ResultsQueryService` with a `null` client. Rename, extract or finalise any of those and the harness breaks.
-- **`RunCommandSummaryTest` (20 field writes), `RunCommandDetachTest` (14) and `ConsoleOutputTest` (11)** write `command.detach`, `.format`, `.session`, `.console`, `summaryJobId`, and since 7d9660a `summaryDeployment`, directly (`RunCommandDetachTest.java:111-118`, `:232`, `:270`, `:286`). This pins RunCommand's field layout. `interactive-setup` showed the cost: adding one summary field meant three test edits.
-- **`TeardownConfigFileTest`** replaces `removeDeployment` wholesale (`:63`), so it obstructs extracting that method and protects nothing inside it (T2).
-- **Six classes capture SimpleLogger output** (T9) and assert on log wording. They survive a move but break when a log line is reworded or a message moves between logger and `Console`, which a boundary refactor often does.
+**Obstruct** these. They address code by its location:
+- **`RunCommandTest`** (51 tests) still calls package-private statics on the command: `RunCommand.requireValidProject` (`:65,72,92`), `resolveResultsTable` (`:111,122,130`), `RESERVED_TAG_KEYS` (`:98`), `watchdogBound` (`:455-467`), and it sets `command.project` (`:82,406`). Its `JobLaunch.noImageMessage` call (`:592`) already had to follow the code into `JobLaunch`. The `projectFromToplevel` tests now call `GitProject` directly (`:20-54`), so that part was converted.
+- **The seven `IFactory` + override harnesses** (T5) depend on package-private hook names or fields and on subclassing `ResultsQueryService` with a `null` client.
+- **Field-poking `RunCommand` tests:**
+  - `RunCommandSummaryTest` (20 writes), `RunCommandDetachTest` (14), `JobsConsoleOutputTest` (8) and `RunCommandLaunchTest` (4) write `RunCommand`'s fields directly.
+  - `RunCommandDetachTest` also builds `new JobLaunch(null, …)` (`:113`) to reach `afterLaunch` as a listener, which couples it to `JobLaunch`'s constructor and to the `RunCommand`-as-`Listener` wiring.
+- **`TeardownConfigFileTest`** replaces `removeDeployment` wholesale (`:63`), so it obstructs extracting the method and protects nothing inside it (T2).
+- **The six logger-capturing classes** (T9) break when wording moves between the logger and `Console`.
 
-**Suggested order for a refactor:**
-1. Land T6's builders and T5's `TestCli`, modelled on `SetupRun`.
-2. Convert the `RunCommandTest` statics into tests on the target class *before* moving the code, so the move runs under green tests.
-3. Introduce the T1/T2 ports for run, teardown and image build, following `SetupAws`. The first test written against each is the call-order test that the current suite lacks for those commands.
+**Suggested order for the next refactor:**
+1. Write T2's teardown and image-build ports first. `RunAws` and `JobLaunchTest` show the shape, and the image fakes are already in the right package.
+2. Land T6's builders and T5's `TestCli` in `testsupport`.
+3. Move `RunCommandTest`'s statics onto a request or plan class under green tests before deleting them from `RunCommand`.
 
-## Resolved by interactive-setup (7d9660a)
+## Fixed by the slice-architecture refactor
 
-None. Setup's part of T2 is covered now. Teardown and image build are not, so T2 stays open as **Changed**.
+- **T1.** `baas run`'s AWS sequence moved into `JobLaunch` over `RunAws`.
+  - `JobLaunchTest` pins the order (image → outputs → upload → reserve → hook → `runInstance`) and every early exit.
+  - `RunCommandLaunchTest` drives `RunCommand.call()` end to end against `FakeRunAws`, with `RunCommand.shutdownHooks` replacing real JVM hooks.
+  - The stale CLAUDE.md sentence ("`call()`'s success path is executed by no JVM test") no longer describes the code.
+
+Partly fixed, so kept open as **Open, changed**:
+- **T3:** `RunnerArgsContractTest` covers the argv contract and the subcommand set, but not JMH option mapping or the HTML parser.
+- **T4:** `JobRecorderContract` binds DynamoDB and two of the three in-memory recorders. `RunCommandDetachTest.Recorder`, `AwsSetupAws` and `AwsRunAws` are not bound.
 
 ## Withdrawn
 
-None. Two dabbc55 counts were corrected in place: `JobItem` sites (13 in 8 files, not 11 in 7) and logger-capturing classes (6, not 7).
+None. Every remaining finding was re-located at `a8be1a0`. Classes the refactor moved are cited at their new paths, and counts that changed are refreshed in place: field writes 66 → 70, `JobItem` sites 13 in 9 files, `.contains` 286 → 298.
