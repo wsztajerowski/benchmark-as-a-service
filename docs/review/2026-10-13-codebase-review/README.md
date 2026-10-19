@@ -1,5 +1,12 @@
 # Codebase review, 2026-10-13
 
+> **Implemented (2026-10-15/19) on branch `slice-architecture`** — see ADR 0009. What is still open
+> after re-checking every finding against the refactored code: [alive-findings.md](alive-findings.md).
+> The independent review of the refactor is [implementation-review.md](implementation-review.md), the
+> simplification pass [simplification-review.md](simplification-review.md). Browser review page with
+> every diagram drawn from the code: https://claude.ai/artifact/78Wppry84NTFApwRqs46Wc (private).
+
+
 Five reviews and one survey of CLI architecture styles, written against `next-release` at `dabbc55` and **re-verified on 2026-10-14 against `7d9660a`**, after
 `interactive-setup` landed (the rewritten `next-release` `c66dac4` has a byte-identical code tree). Scope:
 `baas-cli`, `benchmark-runner`, `baas-model`, `infra/`, the generated user-data and `scripts/install.sh`.
