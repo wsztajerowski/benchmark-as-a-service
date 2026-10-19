@@ -58,7 +58,7 @@ simplification review (`simplification-review.md`, Z1–Z12) file against the re
 | B9 | **Fixed by the refactor** | Slices by noun. Residue: `JobReference.JOB_ID` still re-encodes `JobId`'s format |
 | B10 | **Fixed by the refactor** | `console.Json`, `Csv`, `Elapsed`; `STOP_WRITE_TIMEOUT` on `JobSession`; no command borrows another's statics |
 | B11 | **Open, changed** | Cycle fixed (runner acyclic); upload inside `JmhRunResults` and `@Entity` on parse DTOs remain |
-| B12 | **Open, being fixed in this branch** | Diagrams are being redrawn by another change on `slice-architecture` (also I10); not re-checked here |
+| B12 | **Fixed in this branch** | `c4-3-component-cli`, `c4-3-component-runner`, `baas-run`, `baas-build-image`, `baas-results`, `baas-jobs` and `baas-jobs-show-diff` redrawn from the code (98a5f77); the rest were checked and still match (also closes I10) |
 | B13 | **Open, relocated** | Unchanged in substance; new lines in `JobSession`/`JobTermination` |
 | B14 | **Fixed by the refactor** | `model`/`model.dynamodb` split, `ModelBoundaryTest`, public attribute constants, `TagKeys.EXCLUDE_FROM_RESULTS` |
 | B15 | **Fixed in this branch** · Could · XS | `deployment` ↔ `deployment.setup` package cycle: `DeployerPreflight` and `DeployerPolicyRenderer` moved into `deployment.setup`, their only user |
