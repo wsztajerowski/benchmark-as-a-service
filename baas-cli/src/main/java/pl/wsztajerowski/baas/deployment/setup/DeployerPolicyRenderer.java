@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas.deployment;
+package pl.wsztajerowski.baas.deployment.setup;
 
 import java.io.IOException;
 import java.io.InputStream;
