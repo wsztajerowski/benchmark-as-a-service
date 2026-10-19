@@ -1,47 +1,40 @@
 C4Component
-    title baas CLI — Components (level 3)
+    title baas CLI — Components (level 3): composition root, kernel, five slices (ADR 0009)
 
-    Container_Boundary(cli, "baas-cli.jar") {
-        Component(app, "BaasApp + LoggingMixin", "picocli root", "--deployment (inherited), -v pre-scan, failure reporting")
-
-        Component(adminCmds, "admin commands", "SetupCommand, BuildImageCommand, ImageCommand, TeardownCommand, DeployerPolicyCommand", "Deployer credentials (aws.deployerProfile)")
-        Component(configCmds, "config commands", "ConfigSet / ConfigShow / ConfigSync", "Local file; sync proves the stack exists")
-        Component(runCmd, "RunCommand", "picocli", "Preconditions, job naming, upload, launch, poll, JSON summary, shutdown hook")
-        Component(queryCmds, "read commands", "ResultsCommand, DownloadCommand, EnvDiffSubcommand", "Operator credentials, read-only")
-        Component(jobsCmds, "jobs commands", "JobsListSubcommand, JobsTerminateSubcommand", "Operator credentials; list reads, terminate cancels and terminates")
-        Component(jobs, "jobs package", "JobSession, DynamoDbJobRecorder, JobListing, JobTermination", "Job item writes, the one stop path, poll outcomes, vanished resolution")
-
-        Component(cfg, "ConfigService / BaasConfig", "Jackson YAML", "One file per deployment, selection by --deployment; DeploymentNames composes every resource name")
-        Component(infra, "infra services", "CloudFormationService, Ec2ProvisioningService, ImageBuilderService, S3UploadService, SsmService, ResultsTableService", "Thin AWS SDK wrappers")
-        Component(render, "Renderers", "RunnerImageRenderer, DeployerPolicyRenderer, UserDataScriptBuilder", "Turn bundled templates into stack parameters, IAM JSON, user-data")
-        Component(jar, "RunnerJarResolver", "HTTP + SHA-256", "Seeds releases/<v>/benchmark-runner.jar once, from GitHub Releases")
-        Component(results, "results package", "ResultsQueryService, Filters, Grouping, ResultsTable, EnvironmentManifest", "Query, best-per-group, table/JSON/CSV, manifest diff")
-        Component(console, "Console / StatusLine / Table", "stdout only", "Payload path; colour and redraw only when interactive")
+    Container_Boundary(rootB, "pl.wsztajerowski.baas — composition root, imported by nothing") {
+        Component(app, "BaasApp, AdminCommand", "picocli root, implements cli.Root", "Registers all five slices plus the run / query aliases; --deployment (inherited), -v pre-scan, failure reporting")
     }
 
-    Container_Boundary(model, "baas-model.jar (shared with the runner)") {
-        Component(keys, "JobId, JobLayout, ResultKeys, TagKeys, MeasurementItemMapper, JobItemMapper, JobStatus", "plain Java", "The only builders of S3 prefixes, DynamoDB keys and the tag vocabulary")
+    Container_Boundary(slices, "Slices — one per noun; imports only deployment → jobs → {image, results}") {
+        Component(deployment, "deployment (+ deployment.setup)", "DeploymentCommand, SetupCommand, TeardownCommand, DeployerPolicyRenderer, DeployerPreflight", "Setup = SetupSteps over the SetupAws port (AwsSetupAws): eleven SetupStep classes run by SetupWalkthrough. Teardown builds its adapters inline")
+        Component(jobs, "jobs", "JobsCommand, RunCommand, Jobs{List,Show,Diff,Download,Terminate}Subcommand", "run = JobLaunch over the RunAws port (AwsRunAws); JobSession, JobStop, JobTermination, JobListing, DynamoDbJobRecorder, Ec2ProvisioningService, RunnerJarResolver, UserDataScriptBuilder, EnvironmentManifest, PackagesDiff, JobPaths")
+        Component(image, "image", "AdminImageCommand, ImageBuildSubcommand, ImageShowSubcommand", "RunnerImageBuild (the build use case), ImageBuilderService, RunnerImageRenderer, RunnerImageParameters, RunnerImageExtension, ParentImageResolver, RunnerImage")
+        Component(results, "results", "ResultsCommand, ResultsQuerySubcommand", "ResultsQueryService, ResultsFilters, ResultsGrouping, ResultsTable, ResultRow")
+        Component(config, "config", "ConfigCommand, Config{List,Set,Show,Sync}Subcommand", "Standalone: imports the kernel only")
     }
 
-    Rel(app, adminCmds, "dispatches")
-    Rel(app, configCmds, "dispatches")
-    Rel(app, runCmd, "dispatches")
-    Rel(app, queryCmds, "dispatches")
-    Rel(app, jobsCmds, "dispatches")
-    Rel(runCmd, jobs, "reserve, launch, poll, stop")
-    Rel(jobsCmds, jobs, "list, terminate")
-    Rel(jobs, keys, "job keys, status vocabulary")
-    Rel(adminCmds, render, "uses")
-    Rel(adminCmds, infra, "uses")
-    Rel(runCmd, render, "user-data")
-    Rel(runCmd, jar, "pinned runner")
-    Rel(runCmd, infra, "uses")
-    Rel(runCmd, results, "post-job table")
-    Rel(runCmd, keys, "job id, prefix, reserved tags")
-    Rel(queryCmds, results, "uses")
-    Rel(results, keys, "key decoding")
-    Rel(configCmds, cfg, "read/write")
-    Rel(runCmd, console, "summary, status line")
-    Rel(queryCmds, console, "payload")
+    Container_Boundary(kernel, "Kernel — every slice may use it, it imports no slice") {
+        Component(cli, "cli", "Root, Invocation, LoggingMixin, BaasVersion", "How a command reads the root's --deployment and config root without importing BaasApp")
+        Component(console, "console", "Console, StatusLine, Table, Json, Csv, Hints, Watch, Elapsed", "stdout payload; colour and redraw only when interactive")
+        Component(session, "session", "ConfigService, BaasConfig, DeploymentNames, OperatorSession, DeployerSession, CoreStack, GitProject, DeploymentNameRule", "Which deployment, which credentials; DeploymentNames composes every resource name")
+        Component(aws, "aws", "AwsClientFactory, CloudFormationService, S3UploadService, BucketProbe, AwsErrors, Checksums", "Shared AWS SDK v2 readers and writers")
+    }
 
-    UpdateLayoutConfig($c4ShapeInRow="4", $c4BoundaryInRow="1")
+    Container_Boundary(model, "baas-model.jar — the one contract (CLI, runner, user-data)") {
+        Component(contract, "model + model.dynamodb", "JobId, JobLayout, JobStatus, ResultKeys, TagKeys, RunnerArgs, BenchmarkType | JobItemMapper, MeasurementItemMapper, JobItemConditions", "Names, keys, statuses; model imports no AWS SDK")
+    }
+
+    Rel(app, jobs, "registers (and every other slice)")
+    Rel(deployment, jobs, "Ec2ProvisioningService (teardown gate)")
+    Rel(deployment, image, "RunnerImageBuild, ImageBuilderService.retireDeployment")
+    Rel(jobs, image, "RunnerImage, ImageBuilderService.currentImage")
+    Rel(jobs, results, "ResultsQueryService, ResultsTable, ResultRow")
+    Rel(jobs, session, "OperatorSession, DeploymentNames")
+    Rel(deployment, session, "DeployerSession, ConfigService")
+    Rel(results, console, "Table, Json, Csv, Watch")
+    Rel(config, session, "ConfigService, OperatorSession")
+    Rel(cli, session, "Invocation → ConfigService")
+    Rel(session, aws, "AwsClientFactory, BucketProbe")
+    Rel(jobs, contract, "JobId, JobLayout, JobStatus, keys")
+
+    UpdateLayoutConfig($c4ShapeInRow="3", $c4BoundaryInRow="1")

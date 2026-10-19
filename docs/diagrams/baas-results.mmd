@@ -1,6 +1,6 @@
 sequenceDiagram
     actor User as Operator or CI job
-    participant RC as ResultsCommand
+    participant RC as ResultsQuerySubcommand
     participant CFG as config file
     participant Git as git (working directory)
     participant DDB as DynamoDB<br/><prefix>-results
@@ -16,19 +16,19 @@ sequenceDiagram
         RC->>RC: --project with --all-projects?
     end
 
-    RC->>CFG: load() -- table = <prefix>-results, or exit 1 "No deployment"
+    RC->>CFG: OperatorSession.config() -- table = <prefix>-results, or exit 1 "No deployment"
 
     alt --job-id id
         RC->>DDB: Query jobId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the job item
     else --all-projects
-        RC->>DDB: Scan, begins_with(pk, RESULT#) (exclude_from_results filtered unless --show-excluded)
+        RC->>DDB: Scan, begins_with(pk, RESULT#35;) (exclude_from_results filtered unless --show-excluded)
     else project-scoped
         alt --project p
             Note over RC: p
         else git.resolveProject = true and cwd is in a repository
             RC->>Git: repository name of cwd
         else otherwise
-            RC->>DDB: Scan for visible projects, begins_with(pk, RESULT#) -- job items never offer a project
+            RC->>DDB: Scan for visible projects, begins_with(pk, RESULT#35;) -- job items never offer a project
             alt none
                 RC-->>User: error, exit 1
             else no terminal, or format is json/csv
@@ -38,7 +38,7 @@ sequenceDiagram
                 User-->>RC: a number (anything else: refuse, exit 1)
             end
         end
-        RC->>DDB: Query pk = RESULT#<project>
+        RC->>DDB: Query pk = RESULT#35;<project>
     end
 
     Note over RC: Filter by name regex, --tag and --exclude-tag (warn on a tag no row carries).<br/>With --best-per: keep the best per (project, benchmark, params, mode, tag) -- highest for thrpt,<br/>lowest for avgt/sample/ss. Sort (newest first by default), skip --offset, cut to --limit (20, 0 = all).
