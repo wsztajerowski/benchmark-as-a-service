@@ -32,8 +32,8 @@ sequenceDiagram
         alt not a job id (a result path is refused)
             DL-->>User: "is not a job id", exit 2 -- no AWS call, nothing written
         end
-        DL->>DDB: resultPathForJob(id) -- the job item first, so a failed job resolves too
-        alt no item
+        DL->>DDB: JobPaths.resultPathForJob(id) -- the job item first (so a failed job resolves too), else a measurement naming the job
+        alt neither a job item nor a measurement
             DL-->>User: "No job found", exit 1 -- nothing written
         end
         DDB-->>DL: stored resultPath (read, never reconstructed)
@@ -60,7 +60,7 @@ sequenceDiagram
         alt either is not a job id
             ED-->>User: "is not a job id", exit 2 -- no AWS call
         end
-        ED->>DDB: resultPathForJob(A), then B -- fail fast on the first unknown, S3 not read
+        ED->>DDB: JobPaths.resultPathForJob(A), then B -- fail fast on the first unknown, S3 not read
         ED->>S3: GetObject <A>/environment.json, <B>/environment.json
         alt either missing
             ED-->>User: error naming the job, exit 1
