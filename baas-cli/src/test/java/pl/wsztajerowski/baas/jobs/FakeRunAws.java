@@ -75,7 +75,7 @@ public final class FakeRunAws implements RunAws {
     }
 
     @Override
-    public String pinnedRunnerJar(String bucket, String version, String sourceRepo) {
+    public String pinnedRunnerJar(String bucket, String version, String sourceRepo, String runnerSha256) {
         events.add("pinnedRunnerJar " + version);
         return "releases/" + version + "/benchmark-runner.jar";
     }
