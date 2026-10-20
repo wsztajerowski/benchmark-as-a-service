@@ -803,7 +803,11 @@ Project is in the key because `--all-projects` can put two projects' identically
 by side; params because a sweep's variants are different workloads; mode because one benchmark run as
 `thrpt` and `avgt` is two numbers in two units — before `jobs-command`, "best" ignored the mode and
 always kept the highest score, the slowest result for `avgt`.
-The table never shows params in its columns — `-v` prints a `params` line above the `tags` line.
+The table never shows params in its columns — `-v` prints a `params` line above the `tags` line,
+and between them any JMH secondary metrics (`metrics`) and a JCStress job's failing tests (`failed`).
+A JCStress row's SCORE is `passed/total`, marked `✗` when a test failed or errored, and JSON carries
+`jcstress {total, passed, failed, errors, failedTests}`: the job itself ends `completed` and `baas run`
+exits 0 whatever its tests found — the status says JCStress ran, not what it measured (decided 2026-10-20).
 `--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
 
 ### Job items
