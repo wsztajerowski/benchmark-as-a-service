@@ -19,11 +19,10 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
+import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
-import static java.nio.file.Files.list;
 import static java.text.MessageFormat.format;
 import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
@@ -99,24 +98,8 @@ public class JmhWithProfilerSubcommandService {
     private void uploadProfilerArtifacts() {
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
             Path storageDir = Path.of(profilerOutputPathFor(jmhResult));
-            // Only async and jfr write a per-benchmark directory; gc, comp, cl and the rest report
-            // secondary metrics and create none. Listing a missing one failed the job after the
-            // benchmark had finished, before its measurements were stored.
-            if (!Files.isDirectory(storageDir)) {
-                logger.debug("No profiler artifacts for {}", jmhResult.benchmark());
-                continue;
-            }
-            try (Stream<Path> paths = list(storageDir)) {
-                paths
-                    .forEach(path -> {
-                        Path storagePath = storageDir.resolve(path.getFileName());
-                        logger.info("Saving profiler output: {}", storagePath);
-                        storageService
-                            .saveFile(storagePath, path);
-                    });
-            } catch (IOException e) {
-                throw new JavaWonderlandException(e);
-            }
+            // -prof writes into the result tree itself, so the local and storage paths are one.
+            ProfilerArtifacts.upload(storageService, storageDir, storageDir);
         }
     }
 
