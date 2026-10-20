@@ -55,6 +55,19 @@ class RunCommandLaunchTest {
         return base.toArray(String[]::new);
     }
 
+    /** G1: the benchmark's arguments come last on the runner's command line, where picocli's last value wins. */
+    @Test
+    void aRunnerOptionTheCliSetsIsRefusedAfterTheDoubleDashBeforeAnyAwsCall() throws Exception {
+        Path jar = Files.writeString(dir.resolve("b.jar"), "jar");
+
+        int exit = run("--benchmark-jar", jar.toString(), "--runner-jar", jar.toString(), "--project", "lynx-journal",
+            "jmh", "--", "MyBenchmark", "--tag", "imageVersion=1.0.0");
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(aws.events).as("nothing reached AWS").isEmpty();
+        assertThat(aws.uploads).isEmpty();
+    }
+
     @Test
     void aCompletedJobExitsZeroAndPrintsOneSummaryObject() throws Exception {
         aws.instance = FakeRunAws.Instance.COMPLETED_BEFORE_CONFIRM;

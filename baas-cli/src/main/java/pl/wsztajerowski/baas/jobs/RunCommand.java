@@ -20,6 +20,7 @@ import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.session.OperatorSession;
+import pl.wsztajerowski.baas.model.RunnerArgs;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
@@ -32,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -249,6 +251,12 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
             return 2;
         }
+        Optional<String> setByTheCli = RunnerArgs.firstSetByTheCli(benchmarkParams);
+        if (setByTheCli.isPresent()) {
+            logger.error("{} after -- names a runner option baas run sets itself. {}\nNothing was launched.",
+                setByTheCli.get(), insteadOf(setByTheCli.get()));
+            return 2;
+        }
 
         // Checked first, before resolving the project, the results table, the runner image or
         // anything else: a job that cannot name the runner JAR it will execute is going to fail
@@ -432,6 +440,21 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
      * <p>Defined once in baas-model so the CLI and the runner cannot drift apart.
      */
     static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
+
+    /**
+     * What to type instead of a runner option the benchmark's arguments may not name. The arguments
+     * reach the runner after the CLI's own options, and picocli keeps the last value, so each of
+     * these would silently override what {@code baas run} set, or fail the job on the instance.
+     */
+    static String insteadOf(String option) {
+        return switch (option) {
+            case RunnerArgs.TAG -> "Pass tags to baas run, before --: baas run --tag key=value ...";
+            case RunnerArgs.PROJECT -> "Pass the project to baas run, before --: baas run --project <name> ...";
+            case RunnerArgs.MONGO_CONNECTION_STRING_SHORT, RunnerArgs.MONGO_CONNECTION_STRING ->
+                "BaaS stores results in its deployment's table. A JCStress mode is --mode, not -m.";
+            default -> "It names the job's own deployment resources, which no benchmark argument may change.";
+        };
+    }
 
     /**
      * The results table this job records its status in and stores its measurements to.
