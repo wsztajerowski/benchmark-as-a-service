@@ -26,21 +26,23 @@ sequenceDiagram
     JL->>Port: stackOutputs(<prefix>)
     Port->>CF: describeStacks -- SubnetId, SecurityGroupId
     Note over JL: resolveNetworking: a missing output throws, before any upload
+    opt no --runner-jar: pinned to this CLI's version
+        JL->>Port: pinnedRunnerJar(bucket, version, sourceRepo, runnerSha256)
+        Port->>S3: RunnerJarResolver.resolve -- head releases/<version>/benchmark-runner.jar, checksum mode
+        opt absent
+            Port->>GH: fetch benchmark-runner.jar
+            Note over Port: verify against the digest built into the CLI -- a mismatch throws
+            Port->>S3: putObject If-None-Match *, with a SHA-256 checksum (412/409 = another launch seeded it), then head again
+        end
+        Note over Port: S3's SHA-256 must equal the built-in digest -- else throws, nothing uploaded or launched
+    end
     Note over JL: ONE clock read: jobInstant = Instant.now()<br/>jobId = JobId.generate(jobInstant), resultPath = JobLayout.jobPrefix(project, jobId)
     JL->>RC: Listener.named(jobId, resultPath)
     JL->>Port: upload(benchmark JAR, JobLayout.benchmarkJarKey)
     Port->>S3: putObject jobs/<project>/<jobId>/input/benchmark.jar
-    alt --runner-jar given
+    opt --runner-jar given
         JL->>Port: upload(runner JAR, JobLayout.runnerJarOverrideKey)
         Port->>S3: putObject jobs/<project>/<jobId>/input/runner.jar
-    else pinned to this CLI's version
-        JL->>Port: pinnedRunnerJar(bucket, version, sourceRepo)
-        Port->>S3: RunnerJarResolver.resolve -- head releases/<version>/benchmark-runner.jar
-        opt absent
-            Port->>GH: fetch benchmark-runner.jar + .sha256
-            Note over Port: verify -- a mismatch throws, nothing launched
-            Port->>S3: putObject If-None-Match * (412/409 = another launch seeded it)
-        end
     end
     Note over JL: new UserDataScriptBuilder().build(...) with job.sortKey() from ResultKeys --<br/>installs nothing, see the instance-side diagram
     JL->>JS: new JobSession(job, recorder, stopRecorder (5 s client), instances)
