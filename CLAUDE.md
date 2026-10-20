@@ -795,7 +795,8 @@ prefix drops that segment, so what the path stopped carrying the tags now carry 
 whole point of tags being the query surface.
 
 Unknown keys pass through — `baas results query` warns only when a `--tag` names a key no row carries.
-`baas results query` lists every measurement by default, newest first, 20 at a time. `--best-per <tag>`
+`baas results query` lists every measurement by default, newest first, 20 at a time in a table and
+all of them in `json`/`csv` — a pipe cannot see the stderr note about a cut (same for `jobs list`). `--best-per <tag>`
 keeps the best score per `(project, benchmark, params, mode, <tag>)` — the highest for throughput, the
 lowest for a time-per-operation mode — and rows carrying no such tag are bucketed rather than dropped.
 Project is in the key because `--all-projects` can put two projects' identically named benchmarks side
