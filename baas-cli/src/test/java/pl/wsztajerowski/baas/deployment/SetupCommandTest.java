@@ -191,10 +191,15 @@ class SetupCommandTest {
         assertThat(out.toString().strip()).as("unattended, the policy is the payload").startsWith("{").endsWith("}");
     }
 
-    /** The control: the same terminal without the option asks. */
+    /**
+     * The control: the same terminal without the option asks. {@code --policy-file} keeps the
+     * hand-over out of the working directory: closed input answers its prompt with the default,
+     * {@code policy.json}, which resolved against surefire's directory and was committed once.
+     */
     @Test
     void withoutTheOptionATerminalIsAsked(@org.junit.jupiter.api.io.TempDir java.nio.file.Path root) {
-        int[] result = onATerminal(root, new java.io.StringWriter(), "admin", "deployment", "setup", "--region", "us-east-1");
+        int[] result = onATerminal(root, new java.io.StringWriter(), "admin", "deployment", "setup", "--region", "us-east-1",
+            "--policy-file", root.resolve("policy.json").toString());
 
         assertThat(result[0]).as("the profile prompt reads a line").isPositive();
     }
