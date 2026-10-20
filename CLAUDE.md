@@ -584,7 +584,12 @@ The watchdog is the only one that survives a deadlocked JVM.
   `aws-chunked` upload framing as object bytes — `StorageServiceIT` had asserted that corrupted size.
 - **A JCStress job's mode is `--mode`, not `-m`.** The runner forwards it to JCStress as `-m`, but
   on the runner `-m` is `--mongo-connection-string` on every subcommand, so `baas run jcstress -- -m
-  sanity` is read as a Mongo URI. The short form can follow once `retire-mongodb` frees `-m`.
+  sanity` would be read as a Mongo URI; `baas run` refuses it before launching, pointing at `--mode`.
+  The short form can follow once `retire-mongodb` frees `-m`.
+- **Text after `--` may not name a runner option `baas run` sets** (`RunnerArgs.SET_BY_THE_CLI`:
+  `--tag`, `--project`, `--job-id`, `--results-table`, `--s3-bucket`, the endpoints, `-m`, …). User-data
+  passes it after the CLI's own options and picocli keeps the last value, so it would override the
+  guarded tags or the project, or fail the job on the instance. Refused with exit 2, before any AWS call.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
 - **The mongo connection string must include a database name** (`mongodb://host:port/dbname`),

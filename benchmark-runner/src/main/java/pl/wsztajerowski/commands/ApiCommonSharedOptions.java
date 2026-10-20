@@ -27,7 +27,7 @@ public class ApiCommonSharedOptions {
     @Option(names = RunnerArgs.RESULT_PATH, description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
     Path resultPath;
 
-    @Option(names = {"-id", RunnerArgs.JOB_ID}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
+    @Option(names = {RunnerArgs.JOB_ID_SHORT, RunnerArgs.JOB_ID}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
     String jobId;
 
     @Option(names = RunnerArgs.CREATED_AT,
@@ -41,12 +41,12 @@ public class ApiCommonSharedOptions {
     @Option(names = RunnerArgs.RESULTS_TABLE, description = "DynamoDB table holding benchmark measurements.")
     String resultsTableName;
 
-    @Option(names = "--dynamodb-endpoint",
+    @Option(names = RunnerArgs.DYNAMODB_ENDPOINT,
         defaultValue = "${AWS_ENDPOINT_URL_DYNAMODB}",
         description = "Custom DynamoDB endpoint, for LocalStack.")
     URI dynamoDbEndpoint;
 
-    @Option(names = {"--mongo-connection-string", "-m"},
+    @Option(names = {RunnerArgs.MONGO_CONNECTION_STRING, RunnerArgs.MONGO_CONNECTION_STRING_SHORT},
         defaultValue = "${MONGO_CONNECTION_STRING}",
         description = "MongoDB connection string - you could provide it as a option value or put in MONGO_CONNECTION_STRING env variable. For details see: https://www.mongodb.com/docs/manual/reference/connection-string/")
     URI mongoConnectionString;
@@ -58,7 +58,7 @@ public class ApiCommonSharedOptions {
         @Option(names = RunnerArgs.S3_BUCKET, required = true, description = "S3 bucket name where benchmark will be placed.")
         String s3BucketName;
 
-        @Option(names = "--s3-service-endpoint",
+        @Option(names = RunnerArgs.S3_SERVICE_ENDPOINT,
             defaultValue = "${AWS_ENDPOINT_URL_S3}",
             description = "Custom S3 Service endpoint")
         URI s3ServiceEndpoint;
