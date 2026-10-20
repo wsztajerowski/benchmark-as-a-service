@@ -112,21 +112,22 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     int offset;
 
     @Option(names = "--limit", paramLabel = "<n>",
-        description = "Report at most this many rows (default 20, or no limit with --job-id; 0 for no limit).")
+        description = "Report at most this many rows (default 20 in a table; no limit for json, csv or --job-id; 0 for no limit).")
     Integer limit;
 
-    /** The default cut, for sweeps of a project or of every project. */
+    /** The default cut, for a table of a project or of every project. */
     static final int DEFAULT_LIMIT = 20;
 
     /**
-     * The limit in force: the one given, else none for a job lookup — a job's measurements are a
-     * bounded set, and {@code baas run} points at exactly this lookup — else {@link #DEFAULT_LIMIT}.
+     * The limit in force: the one given; else none for a job lookup — a job's measurements are a
+     * bounded set, and {@code baas run} points at exactly this lookup — or for json and csv, whose
+     * reader is a pipe that cannot see the stderr note about a cut; else {@link #DEFAULT_LIMIT}.
      */
     int effectiveLimit() {
         if (limit != null) {
             return limit;
         }
-        return jobId != null ? 0 : DEFAULT_LIMIT;
+        return jobId != null || !"table".equalsIgnoreCase(format) ? 0 : DEFAULT_LIMIT;
     }
 
     @Option(names = "--format", description = "Output format: table (default), json, csv.", defaultValue = "table")

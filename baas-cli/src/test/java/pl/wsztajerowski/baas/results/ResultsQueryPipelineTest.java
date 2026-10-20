@@ -104,13 +104,33 @@ class ResultsQueryPipelineTest {
         return ids;
     }
 
+    /** Every job id a table or CSV names, in order. */
+    private static List<String> namedJobs(String text) {
+        var matcher = Pattern.compile("\\bjob-\\d+\\b").matcher(text);
+        List<String> ids = new ArrayList<>();
+        while (matcher.find()) {
+            ids.add(matcher.group());
+        }
+        return ids;
+    }
+
     @Test
-    void theDefaultIsTheTwentyNewestEveryMeasurement() {
-        var run = query();
+    void theDefaultTableIsTheTwentyNewest() {
+        var run = execute(List.of("query", "--project", "p"));
 
         assertThat(run.exit()).as(run.err()).isZero();
-        List<String> ids = jobIds(run.out());
-        assertThat(ids).hasSize(20).startsWith("job-30", "job-29").endsWith("job-11");
+        assertThat(namedJobs(run.out())).hasSize(20).startsWith("job-30", "job-29").endsWith("job-11");
+    }
+
+    /** G6: a pipe cannot see the stderr note about a cut, so a machine format is never cut unasked. */
+    @Test
+    void jsonAndCsvReturnEveryRowByDefault() {
+        var json = query();
+        var csv = execute(List.of("query", "--project", "p", "--format", "csv"));
+
+        assertThat(jobIds(json.out())).hasSize(30).startsWith("job-30").endsWith("job-1");
+        assertThat(json.err()).doesNotContain("Reporting");
+        assertThat(namedJobs(csv.out())).hasSize(30);
     }
 
     /** R11: a job lookup is the whole job, unless a limit is asked for. */

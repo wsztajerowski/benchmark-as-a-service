@@ -76,9 +76,23 @@ public class JobsListSubcommand implements Callable<Integer> {
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
 
-    @Option(names = "--limit", paramLabel = "<n>", defaultValue = "20",
-        description = "Show at most this many jobs (default 20; 0 for no limit).")
-    int limit;
+    @Option(names = "--limit", paramLabel = "<n>",
+        description = "Show at most this many jobs (default 20 in a table; no limit for json or csv; 0 for no limit).")
+    Integer limit;
+
+    /** The default cut, for a table. */
+    static final int DEFAULT_LIMIT = 20;
+
+    /**
+     * The limit in force: the one given; else none for json and csv, whose reader is a pipe that
+     * cannot see the stderr note about a cut; else {@link #DEFAULT_LIMIT}.
+     */
+    int effectiveLimit() {
+        if (limit != null) {
+            return limit;
+        }
+        return "table".equalsIgnoreCase(format) ? DEFAULT_LIMIT : 0;
+    }
 
     @Option(names = "--offset", paramLabel = "<n>", description = "Skip this many jobs first (default 0).")
     int offset;
@@ -116,8 +130,8 @@ public class JobsListSubcommand implements Callable<Integer> {
             logger.error("Unknown --format '{}'. Valid: {}.", format, String.join(", ", FORMATS));
             return 2;
         }
-        if (limit < 0 || offset < 0) {
-            logger.error("--limit and --offset must not be negative; got {} and {}.", limit, offset);
+        if (effectiveLimit() < 0 || offset < 0) {
+            logger.error("--limit and --offset must not be negative; got {} and {}.", effectiveLimit(), offset);
             return 2;
         }
         if (!JobListing.SORT_FIELDS.contains(sortBy)) {
@@ -191,6 +205,7 @@ public class JobsListSubcommand implements Callable<Integer> {
     List<JobListing.Row> page(List<JobListing.Row> rows, java.util.function.Consumer<String> note) {
         List<JobListing.Row> sorted = JobListing.sorted(rows, sortBy, ascending);
         List<JobListing.Row> shown = sorted.stream().skip(offset).toList();
+        int limit = effectiveLimit();
         if (limit > 0 && shown.size() > limit) {
             shown = shown.subList(0, limit);
         }
