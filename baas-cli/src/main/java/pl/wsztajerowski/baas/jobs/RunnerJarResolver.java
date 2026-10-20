@@ -7,6 +7,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.model.JobLayout;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ChecksumAlgorithm;
+import software.amazon.awssdk.services.s3.model.ChecksumMode;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.S3Exception;
@@ -16,8 +18,9 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.Base64;
+import java.util.HexFormat;
 
 /**
  * Seeds and resolves the version-pinned runner JAR at {@code releases/<version>/}.
@@ -33,47 +36,80 @@ public final class RunnerJarResolver {
     private static final Logger logger = LoggerFactory.getLogger(RunnerJarResolver.class);
 
     private static final String JAR_ASSET = JobLayout.RUNNER_JAR_NAME;
-    private static final String CHECKSUM_ASSET = JobLayout.RUNNER_JAR_NAME + ".sha256";
     private static final Duration TIMEOUT = Duration.ofMinutes(2);
 
     private RunnerJarResolver() {
     }
 
     /**
-     * Upload-if-absent, never overwrite. A present object is used as-is, so a corrupted one does
-     * not self-repair — the fix is deleting the key so the next job re-seeds it. Overwriting
-     * instead would make {@code releases/<version>/} mutable, which is the one property the whole
-     * pinning argument rests on. The head only spares later jobs the download; what enforces
-     * "never overwrite" is the conditional put in {@link #seed}, so two first jobs of a version
-     * that both found the slot empty still write it once.
+     * Upload-if-absent, never overwrite, and on every launch a check that the object is this CLI's
+     * own runner: its S3 SHA-256 checksum must equal {@code runnerSha256}, the digest the build
+     * wrote into the CLI. The operator role may write the bucket, so a slot seeded correctly once
+     * could later hold anything; the check makes a replaced runner a refused launch rather than one
+     * every later job of the version executes (review X1). It needs no network — GitHub is still
+     * reached only to seed — and S3 computed the checksum from the bytes actually written, so the
+     * writer cannot choose it.
+     *
+     * <p>A present object is never repaired: the fix is deleting the key so the next job re-seeds
+     * it. Overwriting instead would make {@code releases/<version>/} mutable, which is the one
+     * property the whole pinning argument rests on. What enforces "never overwrite" is the
+     * conditional put in {@link #seed}, so two first jobs of a version write it once.
      */
-    public static String resolve(S3Client s3, String bucket, String version, String sourceRepo) {
-        String key = JobLayout.runnerJarKey(version);
-        if (exists(s3, bucket, key)) {
-            logger.debug("Runner JAR already seeded at s3://{}/{}", bucket, key);
-            return key;
+    public static String resolve(S3Client s3, String bucket, String version, String sourceRepo, String runnerSha256) {
+        if (runnerSha256 == null || runnerSha256.isBlank()) {
+            throw new IllegalStateException(
+                "This build of the CLI carries no runner digest, so it cannot tell whether the runner in "
+                    + "the bucket is its own. Run against a local build: baas run --runner-jar <path> ... "
+                    + "Nothing was launched.");
         }
-        logger.info("Seeding runner JAR {} from {} release v{}...", key, sourceRepo, version);
-        byte[] jar = fetchAsset(sourceRepo, version, JAR_ASSET);
-        String publishedSha = new String(
-            fetchAsset(sourceRepo, version, CHECKSUM_ASSET), StandardCharsets.UTF_8);
-        verify(jar, publishedSha);
-        seed(s3, bucket, key, jar);
+        String key = JobLayout.runnerJarKey(version);
+        Stored stored = head(s3, bucket, key);
+        if (stored == null) {
+            logger.info("Seeding runner JAR {} from {} release v{}...", key, sourceRepo, version);
+            byte[] jar = fetchAsset(sourceRepo, version, JAR_ASSET);
+            verify(jar, runnerSha256);
+            seed(s3, bucket, key, jar);
+            // Read back: it is this launch's object, or a concurrent launch's (412/409), and the
+            // second must pass the same check.
+            stored = head(s3, bucket, key);
+        }
+        requireOwnRunner(stored, runnerSha256, bucket, key);
         return key;
     }
 
+    /** What a head of the slot found: {@code sha256} is null when the object carries no SHA-256 checksum. */
+    record Stored(String sha256) {
+    }
+
+    static void requireOwnRunner(Stored stored, String runnerSha256, String bucket, String key) {
+        String expected = runnerSha256.strip().toLowerCase();
+        if (stored != null && expected.equals(stored.sha256())) {
+            return;
+        }
+        String found = stored == null ? "no object at all"
+            : stored.sha256() == null ? "an object with no SHA-256 checksum, seeded before this check existed or written by hand"
+            : "an object whose SHA-256 is " + stored.sha256();
+        throw new IllegalStateException(
+            "s3://" + bucket + "/" + key + " is not the runner this CLI was released with: expected SHA-256 "
+                + expected + ", found " + found + ". Nothing was launched.\n"
+                + "  Delete it with deployer credentials, and the next job re-seeds it from the release:\n"
+                + "  aws s3 rm s3://" + bucket + "/" + key);
+    }
+
     /**
-     * Writes the slot only if S3 holds nothing at the key. S3 answers 412 when the object appeared
-     * after the head, and 409 when another conditional put of it is still in flight; either way
-     * another launch is seeding the same verified release asset, so the slot is treated as seeded.
-     * Should that other upload fail after a 409, this job's instance finds no runner and fails
-     * with its boot log uploaded, and the next job re-seeds.
+     * Writes the slot only if S3 holds nothing at the key, asking S3 to store a SHA-256 checksum of
+     * it — what every later launch compares. S3 answers 412 when the object appeared after the head,
+     * and 409 when another conditional put of it is still in flight; either way another launch is
+     * seeding the same verified release asset, so the slot is treated as seeded. Should that other
+     * upload fail after a 409, the read-back finds no object and this launch is refused, and the
+     * next job re-seeds.
      *
      * @return whether this call wrote the object
      */
     static boolean seed(S3Client s3, String bucket, String key, byte[] jar) {
         try {
-            s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).ifNoneMatch("*").build(),
+            s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).ifNoneMatch("*")
+                    .checksumAlgorithm(ChecksumAlgorithm.SHA256).build(),
                 RequestBody.fromBytes(jar));
             return true;
         } catch (S3Exception e) {
@@ -86,15 +122,24 @@ public final class RunnerJarResolver {
         }
     }
 
-    static boolean exists(S3Client s3, String bucket, String key) {
+    /**
+     * The slot's stored SHA-256 as lowercase hex, or null for no object. A multipart object's
+     * composite checksum ({@code <base64>-<parts>}) is no file digest, so it reads as none.
+     */
+    static Stored head(S3Client s3, String bucket, String key) {
         try {
-            s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
-            return true;
+            var response = s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key)
+                .checksumMode(ChecksumMode.ENABLED).build());
+            String checksum = response.checksumSHA256();
+            if (checksum == null || checksum.contains("-")) {
+                return new Stored(null);
+            }
+            return new Stored(HexFormat.of().formatHex(Base64.getDecoder().decode(checksum)));
         } catch (NoSuchKeyException e) {
-            return false;
+            return null;
         } catch (S3Exception e) {
             if (e.statusCode() == 404) {
-                return false;
+                return null;
             }
             throw e;
         }
@@ -111,8 +156,7 @@ public final class RunnerJarResolver {
     }
 
     /**
-     * Fails naming the repository, the version and the asset. A release that exists but carries no
-     * checksum asset is as much a failure as a missing release — verification is not optional.
+     * Fails naming the repository, the version and the asset.
      */
     static byte[] fetchAsset(String sourceRepo, String version, String assetName) {
         String url = assetUrl(sourceRepo, version, assetName);
@@ -142,17 +186,18 @@ public final class RunnerJarResolver {
 
 
     /**
-     * An absent checksum is a failure, not a skip. Treating it as one would let the single moment
-     * verification became possible pass without taking it.
+     * Checks a downloaded runner against the digest this CLI was built with — not against the
+     * release's own {@code .sha256} asset, which anyone able to replace the JAR could replace beside
+     * it (review X8). An absent checksum is a failure, not a skip.
      */
-    public static void verify(byte[] jar, String publishedSha256) {
-        if (publishedSha256 == null || publishedSha256.isBlank()) {
+    public static void verify(byte[] jar, String expectedSha256) {
+        if (expectedSha256 == null || expectedSha256.isBlank()) {
             throw new IllegalStateException(
-                "No published checksum for the runner JAR — refusing to upload it unverified. "
+                "No checksum to verify the runner JAR against — refusing to upload it unverified. "
                     + "Nothing was uploaded.");
         }
         // `sha256sum <file>` prints "<hex>  <name>"; only the first field is the digest.
-        String expected = publishedSha256.strip().split("\\s+", 2)[0].toLowerCase();
+        String expected = expectedSha256.strip().split("\\s+", 2)[0].toLowerCase();
         String actual = Checksums.sha256Hex(jar);
         if (!expected.equals(actual)) {
             throw new IllegalStateException(
