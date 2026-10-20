@@ -61,7 +61,7 @@ class JobsCommandTest {
     void theDefaultIsTwentyJobsOfAnyStatus() {
         var list = list();
 
-        assertThat(list.limit).isEqualTo(20);
+        assertThat(list.effectiveLimit()).isEqualTo(20);
         assertThat(list.inFlight).isFalse();
     }
 
@@ -143,6 +143,14 @@ class JobsCommandTest {
         assertThat(notes).singleElement().asString().contains("20 of 30");
         assertThat(list("--offset", "20").page(rows, notes::add)).hasSize(10);
         assertThat(list("--limit", "0").page(rows, notes::add)).hasSize(30);
+    }
+
+    /** G6: a pipe cannot see the stderr note about a cut, so a machine format is never cut unasked. */
+    @Test
+    void jsonAndCsvListEveryJobByDefault() {
+        assertThat(list("--format", "json").effectiveLimit()).isZero();
+        assertThat(list("--format", "csv").effectiveLimit()).isZero();
+        assertThat(list("--format", "json", "--limit", "5").effectiveLimit()).isEqualTo(5);
     }
 
     @Test
