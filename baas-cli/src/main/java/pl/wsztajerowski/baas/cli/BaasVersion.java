@@ -38,6 +38,25 @@ public final class BaasVersion {
         }
     }
 
+    /**
+     * The SHA-256 of the runner JAR this CLI was built with, as the build wrote it into
+     * {@code /baas-runner.properties}; empty for a build made without the runner beside it. A
+     * released CLI launches on {@code releases/<version>/benchmark-runner.jar} only when the object
+     * there has exactly this digest, so a runner replaced in the bucket is refused, not executed.
+     */
+    public static String runnerSha256() {
+        try (var in = BaasVersion.class.getResourceAsStream("/baas-runner.properties")) {
+            if (in == null) {
+                return "";
+            }
+            var properties = new java.util.Properties();
+            properties.load(in);
+            return properties.getProperty("runner.sha256", "").strip();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(e);
+        }
+    }
+
     public static boolean isReleased() {
         return isReleased(current());
     }

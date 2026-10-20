@@ -88,7 +88,7 @@ class JobLaunchTest {
         return new JobLaunch.Request("jmh", List.of("MyBenchmark", "-f", "1"), benchmarkJar, runnerJar,
             "c5.2xlarge", "lynx-journal", 600, 900,
             Map.of("project", "lynx-journal", "type", "jmh", "source", "local"), detach, "7.1.1",
-            "Wiktor-Sztajerowski/benchmark-as-a-service");
+            "Wiktor-Sztajerowski/benchmark-as-a-service", "0".repeat(64));
     }
 
     private int indexOf(String prefix) {
@@ -107,6 +107,8 @@ class JobLaunchTest {
             "currentImage /dev/runner/ami-id",
             "stackOutputs dev");
         assertThat(indexOf("upload ")).isGreaterThan(indexOf("stackOutputs"));
+        assertThat(indexOf("upload ")).as("a refused runner leaves no upload behind")
+            .isGreaterThan(indexOf("pinnedRunnerJar"));
         assertThat(indexOf("reserve")).isGreaterThan(indexOf("pinnedRunnerJar"));
         assertThat(indexOf("hook armed")).isGreaterThan(indexOf("reserve"));
         assertThat(indexOf("runInstance")).isGreaterThan(indexOf("hook armed"));

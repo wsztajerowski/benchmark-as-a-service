@@ -29,8 +29,11 @@ public interface RunAws {
     /** Best effort is the caller's call: this throws when the write fails. */
     void putText(String bucket, String key, String text);
 
-    /** The release-pinned runner JAR's key, seeding it (checksum-verified) when absent. */
-    String pinnedRunnerJar(String bucket, String version, String sourceRepo);
+    /**
+     * The release-pinned runner JAR's key, seeding it when absent; throws unless the object there
+     * has the digest this CLI was built with.
+     */
+    String pinnedRunnerJar(String bucket, String version, String sourceRepo, String runnerSha256);
 
     /** The job item's writer. Never closed: the shutdown hook may still be using it. */
     JobRecorder recorder(String table);

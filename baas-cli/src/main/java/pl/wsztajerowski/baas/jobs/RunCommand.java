@@ -306,7 +306,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         summaryDeployment = config.getPrefix();
         var request = new JobLaunch.Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar,
             resolvedInstanceType, resolvedProject, resolvedTimeout, resolvedWallClock,
-            runnerTags, detach, BaasVersion.current(), BaasVersion.sourceRepo());
+            runnerTags, detach, BaasVersion.current(), BaasVersion.sourceRepo(), BaasVersion.runnerSha256());
         return new JobLaunch(awsFactory.apply(operatorSession().factory()), config.names(), this).run(request);
     }
 
