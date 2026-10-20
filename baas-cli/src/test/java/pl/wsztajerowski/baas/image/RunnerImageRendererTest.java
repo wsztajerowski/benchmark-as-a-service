@@ -229,6 +229,28 @@ class RunnerImageRendererTest {
             .hasMessageContaining("unknown key 'parentImage.amiId'");
     }
 
+    /** Review X2: the one download no package signature covers is checked before it is unpacked. */
+    @Test
+    void theAsyncProfilerDownloadIsCheckedBeforeItIsUnpacked() {
+        String base = renderer.renderBase();
+        String check = "echo '" + definition.tools().asyncProfiler().sha256() + "  /tmp/ap.tgz' | sha256sum -c -";
+
+        assertThat(definition.tools().asyncProfiler().sha256()).matches("[0-9a-f]{64}");
+        assertThat(base).contains(check);
+        assertThat(base.indexOf(check)).isLessThan(base.indexOf("tar -xf /tmp/ap.tgz"));
+    }
+
+    @Test
+    void aDeclarationWithoutTheAsyncProfilerDigestIsRejected() throws Exception {
+        String withoutLine = shippedYaml().lines()
+            .filter(line -> !line.strip().startsWith("sha256:"))
+            .collect(java.util.stream.Collectors.joining("\n"));
+
+        assertThatThrownBy(() -> parse(withoutLine))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("missing tools.asyncProfiler.sha256");
+    }
+
     @Test
     void aMissingValueIsRejectedByItsPath() throws Exception {
         String withoutLine = shippedYaml().lines()
