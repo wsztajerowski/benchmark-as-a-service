@@ -44,6 +44,7 @@ public record RunnerImageDefinition(
             check(missing, "tools.asyncProfiler", tools.asyncProfiler());
             if (tools.asyncProfiler() != null) {
                 check(missing, "tools.asyncProfiler.version", tools.asyncProfiler().version());
+                check(missing, "tools.asyncProfiler.sha256", tools.asyncProfiler().sha256());
                 check(missing, "tools.asyncProfiler.installPath", tools.asyncProfiler().installPath());
             }
         }
@@ -99,7 +100,8 @@ public record RunnerImageDefinition(
     public record KernelPackage(@JsonProperty("package") String packageName) {
     }
 
-    public record AsyncProfiler(String version, String installPath) {
+    /** {@code sha256} is the download's digest, checked before it is unpacked. */
+    public record AsyncProfiler(String version, String sha256, String installPath) {
         public String downloadUrl() {
             return "https://github.com/async-profiler/async-profiler/releases/download/v%s/async-profiler-%s-linux-x64.tar.gz"
                 .formatted(version, version);

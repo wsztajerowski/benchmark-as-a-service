@@ -76,6 +76,7 @@ public class RunnerImageRenderer {
             .replace("{{CORRETTO_NVR}}", tools.corretto().nvr())
             .replace("{{PERF_PACKAGE}}", tools.perf().packageName())
             .replace("{{ASYNC_PROFILER_URL}}", asyncProfiler.downloadUrl())
+            .replace("{{ASYNC_PROFILER_SHA256}}", asyncProfiler.sha256())
             .replace("{{ASYNC_PROFILER_HOME}}", asyncProfiler.installPath())
             .replace("{{PERF_EVENT_PARANOID}}", Integer.toString(kernel.perfEventParanoid()))
             .replace("{{KPTR_RESTRICT}}", Integer.toString(kernel.kptrRestrict()))
@@ -171,6 +172,7 @@ public class RunnerImageRenderer {
                       dnf install -y '{{CORRETTO_NVR}}'
                       dnf install -y "{{PERF_PACKAGE}}-$(uname -r | sed 's/\\.x86_64$//')"
                       curl -fsSL '{{ASYNC_PROFILER_URL}}' -o /tmp/ap.tgz
+                      echo '{{ASYNC_PROFILER_SHA256}}  /tmp/ap.tgz' | sha256sum -c -
                       rm -rf '{{ASYNC_PROFILER_HOME}}'
                       mkdir -p /app
                       tar -xf /tmp/ap.tgz -C /tmp
