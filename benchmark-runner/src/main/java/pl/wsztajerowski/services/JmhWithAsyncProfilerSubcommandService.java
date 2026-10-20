@@ -20,10 +20,8 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 import static java.util.Objects.requireNonNull;
-import static java.nio.file.Files.list;
 import static java.text.MessageFormat.format;
 import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
@@ -104,17 +102,7 @@ public class JmhWithAsyncProfilerSubcommandService {
         for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
             Path localDir = asyncProfilerOptions.asyncOutputPath().resolve(benchmarkDirName(jmhResult));
             Path storageDir = Path.of(profilerOutputPathFor(jmhResult));
-            try (Stream<Path> paths = list(localDir)) {
-                paths
-                    .forEach(path -> {
-                        Path storagePath = storageDir.resolve(path.getFileName());
-                        logger.info("Saving profiler output: {}", storagePath);
-                        storageService
-                            .saveFile(storagePath, path);
-                    });
-            } catch (IOException e) {
-                throw new JavaWonderlandException(e);
-            }
+            ProfilerArtifacts.upload(storageService, localDir, storageDir);
         }
     }
 
