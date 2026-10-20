@@ -5,6 +5,7 @@
 > The independent review of the refactor is [implementation-review.md](implementation-review.md), the
 > simplification pass [simplification-review.md](simplification-review.md). Browser review page with
 > every diagram drawn from the code: https://claude.ai/artifact/78Wppry84NTFApwRqs46Wc (private).
+> Feature proposals held back until users are asked: [user-discussion.md](user-discussion.md).
 
 
 Five reviews and one survey of CLI architecture styles, written against `next-release` at `dabbc55` and **re-verified on 2026-10-14 against `7d9660a`**, after

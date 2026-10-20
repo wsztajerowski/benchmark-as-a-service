@@ -26,33 +26,46 @@ CLI and are identical.
 Ordered by necessity, then by how much each fix unlocks. Effort uses the scale in
 `docs/review/open-findings.md` (XS < 1 h, S a few hours, M an OpenSpec change).
 
-### Must
+### Decided in triage
 
-| ID | Finding | Effort | Note |
-|---|---|---|---|
-| G2 | A JCStress job whose tests fail ends `completed`, exit 0; no command shows the pass/fail counts or JMH secondary metrics | S | Needs a decision first: was hiding the verdict intended (`jcstress-e2e` deliberately does not assert pass/fail)? |
+| ID | Decision (2026-10-20) |
+|---|---|
+| G2 | **Status and exit code stay as they are.** A JCStress job that ran and stored its results is `completed`, and `baas run` exits 0, whatever its tests found: the status says the run finished, not what it measured. The verdict is shown instead. The score cell reads `passed/total` with a mark when tests failed. JSON gains `jcstress {total, passed, failed, errors, failedTests[]}`, and secondary metrics go on `-v` lines. Downgraded from Must to Should: it is now a display change only. |
+| X1 | **The runner's digest is built into the CLI and checked on every pinned launch.** The release writes `benchmark-runner.jar`'s SHA-256 into the CLI JAR (the runner builds first in the reactor). Seeding stores the object with an S3 SHA-256 checksum. Each launch does one `HeadObject` with checksum mode and launches nothing when the stored checksum is missing or differs. GitHub stays a first-job-only dependency, and `--runner-jar` is unaffected. Chosen over denying the operator writes to `releases/*`, which would move seeding to an admin step for every new version, and over fetching the `.sha256` per launch, which would make every launch need GitHub. Also narrows X8. |
+| G6 | **`--format json` and `--format csv` have no default limit** in `results query` and `jobs list`. The table keeps 20, and an explicit `--limit`/`--offset` applies to every format. The JSON stays a bare array: no envelope. User-facing: a pipe now gets every row. |
+| G13 | **Deferred** — to be addressed later. |
+| K2 | **Done the plain way.** Validators throw `CommandRefusal(exitCode, message)`, logged once by `BaasApp.reportFailure` without the `-v` hint. `JobLaunch` returns `Launched \| Refused(exit, message)`. Exit codes and message text are unchanged. The refusal line's short logger name becomes `BaasApp`, a user-facing difference to add to ADR 0009's list; no caller keys on it. |
+| G5 | **Deferred** — skipped in triage. |
+| G3 | **To discuss with users** before building: the proposal is in [user-discussion.md](user-discussion.md). |
+| G4 | **To discuss with users**, as G3. |
+| G8 | **To discuss with users**, as part of a larger design of what BaaS records about a result. |
+| G10 | **Deferred** — skipped in triage. |
+| Z9 | **Drop the fallback.** `JobPaths` becomes `recorder.find(jobId).map(JobItem::resultPath)`; `ResultsQueryService.resultPathFromMeasurements` and its IT cases go. Checked read-only on 2026-10-20: neither `baas-381492019823` (16 measurements, 16 jobs) nor `baas-development` holds a measurement whose job has no job item. |
+| Z12 | **Already decided** (2026-10-04) and queued as `retire-mongodb`, QUEUE item 3. Nothing to triage. |
+| Could items | **Left as "when nearby"**: fixed when work touches their code, not scheduled. |
 
 ### Should — fix soon
 
 | ID | Finding | Effort | Note |
 |---|---|---|---|
+| G2 | `ResultRow` drops the stored JCStress verdict and JMH secondary metrics | S | Display only, as decided above |
 | K6 | The async-profiler service has no missing-directory guard: a benchmark with no profiler output fails the job after its measurement | XS | A real bug; the `-prof` service has the guard. One `if` and a test |
 | T13 | A setup test writes `baas-cli/policy.json`, and the file is tracked on `next-release` | XS | Point the test at a `@TempDir`, delete the file |
-| X1 | Any operator (so any CI ref) can overwrite `releases/<v>/benchmark-runner.jar`; nothing re-checks it once seeded | S | Deny writes to `releases/*` for the operator, or re-verify the checksum per launch — a decision |
+| X1 | Any operator (so any CI ref) can overwrite `releases/<v>/benchmark-runner.jar`; nothing re-checks it once seeded | S | Built-in digest, as decided above |
 | X2 | async-profiler is baked into the image from a tarball with no checksum | S | Pin a SHA-256 in `runner-image.yaml` |
 | G1 | Text after `--` overrides runner options the CLI guards (`--tag imageVersion=`, `--tag project=`, `--project`) | XS | `RunnerArgs` now names the options to scan for |
-| G6 | `--format json/csv` is silently cut to 20 rows | XS | |
-| G13 | No way to forget a deployment locally or reset a preference | XS | |
+| G6 | `--format json/csv` is silently cut to 20 rows | XS | No default limit for machine formats, as decided above |
+| G13 | No way to forget a deployment locally or reset a preference | XS | Deferred in triage |
 | T2 | Teardown and image build sequencing is untested (adapters built inline) | S | Give them a port in the `RunAws`/`SetupAws` shape |
 | T3 | Runner commands layer: JMH option forwarding and the JCStress HTML parser have no unit test | S | |
 | T4 | `RunCommandDetachTest`'s recorder is not bound to `JobRecorderContract` and breaks three of its rules | XS | Bind it, or use `FakeRunAws`'s recorder |
-| K2 | 52 hand-rolled "log, return 1/2" exits | S | Was left out of the refactor on purpose: routing refusals through one handler changes their stderr prefix |
+| K2 | 52 hand-rolled "log, return 1/2" exits | S | Plain `CommandRefusal`, as decided above |
 | K5 | `UserDataScriptBuilder.build` takes 16 positional parameters | S | Its only caller, `JobLaunch`, already holds the three objects they come from |
-| G3 | No way to exclude, re-tag or delete a measurement after the run | M | |
-| G4 | No score comparison between jobs or against a baseline | M | |
-| G5 | No `jobs wait` (or `terminal` field) for CI | S | |
-| G8 | The job record does not say what ran (arguments, runner version, timeout, mode, JAR digest) | S | |
-| G10 | The runner cannot pass JMH `-p` overrides or more than one include regex | S | |
+| G3 | No way to exclude, re-tag or delete a measurement after the run | M | In [user-discussion.md](user-discussion.md) |
+| G4 | No score comparison between jobs or against a baseline | M | In [user-discussion.md](user-discussion.md) |
+| G5 | No `jobs wait` (or `terminal` field) for CI | S | Deferred in triage |
+| G8 | The job record does not say what ran (arguments, runner version, timeout, mode, JAR digest) | S | In [user-discussion.md](user-discussion.md) |
+| G10 | The runner cannot pass JMH `-p` overrides or more than one include regex | S | Deferred in triage |
 | B6 | Nine command classes still build AWS clients inline; six anonymous-subclass tests remain | M | Partly fixed: `DeployerSession`, and `run` has a port |
 | B7 | Only `JobLaunch` takes the immutable `DeploymentNames`; everything else holds the mutable `BaasConfig` | S | Partly fixed |
 
