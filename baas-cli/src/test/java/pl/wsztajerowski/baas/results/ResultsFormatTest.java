@@ -5,6 +5,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.model.JcstressSummary;
+import pl.wsztajerowski.baas.model.SecondaryMetric;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -49,6 +51,70 @@ class ResultsFormatTest {
         method.setAccessible(true);
         method.invoke(command, rows);
         return captured.toString();
+    }
+
+    /** A JCStress job of 40 tests, two of them failed and one errored. */
+    private static ResultRow jcstress(int failed, int errors) {
+        Map<String, String> failedTests = new java.util.HashMap<>();
+        for (int i = 0; i < failed; i++) failedTests.put("org.example.Race" + i, "FORBIDDEN");
+        Map<String, String> errorTests = new java.util.HashMap<>();
+        for (int i = 0; i < errors; i++) errorTests.put("org.example.Crash" + i, "ERROR");
+        return new ResultRow("jc-1", "(jcstress) jc-1", "jcstress", null, Double.NaN, Double.NaN, "",
+            "2026-08-12T21:36:13Z", Map.of(), "p", Map.of(),
+            new JcstressSummary(40, 40 - failed - errors, failed, errors, failedTests, errorTests, Map.of()),
+            Map.of());
+    }
+
+    private String table(List<ResultRow> rows, boolean verbose) {
+        ResultsTable.print(console, rows, false, verbose);
+        return captured.toString();
+    }
+
+    /** G2: a JCStress job ends completed whatever its tests found; the verdict is in the score. */
+    @Test
+    void aJcstressRowsScoreIsPassedOverTotalMarkedWhenATestFailed() {
+        String failing = table(List.of(jcstress(2, 1)), false);
+
+        assertThat(failing).contains("37/40 ✗").contains("tests").doesNotContain("NaN");
+    }
+
+    @Test
+    void aJcstressRowWhoseTestsAllPassedCarriesNoMark() {
+        assertThat(table(List.of(jcstress(0, 0)), false)).contains("40/40").doesNotContain("✗");
+    }
+
+    @Test
+    void verboseNamesTheFailingTestsAndTheSecondaryMetrics() {
+        Locale.setDefault(Locale.ROOT);
+        var jmh = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
+            "2026-08-12T21:36:13Z", Map.of(), "p", Map.of(), null,
+            Map.of("gc.alloc.rate.norm", new SecondaryMetric(24.0, "B/op"), "gc.count", new SecondaryMetric(3.0, "counts")));
+
+        String out = table(List.of(jcstress(1, 1), jmh), true);
+
+        assertThat(out).contains("failed  org.example.Crash0  org.example.Race0")
+            .contains("metrics gc.alloc.rate.norm=24.000 B/op  gc.count=3.000 counts");
+    }
+
+    @Test
+    void jsonCarriesTheVerdictAndTheSecondaryMetrics() throws Exception {
+        var jmh = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
+            "2026-08-12T21:36:13Z", Map.of(), "p", Map.of(), null,
+            Map.of("gc.alloc.rate.norm", new SecondaryMetric(24.0, "B/op")));
+
+        var parsed = new ObjectMapper().readTree(render("json", List.of(jcstress(2, 1), jmh)));
+
+        var verdict = parsed.get(0).get("jcstress");
+        assertThat(verdict.get("total").asInt()).isEqualTo(40);
+        assertThat(verdict.get("passed").asInt()).isEqualTo(37);
+        assertThat(verdict.get("failed").asInt()).isEqualTo(2);
+        assertThat(verdict.get("errors").asInt()).isEqualTo(1);
+        assertThat(verdict.get("failedTests")).extracting(com.fasterxml.jackson.databind.JsonNode::asText)
+            .containsExactly("org.example.Crash0", "org.example.Race0", "org.example.Race1");
+        assertThat(parsed.get(0).get("secondaryMetrics").isEmpty()).isTrue();
+        assertThat(parsed.get(1).get("jcstress").isNull()).isTrue();
+        assertThat(parsed.get(1).get("secondaryMetrics").get("gc.alloc.rate.norm").get("score").asDouble()).isEqualTo(24.0);
+        assertThat(parsed.get(1).get("secondaryMetrics").get("gc.alloc.rate.norm").get("unit").asText()).isEqualTo("B/op");
     }
 
     /**

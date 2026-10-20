@@ -4,6 +4,7 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
+import pl.wsztajerowski.baas.model.SecondaryMetric;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -45,7 +46,8 @@ public final class ResultsTable {
     /**
      * @param withProject a leading PROJECT column, for {@code --all-projects}
      * @param withTags    indented lines under each row, for {@code -v}: the row's params, then every
-     *                    tag. Outside the column grid, so however many there are, no column moves
+     *                    tag, with any secondary metrics and a JCStress job's failing tests between.
+     *                    Outside the column grid, so however many there are, no column moves
      */
     public static void print(Console console, List<ResultRow> rows, boolean withProject, boolean withTags) {
         if (rows.isEmpty()) {
@@ -73,11 +75,24 @@ public final class ResultsTable {
             cells.add(new Cell(r.jobId(), rowStyle));
             cells.add(new Cell(truncate(r.benchmarkType(), 13), rowStyle));
             cells.add(new Cell(r.mode() != null ? r.mode() : "", rowStyle));
-            cells.add(number(console, r.score(), rowStyle));
-            cells.add(new Cell(r.scoreUnit() != null ? r.scoreUnit() : "", rowStyle));
+            if (r.jcstress() != null) {
+                cells.add(verdict(console, r, rowStyle));
+                cells.add(new Cell("tests", rowStyle));
+            } else {
+                cells.add(number(console, r.score(), rowStyle));
+                cells.add(new Cell(r.scoreUnit() != null ? r.scoreUnit() : "", rowStyle));
+            }
             table.printRow(cells);
             if (withTags && !r.params().isEmpty()) {
                 console.println("    " + console.faint("params  " + tagLine(r.params())));
+            }
+            if (withTags && !r.secondaryMetrics().isEmpty()) {
+                console.println("    " + console.faint("metrics " + metricLine(r.secondaryMetrics())));
+            }
+            if (withTags && r.testsFailed()) {
+                var names = new TreeMap<String, String>(r.jcstress().failed());
+                names.putAll(r.jcstress().errors());
+                console.println("    " + console.faint("failed  " + String.join("  ", names.keySet())));
             }
             if (withTags && !r.tags().isEmpty()) {
                 console.println("    " + console.faint("tags    " + tagLine(r.tags())));
@@ -90,6 +105,23 @@ public final class ResultsTable {
         return new TreeMap<>(tags).entrySet().stream()
             .map(e -> e.getKey() + "=" + e.getValue())
             .collect(Collectors.joining("  "));
+    }
+
+    /** {@code name=score unit}, sorted by name like {@link #tagLine}; numbers formatted as the SCORE column's. */
+    static String metricLine(Map<String, SecondaryMetric> metrics) {
+        return new TreeMap<>(metrics).entrySet().stream()
+            .map(e -> e.getKey() + "=" + String.format("%.3f", e.getValue().score())
+                + (e.getValue().unit() == null || e.getValue().unit().isEmpty() ? "" : " " + e.getValue().unit()))
+            .collect(Collectors.joining("  "));
+    }
+
+    /**
+     * A JCStress row's score cell: {@code passed/total}, marked when any test failed or errored.
+     * The job's status says only that JCStress ran; this is where its verdict shows.
+     */
+    private static Cell verdict(Console console, ResultRow r, UnaryOperator<String> rowStyle) {
+        String text = r.jcstress().passedTests() + "/" + r.jcstress().totalTests();
+        return r.testsFailed() ? new Cell(text + " ✗", console::red) : new Cell(text, rowStyle);
     }
 
     /** An unknown value is de-emphasised, so it cannot be read as a measurement. */
