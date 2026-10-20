@@ -32,8 +32,8 @@ sequenceDiagram
         alt not a job id (a result path is refused)
             DL-->>User: "is not a job id", exit 2 -- no AWS call, nothing written
         end
-        DL->>DDB: JobPaths.resultPathForJob(id) -- the job item first (so a failed job resolves too), else a measurement naming the job
-        alt neither a job item nor a measurement
+        DL->>DDB: JobPaths.resultPathForJob(id) -- the job item, so a failed job resolves too
+        alt no job item
             DL-->>User: "No job found", exit 1 -- nothing written
         end
         DDB-->>DL: stored resultPath (read, never reconstructed)

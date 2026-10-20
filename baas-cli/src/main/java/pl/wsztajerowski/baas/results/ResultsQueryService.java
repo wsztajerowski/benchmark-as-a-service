@@ -183,27 +183,6 @@ public class ResultsQueryService implements AutoCloseable {
     }
 
     /**
-     * The result path a job's first measurement records — for a job recorded before job items
-     * existed, its measurements are the only index entries under its id. {@code null} when there are
-     * none. {@code JobPaths} asks the job item first.
-     */
-    public String resultPathFromMeasurements(String jobId) {
-        var response = client.query(QueryRequest.builder()
-            .tableName(tableName)
-            .indexName(ResultKeys.JOB_ID_INDEX_NAME)
-            .keyConditionExpression("#pk = :pk")
-            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
-            .expressionAttributeValues(Map.of(
-                ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
-            .limit(1)
-            .build());
-        return response.items().stream()
-            .findFirst()
-            .map(item -> MeasurementItemMapper.fromItem(item).resultPath())
-            .orElse(null);
-    }
-
-    /**
      * Paginates to exhaustion. A Query returns at most 1 MB per page regardless of matches, and a
      * filter expression is applied after that budget is spent — so a single page can come back
      * empty with more results behind it, and stopping at the first page would silently truncate.

@@ -314,11 +314,12 @@ class ResultsQueryServiceIT {
         assertThat(paths().resultPathForJob("req-failed")).isEqualTo("jobs/lynx-journal/req-failed");
     }
 
+    /** Z9: measurements alone no longer name a job; every live job has a job item. */
     @Test
-    void aJobFromBeforeJobItemsStillResolvesFromItsMeasurements() {
+    void measurementsWithoutAJobItemDoNotResolveAPath() {
         put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
 
-        assertThat(paths().resultPathForJob("req-old")).isEqualTo("main/jmh/ts");
+        assertThat(paths().resultPathForJob("req-old")).isNull();
     }
 
     @Test
@@ -326,7 +327,7 @@ class ResultsQueryServiceIT {
         assertThat(paths().resultPathForJob("no-such-run")).isNull();
     }
 
-    /** The job-side lookup diff and download use: the job item first, then the measurements. */
+    /** The job-side lookup diff and download use: the job item. */
     private pl.wsztajerowski.baas.jobs.JobPaths paths() {
         return new pl.wsztajerowski.baas.jobs.JobPaths(client, tableName);
     }
