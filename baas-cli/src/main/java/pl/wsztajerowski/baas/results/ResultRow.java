@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.model.JcstressSummary;
 import pl.wsztajerowski.baas.model.ResultKeys;
+import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.TagKeys;
 
@@ -23,12 +25,28 @@ public record ResultRow(
     Map<String, String> tags,
     String project,
     /** A {@code @Param} sweep's variant; empty otherwise. Part of the benchmark's identity, not a tag. */
-    Map<String, String> params
+    Map<String, String> params,
+    /**
+     * A JCStress job's verdict; null for JMH. JCStress has no score, and its job ends
+     * {@code completed} whatever its tests found — this is where a failure shows.
+     */
+    JcstressSummary jcstress,
+    /** JMH's secondary metrics ({@code -prof gc}'s {@code gc.alloc.rate.norm}, …); empty otherwise. */
+    Map<String, SecondaryMetric> secondaryMetrics
 ) {
 
     public ResultRow {
         tags = tags == null ? Map.of() : Map.copyOf(tags);
         params = params == null ? Map.of() : Map.copyOf(params);
+        secondaryMetrics = secondaryMetrics == null ? Map.of() : Map.copyOf(secondaryMetrics);
+    }
+
+    /** Without a verdict or secondary metrics: a JMH row built by hand, mostly in tests. */
+    public ResultRow(String jobId, String benchmarkName, String benchmarkType, String mode,
+                     double score, double scoreError, String scoreUnit, String createdAt,
+                     Map<String, String> tags, String project, Map<String, String> params) {
+        this(jobId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
+            tags, project, params, null, Map.of());
     }
 
     /** Without params: every benchmark that declares no {@code @Param}. */
@@ -64,7 +82,14 @@ public record ResultRow(
             measurement.createdAt() == null ? "" : measurement.createdAt().toString(),
             measurement.tags(),
             measurement.project(),
-            measurement.params());
+            measurement.params(),
+            measurement.jcstress(),
+            measurement.secondaryMetrics());
+    }
+
+    /** Some of a JCStress job's tests failed or errored. */
+    public boolean testsFailed() {
+        return jcstress != null && jcstress.failedTests() + jcstress.errorTests() > 0;
     }
 
     /**

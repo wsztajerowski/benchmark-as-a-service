@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.model.JcstressSummary;
+import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.session.GitProject;
 import pl.wsztajerowski.baas.cli.Invocation;
@@ -404,11 +406,13 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             out.printf(
                 "  {\"jobId\":%s,\"benchmarkName\":%s,\"benchmarkType\":%s," +
                 "\"mode\":%s,\"score\":%s,\"scoreError\":%s,\"scoreUnit\":%s," +
-                "\"createdAt\":%s,\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s}%s%n",
+                "\"createdAt\":%s,\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s," +
+                "\"jcstress\":%s,\"secondaryMetrics\":%s}%s%n",
                 quoted(r.jobId()), quoted(r.benchmarkName()), quoted(r.benchmarkType()), quoted(r.mode()),
                 Json.number(r.score()), Json.number(r.scoreError()), quoted(r.scoreUnit()), quoted(r.createdAt()),
                 Json.string(r.imageVersion()), Json.string(r.instanceType()), Json.object(r.tags()),
-                Json.object(r.params()), i < rows.size() - 1 ? "," : "");
+                Json.object(r.params()), jcstressJson(r.jcstress()), metricsJson(r.secondaryMetrics()),
+                i < rows.size() - 1 ? "," : "");
         }
         out.println("]");
     }
@@ -430,6 +434,30 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         }
     }
 
+
+    /**
+     * A JCStress job's verdict, or {@code null} for JMH: the counts, and the tests that failed or
+     * errored, by name. A job whose tests failed is still {@code completed}; scripts read this.
+     */
+    static String jcstressJson(JcstressSummary verdict) {
+        if (verdict == null) {
+            return "null";
+        }
+        var failing = new java.util.TreeSet<>(verdict.failed().keySet());
+        failing.addAll(verdict.errors().keySet());
+        return "{\"total\":" + verdict.totalTests() + ",\"passed\":" + verdict.passedTests()
+            + ",\"failed\":" + verdict.failedTests() + ",\"errors\":" + verdict.errorTests()
+            + ",\"failedTests\":" + failing.stream().map(Json::string)
+                .collect(java.util.stream.Collectors.joining(",", "[", "]")) + "}";
+    }
+
+    /** {@code {"name":{"score":…,"unit":…}}}, key-sorted like every other object here. */
+    static String metricsJson(Map<String, SecondaryMetric> metrics) {
+        return new java.util.TreeMap<>(metrics).entrySet().stream()
+            .map(e -> Json.string(e.getKey()) + ":{\"score\":" + Json.number(e.getValue().score())
+                + ",\"unit\":" + Json.string(e.getValue().unit()) + "}")
+            .collect(java.util.stream.Collectors.joining(",", "{", "}"));
+    }
 
     /** A field this payload has always quoted, absent included; see printJson. */
     private static String quoted(Object value) {
