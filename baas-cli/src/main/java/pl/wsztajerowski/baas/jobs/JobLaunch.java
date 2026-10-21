@@ -40,7 +40,7 @@ public final class JobLaunch {
     public record Request(String benchmarkType, List<String> benchmarkParams, Path benchmarkJar, Path runnerJar,
                           String instanceType, String project, int timeoutSeconds,
                           int watchdogSeconds, Map<String, String> runnerTags, boolean detach,
-                          String cliVersion, String sourceRepo, String runnerSha256) {
+                          String cliVersion, String sourceRepo) {
         public Request {
             benchmarkParams = List.copyOf(benchmarkParams);
             runnerTags = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(runnerTags));
@@ -124,12 +124,6 @@ public final class JobLaunch {
         // its own stack, so this costs one call.
         Map<String, String> networking = resolveNetworking();
 
-        // Also before naming the job and before any upload: a runner in the bucket that is not
-        // this CLI's own refuses the job, and refusing it after the benchmark JAR's upload would
-        // leave an input/ no job item names.
-        String pinnedRunnerJarKey = request.runnerJar() != null ? null
-            : aws.pinnedRunnerJar(deployment.bucket(), request.cliVersion(), request.sourceRepo(), request.runnerSha256());
-
         // 2. Name the job. One clock read: the instant travels into the identifier, into the S3
         //    prefix and on to the runner as --created-at, so the prefix name and the stored
         //    timestamp are the same value rather than two values that happen to be close.
@@ -155,7 +149,7 @@ public final class JobLaunch {
             aws.upload(request.runnerJar(), deployment.bucket(), runnerJarS3Key);
             logger.info("Runner JAR: {} (local override, not a pinned release)", request.runnerJar());
         } else {
-            runnerJarS3Key = pinnedRunnerJarKey;
+            runnerJarS3Key = aws.pinnedRunnerJar(deployment.bucket(), request.cliVersion(), request.sourceRepo());
             // Which runner build a job executed is the first thing anyone comparing two results
             // asks, so it is reported on every job — not only on the one that seeded the slot.
             logger.info("Runner JAR: {} (pinned to CLI version {})", runnerJarS3Key, request.cliVersion());
