@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class CommandTreeTest {
 
     private static CommandLine root() {
-        return new CommandLine(new BaasApp());
+        return BaasApp.commandLine(new BaasApp());
     }
 
     @Test

@@ -66,7 +66,7 @@ class JobsShowCommandTest {
         };
         List<String> line = new ArrayList<>(List.of("jobs", "show", ID));
         line.addAll(List.of(extra));
-        int exit = new CommandLine(new BaasApp(dir), factory).setErr(new PrintWriter(new StringWriter(), true))
+        int exit = BaasApp.commandLine(new BaasApp(dir), factory).setErr(new PrintWriter(new StringWriter(), true))
             .execute(line.toArray(String[]::new));
         return new Run(exit, out.toString());
     }

@@ -19,6 +19,7 @@ import pl.wsztajerowski.baas.jobs.JobsCommand;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.cli.Root;
 import pl.wsztajerowski.baas.session.ConfigService;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.session.DeploymentSelectionException;
 
 import java.nio.file.Path;
@@ -120,7 +121,17 @@ public class BaasApp implements Runnable, Root {
      * here so that {@code main} and the tests render the same help.
      */
     public static CommandLine commandLine(BaasApp app) {
-        var commandLine = new CommandLine(app);
+        return commandLine(app, CommandLine.defaultFactory());
+    }
+
+    /**
+     * The command tree as {@code main} runs it, failure handling included: a {@link CommandRefusal}
+     * leaves through {@link #reportFailure}, which logs it and returns its exit code. Tests build
+     * the tree here too, with their own factory, so they see the exits a user sees.
+     */
+    public static CommandLine commandLine(BaasApp app, CommandLine.IFactory factory) {
+        var commandLine = new CommandLine(app, factory)
+            .setExecutionExceptionHandler(BaasApp::reportFailure);
         commandLine.getHelpSectionMap().put(CommandLine.Model.UsageMessageSpec.SECTION_KEY_COMMAND_LIST_HEADING,
             help -> System.lineSeparator());
         commandLine.getHelpSectionMap().put(CommandLine.Model.UsageMessageSpec.SECTION_KEY_COMMAND_LIST,
@@ -166,7 +177,6 @@ public class BaasApp implements Runnable, Root {
         BaasApp app = new BaasApp();
         System.exit(commandLine(app)
             .setExecutionStrategy(app::executionStrategy)
-            .setExecutionExceptionHandler(BaasApp::reportFailure)
             .execute(args));
     }
 
@@ -188,13 +198,18 @@ public class BaasApp implements Runnable, Root {
      * {@code -v} and the trace would be unreachable.
      *
      * <p>A {@link DeploymentSelectionException} gets no {@code -v} hint: its message already says what
-     * to type, and its trace would show only where the files were read.
+     * to type, and its trace would show only where the files were read. Nor does a
+     * {@link CommandRefusal}, which also chooses its exit code: a command's refusals are logged here,
+     * once, rather than by each command.
      */
-    static int reportFailure(Exception ex, CommandLine commandLine,
+    public static int reportFailure(Exception ex, CommandLine commandLine,
                              CommandLine.ParseResult parseResult) {
         Logger logger = LoggerFactory.getLogger(BaasApp.class);
         String message = ex.getMessage() != null ? ex.getMessage() : ex.toString();
         logger.error("{}", message);
+        if (ex instanceof CommandRefusal refusal) {
+            return refusal.exitCode();
+        }
         if (logger.isDebugEnabled()) {
             logger.debug("Stack trace:", ex);
         } else if (!(ex instanceof DeploymentSelectionException)) {

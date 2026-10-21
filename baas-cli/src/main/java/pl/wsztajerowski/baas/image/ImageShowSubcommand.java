@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.image;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.session.DeployerSession;
 import org.slf4j.Logger;
@@ -51,8 +52,8 @@ public class ImageShowSubcommand implements Callable<Integer> {
         try (var cf = factory.cloudFormation()) {
             var cloudFormation = new CloudFormationService(cf);
             if (!cloudFormation.stackExists(prefix)) {
-                logger.error("Stack {} does not exist. Run `{}` first.", prefix, Hints.command(prefix, "admin deployment setup"));
-                return 1;
+                throw CommandRefusal.refused("Stack " + prefix + " does not exist. Run `"
+                    + Hints.command(prefix, "admin deployment setup") + "` first.");
             }
             extension = cloudFormation.getStackParameters(prefix)
                 .getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");

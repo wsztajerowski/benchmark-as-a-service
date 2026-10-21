@@ -382,6 +382,7 @@ class RunCommandTest {
     @Test
     void anUnknownFormatIsRefusedRatherThanReadAsText() {
         int exit = new picocli.CommandLine(new RunCommand())
+            .setExecutionExceptionHandler(pl.wsztajerowski.baas.BaasApp::reportFailure)
             .execute("--benchmark-jar", "b.jar", "--format", "jsno", "jmh");
 
         assertThat(exit).isEqualTo(2);
@@ -480,9 +481,9 @@ class RunCommandTest {
         var command = new RunCommand();
         command.benchmarkType = "jmh";
 
-        assertThat(command.call())
+        assertThatThrownBy(command::call)
             .as("an unreleased CLI has no release to pin to, and there is no fallback")
-            .isEqualTo(1);
+            .isInstanceOfSatisfying(pl.wsztajerowski.baas.cli.CommandRefusal.class, r -> assertThat(r.exitCode()).isEqualTo(1));
     }
 
     @Test

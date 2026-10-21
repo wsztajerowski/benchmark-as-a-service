@@ -32,7 +32,7 @@ class ResultsConsoleOutputTest {
         PrintStream originalErr = System.err;
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-            int code = new CommandLine(new BaasApp()).setOut(new PrintWriter(out)).execute(args);
+            int code = BaasApp.commandLine(new BaasApp()).setOut(new PrintWriter(out)).execute(args);
             return new Captured(out.toString(), err.toString(StandardCharsets.UTF_8), code);
         } finally {
             System.setErr(originalErr);

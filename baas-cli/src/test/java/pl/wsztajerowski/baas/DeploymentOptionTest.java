@@ -34,7 +34,7 @@ class DeploymentOptionTest {
         PrintStream original = System.err;
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-            int code = new CommandLine(new BaasApp(dir))
+            int code = BaasApp.commandLine(new BaasApp(dir))
                 .setOut(new PrintWriter(new StringWriter()))
                 .setErr(new PrintWriter(picocliErr, true))
                 .setExecutionExceptionHandler(BaasApp::reportFailure)
@@ -70,7 +70,7 @@ class DeploymentOptionTest {
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
             BaasApp.reportFailure(new RuntimeException("Stack wiktor-dev is in UPDATE_ROLLBACK_FAILED"),
-                new CommandLine(new BaasApp(dir)), null);
+                BaasApp.commandLine(new BaasApp(dir)), null);
         } finally {
             System.setErr(original);
         }

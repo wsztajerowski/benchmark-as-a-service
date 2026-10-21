@@ -71,7 +71,7 @@ class TeardownConfigFileTest {
         String[] args = new String[global.length + 4];
         System.arraycopy(global, 0, args, 0, global.length);
         System.arraycopy(new String[]{"admin", "deployment", "teardown", "--yes"}, 0, args, global.length, 4);
-        return new CommandLine(new BaasApp(dir), factory)
+        return BaasApp.commandLine(new BaasApp(dir), factory)
             .setOut(new PrintWriter(new StringWriter()))
             .setErr(new PrintWriter(new StringWriter()))
             .execute(args);

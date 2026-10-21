@@ -43,7 +43,7 @@ class RunCommandLaunchTest {
         command.awsFactory = factory -> aws;
         command.console = Console.plain(new PrintWriter(out));
         command.shutdownHooks = hook -> armedHooks++;
-        return new CommandLine(command).execute(args);
+        return new CommandLine(command).setExecutionExceptionHandler(pl.wsztajerowski.baas.BaasApp::reportFailure).execute(args);
     }
 
     private String[] args(String... extra) throws Exception {

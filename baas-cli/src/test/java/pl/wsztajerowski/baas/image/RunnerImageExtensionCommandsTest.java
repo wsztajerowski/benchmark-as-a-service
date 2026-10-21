@@ -42,7 +42,7 @@ class RunnerImageExtensionCommandsTest {
 
     @Test
     void buildImageTakesAnExtensionFile() {
-        var result = new CommandLine(new BaasApp()).parseArgs("admin", "image", "build", "--extension", "ext.yaml");
+        var result = BaasApp.commandLine(new BaasApp()).parseArgs("admin", "image", "build", "--extension", "ext.yaml");
 
         assertThat(((ImageBuildSubcommand) result.subcommand().subcommand().subcommand().commandSpec().userObject()).extensionFile)
             .isEqualTo(Path.of("ext.yaml"));
@@ -50,7 +50,7 @@ class RunnerImageExtensionCommandsTest {
 
     @Test
     void imageTakesTheExtensionFlag() {
-        var result = new CommandLine(new BaasApp()).parseArgs("admin", "image", "show", "--extension");
+        var result = BaasApp.commandLine(new BaasApp()).parseArgs("admin", "image", "show", "--extension");
 
         assertThat(((ImageShowSubcommand) result.subcommand().subcommand().subcommand().commandSpec().userObject()).printExtension)
             .isTrue();
@@ -76,7 +76,7 @@ class RunnerImageExtensionCommandsTest {
         int exit;
         try {
             System.setErr(new PrintStream(stderr, true, StandardCharsets.UTF_8));
-            exit = new CommandLine(new BaasApp(dir)).execute(
+            exit = BaasApp.commandLine(new BaasApp(dir)).execute(
                 "admin", "image", "build", "--extension", big.toString());
         } finally {
             System.setErr(original);

@@ -51,7 +51,7 @@ class JobsCommandTest {
     /** Removed outright, with no alias: `runs` sat one letter from the `run` verb. */
     @Test
     void theOldRunsGroupNoLongerParses() {
-        var root = new CommandLine(new pl.wsztajerowski.baas.BaasApp());
+        var root = pl.wsztajerowski.baas.BaasApp.commandLine(new pl.wsztajerowski.baas.BaasApp());
 
         assertThat(root.getSubcommands()).containsKey("jobs").doesNotContainKey("runs");
         assertThat(root.execute("runs", "list")).isNotZero();
@@ -156,7 +156,7 @@ class JobsCommandTest {
     @Test
     void watchingWithoutATerminalIsRefused() throws Exception {
         var err = new StringWriter();
-        int exit = new CommandLine(new pl.wsztajerowski.baas.BaasApp())
+        int exit = pl.wsztajerowski.baas.BaasApp.commandLine(new pl.wsztajerowski.baas.BaasApp())
             .setErr(new PrintWriter(err, true))
             .execute("jobs", "list", "--watch");
 
