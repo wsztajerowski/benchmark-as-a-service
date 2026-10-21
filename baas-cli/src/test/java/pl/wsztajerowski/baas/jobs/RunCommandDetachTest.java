@@ -130,7 +130,7 @@ class RunCommandDetachTest {
         for (String[] args : List.of(
             new String[] {"run", "--detach", "--benchmark-jar", "b.jar", "jmh", "--", "MyBenchmark"},
             new String[] {"jobs", "run", "--detach", "--benchmark-jar", "b.jar", "jmh", "--", "MyBenchmark"})) {
-            var parsed = new CommandLine(new BaasApp()).parseArgs(args);
+            var parsed = BaasApp.commandLine(new BaasApp()).parseArgs(args);
             while (parsed.hasSubcommand()) {
                 parsed = parsed.subcommand();
             }
@@ -140,7 +140,7 @@ class RunCommandDetachTest {
 
     @Test
     void withoutTheFlagARunIsAttached() {
-        var parsed = new CommandLine(new BaasApp())
+        var parsed = BaasApp.commandLine(new BaasApp())
             .parseArgs("run", "--benchmark-jar", "b.jar", "jmh", "--", "MyBenchmark").subcommand();
         assertThat(((RunCommand) parsed.commandSpec().userObject()).detach).isFalse();
     }

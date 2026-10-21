@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.model.JobLayout;
 import org.slf4j.Logger;
@@ -75,8 +76,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
         for (String job : new String[]{jobA, jobB}) {
             String notAJobId = JobReference.notAJobId(job);
             if (notAJobId != null) {
-                logger.error("{}", notAJobId);
-                return 2;
+                throw CommandRefusal.usage(notAJobId);
             }
         }
         BaasConfig config = session().config();
@@ -91,13 +91,11 @@ public class JobsDiffSubcommand implements Callable<Integer> {
             // One at a time, so an unknown first job is reported without looking up the second.
             pathA = JobReference.resolve(jobA, lookup::resultPathForJob);
             if (pathA == null) {
-                logger.error("{}", JobReference.noSuchJob(jobA));
-                return 1;
+                throw CommandRefusal.refused(JobReference.noSuchJob(jobA));
             }
             pathB = JobReference.resolve(jobB, lookup::resultPathForJob);
             if (pathB == null) {
-                logger.error("{}", JobReference.noSuchJob(jobB));
-                return 1;
+                throw CommandRefusal.refused(JobReference.noSuchJob(jobB));
             }
         }
 

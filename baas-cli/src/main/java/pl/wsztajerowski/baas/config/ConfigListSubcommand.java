@@ -1,9 +1,8 @@
 package pl.wsztajerowski.baas.config;
 
 import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Json;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
@@ -32,8 +31,6 @@ import java.util.concurrent.Callable;
 )
 public class ConfigListSubcommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(ConfigListSubcommand.class);
-
     static final List<String> FORMATS = List.of("table", "json");
 
     private static final List<Column> COLUMNS = List.of(
@@ -55,8 +52,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
     @Override
     public Integer call() {
         if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            logger.error("Unknown --format '{}'. Valid: {}.", format, String.join(", ", FORMATS));
-            return 2;
+            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: " + String.join(", ", FORMATS) + ".");
         }
         List<BaasConfig> deployments = Invocation.configService(spec).all();
         if (format.equalsIgnoreCase("json")) {

@@ -14,7 +14,7 @@ class ImageCommandsTest {
     @ParameterizedTest
     @ValueSource(strings = {"build", "show"})
     void resolvesUnderAdmin(String subcommand) {
-        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+        CommandLine.ParseResult result = BaasApp.commandLine(new BaasApp())
             .parseArgs("admin", "image", subcommand, "--help");
 
         assertThat(result.subcommand().commandSpec().name()).isEqualTo("admin");
@@ -31,7 +31,7 @@ class ImageCommandsTest {
     @ParameterizedTest
     @ValueSource(strings = {"build-image", "image", "build"})
     void isNotResolvableAsATopLevelCommand(String subcommand) {
-        assertThat(new CommandLine(new BaasApp()).getSubcommands())
+        assertThat(BaasApp.commandLine(new BaasApp()).getSubcommands())
             .as("these sit under admin precisely because they need deployer credentials")
             .doesNotContainKey(subcommand);
     }
@@ -58,7 +58,7 @@ class ImageCommandsTest {
     @ParameterizedTest
     @ValueSource(strings = {"build", "show"})
     void verboseIsAcceptedSoTheArgvPreScanApplies(String subcommand) {
-        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+        CommandLine.ParseResult result = BaasApp.commandLine(new BaasApp())
             .parseArgs("admin", "image", subcommand, "-v");
 
         assertThat(result.subcommand().subcommand().subcommand().commandSpec().name()).isEqualTo(subcommand);
@@ -66,7 +66,7 @@ class ImageCommandsTest {
 
     @Test
     void adminListsBothImageCommands() {
-        assertThat(new CommandLine(new BaasApp()).getSubcommands().get("admin").getSubcommands()
+        assertThat(BaasApp.commandLine(new BaasApp()).getSubcommands().get("admin").getSubcommands()
             .get("image").getSubcommands())
             .containsKeys("build", "show");
     }

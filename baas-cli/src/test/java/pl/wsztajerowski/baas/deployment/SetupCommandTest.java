@@ -172,7 +172,7 @@ class SetupCommandTest {
                 return defaults.create(cls);
             }
         };
-        int exit = new CommandLine(new pl.wsztajerowski.baas.BaasApp(root), factory)
+        int exit = pl.wsztajerowski.baas.BaasApp.commandLine(new pl.wsztajerowski.baas.BaasApp(root), factory)
             .setOut(new java.io.PrintWriter(out, true))
             .setErr(new java.io.PrintWriter(new java.io.StringWriter(), true))
             .execute(args);

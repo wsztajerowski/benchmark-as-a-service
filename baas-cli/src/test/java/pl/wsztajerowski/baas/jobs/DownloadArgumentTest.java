@@ -41,7 +41,7 @@ class DownloadArgumentTest {
     @Test
     void aPathIsRefusedBeforeAnythingIsRead() {
         var err = new java.io.StringWriter();
-        int exit = new picocli.CommandLine(new pl.wsztajerowski.baas.BaasApp(java.nio.file.Path.of("/nonexistent")))
+        int exit = pl.wsztajerowski.baas.BaasApp.commandLine(new pl.wsztajerowski.baas.BaasApp(java.nio.file.Path.of("/nonexistent")))
             .setErr(new java.io.PrintWriter(err, true))
             .execute("jobs", "download", "main/jmh/20260819_090000");
 

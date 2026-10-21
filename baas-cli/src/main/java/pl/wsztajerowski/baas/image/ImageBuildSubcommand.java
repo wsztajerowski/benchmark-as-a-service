@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.image;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.session.DeployerSession;
 import org.slf4j.Logger;
@@ -56,15 +57,13 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         if (extensionFile != null) {
             if (!Files.isRegularFile(extensionFile)) {
                 // Files.readString's NoSuchFileException carries only the path as its message.
-                logger.error("Extension file not found: {}. Nothing was changed.", extensionFile);
-                return 1;
+                throw CommandRefusal.refused("Extension file not found: " + extensionFile + ". Nothing was changed.");
             }
             var file = RunnerImageExtension.parse(Files.readString(extensionFile));
             try {
                 RunnerImageExtension.requireStorable(file.content());
             } catch (IllegalStateException e) {
-                logger.error(e.getMessage());
-                return 1;
+                throw CommandRefusal.refused(e.getMessage());
             }
             pushed = Optional.of(file);
         }
@@ -78,8 +77,7 @@ public class ImageBuildSubcommand implements Callable<Integer> {
         try {
             result = RunnerImageBuild.run(factory, prefix, region, pushed);
         } catch (IllegalStateException e) {
-            logger.error(e.getMessage());
-            return 1;
+            throw CommandRefusal.refused(e.getMessage());
         }
         logger.info("""
             Runner image {} built and published.

@@ -24,7 +24,7 @@ class RepeatCommandTest {
 
     private CommandLine.ParseResult parse(List<String> tokens) {
         assertThat(tokens.getFirst()).isEqualTo("baas");
-        return new CommandLine(new BaasApp(root)).parseArgs(tokens.subList(1, tokens.size()).toArray(String[]::new));
+        return BaasApp.commandLine(new BaasApp(root)).parseArgs(tokens.subList(1, tokens.size()).toArray(String[]::new));
     }
 
     private static CommandLine.ParseResult setupOf(CommandLine.ParseResult result) {

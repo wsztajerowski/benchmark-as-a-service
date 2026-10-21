@@ -16,12 +16,12 @@ class AdminProfileOptionTest {
 
     @Test
     void onlySetupTakesTheDeployerProfile() {
-        var setup = new CommandLine(new BaasApp())
+        var setup = BaasApp.commandLine(new BaasApp())
             .parseArgs("admin", "deployment", "setup", "--deployer-aws-profile", "deployer");
         assertThat(setup.subcommand().subcommand().subcommand().hasMatchedOption("--deployer-aws-profile")).isTrue();
 
         for (String command : new String[]{"image build", "image show", "deployment teardown"}) {
-            assertThatThrownBy(() -> new CommandLine(new BaasApp())
+            assertThatThrownBy(() -> BaasApp.commandLine(new BaasApp())
                 .parseArgs(("admin " + command + " --deployer-aws-profile deployer").split(" ")))
                 .as(command)
                 .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
@@ -34,7 +34,7 @@ class AdminProfileOptionTest {
         for (String line : new String[]{"admin deployment setup --aws-profile", "config set --aws-profile",
                 "admin deployment setup --deployer-profile", "config set --deployer-profile",
                 "config set --operator-profile"}) {
-            assertThatThrownBy(() -> new CommandLine(new BaasApp())
+            assertThatThrownBy(() -> BaasApp.commandLine(new BaasApp())
                 .parseArgs((line + " deployer").split(" ")))
                 .as(line)
                 .isInstanceOf(CommandLine.UnmatchedArgumentException.class);

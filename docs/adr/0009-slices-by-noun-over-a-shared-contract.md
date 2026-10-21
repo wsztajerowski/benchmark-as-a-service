@@ -66,6 +66,11 @@ no slice may import another did not fit the domain (below).
   their logger name instead of `RunCommand` (the text is unchanged); and artifact keys are joined by
   `JobLayout.artifactKey`, which tolerates a trailing slash on a result path, so `jobs diff` now finds
   a manifest it used to report missing for such a path.
+- Later (2026-10-21, review K2): a command's refusals — an unknown value, conflicting options, a
+  missing job — are thrown as `cli.CommandRefusal` and logged once by `BaasApp.reportFailure`, so
+  their logger name is `BaasApp` rather than the command's. Exit codes and message text are
+  unchanged, which an offline comparison of 30 refusals against the previous build confirmed.
+  `JobLaunch`'s reservation failure still logs in place: thrown, it would print after `run`'s hint.
 
 ## Alternatives considered
 
