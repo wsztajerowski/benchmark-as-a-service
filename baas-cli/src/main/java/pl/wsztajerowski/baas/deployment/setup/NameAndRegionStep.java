@@ -38,16 +38,14 @@ final class NameAndRegionStep implements SetupStep {
             if (context.region == null) {
                 String region = context.options.region() != null
                     ? context.options.region()
-                    : new BaasConfig().getAws().resolveRegion();
+                    : BaasConfig.AwsConfig.defaultRegion();
                 if (context.options.region() == null && context.interactive()) {
                     region = context.prompter().ask("AWS region (cannot be changed later)", region);
                 }
                 context.region = region;
             }
-            context.config.setPrefix(context.deployment);
             logger.info("New deployment {} in {}", context.deployment, context.region);
         }
-        context.config.getAws().setRegion(context.region);
 
         // A deployer's grants name one region, so in another region the permission check would
         // print a policy for a second deployment that cannot exist. A bucket elsewhere means the

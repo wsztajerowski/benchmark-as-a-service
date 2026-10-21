@@ -156,7 +156,15 @@ public class BaasConfig {
         }
 
         public String resolveRegion(java.util.Map<String, String> environment) {
-            if (hasRegion()) return region;
+            return hasRegion() ? region : defaultRegion(environment);
+        }
+
+        /** Where a deployment no file names is looked for or created: {@code AWS_REGION}, else {@value #DEFAULT_REGION}. */
+        public static String defaultRegion() {
+            return defaultRegion(System.getenv());
+        }
+
+        static String defaultRegion(java.util.Map<String, String> environment) {
             String fromEnvironment = environment.get("AWS_REGION");
             if (fromEnvironment != null && !fromEnvironment.isBlank()) return fromEnvironment.strip();
             return DEFAULT_REGION;

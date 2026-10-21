@@ -123,7 +123,7 @@ final class SetupContext {
         if (options.region() != null) {
             return options.region();
         }
-        return config != null ? config.getAws().resolveRegion() : new BaasConfig().getAws().resolveRegion();
+        return config != null ? config.getAws().resolveRegion() : BaasConfig.AwsConfig.defaultRegion();
     }
 
     /** AWS for the current region and profile, rebuilt only when either changes. */
