@@ -10,7 +10,7 @@ jobs:
     env:
       # Pinned to the version infra/runner-image.yaml bakes into the runner AMI, so the test
       # exercises the profiler the measuring instance actually carries. Bump both together.
-      ASYNC_PROFILER_VERSION: "4.0"
+      ASYNC_PROFILER_VERSION: "4.6"
 
     steps:
       - name: Checkout code

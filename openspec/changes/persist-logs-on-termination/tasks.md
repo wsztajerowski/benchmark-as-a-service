@@ -2,42 +2,42 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm EC2's default `TerminateInstances` attempts a graceful OS shutdown, so a systemd
+- [x] 1.1 Confirm EC2's default `TerminateInstances` attempts a graceful OS shutdown, so a systemd
   `ExecStop` runs on a CLI-initiated termination (AWS EC2 User Guide, *Terminate an instance with a
   graceful OS shutdown*; the API's `--skip-os-shutdown` is the opt-out) and record the source in
   design.md
-- [ ] 1.2 Confirm the async-profiler 4.6 `linux-x64` tarball keeps the layout the bake moves into
+- [x] 1.2 Confirm the async-profiler 4.6 `linux-x64` tarball keeps the layout the bake moves into
   place (`async-profiler-*-linux-x64/lib/libasyncProfiler.so`, `bin/asprof`) by listing it
 
 ## 2. Ship logs from the instance
 
-- [ ] 2.1 Add `ship_logs` to `UserDataScriptBuilder` (boot log, `${WORK_DIR}/*-output.txt`,
+- [x] 2.1 Add `ship_logs` to `UserDataScriptBuilder` (boot log, `${WORK_DIR}/*-output.txt`,
   `${WORK_DIR}/**/*.log` under `logs/`), defined before the watchdog forks; verify with a stub-`aws`
   test that asserts the three uploads and their keys
-- [ ] 2.2 Call `ship_logs` from the watchdog, the refused-`running` exit and the normal end in place
+- [x] 2.2 Call `ship_logs` from the watchdog, the refused-`running` exit and the normal end in place
   of the boot-log-only upload; verify the existing ordering tests, updated, still pin "status, then
   upload, then terminate"
-- [ ] 2.3 Install `baas-ship-logs.service` right after the watchdog starts, its `ExecStop` a file
+- [x] 2.3 Install `baas-ship-logs.service` right after the watchdog starts, its `ExecStop` a file
   generated from `declare -f ship_logs`; verify by running the generated hook file under a stub `aws`
   with an empty environment and asserting it uploads to the job's prefix
-- [ ] 2.4 Verify `theRenderedScriptIsSyntacticallyValidBash`, `commentLinesAreNotRendered` and
+- [x] 2.4 Verify `theRenderedScriptIsSyntacticallyValidBash`, `commentLinesAreNotRendered` and
   `aLargeJobStaysWellUnderTheUserDataLimit` still pass
 
 ## 3. Upgrade async-profiler
 
-- [ ] 3.1 `infra/runner-image.yaml`: async-profiler 4.6, `imageVersion` 1.4.0; `ci-pr-build.yml`
+- [x] 3.1 `infra/runner-image.yaml`: async-profiler 4.6, `imageVersion` 1.4.0; `ci-pr-build.yml`
   `ASYNC_PROFILER_VERSION` 4.6; verify `RunnerImageRendererTest` passes and the rendered URL names 4.6
-- [ ] 3.2 Run `JmhWithAsyncProfilerSubcommandServiceIT` locally with `ASYNC_PATH` pointing at the 4.6
+- [x] 3.2 Run `JmhWithAsyncProfilerSubcommandServiceIT` locally with `ASYNC_PATH` pointing at the 4.6
   macOS library, and verify it ran (not skipped) and passed
 
 ## 4. Documentation
 
-- [ ] 4.1 CLAUDE.md: record the shutdown hook under the user-data invariants (no shebang, why a
+- [x] 4.1 CLAUDE.md: record the shutdown hook under the user-data invariants (no shebang, why a
   `#` line cannot carry it) and the S3 layout rows for the logs of a stopped job
 
 ## 5. Full build
 
-- [ ] 5.1 `mvn -B clean verify` from the reactor root passes
+- [x] 5.1 `mvn -B clean verify` from the reactor root passes
 
 ## 6. End-to-end (manual, `baas run` path — no automated test covers it)
 

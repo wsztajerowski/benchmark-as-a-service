@@ -24,7 +24,7 @@
 # edit below needs this bumped too. `baas admin build-image` preflights that and refuses to start
 # a ~15-minute build it knows will be rejected. The recipe's and the extension's versions are
 # derived by the CLI and never written here.
-imageVersion: "1.3.1"
+imageVersion: "1.4.0"
 
 # Exact parent release, never a "latest" selector. A selector would silently re-base the whole
 # measurement environment on whatever AWS published that morning — the precise drift this
@@ -60,8 +60,8 @@ tools:
   # replaced under its tag, and this is the one input to the image no package signature covers.
   # A new version needs its digest: `curl -fsSL <url> | sha256sum`.
   asyncProfiler:
-    version: "4.0"
-    sha256: ba32bd69cc2906f6251cd5aa8ae72c3abc12267ba858d38733f7751cc4d3e05b
+    version: "4.6"
+    sha256: 1e79ed54d8952889a2e74f993d22ee925e3322460d4f37a2ed95bfb88585da36
     installPath: /app/async-profiler
 
 # Kernel tunables that move benchmark numbers, declared instead of inherited.
