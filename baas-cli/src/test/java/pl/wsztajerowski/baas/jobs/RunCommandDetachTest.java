@@ -16,8 +16,6 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
-import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,79 +33,17 @@ class RunCommandDetachTest {
         Instant.parse("2026-10-12T12:00:00Z"), "jobs/p/20261012T120000000Z-a3f9c21b", "c5.2xlarge",
         JobStatus.LAUNCHING, null, null, Map.of(), null);
 
-    /** The job item in memory: the conditional writes the CLI and the instance make. */
-    private static final class Recorder implements JobRecorder {
-        final List<String> writes = new ArrayList<>();
-        String status = JobStatus.LAUNCHING;
-        RuntimeException failLaunched;
-
-        @Override
-        public void reserve(JobItem job) {
-            writes.add("reserve");
-        }
-
-        @Override
-        public Write launched(JobItem job, String instanceId) {
-            if (failLaunched != null) throw failLaunched;
-            writes.add("launched");
-            if (!JobStatus.LAUNCHING.equals(status)) return Write.REFUSED;
-            status = JobStatus.LAUNCHED;
-            return Write.WRITTEN;
-        }
-
-        @Override
-        public Write launchFailed(JobItem job, String errorCode) {
-            writes.add("launch-failed");
-            return Write.WRITTEN;
-        }
-
-        @Override
-        public Write stop(JobItem job, String reason) {
-            writes.add("stop:" + reason);
-            if (JobStatus.isTerminal(status)) return Write.REFUSED;
-            status = reason;
-            return Write.WRITTEN;
-        }
-
-        @Override
-        public Optional<JobItem> read(JobItem job) {
-            return Optional.of(new JobItem(job.jobId(), job.project(), job.createdAt(), job.resultPath(),
-                job.instanceType(), status, null, null, Map.of(), null));
-        }
-
-        @Override
-        public Optional<JobItem> find(String jobId) {
-            return read(JOB);
-        }
-
-        @Override
-        public List<JobItem> newestFirst(Predicate<JobItem> filter, int limit) {
-            return List.of();
-        }
-    }
-
-    private static final class Instances implements JobSession.Instances {
-        final List<String> terminated = new ArrayList<>();
-
-        @Override
-        public String state(String instanceId) {
-            return "running";
-        }
-
-        @Override
-        public Optional<String> findLive(String jobId) {
-            return Optional.empty();
-        }
-
-        @Override
-        public void terminate(String instanceId) {
-            terminated.add(instanceId);
-        }
-    }
-
-    private final Recorder recorder = new Recorder();
-    private final Instances instances = new Instances();
+    // JobSessionTest's fakes, which JobSessionFakeRecorderTest binds to JobRecorderContract (review T4).
+    private final JobSessionTest.FakeRecorder recorder = reserved();
+    private final JobSessionTest.FakeInstances instances = new JobSessionTest.FakeInstances();
     private final JobSession session = new JobSession(JOB, recorder, recorder, instances);
+
+    /** Every test here starts after the reservation, as the launch reaches the detach branch. */
+    private static JobSessionTest.FakeRecorder reserved() {
+        var recorder = new JobSessionTest.FakeRecorder();
+        recorder.reserve(JOB);
+        return recorder;
+    }
 
     /** The handler with the command as its listener — how a real launch reaches the command. */
     private static JobLaunch launch(RunCommand command) {
