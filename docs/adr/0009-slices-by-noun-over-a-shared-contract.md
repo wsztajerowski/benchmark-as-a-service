@@ -56,9 +56,10 @@ no slice may import another did not fit the domain (below).
 - `baas run`'s whole flow, success path included, runs in JVM tests; the paid E2E job now proves
   only the real AWS behind the port.
 - A renamed artifact, attribute, option or type fails a build instead of a job.
-- Teardown and the image commands still construct their adapters inline: they have no port yet, and
-  their sequencing stays tested only through their services (T2). The next port follows the
-  `RunAws`/`SetupAws` shape when one of them needs a sequence test.
+- Teardown and the image build got ports in the same shape later (2026-10-21, review T2/B6):
+  `TeardownAws` and `ImageBuildAws`, each with a recording fake and one ordering test per rule. The
+  thin read commands (`jobs show/list/diff/download`, `results query`, `config sync`) still build
+  their clients inline; a port follows when one of them needs a sequence test.
 - `BaasConfig` remains the persisted form and is still what most commands hold; only the use cases
   extracted here take the immutable `DeploymentNames` (B7, partly).
 - Three things a user can see changed, all deliberate: JSON payloads escape every string field
