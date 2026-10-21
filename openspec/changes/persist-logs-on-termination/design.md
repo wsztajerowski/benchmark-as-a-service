@@ -59,13 +59,16 @@ then runs again at shutdown and overwrites the same keys with the same or longer
 file: an extra few `PutObject`s cost nothing, and the second copy of the boot log is the more
 complete one.
 
-### Keys match the runner's own
+### Keys match the runner's own, named from `baas-model`
 
-`<type>-output.txt` at the prefix root and `logs/<path below /app>`, exactly what
-`JmhSubcommandService` and `JobLogs` write, so a completed job gets overwrites rather than a second
-copy. `aws s3 cp --recursive --exclude '*' --include '*.log'` from `/app` gives that layout without
-listing the bucket, which `RunnerRole` cannot. Unlike `JobLogs` it has no depth bound; `/app` is a
-directory the job owns, not `/`.
+The process output goes up as the runner uploads it: written locally to the type's
+`BenchmarkType.workingOutputName()` (`jmh-output.txt` for every JMH type, `jcstress-output.txt`) and
+uploaded as its `processOutputName()` (`jmh-with-async-output.txt`, …), both exported into the script
+from the enum, and the runner's `--process-output` default reads the same constant. The boot log and
+`logs/` come from `JobLayout` through the script's `@NAME@` placeholders. So a completed job gets
+overwrites rather than a second copy. `aws s3 cp --recursive --exclude '*' --include '*.log'` from
+`/app` gives `logs/<path below /app>` without listing the bucket, which `RunnerRole` cannot. Unlike
+`JobLogs` it has no depth bound; `/app` is a directory the job owns, not `/`.
 
 ### async-profiler 4.6, base 1.4.0
 
@@ -73,10 +76,9 @@ The newest release. The breaking changes between 4.0 and 4.6 (`check` command, `
 `cstack=lbr`, the HTTP server, `filter` arguments, the `otlp` format) touch nothing the runner
 passes (`libPath`, `output`, `dir`, `event`, `interval`). The tarball layout is unchanged
 (`async-profiler-4.6-linux-x64/lib/libasyncProfiler.so`). Minor bump: a tool upgrade, nothing
-removed — and above `slice-architecture`'s 1.3.1 (unmerged, which pins the tarball's `sha256`).
-Whichever of the two merges second resolves `runner-image.yaml` to 4.6 with the digest
-`1e79ed54d8952889a2e74f993d22ee925e3322460d4f37a2ed95bfb88585da36` (`linux-x64` tarball, computed
-2026-10-21) and `imageVersion` above both.
+removed — and above `slice-architecture`'s 1.3.1, which added the tarball's `sha256`. Rebased onto
+it, the digest is 4.6's: `1e79ed54d8952889a2e74f993d22ee925e3322460d4f37a2ed95bfb88585da36`
+(`linux-x64` tarball, computed 2026-10-21).
 
 ## Risks / Trade-offs
 

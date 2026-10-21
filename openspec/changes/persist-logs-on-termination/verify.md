@@ -41,6 +41,15 @@ macOS library (`ASYNC_PATH`).
 
 ## Deviations
 
+- **Rebased onto `slice-architecture` (2026-10-21), and a naming bug fixed on the way.** The first
+  version uploaded `/app/*-output.txt` under its local name. Every JMH type writes `jmh-output.txt`,
+  but the runner uploads it per type (`jmh-with-async-output.txt`, `jmh-profiler-output.txt`), so a
+  stopped profiler job would have left its output beside the expected key, not at it. The live run
+  was a plain `jmh` job, which is why it did not show. Both names now come from `BenchmarkType`
+  (`workingOutputName`, `processOutputName`), which the runner's default also reads; pinned by
+  `aStoppedProfilerJobsOutputLandsAtTheNameTheRunnerUploadsItAs` and `BenchmarkTypeTest`. The boot
+  log and `logs/` names come from `JobLayout` through the refactor's `@NAME@` placeholders.
+
 - Task 2.3 said "right after the watchdog starts". The hook is installed after the `running` write
   instead: that write must stay first after the watchdog, because everything before the JVM has to
   fit in the watchdog margin, and the refused-`running` exit calls `ship_logs` itself anyway. Pinned
@@ -53,8 +62,7 @@ macOS library (`ASYNC_PATH`).
   `slice-architecture` branch on 2026-10-21, and a build from this branch would replace it under
   that session. async-profiler 4.6 is verified only through the local IT on macOS and the tarball
   listing, not on a baked AMI. Run 6.2/6.3 when `baas-development` is free.
-- **W2**: `slice-architecture` also edits `infra/runner-image.yaml` (`imageVersion` 1.3.1 plus an
-  async-profiler `sha256`). Whichever branch merges second takes 4.6, the digest recorded in
-  design.md, and an `imageVersion` above both.
+- ~~**W2**~~: closed by the rebase onto `slice-architecture`: `infra/runner-image.yaml` is 1.4.0 with
+  async-profiler 4.6 and its `sha256`.
 - **W3**: the benchmark-timeout and watchdog scenarios are covered by stub-`aws` unit tests, not
   by a live run.

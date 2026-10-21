@@ -128,8 +128,9 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
 - **A stopped job's logs are shipped by a systemd stop hook, not by the CLI.** Ctrl+C, `baas jobs
   terminate` and the poll cap all end in `TerminateInstances`, whose default graceful OS shutdown
   runs `baas-ship-logs.service`'s `ExecStop` while the network is still up (billing has already
-  stopped). It uploads what `ship_logs` does — boot log, `/app/*-output.txt`, `/app/**/*.log` at the
-  runner's own keys — and every exit of the script calls `ship_logs` itself too, so a hook that
+  stopped). It uploads what `ship_logs` does — boot log, the process output, `/app/**/*.log` at the
+  runner's own keys, every name from `baas-model` (`BenchmarkType` gives both the local file and the
+  per-type key, which differ for the JMH profiler types) — and every exit of the script calls `ship_logs` itself too, so a hook that
   never ran loses only the external-stop case. The hook file is `declare -f ship_logs` run by an
   explicit `/bin/bash`: a `#!` line would be stripped with the comments. Never pass
   `--skip-os-shutdown` to a runner's termination; it bypasses the hook.
