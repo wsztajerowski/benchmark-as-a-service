@@ -25,6 +25,19 @@ class UserDataScriptBuilderTest {
     @TempDir
     Path tempDir;
 
+    /** The launch's objects, from the values a test varies; the benchmark key and sort key are derived. */
+    private static String build(String region, String prefix, String benchmarkType, String jobId, String project,
+                                String resultPath, String createdAt, int timeout, int watchdog,
+                                String imageVersion, String amiId, String runnerJarKey,
+                                List<String> params, Map<String, String> tags) {
+        var job = new pl.wsztajerowski.baas.model.JobItem(jobId, project, java.time.Instant.parse(createdAt), resultPath,
+            "c5.2xlarge", pl.wsztajerowski.baas.model.JobStatus.LAUNCHING, null, null, tags, null);
+        var request = new JobLaunch.Request(benchmarkType, params, null, null, "c5.2xlarge", project,
+            timeout, watchdog, tags, false, "7.2.0", "Wiktor-Sztajerowski/benchmark-as-a-service");
+        return new UserDataScriptBuilder().build(region, pl.wsztajerowski.baas.session.DeploymentNames.of(prefix), job,
+            new pl.wsztajerowski.baas.image.RunnerImage(amiId, imageVersion, null, null), request, runnerJarKey);
+    }
+
     private String script() {
         return script(Map.of());
     }
@@ -36,14 +49,10 @@ class UserDataScriptBuilderTest {
     private static final String JOB_SORT_KEY = "2026-07-24T12:00:00.000Z#20260724T120000000Z-a3f9c21b";
 
     private String script(Map<String, String> runnerTags, String resultsTable) {
-        String encoded = new UserDataScriptBuilder().build(
-            "eu-central-1", "baas-a1b2c3d4", "jmh",
-            "20260724T120000000Z-a3f9c21b",
-            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b",
-            "2026-07-24T12:00:00Z",
-            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
-            7200, 7500,
-            "1.0.0", "ami-0123456789abcdef0", null, resultsTable, JOB_SORT_KEY,
+        String encoded = build("eu-central-1", resultsTable.replaceFirst("-results$", ""), "jmh",
+            "20260724T120000000Z-a3f9c21b", "lynx-journal",
+            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b", "2026-07-24T12:00:00Z",
+            7200, 7500, "1.0.0", "ami-0123456789abcdef0", null,
             List.of("MyBenchmark", "-f", "1"), runnerTags);
         return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
     }
@@ -170,10 +179,8 @@ class UserDataScriptBuilderTest {
         Path marker = tempDir.resolve("PWNED");
         List<String> params = List.of("MyBenchmark", "-p", "pattern=a$b", "-jvmArgs", "-Dx=\"q\" `id`",
             "$(touch " + marker + ")", "it's", "two words", "back\\slash", "a;b");
-        String encoded = new UserDataScriptBuilder().build(
-            "eu-central-1", "baas-a1b2c3d4", "jmh", "id", "jobs/p/id", "2026-07-24T12:00:00Z",
-            "jobs/p/id/input/benchmark.jar", 7200, 7500, "1.0.0", "ami-0", null, "t", JOB_SORT_KEY,
-            params, Map.of());
+        String encoded = build("eu-central-1", "baas-a1b2c3d4", "jmh", "id", "p", "jobs/p/id",
+            "2026-07-24T12:00:00Z", 7200, 7500, "1.0.0", "ami-0", null, params, Map.of());
 
         List<String> elements = evaluateArray(
             new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8), "BENCHMARK_PARAMS_ARRAY");
@@ -418,14 +425,10 @@ class UserDataScriptBuilderTest {
         List<String> params = List.of("pl.wsztajerowski.SomeBenchmark.measure", "-f", "3", "-wi", "5", "-i", "10",
             "-p", "size=1,10,100,1000,10000,100000", "-p", "implementation=synchronized,reentrant,stamped,atomic",
             "-p", "threads=1,2,4,8,16", "-jvmArgs", "-XX:+UseG1GC -Xms4g -Xmx4g");
-        String encoded = new UserDataScriptBuilder().build(
-            "eu-central-1", "baas-381492019823", "jmh-with-async",
-            "20260724T120000000Z-a3f9c21b",
-            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b",
-            "2026-07-24T12:00:00.123Z",
-            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b/input/benchmark.jar",
-            7200, 7500, "1.2.0", "ami-0ae60d9d990dc00df", "releases/6.1.0/benchmark-runner.jar",
-            "baas-381492019823-results", JOB_SORT_KEY, params, tags);
+        String encoded = build("eu-central-1", "baas-381492019823", "jmh-with-async",
+            "20260724T120000000Z-a3f9c21b", "benchmark-as-a-service",
+            "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b", "2026-07-24T12:00:00.123Z",
+            7200, 7500, "1.2.0", "ami-0ae60d9d990dc00df", "releases/6.1.0/benchmark-runner.jar", params, tags);
         int rawBytes = Base64.getDecoder().decode(encoded).length;
 
         assertThat(rawBytes).isLessThan(UserDataScriptBuilder.USER_DATA_LIMIT_BYTES * 3 / 4);
@@ -1048,10 +1051,9 @@ class UserDataScriptBuilderTest {
     void everyExportedValueSurvivesAQuoteAsLiteralText() throws Exception {
         Path marker = tempDir.resolve("PWNED");
         String hostile = "x';touch " + marker + ";'";
-        String encoded = new UserDataScriptBuilder().build(
-            hostile, hostile, hostile, hostile, "jobs/" + hostile + "/id", hostile,
-            "jobs/" + hostile + "/id/input/benchmark.jar", 7200, 7500,
-            hostile, hostile, hostile, hostile, hostile,
+        // Every string the script exports, hostile; the instant is typed now, so it cannot be.
+        String encoded = build(hostile, hostile, hostile, hostile, hostile, "jobs/" + hostile + "/id",
+            "2026-07-24T12:00:00Z", 7200, 7500, hostile, hostile, hostile,
             List.of(hostile), Map.of("project", hostile, "branch", hostile));
         String script = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
         String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
@@ -1065,7 +1067,7 @@ class UserDataScriptBuilderTest {
         assertThat(process.exitValue()).as("bash said: " + output).isZero();
         assertThat(Files.exists(marker)).as("an exported value must never run as shell").isFalse();
         assertThat(output.lines()).containsExactly(
-            "jobs/" + hostile + "/id", "jobs/" + hostile + "/id/input/benchmark.jar", hostile);
+            "jobs/" + hostile + "/id", "jobs/" + hostile + "/" + hostile + "/input/benchmark.jar", hostile);
     }
 
     /**
