@@ -95,9 +95,9 @@ class UserDataScriptBuilderTest {
         assertThat(script)
             .as("the instance self-terminates, so an unshipped log is a log that no longer exists")
             .contains("/var/log/cloud-init-output.log")
-            .contains("${RESULT_PATH}/cloud-init-output.log");
+            .contains("${dest}/cloud-init-output.log");
 
-        assertThat(script.indexOf("cloud-init-output.log"))
+        assertThat(script.lastIndexOf("ship_logs\n"))
             .as("the upload must happen before the terminate call")
             .isLessThan(script.lastIndexOf("terminate-instances"));
     }
@@ -114,7 +114,7 @@ class UserDataScriptBuilderTest {
 
         int watchdogStart = script.indexOf("sleep ${WALL_CLOCK_HARD_KILL}");
         int watchdogTerminate = script.indexOf("terminate-instances", watchdogStart);
-        int uploadInWatchdog = script.indexOf("cloud-init-output.log", watchdogStart);
+        int uploadInWatchdog = script.indexOf("ship_logs", watchdogStart);
 
         assertThat(watchdogStart).isNotNegative();
         assertThat(uploadInWatchdog)
@@ -293,10 +293,13 @@ class UserDataScriptBuilderTest {
     @Test
     void theInstanceUploadsItsArtifactsUnderTheModelsNames() {
         String script = script();
-        for (String name : java.util.List.of(pl.wsztajerowski.baas.model.JobLayout.BOOT_LOG_NAME,
+        for (String name : java.util.List.of(
             pl.wsztajerowski.baas.model.JobLayout.ENVIRONMENT_NAME, pl.wsztajerowski.baas.model.JobLayout.PACKAGES_NAME)) {
             assertThat(script).contains("\"s3://${S3_BUCKET}/${RESULT_PATH}/" + name + "\"");
         }
+        assertThat(script)
+            .contains("\"${dest}/" + pl.wsztajerowski.baas.model.JobLayout.BOOT_LOG_NAME + "\"")
+            .contains("\"${dest}/" + pl.wsztajerowski.baas.model.JobLayout.LOGS_SEGMENT + "\" --recursive");
     }
 
     /** The shell's guard is the CLI's own expression and values, so "terminal" means one thing. */
@@ -346,7 +349,7 @@ class UserDataScriptBuilderTest {
 
         assertThat(script.indexOf("job_status \"${STATUS}\"", benchmark))
             .isPositive()
-            .isLessThan(script.lastIndexOf("cloud-init-output.log"));
+            .isLessThan(script.lastIndexOf("ship_logs\n"));
     }
 
     /** The runner's Java SDK reads the same variables; exporting them would change its retries. */
@@ -519,13 +522,18 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * Runs the script's exports, its {@code job_status} definition and {@code body} under bash,
+     * Runs the script's exports, its {@code job_status} and {@code ship_logs} definitions and
+     * {@code body} under bash,
      * with {@code aws} replaced by a stub that appends its arguments to a file and then succeeds,
      * fails a condition, or fails outright.
      */
+    /** The stub directory of the latest {@link #runAgainstStubAws} call. */
+    private Path stubBin;
+
     private List<String> runAgainstStubAws(String script, String mode, String body) throws Exception {
         Path calls = tempDir.resolve("calls-" + System.nanoTime());
         Path bin = Files.createDirectories(tempDir.resolve("bin-" + System.nanoTime()));
+        stubBin = bin;
         Path aws = bin.resolve("aws");
         Files.writeString(aws, """
             #!/usr/bin/env bash
@@ -544,7 +552,7 @@ class UserDataScriptBuilderTest {
             """);
         assertThat(shutdown.toFile().setExecutable(true)).isTrue();
         String exports = script.lines().filter(l -> l.startsWith("export ")).collect(Collectors.joining("\n", "", "\n"));
-        String function = script.substring(script.indexOf("job_status() {"), script.indexOf("\n}\n", script.indexOf("job_status() {")) + 3);
+        String function = function(script, "job_status") + function(script, "ship_logs");
 
         ProcessBuilder builder = new ProcessBuilder("bash", "-c", exports + function + body)
             .redirectErrorStream(true);
@@ -556,6 +564,133 @@ class UserDataScriptBuilderTest {
         assertThat(running.waitFor(20, TimeUnit.SECONDS)).isTrue();
         assertThat(running.exitValue()).as("bash said: " + output).isZero();
         return Files.exists(calls) ? Files.readAllLines(calls) : List.of();
+    }
+
+    // ─── Logs of a job stopped early ─────────────────────────────────────────────
+
+    /**
+     * A job stopped early used to leave only its boot log, and one stopped from outside nothing at
+     * all. Runs {@code ship_logs} against a working directory holding what a job writes, and pins
+     * that each lands at the key the runner itself uses.
+     */
+    @Test
+    void shipLogsUploadsTheBootLogTheProcessOutputAndEveryLogAtTheRunnersKeys() throws Exception {
+        Path work = jobWorkingDirectory();
+
+        List<String> calls = runAgainstStubAws(script(), "ok", "WORK_DIR='" + work + "'\nship_logs\n");
+
+        assertThat(calls).containsExactlyElementsOf(expectedUploads(work));
+    }
+
+    /**
+     * Every JMH type writes jmh-output.txt, and the runner uploads it as the type's own name. A
+     * stopped jmh-with-async job has to leave it at that name too, not beside it under the local one.
+     */
+    @Test
+    void aStoppedProfilerJobsOutputLandsAtTheNameTheRunnerUploadsItAs() throws Exception {
+        Path work = jobWorkingDirectory();
+        String script = new String(Base64.getDecoder().decode(build("eu-central-1", "baas-a1b2c3d4", "jmh-with-async",
+            "20260724T120000000Z-a3f9c21b", "lynx-journal", "jobs/lynx-journal/20260724T120000000Z-a3f9c21b",
+            "2026-07-24T12:00:00Z", 7200, 7500, "1.0.0", "ami-0123456789abcdef0", null, List.of("MyBenchmark"),
+            Map.of())), StandardCharsets.UTF_8);
+
+        List<String> calls = runAgainstStubAws(script, "ok", "WORK_DIR='" + work + "'\nship_logs\n");
+
+        assertThat(calls).contains("s3 cp " + work.resolve("jmh-output.txt")
+            + " s3://baas-a1b2c3d4/jobs/lynx-journal/20260724T120000000Z-a3f9c21b/jmh-with-async-output.txt");
+    }
+
+    /** Uploads are best effort: one that fails must not keep the rest, or the termination, from running. */
+    @Test
+    void aFailedUploadDoesNotStopTheOthers() throws Exception {
+        Path work = jobWorkingDirectory();
+
+        List<String> calls = runAgainstStubAws(script(), "fail",
+            "WORK_DIR='" + work + "'\nship_logs && echo shipped >> \"$STUB_CALLS\"\n");
+
+        assertThat(calls).hasSize(4).last().isEqualTo("shipped");
+    }
+
+    /**
+     * A stop from outside is a TerminateInstances, which shuts the OS down, and then only a systemd
+     * stop hook runs. Writes the hook file the way the script does and runs it in an empty
+     * environment, as systemd would, so it proves the file carries the function and every value it
+     * reads — not merely that a line naming it exists.
+     */
+    @Test
+    void theShutdownHookShipsTheLogsWithNothingButItsOwnFile() throws Exception {
+        String script = script();
+        Path work = jobWorkingDirectory();
+        Path hook = tempDir.resolve("baas-ship-logs");
+
+        runAgainstStubAws(script, "ok",
+            "WORK_DIR='" + work + "'\n" + function(script, "ship_logs_hook") + "ship_logs_hook > '" + hook + "'\n");
+        assertThat(Files.readString(hook)).as("a shebang would be stripped with the comments").doesNotStartWith("#");
+
+        Path calls = tempDir.resolve("hook-calls");
+        Process running = new ProcessBuilder("env", "-i", "PATH=" + stubBin + ":/usr/bin:/bin",
+            "STUB_CALLS=" + calls, "STUB_MODE=ok", "/bin/bash", hook.toString())
+            .redirectErrorStream(true).start();
+        String output = new String(running.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        assertThat(running.waitFor(20, TimeUnit.SECONDS)).isTrue();
+        assertThat(running.exitValue()).as("hook said: " + output).isZero();
+
+        assertThat(Files.readAllLines(calls)).containsExactlyElementsOf(expectedUploads(work));
+    }
+
+    @Test
+    void theShutdownHookRunsOnStopWhileTheNetworkIsUpAndIsInstalledBeforeTheBenchmark() {
+        String script = script();
+
+        assertThat(script)
+            .contains("ExecStop=/bin/bash /usr/local/sbin/baas-ship-logs")
+            .contains("After=network-online.target")
+            .contains("RemainAfterExit=yes")
+            .contains("TimeoutStopSec=90")
+            .contains("systemctl start baas-ship-logs.service");
+        assertThat(script.indexOf("ship_logs_hook > /usr/local/sbin/baas-ship-logs"))
+            .as("nothing may delay the watchdog or the running write, and the hook must be armed before the benchmark")
+            .isGreaterThan(script.indexOf("job_status running 2"))
+            .isLessThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
+    }
+
+    /** ship_logs reads WORK_DIR; the job runs in /app. The two must name the same directory. */
+    @Test
+    void shipLogsReadsTheDirectoryTheJobRunsIn() {
+        assertThat(script()).contains("export WORK_DIR='/app'\n").contains("\ncd /app\n");
+    }
+
+    /** Every self-termination ships the full set, not only the boot log. */
+    @Test
+    void everyExitOfTheScriptShipsTheLogsBeforeTerminating() {
+        List<String> lines = script().lines().map(String::strip).toList();
+        List<Integer> terminates = java.util.stream.IntStream.range(0, lines.size())
+            .filter(i -> lines.get(i).startsWith("aws ec2 terminate-instances")).boxed().toList();
+
+        assertThat(terminates).hasSize(3).allSatisfy(i ->
+            assertThat(lines.subList(i - 3, i)).as("before line " + i).contains("ship_logs"));
+    }
+
+    private Path jobWorkingDirectory() throws Exception {
+        Path work = Files.createDirectories(tempDir.resolve("app"));
+        Files.writeString(work.resolve("jmh-output.txt"), "# Warmup Iteration   1");
+        Files.createDirectories(work.resolve("async-output"));
+        Files.writeString(work.resolve("async-output/profiler.log"), "x");
+        return work;
+    }
+
+    private static List<String> expectedUploads(Path work) {
+        String dest = "s3://baas-a1b2c3d4/jobs/lynx-journal/20260724T120000000Z-a3f9c21b";
+        return List.of(
+            "s3 cp /var/log/cloud-init-output.log " + dest + "/cloud-init-output.log",
+            "s3 cp " + work.resolve("jmh-output.txt") + " " + dest + "/jmh-output.txt",
+            "s3 cp " + work + " " + dest + "/logs --recursive --exclude * --include *.log --only-show-errors");
+    }
+
+    private static String function(String script, String name) {
+        int start = script.indexOf(name + "() {");
+        assertThat(start).as(name + " definition").isNotNegative();
+        return script.substring(start, script.indexOf("\n}\n", start) + 3);
     }
 
     // ─── Environment manifest ────────────────────────────────────────────────────
@@ -1051,8 +1186,10 @@ class UserDataScriptBuilderTest {
     void everyExportedValueSurvivesAQuoteAsLiteralText() throws Exception {
         Path marker = tempDir.resolve("PWNED");
         String hostile = "x';touch " + marker + ";'";
-        // Every string the script exports, hostile; the instant is typed now, so it cannot be.
-        String encoded = build(hostile, hostile, hostile, hostile, hostile, "jobs/" + hostile + "/id",
+        // Every string the script exports, hostile; the instant is typed now, so it cannot be. The
+        // benchmark type is not: it names a BenchmarkType, which RunCommand checks before any launch
+        // and the builder looks up, so a hostile one is refused before a script exists.
+        String encoded = build(hostile, hostile, "jmh", hostile, hostile, "jobs/" + hostile + "/id",
             "2026-07-24T12:00:00Z", 7200, 7500, hostile, hostile, hostile,
             List.of(hostile), Map.of("project", hostile, "branch", hostile));
         String script = new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
