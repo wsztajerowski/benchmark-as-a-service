@@ -129,7 +129,6 @@ public final class JobLaunch {
         //    timestamp are the same value rather than two values that happen to be close.
         Instant jobInstant = Instant.now();
         String jobId = JobId.generate(jobInstant);
-        String createdAt = jobInstant.toString();
         String resultPath = JobLayout.jobPrefix(request.project(), jobId);
         listener.named(jobId, resultPath);
         logger.info("Job {} — results will land under s3://{}/{}",
@@ -160,11 +159,7 @@ public final class JobLaunch {
         JobItem job = new JobItem(jobId, request.project(), jobInstant, resultPath, request.instanceType(),
             JobStatus.LAUNCHING, null, null, request.runnerTags(), null);
         String userData = new UserDataScriptBuilder().build(
-            aws.region(), deployment.bucket(),
-            request.benchmarkType(), jobId, resultPath, createdAt, benchmarkJarKey,
-            request.timeoutSeconds(), request.watchdogSeconds(),
-            runnerImage.imageVersion(), runnerImage.amiId(), runnerJarS3Key,
-            deployment.resultsTable(), job.sortKey(), request.benchmarkParams(), request.runnerTags());
+            aws.region(), deployment, job, runnerImage, request, runnerJarS3Key);
         // The script is what actually decides whether a job works; when a runner dies before it
         // can upload cloud-init-output.log, this is the only place left to look.
         logger.debug("Generated user-data script:\n{}", userData);

@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.image.RunnerImage;
+import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.RunnerArgs;
@@ -8,6 +10,7 @@ import pl.wsztajerowski.baas.model.dynamodb.JobItemConditions;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
+import pl.wsztajerowski.baas.session.DeploymentNames;
 
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -295,12 +298,27 @@ public class UserDataScriptBuilder {
         aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
         """));
 
-    public String build(String region, String bucket, String benchmarkType,
-                        String jobId, String resultPath, String createdAt,
-                        String benchmarkJarS3Key, int benchmarkTimeoutSeconds,
-                        int wallClockHardKillSeconds, String imageVersion, String amiId,
-                        String runnerJarS3Key, String resultsTableName, String jobSortKey,
-                        List<String> benchmarkParams, Map<String, String> runnerTags) {
+    /**
+     * The script for one job, from the objects the launch holds (review K5): sixteen positional
+     * values, eleven of them strings, made a swapped pair compile and fail only on a paid instance.
+     * The benchmark JAR's key is derived here exactly as the launch uploads it.
+     */
+    public String build(String region, DeploymentNames deployment, JobItem job, RunnerImage image,
+                        JobLaunch.Request request, String runnerJarS3Key) {
+        return render(region, deployment.bucket(), request.benchmarkType(),
+            job.jobId(), job.resultPath(), job.createdAt().toString(),
+            JobLayout.benchmarkJarKey(job.project(), job.jobId()),
+            request.timeoutSeconds(), request.watchdogSeconds(),
+            image.imageVersion(), image.amiId(), runnerJarS3Key,
+            deployment.resultsTable(), job.sortKey(), request.benchmarkParams(), request.runnerTags());
+    }
+
+    private String render(String region, String bucket, String benchmarkType,
+                          String jobId, String resultPath, String createdAt,
+                          String benchmarkJarS3Key, int benchmarkTimeoutSeconds,
+                          int wallClockHardKillSeconds, String imageVersion, String amiId,
+                          String runnerJarS3Key, String resultsTableName, String jobSortKey,
+                          List<String> benchmarkParams, Map<String, String> runnerTags) {
         List<String> tagArgs = runnerTags.entrySet().stream()
             .flatMap(e -> Stream.of(RunnerArgs.TAG, e.getKey() + "=" + e.getValue()))
             .toList();
