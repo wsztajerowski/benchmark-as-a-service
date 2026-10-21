@@ -41,19 +41,19 @@
 
 ## 6. End-to-end (manual, `baas run` path — no automated test covers it)
 
-- [ ] 6.1 On `baas-development`, with the reactor CLI and `--runner-jar`, start a `fake-jmh-benchmarks`
+- [x] 6.1 On `baas-development`, with the reactor CLI and `--runner-jar`, start a `fake-jmh-benchmarks`
   job long enough to be mid-benchmark, stop it with `baas jobs terminate`, and verify the prefix holds
   `cloud-init-output.log` (ending in the shutdown), `jmh-output.txt` with iteration lines, and the job
   item says `cancelled`. Record it in verify.md
-- [ ] 6.2 Second deployment for the image change (infra rule): `baas admin image build` on
+- [ ] 6.2 *(deferred, verify.md W1)* Second deployment for the image change (infra rule): `baas admin image build` on
   `baas-development` with this branch, then one `jmh-with-async` job, and confirm `environment.json`
   says `tools.asyncProfiler` 4.6 and a flame graph is produced. Record it in verify.md, or the reason
   it was deferred
-- [ ] 6.3 Score comparison against a pre-change run (measurement-affecting rule): compare one
+- [ ] 6.3 *(deferred, verify.md W1)* Score comparison against a pre-change run (measurement-affecting rule): compare one
   `fake-jmh-benchmarks` score on 1.4.0 against a 1.3.x run, investigate any difference and record
   the spread, or record that it was deferred with 6.2
 
 ## 7. Verify
 
-- [ ] 7.1 Run `/opsx:verify` and record the result in verify.md: requirement → code → test → gap,
+- [x] 7.1 Run `/opsx:verify` and record the result in verify.md: requirement → code → test → gap,
   warnings as W1, W2…, and any deviation from design or tasks
