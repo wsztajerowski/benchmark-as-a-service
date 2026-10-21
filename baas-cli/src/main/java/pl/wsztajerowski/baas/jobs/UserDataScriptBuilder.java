@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.image.RunnerImage;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
@@ -81,6 +82,24 @@ public class UserDataScriptBuilder {
           return 1
         }
 
+        # Ships what the job has produced so far to its prefix: the boot log, the benchmark
+        # process output (the runner redirects it into WORK_DIR/PROCESS_OUTPUT_FILE as it runs, and
+        # uploads it as PROCESS_OUTPUT_NAME, which differs per JMH type) and
+        # every *.log below WORK_DIR under logs/ — the keys the runner itself uses, so after a
+        # completed job this overwrites rather than duplicates. Defined before the watchdog forks,
+        # which calls it, and serialised into the shutdown hook below, so the explicit uploads and
+        # the shutdown-time one are the same code. --recursive from a local directory lists
+        # nothing in the bucket, which RunnerRole could not. Every upload is best effort.
+        ship_logs() {
+          local dest="s3://${S3_BUCKET}/${RESULT_PATH}"
+          aws s3 cp /var/log/cloud-init-output.log "${dest}/@BOOT_LOG@" || true
+          [[ -f "${WORK_DIR}/${PROCESS_OUTPUT_FILE}" ]] \\
+            && { aws s3 cp "${WORK_DIR}/${PROCESS_OUTPUT_FILE}" "${dest}/${PROCESS_OUTPUT_NAME}" || true; }
+          [[ -d "${WORK_DIR}" ]] && { aws s3 cp "${WORK_DIR}" "${dest}/@LOGS@" --recursive \\
+            --exclude '*' --include '*.log' --only-show-errors || true; }
+          return 0
+        }
+
         TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" \\
           -H "X-aws-ec2-metadata-token-ttl-seconds: 300")
         INSTANCE_ID=$(curl -sH "X-aws-ec2-metadata-token: $TOKEN" \\
@@ -93,9 +112,8 @@ public class UserDataScriptBuilder {
           # Before the log upload, so the outcome is on record even if the upload stalls.
           job_status timed-out
           # This path never reaches the normal upload below, and it is exactly the
-          # case a user needs the log for — ship it before the instance disappears.
-          aws s3 cp /var/log/cloud-init-output.log \\
-            "s3://${S3_BUCKET}/${RESULT_PATH}/@BOOT_LOG@" || true
+          # case a user needs the logs for — ship them before the instance disappears.
+          ship_logs
           aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
         ) &
 
@@ -111,11 +129,42 @@ public class UserDataScriptBuilder {
         job_status running 2
         if [[ $? -eq 2 ]]; then
           echo "Job already has an outcome, or has no job item: not starting the benchmark."
-          aws s3 cp /var/log/cloud-init-output.log \\
-            "s3://${S3_BUCKET}/${RESULT_PATH}/@BOOT_LOG@" || true
+          ship_logs
           aws ec2 terminate-instances --instance-ids "$INSTANCE_ID" --region "${AWS_REGION}" || shutdown -h now
           exit 0
         fi
+
+        # The shutdown hook: a stop from outside — Ctrl+C on `baas run`, `baas jobs terminate`, the
+        # CLI's poll cap, the console — is a TerminateInstances, which by default shuts the OS
+        # down gracefully, and systemd then runs ExecStop. Stopped in reverse order of start, it
+        # runs while the network (After=network-online.target) and the instance credentials are
+        # still up; billing has already stopped at shutting-down. TimeoutStopSec bounds a stalled
+        # upload. The hook file is ship_logs itself plus the variables it reads, run by an explicit
+        # /bin/bash because a shebang line would be stripped with the comments. A unit that fails
+        # to start loses only the external-stop case: every exit of this script still ships.
+        ship_logs_hook() {
+          printf 'export S3_BUCKET=%q RESULT_PATH=%q WORK_DIR=%q AWS_REGION=%q\\n' \\
+            "${S3_BUCKET}" "${RESULT_PATH}" "${WORK_DIR}" "${AWS_REGION}"
+          printf 'export PROCESS_OUTPUT_FILE=%q PROCESS_OUTPUT_NAME=%q\\n' \\
+            "${PROCESS_OUTPUT_FILE}" "${PROCESS_OUTPUT_NAME}"
+          declare -f ship_logs
+          echo ship_logs
+        }
+        ship_logs_hook > /usr/local/sbin/baas-ship-logs
+        cat > /etc/systemd/system/baas-ship-logs.service <<'UNIT'
+        [Unit]
+        Description=Ship the BaaS job logs to S3 before the instance goes away
+        Wants=network-online.target
+        After=network-online.target
+        [Service]
+        Type=oneshot
+        RemainAfterExit=yes
+        ExecStart=/bin/true
+        ExecStop=/bin/bash /usr/local/sbin/baas-ship-logs
+        TimeoutStopSec=90
+        UNIT
+        systemctl daemon-reload && systemctl start baas-ship-logs.service \\
+          || echo "baas-ship-logs.service not started: a termination from outside will not ship the logs"
 
         # Nothing is installed here. Corretto, perf, the AWS CLI and async-profiler are baked
         # into the AMI by `baas admin image build` from infra/runner-image.yaml — a runner that
@@ -287,10 +336,10 @@ public class UserDataScriptBuilder {
         STATUS="completed"; [[ $EXIT_CODE -ne 0 ]] && STATUS="failed:${EXIT_CODE}"
         job_status "${STATUS}"
 
-        # Ship the boot log before self-terminating — the instance is about to disappear
-        # and this is the only record of what went wrong on a failed job.
-        aws s3 cp /var/log/cloud-init-output.log \\
-          "s3://${S3_BUCKET}/${RESULT_PATH}/@BOOT_LOG@" || true
+        # Ship the logs before self-terminating — the instance is about to disappear and this is
+        # the only record of what went wrong on a failed job. A benchmark killed by its timeout
+        # took the runner, and the runner's own uploads, with it; this still has its output.
+        ship_logs
 
         # Self-termination, with the watchdog left armed: if this request fails, the watchdog
         # is what remains. The instance is launched with shutdown behaviour TERMINATE, so an OS
@@ -330,6 +379,15 @@ public class UserDataScriptBuilder {
             export("BENCHMARK_TYPE", benchmarkType) +
             export("JOB_ID", jobId) +
             export("RESULT_PATH", resultPath) +
+            // Where the job's files are written and what ship_logs uploads from. The script still
+            // writes `/app` literally where it runs the job; this only lets tests point the upload
+            // at a directory of their own.
+            export("WORK_DIR", "/app") +
+            // The benchmark process's output: the file the runner writes it to as it runs, and the
+            // name it uploads it as. ship_logs uploads the first as the second, so a job stopped
+            // early leaves it at the same key a completed one does.
+            export("PROCESS_OUTPUT_FILE", BenchmarkType.fromCommandName(benchmarkType).workingOutputName()) +
+            export("PROCESS_OUTPUT_NAME", BenchmarkType.fromCommandName(benchmarkType).processOutputName()) +
             // One clock read per job: this instant named the job's prefix and is what the runner
             // stores as createdAt, so the two cannot disagree. The instance's own clock is not
             // consulted.
@@ -370,6 +428,7 @@ public class UserDataScriptBuilder {
         names.put("@BOOT_LOG@", JobLayout.BOOT_LOG_NAME);
         names.put("@ENVIRONMENT@", JobLayout.ENVIRONMENT_NAME);
         names.put("@PACKAGES@", JobLayout.PACKAGES_NAME);
+        names.put("@LOGS@", JobLayout.LOGS_SEGMENT);
         names.put("@PK@", MeasurementItemMapper.PK);
         names.put("@SK@", MeasurementItemMapper.SK);
         names.put("@JOB_PARTITION@", ResultKeys.JOB_PARTITION_KEY);

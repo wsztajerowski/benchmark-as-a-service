@@ -125,6 +125,14 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   `ResultsQueryService` reads the item's top-level `tags` map; tagging the *instance* leaves every stored
   result with a null `imageVersion`, and `--tag`/`--best-per` on it silently match nothing. The tag values are the
   ones observed on the box, so a result's tags cannot disagree with its own `environment.json`.
+- **A stopped job's logs are shipped by a systemd stop hook, not by the CLI.** Ctrl+C, `baas jobs
+  terminate` and the poll cap all end in `TerminateInstances`, whose default graceful OS shutdown
+  runs `baas-ship-logs.service`'s `ExecStop` while the network is still up (billing has already
+  stopped). It uploads what `ship_logs` does — boot log, `/app/*-output.txt`, `/app/**/*.log` at the
+  runner's own keys — and every exit of the script calls `ship_logs` itself too, so a hook that
+  never ran loses only the external-stop case. The hook file is `declare -f ship_logs` run by an
+  explicit `/bin/bash`: a `#!` line would be stripped with the comments. Never pass
+  `--skip-os-shutdown` to a runner's termination; it bypasses the hook.
 - **The benchmark runs from `/app`, never `/`.** The runner (`JobLogs`, every benchmark type) scans
   below its working directory for `.log` files to upload, and cloud-init starts user-data in `/`.
   The walk itself is now bounded — 8 levels, unreadable entries skipped — so from `/` it would no
@@ -720,7 +728,7 @@ non-obvious entries:
 | Key | Meaning |
 |---|---|
 | `launch-error.txt` | Only for a job whose `RunInstances` failed: the AWS error code, message and job id, and what was requested. There is no instance and so no boot log; this is what `baas jobs download <jobId>` then has to show |
-| `cloud-init-output.log` | Runner boot log, uploaded before self-termination — start here when a job fails before producing output |
+| `cloud-init-output.log` | Runner boot log, uploaded before every termination, a cancelled or timed-out job's included (with the process output and `logs/` so far) — start here when a job fails before producing output |
 | `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (6) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Read by `baas jobs show` and compared group by group by `baas jobs diff`, which also compares `packages.txt` when the AMIs differ. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
