@@ -61,9 +61,12 @@ final class DoneStep implements SetupStep {
 
     /**
      * Writes the deployment's file: the region always, the deployer profile once proven. Called on
-     * create as soon as CloudFormation accepts the request, and again at the end.
+     * create as soon as CloudFormation accepts the request, and again at the end. The name and the
+     * region are the context's own fields until here: the steps choose them, refuse them and choose
+     * again without touching the persisted form (review B7).
      */
     static void save(SetupContext context) {
+        context.config.setPrefix(context.deployment);
         context.config.getAws().setRegion(context.region);
         if (!context.fileWritten && context.preflight instanceof SetupAws.Preflight.Met && context.profile != null) {
             context.config.getAws().setDeployerProfile(context.profile);

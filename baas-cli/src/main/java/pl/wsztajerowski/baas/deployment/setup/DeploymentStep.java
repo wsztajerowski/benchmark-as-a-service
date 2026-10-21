@@ -43,7 +43,6 @@ final class DeploymentStep implements SetupStep {
                     logger.warn("Deployment name '{}' {}. Choose another.", name, violation.get());
                 } else {
                     context.deployment = name;
-                    context.config.setPrefix(name);
                 }
             }
         } else if (configured.isEmpty()) {

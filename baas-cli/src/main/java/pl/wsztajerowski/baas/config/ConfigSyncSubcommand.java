@@ -68,21 +68,20 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             throw CommandRefusal.usage(e.getMessage());
         }
         String name = config.requirePrefix();
-        String recordedRegion = config.getAws().getRegion();
         if (operatorProfile != null) {
             config.getAws().setOperatorProfile(operatorProfile);
         }
 
         // The region is found again rather than trusted from the file: sync is what re-points a
         // machine at a deployment rebuilt elsewhere. The session proves the credentials reach the
-        // operator role before the bucket is asked, under that role.
+        // operator role before the bucket is asked, under that role. Nothing below is saved unless
+        // every check passes, so a refused sync leaves the file as it was.
         config.getAws().setRegion(null);
         var factory = OperatorSession.adopting(config, aws(), System.getenv()).factory();
         String region;
         try {
             region = factory.region();
         } catch (RuntimeException e) {
-            config.getAws().setRegion(recordedRegion);
             throw CommandRefusal.refused(e.getMessage());
         }
 
