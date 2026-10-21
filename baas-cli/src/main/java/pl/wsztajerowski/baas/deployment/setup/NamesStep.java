@@ -40,7 +40,6 @@ final class NamesStep implements SetupStep {
             logger.warn("The bucket name {} belongs to another AWS account, and bucket names are global. "
                 + "Choose another name.", context.deployment);
             context.deployment = null;
-            context.config.setPrefix(null);
             return new Outcome.GoTo(NameAndRegionStep.NAME);
         }
         if (bucket instanceof BucketProbe.Forbidden) {
