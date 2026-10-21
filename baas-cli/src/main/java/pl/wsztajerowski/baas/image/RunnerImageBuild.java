@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
-import pl.wsztajerowski.baas.aws.CloudFormationService;
 
 import java.io.IOException;
 import java.util.Map;
@@ -32,62 +31,62 @@ public final class RunnerImageBuild {
     public static Result run(AwsClientFactory factory, String prefix, String region,
                              Optional<RunnerImageExtension.WorkingCopy> pushed)
             throws IOException, InterruptedException {
+        try (var aws = new AwsImageBuildAws(factory)) {
+            return run(aws, prefix, region, pushed);
+        }
+    }
+
+    static Result run(ImageBuildAws aws, String prefix, String region,
+                      Optional<RunnerImageExtension.WorkingCopy> pushed)
+            throws IOException, InterruptedException {
         var renderer = new RunnerImageRenderer();
         var definition = renderer.definition();
         String baseVersion = definition.imageVersion();
         String base = renderer.renderBase();
         String componentName = DeploymentNames.of(prefix).runnerComponent();
 
-        try (var imageBuilderClient = factory.imageBuilder();
-             var ec2 = factory.ec2();
-             var ssm = factory.ssm();
-             var cf = factory.cloudFormation()) {
-
-            var cloudFormation = new CloudFormationService(cf);
-            if (!cloudFormation.stackExists(prefix)) {
-                throw new IllegalStateException("Stack " + prefix
-                    + " does not exist. Run `baas --deployment " + prefix + " admin deployment setup` first.");
-            }
-            Map<String, String> deployed = cloudFormation.getStackParameters(prefix);
-            String refusal = olderBaseRefusal(baseVersion,
-                deployed.get(RunnerImageParameters.IMAGE_VERSION), prefix);
-            if (refusal != null) {
-                throw new IllegalStateException(refusal);
-            }
-            String deployedExtension = deployed.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
-
-            String extension = deployedExtension;
-            if (pushed.isPresent()) {
-                RunnerImageExtension.requireCurrent(pushed.get(), deployedExtension);
-                extension = pushed.get().content();
-            }
-            String parentAmiId = new ParentImageResolver(ec2).resolve(definition.parentImage().amiName(), region);
-
-            var plan = RunnerImageParameters.plan(renderer, baseVersion, base, parentAmiId, extension, deployed);
-            var service = new ImageBuilderService(imageBuilderClient, ec2, ssm);
-
-            // Before the stack update, not after: a rejected component version costs a minute of
-            // CloudFormation rollback, and the message names the resource rather than the fix. Only
-            // the base is checked — its version is the one written by hand; the others are derived
-            // from the deployed stack and cannot collide.
-            service.preflightVersion(componentName, baseVersion, base);
-
-            logger.info("Registering runner image {} (parent {})...", plan.label(), parentAmiId);
-            // Every image parameter is sent; everything else — the networking choices in
-            // particular — is carried forward from the deployed stack.
-            cloudFormation.updateStackParameters(prefix, CloudFormationService.coreTemplate(), plan.values());
-
-            String pipelineArn = cloudFormation.getStackOutputs(prefix).get(CoreStack.OUTPUT_RUNNER_IMAGE_PIPELINE_ARN);
-            if (pipelineArn == null || pipelineArn.isEmpty()) {
-                throw new IllegalStateException("Stack " + prefix + " has no RunnerImagePipelineArn output. Run `baas --deployment "
-                    + prefix + " admin deployment setup` first.");
-            }
-
-            String parameterName = DeploymentNames.of(prefix).amiPointer();
-            String amiId = service.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
-                plan.values().get(RunnerImageParameters.RECIPE_VERSION));
-            return new Result(amiId, plan.label(), parentAmiId, extension, parameterName);
+        if (!aws.stackExists(prefix)) {
+            throw new IllegalStateException("Stack " + prefix
+                + " does not exist. Run `baas --deployment " + prefix + " admin deployment setup` first.");
         }
+        Map<String, String> deployed = aws.stackParameters(prefix);
+        String refusal = olderBaseRefusal(baseVersion,
+            deployed.get(RunnerImageParameters.IMAGE_VERSION), prefix);
+        if (refusal != null) {
+            throw new IllegalStateException(refusal);
+        }
+        String deployedExtension = deployed.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
+
+        String extension = deployedExtension;
+        if (pushed.isPresent()) {
+            RunnerImageExtension.requireCurrent(pushed.get(), deployedExtension);
+            extension = pushed.get().content();
+        }
+        String parentAmiId = aws.resolveParent(definition.parentImage().amiName(), region);
+
+        var plan = RunnerImageParameters.plan(renderer, baseVersion, base, parentAmiId, extension, deployed);
+
+        // Before the stack update, not after: a rejected component version costs a minute of
+        // CloudFormation rollback, and the message names the resource rather than the fix. Only
+        // the base is checked — its version is the one written by hand; the others are derived
+        // from the deployed stack and cannot collide.
+        aws.preflightVersion(componentName, baseVersion, base);
+
+        logger.info("Registering runner image {} (parent {})...", plan.label(), parentAmiId);
+        // Every image parameter is sent; everything else — the networking choices in
+        // particular — is carried forward from the deployed stack.
+        aws.updateStack(prefix, plan.values());
+
+        String pipelineArn = aws.stackOutputs(prefix).get(CoreStack.OUTPUT_RUNNER_IMAGE_PIPELINE_ARN);
+        if (pipelineArn == null || pipelineArn.isEmpty()) {
+            throw new IllegalStateException("Stack " + prefix + " has no RunnerImagePipelineArn output. Run `baas --deployment "
+                + prefix + " admin deployment setup` first.");
+        }
+
+        String parameterName = DeploymentNames.of(prefix).amiPointer();
+        String amiId = aws.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
+            plan.values().get(RunnerImageParameters.RECIPE_VERSION));
+        return new Result(amiId, plan.label(), parentAmiId, extension, parameterName);
     }
 
     /**
