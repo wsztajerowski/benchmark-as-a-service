@@ -54,9 +54,9 @@ public final class AwsRunAws implements RunAws {
     }
 
     @Override
-    public String pinnedRunnerJar(String bucket, String version, String sourceRepo, String runnerSha256) {
+    public String pinnedRunnerJar(String bucket, String version, String sourceRepo) {
         try (var s3 = factory.s3()) {
-            return RunnerJarResolver.resolve(s3, bucket, version, sourceRepo, runnerSha256);
+            return RunnerJarResolver.resolve(s3, bucket, version, sourceRepo);
         }
     }
 

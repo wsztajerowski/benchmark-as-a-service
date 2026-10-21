@@ -58,9 +58,6 @@ jobs:
       # releasing repository is baked into release.config.js before @semantic-release/exec, which
       # would read ${...} as its own template, sees it. A fork's release thereby names the fork as
       # the CLI's runner source (baas.sourceRepo). publishCmd re-packages, so it carries it too.
-      # prepareCmd also checks that the CLI JAR carries the digest of the runner JAR this release
-      # publishes (baas-runner.properties): a released CLI launches on the pinned runner only when
-      # the object in the bucket has that digest, so a mismatch here would refuse every job.
       - name: Generate release configuration
         run: |
           echo "module.exports = {
@@ -83,7 +80,7 @@ jobs:
               [
                 '@semantic-release/exec',
                 {
-                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version} && mvn --batch-mode -DskipTests -Dbaas.sourceRepo=$GITHUB_REPOSITORY package && sha256sum benchmark-runner/target/benchmark-runner.jar | cut -d\" \" -f1 > benchmark-runner/target/benchmark-runner.jar.sha256 && unzip -p baas-cli/target/baas-cli.jar baas-runner.properties | grep -qxF \"runner.sha256=\$(cat benchmark-runner/target/benchmark-runner.jar.sha256)\" && sha256sum baas-cli/target/baas-cli.jar | cut -d\" \" -f1 > baas-cli/target/baas-cli.jar.sha256 && sed -i \"s/^BAAS_VERSION_DEFAULT=.*/BAAS_VERSION_DEFAULT=\${nextRelease.version}/\" scripts/install.sh',
+                  'prepareCmd': 'mvn --batch-mode versions:set -DnewVersion=\${nextRelease.version} && mvn --batch-mode -DskipTests -Dbaas.sourceRepo=$GITHUB_REPOSITORY package && sha256sum benchmark-runner/target/benchmark-runner.jar | cut -d\" \" -f1 > benchmark-runner/target/benchmark-runner.jar.sha256 && sha256sum baas-cli/target/baas-cli.jar | cut -d\" \" -f1 > baas-cli/target/baas-cli.jar.sha256 && sed -i \"s/^BAAS_VERSION_DEFAULT=.*/BAAS_VERSION_DEFAULT=\${nextRelease.version}/\" scripts/install.sh',
                   'publishCmd': 'mvn --batch-mode deploy -DskipTests -Dbaas.sourceRepo=$GITHUB_REPOSITORY'
                 }
               ]

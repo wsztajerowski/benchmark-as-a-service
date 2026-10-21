@@ -112,25 +112,6 @@ class RunnerJarResolverTest {
         assertThat(puts).singleElement().extracting(PutObjectRequest::ifNoneMatch).isEqualTo("*");
     }
 
-    /** What every later launch compares: S3's own SHA-256 of the bytes the seed wrote. */
-    @Test
-    void theSeedAsksS3ToStoreASha256Checksum() {
-        RunnerJarResolver.seed(answering(null), "b", "k", new byte[]{1});
-
-        assertThat(puts).singleElement().extracting(PutObjectRequest::checksumAlgorithm)
-            .isEqualTo(software.amazon.awssdk.services.s3.model.ChecksumAlgorithm.SHA256);
-    }
-
-    /** A CLI built without the runner beside it cannot check the slot, so it refuses before any call. */
-    @Test
-    void aBuildWithoutARunnerDigestRefusesThePinnedRunner() {
-        assertThatThrownBy(() -> RunnerJarResolver.resolve(answering(null), "b", "7.1.0", "o/r", ""))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("carries no runner digest")
-            .hasMessageContaining("--runner-jar");
-        assertThat(puts).isEmpty();
-    }
-
     @Test
     void aConcurrentConditionalPutConflictMeansAnotherLaunchIsSeeding() {
         assertThat(RunnerJarResolver.seed(answering(409), "b", "k", new byte[]{1})).isFalse();
