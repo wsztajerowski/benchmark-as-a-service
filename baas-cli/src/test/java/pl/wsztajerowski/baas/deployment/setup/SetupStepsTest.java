@@ -272,7 +272,7 @@ class SetupStepsTest {
         second.region = "us-east-1";
 
         assertThat(second.run()).isZero();
-        assertThat(second.aws.calls).containsSubsequence("preflight", "stackStatus:" + DERIVED, "submitCreate:" + DERIVED);
+        assertThat(second.aws.calls).containsSubsequence("preflight", "stackState:" + DERIVED, "submitCreate:" + DERIVED);
         assertThat(second.deploymentFile(DERIVED)).contains("us-east-1");
     }
 

@@ -2,7 +2,6 @@ package pl.wsztajerowski.baas.deployment.setup;
 
 import pl.wsztajerowski.baas.aws.BucketProbe;
 import pl.wsztajerowski.baas.image.ImageBuilderService;
-import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 
 import java.time.Instant;
 import java.util.List;
@@ -61,10 +60,23 @@ public interface SetupAws {
 
     Preflight preflight(String callerArn, String policy);
 
-    Optional<StackStatus> stackStatus(String stack);
+    /**
+     * The three answers setup acts on (review K13): none, so it creates; rolled back, which holds
+     * nothing, so it deletes and creates again; or present, so it updates.
+     */
+    enum StackState {
+        ABSENT, ROLLED_BACK, PRESENT;
 
-    /** Waits out any {@code *_IN_PROGRESS} status; the settled status, or empty when there is no stack. */
-    Optional<StackStatus> awaitSettled(String stack) throws InterruptedException;
+        /** Setup is creating the stack, not updating one. */
+        public boolean creating() {
+            return this != PRESENT;
+        }
+    }
+
+    StackState stackState(String stack);
+
+    /** Waits out any {@code *_IN_PROGRESS} status, then answers as {@link #stackState}. */
+    StackState awaitSettled(String stack) throws InterruptedException;
 
     void deleteStack(String stack);
 
