@@ -5,7 +5,6 @@ import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
-import pl.wsztajerowski.baas.session.BaasConfig;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -50,20 +49,21 @@ class TeardownConfigFileTest {
     }
 
 
-    /** Runs teardown with its AWS steps replaced by {@code awsExit}. */
+    /** Runs teardown against a fake AWS: exit 0 completes it, 1 stops it at a live runner. */
     private int teardown(int awsExit, String... global) {
+        var aws = new FakeTeardownAws();
+        if (awsExit != 0) {
+            aws.live = java.util.List.of(new pl.wsztajerowski.baas.jobs.Ec2ProvisioningService.LiveRunner("i-1", "running", null));
+        }
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
         CommandLine.IFactory factory = new CommandLine.IFactory() {
             @Override
             @SuppressWarnings("unchecked")
             public <K> K create(Class<K> cls) throws Exception {
                 if (cls == TeardownCommand.class) {
-                    return (K) new TeardownCommand() {
-                        @Override
-                        int removeDeployment(BaasConfig config, String resolvedStack) {
-                            return awsExit;
-                        }
-                    };
+                    var command = new TeardownCommand();
+                    command.awsFor = config -> aws;
+                    return (K) command;
                 }
                 return defaults.create(cls);
             }

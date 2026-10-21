@@ -16,12 +16,9 @@ import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.aws.CloudFormationService;
 import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService;
-import pl.wsztajerowski.baas.image.ImageBuilderService;
 import pl.wsztajerowski.baas.image.RunnerImageExtension;
 import pl.wsztajerowski.baas.image.RunnerImageParameters;
-import pl.wsztajerowski.baas.aws.S3UploadService;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -30,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
@@ -72,19 +70,21 @@ public class TeardownCommand implements Callable<Integer> {
         return 0;
     }
 
+    /** The deployer's AWS calls. Replaced by tests with a recording fake. */
+    Function<BaasConfig, TeardownAws> awsFor = config -> new AwsTeardownAws(DeployerSession.factory(config));
+
     /**
      * Everything teardown does in AWS — both gates, the extension's rescue, the bucket, the stack and
-     * the image — returning the command's exit code. Overridden by tests, which have no AWS.
+     * the image — returning the command's exit code. The order is the point: each step runs only once
+     * the ones whose failure must stop it have succeeded.
      */
     int removeDeployment(BaasConfig config, String resolvedStack) {
-        var factory = DeployerSession.factory(config);
+        TeardownAws aws = awsFor.apply(config);
 
         // Gate 1: no active jobs
-        try (var ec2 = factory.ec2()) {
-            var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances(resolvedStack);
-            if (!running.isEmpty()) {
-                throw CommandRefusal.refused(inFlightRefusal(resolvedStack, running));
-            }
+        var running = aws.liveRunners(resolvedStack);
+        if (!running.isEmpty()) {
+            throw CommandRefusal.refused(inFlightRefusal(resolvedStack, running));
         }
 
         // Gate 2: explicit confirmation, after saying what goes: nothing survives a teardown.
@@ -98,8 +98,8 @@ public class TeardownCommand implements Callable<Integer> {
         // re-run costs a minute, a lost extension cannot be recovered.
         Optional<Path> savedExtension;
         boolean federated;
-        try (var cf = factory.cloudFormation()) {
-            Map<String, String> parameters = new CloudFormationService(cf).getStackParameters(resolvedStack);
+        try {
+            Map<String, String> parameters = aws.stackParameters(resolvedStack);
             federated = !parameters.getOrDefault(CoreStack.PARAM_GITHUB_ORG, "").isBlank();
             String extension = parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
             savedExtension = saveExtension(extension, Invocation.configService(spec).root(), resolvedStack);
@@ -114,26 +114,20 @@ public class TeardownCommand implements Callable<Integer> {
         // leaving a stack stuck in DELETE_FAILED.
         String bucket = DeploymentNames.of(resolvedStack).bucket();
         logger.info("Emptying S3 bucket: {}", bucket);
-        try (var s3 = factory.s3()) {
-            new S3UploadService(s3).deleteAllObjects(bucket);
+        try {
+            aws.emptyBucket(bucket);
         } catch (RuntimeException e) {
             throw CommandRefusal.refused("Could not empty bucket " + bucket + " (" + e.getMessage()
                 + "). The stack was not deleted; re-run teardown.");
         }
 
         // Delete stack
-        try (var cf = factory.cloudFormation()) {
-            new CloudFormationService(cf).deleteStack(resolvedStack);
-        }
+        aws.deleteStack(resolvedStack);
 
         // Then the image, which build-image created outside the stack. After the stack rather than
         // before: a failed stack deletion then leaves a deployment that still has an image to
         // run on. Never fatal — the stack is gone, so the teardown has succeeded either way.
-        List<String> imageLeftovers;
-        try (var imageBuilder = factory.imageBuilder(); var ec2 = factory.ec2(); var ssm = factory.ssm()) {
-            imageLeftovers = new ImageBuilderService(imageBuilder, ec2, ssm)
-                .retireDeployment(pointerPath(resolvedStack), recipeName(resolvedStack));
-        }
+        List<String> imageLeftovers = aws.retireImage(pointerPath(resolvedStack), recipeName(resolvedStack));
         if (imageLeftovers.isEmpty()) {
             logger.info("{}", imageRetiredNotice(resolvedStack));
         } else {
