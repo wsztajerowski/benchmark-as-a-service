@@ -137,8 +137,8 @@ class SetupCommandTest {
             return new Preflight.Denied(java.util.List.of("cloudformation:CreateStack"));
         }
         @Override public boolean tableExists(String name) { throw new AssertionError("not reached"); }
-        @Override public java.util.Optional<software.amazon.awssdk.services.cloudformation.model.StackStatus> stackStatus(String s) { throw new AssertionError("not reached"); }
-        @Override public java.util.Optional<software.amazon.awssdk.services.cloudformation.model.StackStatus> awaitSettled(String s) { throw new AssertionError("not reached"); }
+        @Override public StackState stackState(String s) { throw new AssertionError("not reached"); }
+        @Override public StackState awaitSettled(String s) { throw new AssertionError("not reached"); }
         @Override public void deleteStack(String s) { throw new AssertionError("not reached"); }
         @Override public java.util.Map<String, String> stackParameters(String s) { throw new AssertionError("not reached"); }
         @Override public java.util.Map<String, String> stackOutputs(String s) { throw new AssertionError("not reached"); }

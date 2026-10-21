@@ -74,17 +74,24 @@ public final class AwsSetupAws implements SetupAws {
     }
 
     @Override
-    public Optional<StackStatus> stackStatus(String stack) {
+    public StackState stackState(String stack) {
         try (var cf = factory.cloudFormation()) {
-            return new CloudFormationService(cf).stackStatus(stack);
+            return stateOf(new CloudFormationService(cf).stackStatus(stack));
         }
     }
 
     @Override
-    public Optional<StackStatus> awaitSettled(String stack) throws InterruptedException {
+    public StackState awaitSettled(String stack) throws InterruptedException {
         try (var cf = factory.cloudFormation()) {
-            return new CloudFormationService(cf).awaitSettled(stack, STACK_POLL);
+            return stateOf(new CloudFormationService(cf).awaitSettled(stack, STACK_POLL));
         }
+    }
+
+    static StackState stateOf(Optional<StackStatus> status) {
+        if (status.isEmpty()) {
+            return StackState.ABSENT;
+        }
+        return status.get() == StackStatus.ROLLBACK_COMPLETE ? StackState.ROLLED_BACK : StackState.PRESENT;
     }
 
     @Override
