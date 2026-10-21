@@ -3,7 +3,6 @@ package pl.wsztajerowski.baas.deployment.setup;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
-import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -66,7 +65,7 @@ final class SetupContext {
     SetupAws.Preflight preflight;
 
     // ─── Step 5: names; the stack's status as found before anything changed ───
-    Optional<StackStatus> stackStatus = Optional.empty();
+    SetupAws.StackState stackState = SetupAws.StackState.ABSENT;
 
     // ─── Step 6: GitHub Actions ───
     /** What the stack trusts now; empty when it trusts no repository. */
@@ -139,7 +138,7 @@ final class SetupContext {
     }
 
     boolean creating() {
-        return stackStatus.isEmpty() || stackStatus.get() == StackStatus.ROLLBACK_COMPLETE;
+        return stackState.creating();
     }
 
     /** Whether this run created or changed anything a repeat would reproduce. */

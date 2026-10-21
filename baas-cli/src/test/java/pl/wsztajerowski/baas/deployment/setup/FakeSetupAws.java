@@ -102,13 +102,13 @@ final class FakeSetupAws implements SetupAws {
     }
 
     @Override
-    public Optional<StackStatus> stackStatus(String stack) {
-        calls.add("stackStatus:" + stack);
-        return Optional.ofNullable(stacks.get(stack));
+    public StackState stackState(String stack) {
+        calls.add("stackState:" + stack);
+        return AwsSetupAws.stateOf(Optional.ofNullable(stacks.get(stack)));
     }
 
     @Override
-    public Optional<StackStatus> awaitSettled(String stack) {
+    public StackState awaitSettled(String stack) {
         calls.add("awaitSettled:" + stack);
         StackStatus status = stacks.get(stack);
         if (status == StackStatus.CREATE_IN_PROGRESS) {
@@ -118,7 +118,8 @@ final class FakeSetupAws implements SetupAws {
         } else if (status == StackStatus.UPDATE_IN_PROGRESS) {
             stacks.put(stack, StackStatus.UPDATE_COMPLETE);
         }
-        return Optional.ofNullable(stacks.get(stack));
+        // The SDK's statuses model the transitions above; the port answers in setup's own terms.
+        return AwsSetupAws.stateOf(Optional.ofNullable(stacks.get(stack)));
     }
 
     @Override

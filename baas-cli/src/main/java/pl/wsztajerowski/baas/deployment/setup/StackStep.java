@@ -5,11 +5,9 @@ import pl.wsztajerowski.baas.session.CoreStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
-import software.amazon.awssdk.services.cloudformation.model.StackStatus;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * Step 8: create or update the stack. Waits first for any operation still running on it — an
@@ -30,7 +28,7 @@ final class StackStep implements SetupStep {
         String stack = context.deployment;
         SetupAws aws = context.aws();
         try {
-            Optional<StackStatus> status = aws.awaitSettled(stack);
+            SetupAws.StackState state = aws.awaitSettled(stack);
             if (context.providerToCreate) {
                 aws.createOidcProvider();
                 context.providerToCreate = false;
@@ -39,9 +37,8 @@ final class StackStep implements SetupStep {
             }
             Map<String, String> parameters = new LinkedHashMap<>();
             parameters.put(CoreStack.PARAM_RESOURCE_NAME_PREFIX, stack);
-            boolean rolledBack = status.isPresent() && status.get() == StackStatus.ROLLBACK_COMPLETE;
-            if (status.isEmpty() || rolledBack) {
-                if (rolledBack) {
+            if (state.creating()) {
+                if (state == SetupAws.StackState.ROLLED_BACK) {
                     logger.info("Stack {} is in ROLLBACK_COMPLETE: an earlier create failed and left nothing behind. "
                         + "Deleting it before creating it again.", stack);
                     aws.deleteStack(stack);

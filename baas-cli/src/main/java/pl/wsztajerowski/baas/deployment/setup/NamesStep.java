@@ -24,7 +24,7 @@ final class NamesStep implements SetupStep {
 
     @Override
     public Outcome run(SetupContext context) {
-        context.stackStatus = context.aws().stackStatus(context.deployment);
+        context.stackState = context.aws().stackState(context.deployment);
         if (!context.creating()) {
             // An existing stack's bucket and table are its own.
             return SetupStep.next();
