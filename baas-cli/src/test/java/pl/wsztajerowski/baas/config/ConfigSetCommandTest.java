@@ -85,7 +85,7 @@ class ConfigSetCommandTest {
     }
 
     private static int execute(Path root, String... args) {
-        return new CommandLine(new BaasApp(root))
+        return BaasApp.commandLine(new BaasApp(root))
             .setOut(new PrintWriter(new StringWriter()))
             .setErr(new PrintWriter(new StringWriter()))
             .execute(args);

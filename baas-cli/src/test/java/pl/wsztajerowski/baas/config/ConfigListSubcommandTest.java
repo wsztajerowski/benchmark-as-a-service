@@ -31,7 +31,7 @@ class ConfigListSubcommandTest {
         args[0] = "config";
         args[1] = "list";
         System.arraycopy(options, 0, args, 2, options.length);
-        int exit = new CommandLine(new BaasApp(dir))
+        int exit = BaasApp.commandLine(new BaasApp(dir))
             .setOut(new PrintWriter(out, true))
             .setErr(new PrintWriter(new StringWriter()))
             .execute(args);
@@ -97,6 +97,6 @@ class ConfigListSubcommandTest {
 
     @Test
     void listHasNoTopLevelAlias() {
-        assertThat(new CommandLine(new BaasApp(dir)).getSubcommands()).doesNotContainKey("list");
+        assertThat(BaasApp.commandLine(new BaasApp(dir)).getSubcommands()).doesNotContainKey("list");
     }
 }

@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -63,8 +64,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
     public Integer call() {
         String notAJobId = JobReference.notAJobId(resultPath);
         if (notAJobId != null) {
-            logger.error("{} Nothing was downloaded.", notAJobId);
-            return 2;
+            throw CommandRefusal.usage(notAJobId + " Nothing was downloaded.");
         }
         BaasConfig config = session().config();
 
@@ -72,8 +72,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
         try {
             bucket = config.bucket();
         } catch (IllegalStateException noDeployment) {
-            logger.error("{}", noDeployment.getMessage());
-            return 1;
+            throw CommandRefusal.refused(noDeployment.getMessage());
         }
 
         var factory = session().factory();
@@ -86,8 +85,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
         }
         // Before anything is written, so an unknown job leaves no partial directory behind.
         if (resolvedPath == null) {
-            logger.error("{} Nothing was written.", JobReference.noSuchJob(resultPath));
-            return 1;
+            throw CommandRefusal.refused(JobReference.noSuchJob(resultPath) + " Nothing was written.");
         }
         logger.debug("{} resolves to {}", resultPath, resolvedPath);
         String prefix = resolvedPath.endsWith("/") ? resolvedPath : resolvedPath + "/";
@@ -96,8 +94,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
         try {
             destinationRoot = outputDir != null ? outputDir : defaultRoot(resolvedPath);
         } catch (IllegalArgumentException e) {
-            logger.error("{} Nothing was written.", e.getMessage());
-            return 1;
+            throw CommandRefusal.refused(e.getMessage() + " Nothing was written.");
         }
 
         try (var s3 = factory.s3()) {
@@ -107,9 +104,8 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
             // Listed before anything is written: the spec requires an unknown job to leave no
             // partial directory behind, and S3 has no directory whose absence we could check.
             if (keys.isEmpty()) {
-                logger.error("No artifacts found for job '{}' in bucket {}. Nothing was written.",
-                    resultPath, bucket);
-                return 1;
+                throw CommandRefusal.refused("No artifacts found for job '" + resultPath + "' in bucket " + bucket
+                    + ". Nothing was written.");
             }
 
             int refused = 0;
@@ -129,10 +125,8 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
             // A key that climbs out of the job's directory was never written by BaaS, so the job's
             // prefix has been tampered with — worth a non-zero exit, not just a log line.
             if (refused > 0) {
-                logger.error("{} key(s) under {} point outside the output directory and were not "
-                    + "written. Inspect them with: aws s3 ls --recursive s3://{}/{}",
-                    refused, prefix, bucket, prefix);
-                return 1;
+                throw CommandRefusal.refused(refused + " key(s) under " + prefix + " point outside the output directory and were not "
+                    + "written. Inspect them with: aws s3 ls --recursive s3://" + bucket + "/" + prefix);
             }
         }
         return 0;

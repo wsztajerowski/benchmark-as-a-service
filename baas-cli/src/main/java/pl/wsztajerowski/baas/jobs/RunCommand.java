@@ -13,6 +13,7 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.BaasVersion;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
@@ -193,6 +194,10 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         try {
             exitCode = execute();
             return exitCode;
+        } catch (CommandRefusal refusal) {
+            // The summary reports the exit the process will have.
+            exitCode = refusal.exitCode();
+            throw refusal;
         } finally {
             // In a finally so it also covers the paths that throw — resolveProject() and
             // resolveResultsTable() both do. Those fail before a job exists, so the object
@@ -244,18 +249,15 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         // Anything but json used to mean text, so `--format jsno` silently printed no summary
         // for a pipeline expecting one.
         if (format != null && !"text".equalsIgnoreCase(format) && !jsonSummary()) {
-            logger.error("Unknown --format '{}'. Valid: text, json.", format);
-            return 2;
+            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: text, json.");
         }
         if (!VALID_TYPES.contains(benchmarkType)) {
-            logger.error("Unknown benchmark type '{}'. Valid: {}", benchmarkType, VALID_TYPES);
-            return 2;
+            throw CommandRefusal.usage("Unknown benchmark type '" + benchmarkType + "'. Valid: " + VALID_TYPES);
         }
         Optional<String> setByTheCli = RunnerArgs.firstSetByTheCli(benchmarkParams);
         if (setByTheCli.isPresent()) {
-            logger.error("{} after -- names a runner option baas run sets itself. {}\nNothing was launched.",
-                setByTheCli.get(), insteadOf(setByTheCli.get()));
-            return 2;
+            throw CommandRefusal.usage(setByTheCli.get() + " after -- names a runner option baas run sets itself. "
+                + insteadOf(setByTheCli.get()) + "\nNothing was launched.");
         }
 
         // Checked first, before resolving the project, the results table, the runner image or
@@ -263,11 +265,10 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         // anyway, and there is deliberately no fallback — two provisioning paths produce silently
         // incomparable results.
         if (runnerJar == null && !BaasVersion.isReleased()) {
-            logger.error("""
-                This is an unreleased build ({}), so there is no runner release to pin to.
+            throw CommandRefusal.refused("""
+                This is an unreleased build (%s), so there is no runner release to pin to.
                   Run against a local build:  baas run --runner-jar <path> ...
-                Nothing was built or launched.""", BaasVersion.current());
-            return 1;
+                Nothing was built or launched.""".formatted(BaasVersion.current()));
         }
 
         BaasConfig config = operatorSession().config();
@@ -298,9 +299,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         // The JAR is named, never derived. Checked before the image lookup and before any upload,
         // like every other precondition this command has.
         if (!benchmarkJar.toFile().exists()) {
-            logger.error("Benchmark JAR not found: {}\nBuild it first, then pass --benchmark-jar.",
-                benchmarkJar);
-            return 1;
+            throw CommandRefusal.refused("Benchmark JAR not found: " + benchmarkJar
+                + "\nBuild it first, then pass --benchmark-jar.");
         }
 
         summaryDeployment = config.getPrefix();

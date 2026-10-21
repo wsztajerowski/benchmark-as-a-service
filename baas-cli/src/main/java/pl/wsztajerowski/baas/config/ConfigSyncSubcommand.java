@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.config;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -64,8 +65,7 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
         try {
             config = Invocation.configService(spec).loadForSync();
         } catch (IllegalStateException e) {
-            logger.error(e.getMessage());
-            return 2;
+            throw CommandRefusal.usage(e.getMessage());
         }
         String name = config.requirePrefix();
         String recordedRegion = config.getAws().getRegion();
@@ -83,18 +83,16 @@ public class ConfigSyncSubcommand implements Callable<Integer> {
             region = factory.region();
         } catch (RuntimeException e) {
             config.getAws().setRegion(recordedRegion);
-            logger.error(e.getMessage());
-            return 1;
+            throw CommandRefusal.refused(e.getMessage());
         }
 
         // The stack is read to prove the deployment exists, not to harvest values from it.
         var outputs = stackOutputs(factory, config.stackName());
         if (outputs.isEmpty()) {
-            logger.error("""
-                    No deployment named '{}': its bucket is in {}, but no stack of that name is.
-                      Create the deployment again: baas --deployment {} admin deployment setup --region {}""",
-                name, region, name, region);
-            return 1;
+            throw CommandRefusal.refused("""
+                    No deployment named '%s': its bucket is in %s, but no stack of that name is.
+                      Create the deployment again: baas --deployment %s admin deployment setup --region %s"""
+                .formatted(name, region, name, region));
         }
 
         config.getAws().setRegion(region);

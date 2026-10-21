@@ -11,7 +11,7 @@ class JobsDiffCommandTest {
 
     @Test
     void diffIsAVerbOfJobsAndEnvIsGone() {
-        CommandLine root = new CommandLine(new BaasApp());
+        CommandLine root = BaasApp.commandLine(new BaasApp());
 
         assertThat(root.getSubcommands().get("jobs").getSubcommands())
             .as("comparing two jobs' environments is part of the execution domain")
@@ -22,7 +22,7 @@ class JobsDiffCommandTest {
 
     @Test
     void diffTakesTwoResultPaths() {
-        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+        CommandLine.ParseResult result = BaasApp.commandLine(new BaasApp())
             .parseArgs("jobs", "diff", "main/jmh/20260724_120000", "main/jmh/20260811_093000");
 
         CommandLine.ParseResult diff = result.subcommand().subcommand();
@@ -48,7 +48,7 @@ class JobsDiffCommandTest {
 
     @Test
     void helpNamesJobIdsAndTheGroupsCompared() {
-        String usage = new CommandLine(new BaasApp())
+        String usage = BaasApp.commandLine(new BaasApp())
             .getSubcommands().get("jobs").getSubcommands().get("diff")
             .getUsageMessage(CommandLine.Help.Ansi.OFF);
 
@@ -80,7 +80,7 @@ class JobsDiffCommandTest {
             }
         };
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        var cli = new CommandLine(new BaasApp(dir), new CommandLine.IFactory() {
+        var cli = BaasApp.commandLine(new BaasApp(dir), new CommandLine.IFactory() {
             @Override
             @SuppressWarnings("unchecked")
             public <K> K create(Class<K> type) throws Exception {

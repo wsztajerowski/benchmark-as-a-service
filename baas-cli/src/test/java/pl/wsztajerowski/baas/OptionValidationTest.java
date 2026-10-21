@@ -35,7 +35,7 @@ class OptionValidationTest {
         PrintStream originalErr = System.err;
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-            int code = new CommandLine(new BaasApp(dir)).setOut(new PrintWriter(out)).execute(args);
+            int code = BaasApp.commandLine(new BaasApp(dir)).setOut(new PrintWriter(out)).execute(args);
             return new Captured(out.toString(), err.toString(StandardCharsets.UTF_8), code);
         } finally {
             System.setErr(originalErr);
@@ -129,7 +129,8 @@ class OptionValidationTest {
         var captured = baas("query", "--all-projects", "--sort-by", "colour");
 
         assertThat(captured.exitCode()).isEqualTo(2);
-        assertThat(captured.err()).contains("created");
+        assertThat(captured.err()).contains("created")
+            .as("a refusal has no stack trace worth asking for").doesNotContain("run with -v");
     }
 
     @Test
@@ -149,7 +150,7 @@ class OptionValidationTest {
     /** U29: job items made every job since resolvable by id, failed ones included. */
     @Test
     void envDiffNoLongerSaysAFailedJobNeedsItsPath() {
-        String help = new CommandLine(new BaasApp()).getSubcommands().get("jobs")
+        String help = BaasApp.commandLine(new BaasApp()).getSubcommands().get("jobs")
             .getSubcommands().get("diff").getUsageMessage();
 
         assertThat(help).doesNotContain("has no index entry");

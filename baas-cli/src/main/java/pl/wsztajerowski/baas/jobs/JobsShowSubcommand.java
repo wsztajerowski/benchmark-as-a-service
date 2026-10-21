@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.model.JobLayout;
 import org.slf4j.Logger;
@@ -111,13 +112,11 @@ public class JobsShowSubcommand implements Callable<Integer> {
     public Integer call() {
         String format = this.format.toLowerCase(Locale.ROOT);
         if (!List.of("table", "json").contains(format)) {
-            logger.error("Unknown --format '{}'. Valid: table, json.", this.format);
-            return 2;
+            throw CommandRefusal.usage("Unknown --format '" + this.format + "'. Valid: table, json.");
         }
         String notAJobId = JobReference.notAJobId(jobId);
         if (notAJobId != null) {
-            logger.error("{}", notAJobId);
-            return 2;
+            throw CommandRefusal.usage(notAJobId);
         }
         BaasConfig config = session().config();
 
@@ -125,8 +124,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
             Optional<JobItem> found = sources.job(jobId);
             if (found.isEmpty()) {
                 // Before any S3 read: an unknown id names no prefix to read.
-                logger.error("{}", JobReference.noSuchJob(jobId));
-                return 1;
+                throw CommandRefusal.refused(JobReference.noSuchJob(jobId));
             }
             JobItem job = found.get();
             Map<String, String> live = new LinkedHashMap<>();

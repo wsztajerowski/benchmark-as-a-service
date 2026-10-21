@@ -90,7 +90,7 @@ class ResultsQueryPipelineTest {
             }
         };
         var err = new StringWriter();
-        int exit = new CommandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
+        int exit = BaasApp.commandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
             .execute(line.toArray(String[]::new));
         return new Run(exit, out.toString(), err.toString());
     }

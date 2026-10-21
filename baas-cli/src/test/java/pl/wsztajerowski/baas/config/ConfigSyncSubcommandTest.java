@@ -74,7 +74,7 @@ class ConfigSyncSubcommandTest {
 
     @Test
     void theNameIsTheGlobalDeploymentOption() {
-        var parsed = new CommandLine(new BaasApp(dir))
+        var parsed = BaasApp.commandLine(new BaasApp(dir))
             .parseArgs("config", "sync", "--deployment", "baas-123456789012-dev");
 
         assertThat(parsed.subcommand().subcommand().commandSpec().userObject())
@@ -163,7 +163,7 @@ class ConfigSyncSubcommandTest {
     }
 
     private int run(CommandLine.IFactory factory, String... args) {
-        return new CommandLine(new BaasApp(dir), factory)
+        return BaasApp.commandLine(new BaasApp(dir), factory)
             .setOut(new PrintWriter(new StringWriter()))
             .setErr(new PrintWriter(new StringWriter()))
             .execute(args);

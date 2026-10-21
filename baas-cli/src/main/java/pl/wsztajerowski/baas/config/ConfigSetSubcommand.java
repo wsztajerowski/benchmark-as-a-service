@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.config;
 
 import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -63,14 +64,12 @@ public class ConfigSetSubcommand implements Callable<Integer> {
     @Override
     public Integer call() {
         if (benchmarkTimeout != null && benchmarkTimeout < 1) {
-            logger.error("--timeout must be at least 1 second; got {}. 0 would disable the process "
-                + "timeout on the instance.", benchmarkTimeout);
-            return 2;
+            throw CommandRefusal.usage("--timeout must be at least 1 second; got " + benchmarkTimeout
+                + ". 0 would disable the process timeout on the instance.");
         }
         if (watchdogMargin != null && watchdogMargin < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
-            logger.error("--watchdog-margin must be at least {} seconds; got {}.",
-                BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS, watchdogMargin);
-            return 2;
+            throw CommandRefusal.usage("--watchdog-margin must be at least " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS
+                + " seconds; got " + watchdogMargin + ".");
         }
         BaasConfig config = Invocation.configService(spec).load();
 

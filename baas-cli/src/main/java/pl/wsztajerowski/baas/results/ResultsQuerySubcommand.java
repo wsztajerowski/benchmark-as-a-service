@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.model.JcstressSummary;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.TagKeys;
@@ -146,44 +147,36 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     @Override
     public Integer call() throws InterruptedException {
         if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            logger.error("Unknown --format '{}'. Valid: {}.", format, String.join(", ", FORMATS));
-            return 2;
+            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: " + String.join(", ", FORMATS) + ".");
         }
         // Before the config is even read: a refused --watch must not reach AWS.
         String watchRefusal = watchRefusal();
         if (watchRefusal != null) {
-            logger.error("{}", watchRefusal);
-            return 2;
+            throw CommandRefusal.usage(watchRefusal);
         }
 
         if (effectiveLimit() < 0 || offset < 0) {
-            logger.error("--limit and --offset must not be negative; got {} and {}.", effectiveLimit(), offset);
-            return 2;
+            throw CommandRefusal.usage("--limit and --offset must not be negative; got " + effectiveLimit() + " and " + offset + ".");
         }
         if (!ResultsGrouping.SORT_FIELDS.contains(sortBy)) {
-            logger.error("Unknown --sort-by '{}'. Valid: {}.", sortBy, String.join(", ", ResultsGrouping.SORT_FIELDS));
-            return 2;
+            throw CommandRefusal.usage("Unknown --sort-by '" + sortBy + "'. Valid: " + String.join(", ", ResultsGrouping.SORT_FIELDS) + ".");
         }
         if (bestPer != null && bestPer.isBlank()) {
-            logger.error("--best-per needs a tag to group by, e.g. --best-per branch.");
-            return 2;
+            throw CommandRefusal.usage("--best-per needs a tag to group by, e.g. --best-per branch.");
         }
         try {
             if (excludeTags != null) {
                 excludeTags.forEach(TagKeys::parsePair);
             }
         } catch (IllegalArgumentException bad) {
-            logger.error("--exclude-tag: {}", bad.getMessage());
-            return 2;
+            throw CommandRefusal.usage("--exclude-tag: " + bad.getMessage());
         }
         String conflict = jobIdConflict();
         if (conflict != null) {
-            logger.error("--job-id reads one job through its own index, so it cannot be combined with {}.", conflict);
-            return 2;
+            throw CommandRefusal.usage("--job-id reads one job through its own index, so it cannot be combined with " + conflict + ".");
         }
         if (project != null && allProjects) {
-            logger.error("--project and --all-projects cannot be combined: name one project, or ask for all.");
-            return 2;
+            throw CommandRefusal.usage("--project and --all-projects cannot be combined: name one project, or ask for all.");
         }
 
         BaasConfig config = session().config();
@@ -192,8 +185,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         try {
             tableName = config.resultsTable();
         } catch (IllegalStateException noDeployment) {
-            logger.error("{}", noDeployment.getMessage());
-            return 1;
+            throw CommandRefusal.refused(noDeployment.getMessage());
         }
 
         try (var results = openResults(config, tableName)) {

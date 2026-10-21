@@ -115,18 +115,18 @@ class ResultsProjectSelectionTest {
 
     @Test
     void oneProjectAndEveryProjectAreExclusive() throws Exception {
-        assertThat(command(true, null, "--project", "p", "--all-projects").call()).isEqualTo(2);
+        assertRefused(() -> command(true, null, "--project", "p", "--all-projects").call());
     }
 
     /** One job is narrower than any project; a mismatched project would be ignored silently. */
     @Test
     void aJobLookupCannotBeCombinedWithAProject() throws Exception {
-        assertThat(command(true, null, "--job-id", "r", "--project", "p").call()).isEqualTo(2);
+        assertRefused(() -> command(true, null, "--job-id", "r", "--project", "p").call());
     }
 
     @Test
     void aJobLookupCannotBeCombinedWithEveryProject() throws Exception {
-        assertThat(command(true, null, "--job-id", "r", "--all-projects").call()).isEqualTo(2);
+        assertRefused(() -> command(true, null, "--job-id", "r", "--all-projects").call());
     }
 
     @Test
@@ -184,7 +184,7 @@ class ResultsProjectSelectionTest {
             }
         };
 
-        new CommandLine(new BaasApp(dir), factory)
+        BaasApp.commandLine(new BaasApp(dir), factory)
             .setErr(new PrintWriter(new StringWriter()))
             .execute("query", "--watch");
 
@@ -196,8 +196,16 @@ class ResultsProjectSelectionTest {
     /** Refused before the configuration is read, so no deployment or credentials are needed. */
     @Test
     void anUnknownFormatIsRefusedRatherThanReadAsTheTable() {
-        int exit = new CommandLine(new ResultsQuerySubcommand()).execute("--project", "p", "--format", "xml");
+        int exit = new CommandLine(new ResultsQuerySubcommand())
+            .setExecutionExceptionHandler(pl.wsztajerowski.baas.BaasApp::reportFailure)
+            .execute("--project", "p", "--format", "xml");
 
         assertThat(exit).isEqualTo(2);
+    }
+
+    /** A usage refusal: exit 2 through {@code BaasApp.reportFailure}. */
+    private static void assertRefused(org.assertj.core.api.ThrowableAssert.ThrowingCallable call) {
+        org.assertj.core.api.Assertions.assertThatThrownBy(call)
+            .isInstanceOfSatisfying(pl.wsztajerowski.baas.cli.CommandRefusal.class, r -> assertThat(r.exitCode()).isEqualTo(2));
     }
 }

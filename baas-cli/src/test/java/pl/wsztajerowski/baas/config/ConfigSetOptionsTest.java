@@ -14,7 +14,7 @@ class ConfigSetOptionsTest {
      */
     @Test
     void thePrefixCannotBeSetUnchecked() {
-        assertThatThrownBy(() -> new CommandLine(new BaasApp())
+        assertThatThrownBy(() -> BaasApp.commandLine(new BaasApp())
             .parseArgs("config", "set", "--prefix", "baas-123456789012"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
@@ -25,7 +25,7 @@ class ConfigSetOptionsTest {
      */
     @Test
     void theRegionCannotBeSetByHand() {
-        assertThatThrownBy(() -> new CommandLine(new BaasApp())
+        assertThatThrownBy(() -> BaasApp.commandLine(new BaasApp())
             .parseArgs("config", "set", "--region", "us-east-1"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }

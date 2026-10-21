@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Elapsed;
 import pl.wsztajerowski.baas.console.Csv;
 import pl.wsztajerowski.baas.console.Json;
@@ -127,30 +128,25 @@ public class JobsListSubcommand implements Callable<Integer> {
     @Override
     public Integer call() throws InterruptedException {
         if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            logger.error("Unknown --format '{}'. Valid: {}.", format, String.join(", ", FORMATS));
-            return 2;
+            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: " + String.join(", ", FORMATS) + ".");
         }
         if (effectiveLimit() < 0 || offset < 0) {
-            logger.error("--limit and --offset must not be negative; got {} and {}.", effectiveLimit(), offset);
-            return 2;
+            throw CommandRefusal.usage("--limit and --offset must not be negative; got " + effectiveLimit() + " and " + offset + ".");
         }
         if (!JobListing.SORT_FIELDS.contains(sortBy)) {
-            logger.error("Unknown --sort-by '{}'. Valid: {}.", sortBy, String.join(", ", JobListing.SORT_FIELDS));
-            return 2;
+            throw CommandRefusal.usage("Unknown --sort-by '" + sortBy + "'. Valid: " + String.join(", ", JobListing.SORT_FIELDS) + ".");
         }
         try {
             if (excludeTags != null) {
                 excludeTags.forEach(pl.wsztajerowski.baas.model.TagKeys::parsePair);
             }
         } catch (IllegalArgumentException bad) {
-            logger.error("--exclude-tag: {}", bad.getMessage());
-            return 2;
+            throw CommandRefusal.usage("--exclude-tag: " + bad.getMessage());
         }
         // Before the config is even read: a refused --watch must not reach AWS.
         String watchRefusal = watch ? Watch.refusal(format, console()) : null;
         if (watchRefusal != null) {
-            logger.error("{}", watchRefusal);
-            return 2;
+            throw CommandRefusal.usage(watchRefusal);
         }
         BaasConfig config = session().config();
         var factory = session().factory();

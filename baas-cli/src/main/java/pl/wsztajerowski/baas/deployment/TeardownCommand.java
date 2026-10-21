@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.session.DeployerSession;
 import pl.wsztajerowski.baas.session.CoreStack;
@@ -82,8 +83,7 @@ public class TeardownCommand implements Callable<Integer> {
         try (var ec2 = factory.ec2()) {
             var running = new Ec2ProvisioningService(ec2).listRunningBenchmarkInstances(resolvedStack);
             if (!running.isEmpty()) {
-                logger.error(inFlightRefusal(resolvedStack, running));
-                return 1;
+                throw CommandRefusal.refused(inFlightRefusal(resolvedStack, running));
             }
         }
 
@@ -104,10 +104,9 @@ public class TeardownCommand implements Callable<Integer> {
             String extension = parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
             savedExtension = saveExtension(extension, Invocation.configService(spec).root(), resolvedStack);
         } catch (IOException | RuntimeException e) {
-            logger.error("Could not save the runner-image extension of {} ({}). Nothing was deleted.\n"
-                + "  Save it by hand with `{}`, then re-run teardown.",
-                resolvedStack, e.getMessage(), Hints.command(resolvedStack, "admin image show --extension > <file>"));
-            return 1;
+            throw CommandRefusal.refused("Could not save the runner-image extension of " + resolvedStack + " (" + e.getMessage()
+                + "). Nothing was deleted.\n  Save it by hand with `"
+                + Hints.command(resolvedStack, "admin image show --extension > <file>") + "`, then re-run teardown.");
         }
 
         // CloudFormation refuses to delete a non-empty bucket, so it is emptied first. A bucket that
@@ -118,9 +117,8 @@ public class TeardownCommand implements Callable<Integer> {
         try (var s3 = factory.s3()) {
             new S3UploadService(s3).deleteAllObjects(bucket);
         } catch (RuntimeException e) {
-            logger.error("Could not empty bucket {} ({}). The stack was not deleted; re-run teardown.",
-                bucket, e.getMessage());
-            return 1;
+            throw CommandRefusal.refused("Could not empty bucket " + bucket + " (" + e.getMessage()
+                + "). The stack was not deleted; re-run teardown.");
         }
 
         // Delete stack
