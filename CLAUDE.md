@@ -203,6 +203,8 @@ The watchdog is the only one that survives a deadlocked JVM.
   inherit, while a leftover AMI is only a cost leak. No step fails the teardown; leftovers are named
   with the command that removes each. `--deployment` retires *that* deployment's image.
   `build-image` itself still leaves one Image Builder record per build, which cost nothing.
+  Teardown's AWS calls go through `TeardownAws`, and `TeardownSequenceTest` pins this order and the
+  gates before it; a build's go through `ImageBuildAws`, pinned by `RunnerImageBuildSequenceTest`.
 - **The image is three components: base, extension, contract — in that order.** The base is
   rendered from the bundled `infra/runner-image.yaml`, the only place a *base* tool version is
   declared; any edit needs `imageVersion` bumped, because Image Builder components are immutable at
