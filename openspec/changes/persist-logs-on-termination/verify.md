@@ -39,6 +39,12 @@ macOS library (`ASYNC_PATH`).
   path ran, so it is not counted as evidence for the hook. It does show that a terminate racing
   completion loses nothing.
 
+- **`20261021T111142914Z-93ba31d9`**, after the rebase onto the slice layout and the output-name fix:
+  `jmh-with-async`, same benchmark. `running` at 11:13:13Z; `baas jobs terminate --yes` at 11:15:59Z.
+  At 11:16:02Z the prefix gained `cloud-init-output.log` and `jmh-with-async-output.txt` (14 complete
+  iterations, cut off at `Iteration  15:`), the name the runner uploads it as, and no `jmh-output.txt`
+  beside it. Status `cancelled`.
+
 ## Deviations
 
 - **Rebased onto `slice-architecture` (2026-10-21), and a naming bug fixed on the way.** The first
