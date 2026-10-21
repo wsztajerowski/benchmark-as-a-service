@@ -1,5 +1,6 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
@@ -39,7 +40,7 @@ public class ApiJCStressOptions {
     @Option(names = "--mode", description = "JCStress job mode, passed to JCStress as -m (e.g. sanity, quick, default, tough, stress). Omitted: JCStress's own default.")
     String mode;
     @Option(names = {"--process-output"}, description = "Write tests process output to a given file. (default: ${DEFAULT-VALUE})")
-    Path processOutput = FileUtils.getWorkingDirectory().resolve("jcstress-output.txt");
+    Path processOutput = FileUtils.getWorkingDirectory().resolve(BenchmarkType.JCSTRESS.workingOutputName());
     @CommandLine.Parameters(index = "0", description = "Test name regex", arity = "0..1")
     String testNameRegex;
 

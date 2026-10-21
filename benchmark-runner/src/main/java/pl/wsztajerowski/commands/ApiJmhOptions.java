@@ -1,5 +1,6 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.RunnerArgs;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
@@ -36,7 +37,7 @@ public class ApiJmhOptions {
     Path machineReadableOutput = getWorkingDirectory().resolve("jmh-results.json");
 
     @Option(names = {"-o", "--process-output"}, description = "Write benchmark process output to a given file. (default: ${DEFAULT-VALUE})")
-    Path processOutput = getWorkingDirectory().resolve("jmh-output.txt");
+    Path processOutput = getWorkingDirectory().resolve(BenchmarkType.JMH.workingOutputName());
 
     @ArgGroup(validate = false, heading = "Benchmark options%n")
     BenchmarkSection benchmarkSection = new BenchmarkSection();
