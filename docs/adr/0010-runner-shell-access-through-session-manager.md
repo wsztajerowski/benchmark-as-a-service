@@ -20,8 +20,10 @@ unregistered (it hibernates: a retry every 5 minutes, backing off to hourly).
 A noise spike (2026-10-21, 12 × c5.large, `Incrementing_Synchronized`, alternating batches) compared
 today's unregistered agent with a registered one. On Xeon 8124M hosts: unregistered 61.76M ops/s ±1.7%
 (n=4), registered 61.57M ±2.9% (n=4) — −0.3% at a resolution of about ±3%. One further registered run
-was a steady 25% slower, uniform across its iterations rather than the periodic dips a waking agent
-would cause, so more likely a slow host; six runs cannot rule the agent out. A live job on
+was a steady 25% slower. Investigated on 2026-10-22: such slow plateaus occur with the agent stopped
+too, and come from the benchmark itself — `@GroupThreads(2)` contending for one lock on a single core's
+two hyperthreads, which settles into steady modes and switches between them
+(`openspec/changes/runner-shell-access/verify.md`). A live job on
 `baas-development` (2026-10-22) then measured the agent directly: after 8.5 minutes, 7.5 of them
 benchmarking with a session attached, `amazon-ssm-agent` and `ssm-agent-worker` had used under a
 second of CPU each against the benchmark JVM's 899 s — under about 0.1%.
@@ -62,7 +64,7 @@ second of CPU each against the benchmark JVM's 899 s — under about 0.1%.
 - **Comparability.** Every job from this change on runs with a registered agent; the image label is
   unchanged (the contract's new check is not part of the base). Results before and after are not
   separable by tag; this date is the boundary. Measured cost: none at ±3% (spike), under 0.1% of CPU
-  (live).
+  (live); the slow plateaus seen while measuring it were the benchmark's own, agent or not.
 - A connected job's numbers are indistinguishable from untouched ones by query. The operator who
   connected knows the job id.
 - CI holds the session grants too (accepted). Operators of one deployment can end each other's sessions,
