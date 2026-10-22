@@ -1,6 +1,6 @@
 # Verify — runner-shell-access
 
-Run 2026-10-22 on branch `runner-shell-access` (last code commit `1e3d31a`; `mvn test` for
+Run 2026-10-22 on branch `runner-shell-access` (last code commit `45f2b27`, `baas jobs connect`; `mvn test` for
 `baas-model` + `baas-cli`: 102 + 1001 green, `DynamoDbJobRecorderIT` green on LocalStack;
 `openspec validate --strict` valid).
 
@@ -26,7 +26,7 @@ No critical issues. Two open warnings (W2, W3); W1 resolved. Ready for archive w
 | Any job of the deployment, whoever launched it | nothing distinguishes launchers | none specific | A CI-launched job was not connected to live; detached jobs from a separate process were — **S1** |
 | Missing plugin refused before any session | `SessionPlugin.java`, `JobsConnectSubcommand.java:117` | `aMissingPluginIsRefusedBeforeAnyAwsCall`, `SessionPluginTest` | "Other commands do not need it": by construction (`SessionPlugin` used only by `connect`), no test |
 | The AWS CLI is not required | `SessionLauncher.java` | `thePluginGetsTheAwsCliArgumentsAndNoCredential` | Never run on a machine without `aws` |
-| States when the instance ends, never extends it | `WatchdogDeadline.java`, `JobsConnectSubcommand.java:132,159-190` | `theDeadlineIsPrinted…`, `aJobWithoutARecordedBound…`, `anInstanceThatTerminatesEndsTheSession`, `aPluginThatDoesNotLeave…` | — (found live as a bug, fixed in `1e3d31a`) |
+| States when the instance ends, never extends it | `WatchdogDeadline.java`, `JobsConnectSubcommand.java:132,159-190` | `theDeadlineIsPrinted…`, `aJobWithoutARecordedBound…`, `anInstanceThatTerminatesEndsTheSession`, `aPluginThatDoesNotLeave…` | — (found live as a bug; the fix is folded into `45f2b27`) |
 | Sessions leave no record in the job's results | nothing writes one | none | Live: connected jobs' tags equal untouched jobs' (score table below) |
 | **job-tracking** | | | |
 | The reservation records the watchdog bound | `baas-model/…/JobItemMapper.java:29,57,94`, `C/jobs/JobLaunch.java:160` | `JobItemMapperTest`, `RunCommandLaunchTest.theReservationRecordsTheWatchdogBound`, `JobRecorderContract.theWatchdogBoundSurvivesEveryLaterWrite` (fakes + LocalStack), `UserDataScriptBuilderTest.theInstanceNeverWritesTheWatchdogBound` | — |
