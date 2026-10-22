@@ -72,4 +72,39 @@ agent's first minute after registering and the operator's `StartSession` probes;
 (12:53:28–12:56:28) overlaps nothing known. A drop of ~24% held steady is the signature of the core's
 sibling hyperthread being busy (a c5.large is one core, two threads); the agent's own measured CPU
 (under 1 s per process over 8.5 min in `c4baa457`) argues against the agent, but that job never hit
-the slow level. **Unexplained — not accepted.** See W1.
+the slow level.
+
+### Investigation of the slow plateau (2026-10-22, 14:24–14:36 UTC)
+
+Four c5.large jobs, 60 iterations each, launched together; in each, one early session started
+`top -b -d 5` writing to `/app/top-sampler.log` (shipped by the runner with the job's logs). B1/B2 kept
+the agent; S1/S2 then ran `systemctl stop amazon-ssm-agent`. (B1's and B2's sampler did not start —
+their second command reached the shell too early — so only S1's log is usable.)
+
+| Arm | CPU | Mean | Slow plateaus |
+|---|---|---|---|
+| B1, agent | 8223CL | 62.0M | none |
+| S1, agent stopped 14:26:43 | 8124M | 57.0M | **49.6M, iters 12–23 and 30–41** — both after the stop |
+| B2, agent | 8124M | 53.8M | 36.9M (iters 3–5), then 54.2–54.8M levels |
+| S2, agent stopped 14:27:39 | 8124M | 60.8M | 51.8M (iters 6–11), 59.1M (54–59) |
+
+S1 settles it: no SSM process appears in any of its 110 samples after the stop, yet it spent 24 of 60
+iterations on a flat 49.6M plateau. Through fast and slow iterations alike, `top` shows one process
+above 3% CPU — the benchmark JVM at 200% — with 0% steal. The cause is the benchmark:
+`Incrementing_Synchronized` runs `@GroupThreads(2)`, two threads contending for one `synchronized`
+lock on the two hyperthreads of one core, and a contended lock's throughput settles into distinct steady
+modes (how the lock is handed over — spinning or parking, and which thread wins) and switches between
+them. The spike's six unregistered runs (100 s each) simply landed in the fast mode.
+
+**Conclusion for 6.3:** no score difference attributable to this change. The fast mode is the same
+with and without a registered agent (~61–63M on 8124M), and the slow modes occur with the agent
+stopped. This benchmark is a poor probe for small environment effects: a comparison that must see a few
+percent needs an uncontended benchmark or several forks.
+
+### Further 6.2 checks
+
+- `ssm:SendCommand` (`AWS-RunShellScript`) as the operator: denied.
+- Deadline printed for `c4baa457` ("about 13:49 UTC") equals its launch (~13:04:00) plus
+  `--timeout 2400` plus the 300 s margin.
+- Every connected job was launched `--detach` and reached by id from a separate process.
+

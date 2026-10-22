@@ -89,14 +89,14 @@
   `admin deployment setup` (update), `admin image build`, a `fake-jmh-benchmarks` run, `jobs connect`
   to it, and `admin deployment teardown` + setup again to confirm the document is removed and re-created
   with the stack; record each step in verify.md.
-- [ ] 6.2 One live session on a running job (needs task 1.1): confirm the shell is bash as `ssm-user` in
+- [x] 6.2 One live session on a running job (needs task 1.1): confirm the shell is bash as `ssm-user` in
   `/app`; the deadline printed matches `LaunchTime + timeout + margin`; the agent's CPU time over the job
   (`ps -o times` for `amazon-ssm-agent` and `ssm-session-worker`) set against the job's length; a
   `--detach`ed job is reached by id from a second terminal; the session ends when the instance
   terminates; and a port-forwarding document and `SendCommand` are denied. Run three more registered
   c5.large `Incrementing_Synchronized` jobs to see whether the spike's 25%-slow run recurs. Record all of
   it in verify.md.
-- [ ] 6.3 Score comparison (measurement-affecting): compare `fake-jmh-benchmarks`'
+- [x] 6.3 Score comparison (measurement-affecting): compare `fake-jmh-benchmarks`'
   `Incrementing_Synchronized` on the same instance type and CPU model before (a pre-change job on the
   same deployment) and after this change; investigate any difference beyond the spike's ±3% rather than
   accept it, and record the spread in verify.md.
