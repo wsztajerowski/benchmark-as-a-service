@@ -3,6 +3,13 @@
 Parked 2026-10-02 at the owner's request: not to be worked on now, and not the next item. See
 [`../QUEUE.md`](../QUEUE.md). Unpark by deleting this file and adding the change to that queue.
 
+**Kept parked by `runner-shell-access` (2026-10-22, ADR 0010).** Every runner now registers its
+`amazon-ssm-agent` so `baas jobs connect` can open a shell on it, and that reaches the regional `ssm`
+and `ssmmessages` endpoints over the runner's 443 egress. A private subnet with no internet route would
+need `ssm` and `ssmmessages` interface endpoints — about $7/month per AZ each — to keep runners
+connectable, which overturns this change's case of isolation at zero standing cost. The owner chose
+shell access. Unparking means deciding to pay for the endpoints or to give up `connect`.
+
 Before `/opsx:apply`, run `/opsx:update private-runner-network`. The artifacts predate changes that
 have since landed:
 

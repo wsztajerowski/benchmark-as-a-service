@@ -103,20 +103,21 @@
 
 ## 7. Documentation
 
-- [ ] 7.1 CLAUDE.md: the `jobs` noun's verbs include `connect`; the "instance contacts no host outside
+- [x] 7.1 CLAUDE.md: the `jobs` noun's verbs include `connect` *(no edit: CLAUDE.md names the nouns,
+  never the verbs)*; the "instance contacts no host outside
   the account" invariant names the regional SSM endpoints the agent uses; *Accepted risks* gains CI's
   reach through `OperatorRole`, unmarked connected jobs, and shared own-session scoping (X6); *What isn't
   there* states no session transcript and no mark on connected jobs.
-- [ ] 7.2 ADR 0010 *Runner shell access through Session Manager*: always on (with the spike's numbers and
+- [x] 7.2 ADR 0010 *Runner shell access through Session Manager*: always on (with the spike's numbers and
   the change date as the comparability boundary), own document, no mark, the plugin interface,
   `private-runner-network` left parked, and the rejected alternatives.
-- [ ] 7.3 `private-runner-network/PARKED.md`: add that shell access needs the `ssm` and `ssmmessages`
+- [x] 7.3 `private-runner-network/PARKED.md`: add that shell access needs the `ssm` and `ssmmessages`
   interface endpoints (~$7/month per AZ each) in a private subnet, and is why the change stays parked.
-- [ ] 7.4 A sequence diagram `docs/diagrams/` for `baas jobs connect`, rendered with `mmdc` to the
+- [x] 7.4 A sequence diagram `docs/diagrams/` for `baas jobs connect`, rendered with `mmdc` to the
   scratchpad and looked at before committing.
-- [ ] 7.5 README: `session-manager-plugin` as a prerequisite for `jobs connect` only; `infra/README.md`
+- [x] 7.5 README: `session-manager-plugin` as a prerequisite for `jobs connect` only; `infra/README.md`
   mentions the session document among the stack's resources.
-- [ ] 7.6 `docs/review/open-findings.md`: note under X6 that own-session scoping for `jobs connect` also
+- [x] 7.6 `docs/review/open-findings.md`: note under X6 that own-session scoping for `jobs connect` also
   keys on the shared session name (closes nothing).
 
 ## 8. Verify

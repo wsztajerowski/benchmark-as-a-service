@@ -75,7 +75,7 @@ intended — a clean exit only proves it parsed, not that the arrow landed in th
 of the repository. Mermaid CLI is installed globally (`npm install -g @mermaid-js/mermaid-cli`); nothing in CI
 renders these files, so a broken diagram is otherwise found by its next reader. State machines for the deployment, an operator machine and a job: `docs/diagrams/baas-states-*.mmd`. Design rationale and open risks:
 [`docs/adr/0001-self-contained-baas-cli.md`](docs/adr/0001-self-contained-baas-cli.md); later decisions, and the hardenings declined
-with their reasons, in `docs/adr/0002`–`0008`. Per-change
+with their reasons, in `docs/adr/0002`–`0010`. Per-change
 records: `openspec/changes/*/design.md`, and `openspec/changes/archive/*/design.md` once archived.
 
 **OpenSpec changes use the stock `spec-driven` schema**, driven by `/opsx:explore` → `/opsx:propose`
@@ -291,7 +291,26 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **The instance contacts no host outside the account.** Its only runner-JAR source is
   `releases/<version>/benchmark-runner.jar` in the bucket, seeded by the CLI. Restoring a
   network fetch reintroduces both the drift — two jobs a week apart executing different runner
-  code — and the egress `private-runner-network` exists to remove.
+  code — and the egress `private-runner-network` exists to remove. The one other destination is AWS's
+  own regional `ssm`/`ssmmessages` endpoints, where the AMI's `amazon-ssm-agent` registers so
+  `baas jobs connect` can reach the runner. Same 443 egress; nothing reaches the job from there unless
+  an operator opens a session.
+- **Every runner is connectable, always, through the stack's own session document.** `RunnerRole`
+  holds `ssm:UpdateInstanceInformation` and the four `ssmmessages:*Channel` actions, nothing else of
+  SSM — no Run Command, no `ec2messages`, no managed policy — and `RunnerSecurityGroup` gains no
+  ingress. The document is `<prefix>-session-runner`, never the account-global
+  `SSM-SessionManagerRunShell`: settings someone puts on that one (S3/CloudWatch logging, KMS) would
+  need grants the runner lacks, and every session would then fail for a reason BaaS cannot see. The
+  operator's `StartSession` names the deployment's `baas-deployment` tag and that document, with
+  `ssm:SessionDocumentAccessCheck` making the document mandatory. In a private subnet this needs
+  `ssm` and `ssmmessages` interface endpoints (~$7/month per AZ each), which is why
+  `private-runner-network` stays parked (ADR 0010).
+- **`baas jobs connect` ends its session when the instance terminates, and a session never holds
+  the instance.** Session Manager leaves a session open after its target is gone and the plugin has
+  no escape key — in raw mode Ctrl+C goes to a shell that no longer exists — so the terminal hung on a
+  dead prompt (found live). While the plugin runs, `connect` checks the instance every 15 s and ends
+  the session once it is ending or ended. Nothing about a session delays, extends or blocks any
+  termination layer.
 - **`releases/<version>/benchmark-runner.jar` is seeded once and never overwritten.** That
   immutability is what the whole pinning argument rests on, and two things hold it: the seed is a
   `PutObject` with `If-None-Match: *`, so S3 refuses a second write — a 412 or 409 means another
@@ -470,6 +489,11 @@ The watchdog is the only one that survives a deadlocked JVM.
 
 ## What isn't there, and what fails silently
 
+- **A session leaves no trace in a job's results.** No transcript is stored, and measurements of a
+  job someone connected to carry no tag or attribute that differs from an untouched job's — decided,
+  not overlooked (ADR 0010). A result measured while a shell was open is indistinguishable by query;
+  the operator who connected knows the job id. Results from before and after every runner registered
+  its agent share one `imageVersion`, too: the change date is the only boundary.
 - **`baas run` has no local mode.** It always provisions EC2. The only no-cost way to exercise the
   runner is `./jmh-with-profiler.sh` / `./jmh-with-async.sh` against LocalStack.
 - **Measurements live in DynamoDB, and a verbatim `jmh-result.json` now exists in S3.** The item
@@ -873,8 +897,10 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Area | Position |
 |---|---|
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
-| Deployer Image Builder wildcard | The deployer policy's `ImageBuilder` statement names `…:*/<prefix>-*`, so the deployer of `baas-123456789012` may also update, delete or start the Image Builder resources of a deployment named `baas-123456789012-dev` — never its stack, bucket, table, roles, pointer or AMIs, which are exact (finding X4). Accepted (2026-10-22): it needs one deployment's name to extend another's, the deployer is already effectively account admin (above), and the CLI only composes exact names through `DeploymentNames`. The exact form — seven `*/<prefix>-<suffix>` patterns, ~550 characters, inside the policy budget — was declined as mechanism for a case no deployment has. |
+| Deployer Image Builder wildcard | The deployer policy's `ImageBuilder` statement names `…:*/<prefix>-*`, so the deployer of `baas-123456789012` may also update, delete or start the Image Builder resources of a deployment named `baas-123456789012-dev` — never its stack, bucket, table, roles, pointer or AMIs, which are exact (finding X4). Accepted (2026-10-22): it needs one deployment's name to extend another's, the deployer is already effectively account admin (above), and the CLI only composes exact names through `DeploymentNames`. The exact form — seven `*/<prefix>-<suffix>` patterns, ~550 characters, inside the policy budget — was declined as mechanism for a case no deployment has. The `SsmSessionDocument` statement's `document/<prefix>-*` is the same shape and accepted for the same reason. |
 
+| CI can open a shell on a runner | GitHub Actions federates into the same `OperatorRole`, so the session grants reach CI too, although CI never calls `connect`. Accepted (2026-10-22): CI already terminates any runner and writes any job item, and a shell on a box that terminates itself within `timeout + margin` adds nothing it could not already break. The flip side is wanted: a hung CI job is reached from a laptop with `baas jobs connect <jobId>`, by id alone. |
+| Operators can end each other's sessions | `TerminateSession`/`ResumeSession` are scoped to sessions whose id starts with the caller's `aws:userid`, but every operator session is named `baas-cli` (finding X6), so "own sessions" means every operator's of that deployment. Accepted (2026-10-22): any operator can already terminate any runner, which ends its sessions anyway; seen live, when one operator session ended another's hung one. Closing X6 narrows it with no change to the policy. |
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + margin` (300 s by default). Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Runners can terminate each other | `RunnerRole`'s `ec2:TerminateInstances` is scoped by the shared `baas-role=benchmark-runner` tag, not to the calling instance, so code on one runner can kill every concurrent job. Accepted (2026-10-02): only an operator can supply a benchmark JAR, and `OperatorRole` already terminates any runner; the runner role's remaining bucket and table writes are the larger exposure — it can overwrite another job's objects under `jobs/*` (finding S7), though no longer delete them or touch `releases/`. The self-only scoping (`ec2:SourceInstanceARN`) was declined because a subtly wrong condition would silently disable self-termination *and* the watchdog, found only when a paid job hangs. Revisit if more than one team ever shares a deployment. |
 | `OperatorRole` trusts the account root | The trust policy names `:root` with no condition, so any principal in the account whose identity policy allows `sts:AssumeRole` on `*` can become an operator. Accepted (2026-10-02): that is AWS's standard same-account delegation, and in practice such principals (admins, `PowerUserAccess`) already hold the EC2, S3 and DynamoDB rights the role grants. A `aws:PrincipalArn` allow-list was declined — every new teammate would need a deployer re-run, SSO role ARNs churn on re-provisioning (the A10 failure), and a wrong pattern locks every operator out. `sts:ExternalId` was declined as a same-account no-op. |
