@@ -162,10 +162,11 @@ SHALL NOT change a deployed extension.
 The contract SHALL verify, on an instance booted from the newly built image, that: a `java` is on
 `PATH` and its specification version is at least the Java version the runner is compiled for; `aws`
 runs; async-profiler's library and `asprof` are present at the path the runner defaults to; `perf`
-runs and matches the running kernel; `/etc/baas-image-version` exists; `kernel.perf_event_paranoid` is
-at most 1; and `kernel.kptr_restrict` is 0. When any check fails, the build SHALL fail, the pointer
-SHALL remain unchanged, and the failure SHALL name the check. The contract SHALL NOT constrain the JVM
-vendor, a JVM version above the floor, the transparent hugepage mode or the swap state.
+runs and matches the running kernel; `amazon-ssm-agent` is installed and enabled to start at boot;
+`/etc/baas-image-version` exists; `kernel.perf_event_paranoid` is at most 1; and
+`kernel.kptr_restrict` is 0. When any check fails, the build SHALL fail, the pointer SHALL remain
+unchanged, and the failure SHALL name the check. The contract SHALL NOT constrain the JVM vendor, a
+JVM version above the floor, the SSM agent's version, the transparent hugepage mode or the swap state.
 
 #### Scenario: An extension that removes async-profiler fails the bake
 - **WHEN** an extension deletes the async-profiler deployment and an image is built
@@ -187,6 +188,11 @@ vendor, a JVM version above the floor, the transparent hugepage mode or the swap
 #### Scenario: Measurement choices are the extension's to change
 - **WHEN** an extension sets transparent hugepages to `madvise`
 - **THEN** the build succeeds, and jobs on the image record `madvise` in `environment.json`
+
+#### Scenario: An extension that disables the SSM agent fails the bake
+- **WHEN** an extension disables or removes `amazon-ssm-agent` and an image is built
+- **THEN** the build fails naming the SSM agent check, and `/<prefix>/runner/ami-id` still names the
+  previous image
 
 ### Requirement: The parent image is resolved from a pinned release in the stack's region
 The base SHALL name its parent as one exact Amazon Linux 2023 release, not as a region-bound AMI ID and

@@ -23,7 +23,7 @@ today's unregistered agent with a registered one. On Xeon 8124M hosts: unregiste
 was a steady 25% slower. Investigated on 2026-10-22: such slow plateaus occur with the agent stopped
 too, and come from the benchmark itself — `@GroupThreads(2)` contending for one lock on a single core's
 two hyperthreads, which settles into steady modes and switches between them
-(`openspec/changes/runner-shell-access/verify.md`). A live job on
+(`openspec/changes/archive/2026-10-22-runner-shell-access/verify.md`). A live job on
 `baas-development` (2026-10-22) then measured the agent directly: after 8.5 minutes, 7.5 of them
 benchmarking with a session attached, `amazon-ssm-agent` and `ssm-agent-worker` had used under a
 second of CPU each against the benchmark JVM's 899 s — under about 0.1%.
