@@ -100,8 +100,8 @@ class JobSessionTest {
         RuntimeException failTerminate;
 
         @Override
-        public String state(String instanceId) {
-            return states.getOrDefault(instanceId, "unknown");
+        public InstanceState state(String instanceId) {
+            return InstanceState.of(states.get(instanceId));
         }
 
         @Override

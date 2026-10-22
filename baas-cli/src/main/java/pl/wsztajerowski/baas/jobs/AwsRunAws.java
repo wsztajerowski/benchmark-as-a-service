@@ -82,7 +82,7 @@ public final class AwsRunAws implements RunAws {
             }
 
             @Override
-            public String state(String instanceId) {
+            public InstanceState state(String instanceId) {
                 return ec2.state(instanceId);
             }
 

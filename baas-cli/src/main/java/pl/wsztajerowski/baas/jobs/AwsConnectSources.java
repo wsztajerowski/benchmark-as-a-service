@@ -11,12 +11,9 @@ import software.amazon.awssdk.services.ssm.model.InvalidDocumentException;
 import software.amazon.awssdk.services.ssm.model.PingStatus;
 
 import java.util.Optional;
-import java.util.Set;
 
 /** {@link JobsConnectSubcommand.Sources} over the operator session's clients. */
 final class AwsConnectSources implements JobsConnectSubcommand.Sources {
-
-    private static final Set<String> ENDED = Set.of("shutting-down", "terminated", "stopping", "stopped");
 
     private final String region;
     private final DynamoDbClient dynamoDb;
@@ -57,21 +54,10 @@ final class AwsConnectSources implements JobsConnectSubcommand.Sources {
             .anyMatch(info -> info.pingStatus() == PingStatus.ONLINE);
     }
 
-    /**
-     * Only an instance EC2 reports as ending or ended is not live. A describe that fails counts as
-     * live, and quietly: a hiccup must not cut a session, and nothing may be written over the shell.
-     */
+    /** Not live only once EC2 reports it ended; a describe that fails counts as live, and quietly. */
     @Override
     public boolean instanceLive(String instanceId) {
-        try {
-            return ec2.describeInstances(r -> r.instanceIds(instanceId)).reservations().stream()
-                .flatMap(reservation -> reservation.instances().stream())
-                .findFirst()
-                .map(instance -> !ENDED.contains(instance.state().nameAsString()))
-                .orElse(true);
-        } catch (RuntimeException e) {
-            return true;
-        }
+        return !instances.state(instanceId).hasEnded();
     }
 
     @Override
