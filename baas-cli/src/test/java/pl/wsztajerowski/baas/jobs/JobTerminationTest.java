@@ -11,10 +11,15 @@ class JobTerminationTest {
     private final JobSessionTest.FakeInstances instances = new JobSessionTest.FakeInstances();
     private final JobTermination termination = new JobTermination(recorder, recorder, instances);
 
+    /** The fake recorder's job, whatever id is asked for. */
+    private static final String JOB_ID = "20261003T000000000Z-a3f9c21b";
+
+    /** A live instance carries its job's tag from launch, as every runner does. */
     private void runningOn(String instanceId) {
         recorder.status = JobStatus.RUNNING;
         recorder.instanceId = instanceId;
         instances.states.put(instanceId, "running");
+        instances.byJobId.put(JOB_ID, instanceId);
     }
 
     @Test
@@ -54,6 +59,22 @@ class JobTerminationTest {
         instances.failTerminate = new IllegalStateException("UnauthorizedOperation");
 
         assertThat(termination.terminate("r", () -> true)).isEqualTo(1);
+    }
+
+    /**
+     * One rule for a job's instance: its tag. A stale `instanceId` on the item (a recorded instance
+     * that is gone) does not hide the live one the tag finds.
+     */
+    @Test
+    void theInstanceIsFoundByItsTagNotByTheItem() {
+        recorder.status = JobStatus.RUNNING;
+        recorder.instanceId = "i-recorded";
+        instances.states.put("i-recorded", "terminated");
+        instances.states.put("i-tagged", "running");
+        instances.byJobId.put(JOB_ID, "i-tagged");
+
+        assertThat(termination.terminate("r", () -> true)).isZero();
+        assertThat(instances.terminated).containsExactly("i-tagged");
     }
 
     @Test

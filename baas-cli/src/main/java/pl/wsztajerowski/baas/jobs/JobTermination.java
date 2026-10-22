@@ -88,14 +88,12 @@ public final class JobTermination {
                 .formatted(jobId, status, live);
     }
 
-    /** The job's pending or running instance: the recorded one if live, else whatever carries its tag. */
+    /**
+     * The job's pending or running instance, by the tag it carries from launch — the one rule every
+     * command uses. The item's recorded {@code instanceId} names the same instance whenever it is set
+     * (the job id is the launch's idempotency token), so it is not consulted.
+     */
     private String liveInstance(JobItem job) {
-        if (job.instanceId() != null) {
-            String state = instances.state(job.instanceId());
-            if ("pending".equals(state) || "running".equals(state)) {
-                return job.instanceId();
-            }
-        }
         return instances.findLive(job.jobId()).orElse(null);
     }
 }
