@@ -146,6 +146,7 @@ class RunnerImageRendererTest {
             .contains("-ge " + renderer.javaFloor())
             .contains("java.specification.version")
             .contains("aws --version")
+            .contains("systemctl is-enabled amazon-ssm-agent")
             .contains("test -f '/app/async-profiler/lib/libasyncProfiler.so'")
             .contains("test -x '/app/async-profiler/bin/asprof'")
             .contains("rpm -q \"perf-${kernel}\"")
