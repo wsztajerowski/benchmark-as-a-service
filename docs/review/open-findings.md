@@ -98,7 +98,7 @@ decides what to pick up next.
 | T11 | The LocalStack pin is repeated in five ITs, one container per class, with a stale `java.wonderland` label ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T12 | Every IT is `disabledWithoutDocker`, so a Docker-less `mvn verify` silently skips every store and S3 test, the contract's only real binding included ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | B11 | The runner uploads inside `JmhRunResults`, and its parse DTOs carry `@Entity` ([architecture](2026-10-13-codebase-review/architecture.md)) | S | — | `retire-mongodb` |
-| B13 | EC2 instance-state strings are compared inside the job domain (`JobSession`, `JobTermination`) ([architecture](2026-10-13-codebase-review/architecture.md)) | XS | — | open, when nearby |
+| B13 | EC2 instance-state strings are compared inside the job domain (`JobSession`, `JobTermination`, and since `runner-shell-access` `AwsConnectSources`) ([architecture](2026-10-13-codebase-review/architecture.md)) | S | — | queued: instance-lookup refactor PR ([QUEUE](../../openspec/changes/QUEUE.md) #2) |
 
 ### Informational
 
