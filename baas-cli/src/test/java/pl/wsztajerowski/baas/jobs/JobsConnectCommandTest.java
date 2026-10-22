@@ -196,6 +196,19 @@ class JobsConnectCommandTest {
         assertThat(calls).noneMatch(call -> call.startsWith("start"));
     }
 
+    /** The item learns its instance from a best-effort write; the tag is there from launch. */
+    @Test
+    void aJobWhoseItemNeverRecordedItsInstanceIsFoundByItsTag() throws Exception {
+        runningJob();
+        job = new JobItem(ID, "baas-e2e", Instant.parse("2026-10-22T12:00:00Z"), "jobs/baas-e2e/" + ID, "c5.large",
+            JobStatus.LAUNCHING, null, null, Map.of(), null, 3600);
+
+        var run = connect();
+
+        assertThat(run.exit()).isZero();
+        assertThat(calls).contains("start " + INSTANCE + " " + DOCUMENT);
+    }
+
     @Test
     void aFinishedJobIsRefusedNamingItsStatus() throws Exception {
         job = job(JobStatus.COMPLETED, 3600);
