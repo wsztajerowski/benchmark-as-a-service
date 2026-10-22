@@ -51,24 +51,27 @@
 
 ## 4. `baas jobs connect`
 
-- [ ] 4.1 A plugin locator that walks `PATH` for `session-manager-plugin` and, when absent, produces the
+- [x] 4.1 A plugin locator that walks `PATH` for `session-manager-plugin` and, when absent, produces the
   macOS and Linux install instructions; unit-tested with a temporary `PATH`.
-- [ ] 4.2 A `ConnectAws` port (job item lookup, `DescribeInstances` state and launch time,
+- [x] 4.2 A `ConnectAws` port (job item lookup, `DescribeInstances` state and launch time,
   `DescribeInstanceInformation` ping status, `StartSession`, `TerminateSession`) with its AWS adapter, and
-  a hand-written fake bound to the same contract as the other `jobs` ports.
-- [ ] 4.3 `JobsConnectSubcommand`, registered in `JobsCommand`, applying the checks in the design's order
+  a hand-written fake bound to the same contract as the other `jobs` ports. *(Done as the command's
+  nested `Sources` port with the adapter `AwsConnectSources`, faked in `JobsConnectCommandTest` — the
+  `jobs show` pattern. No shared contract suite: LocalStack does not emulate Session Manager, so the
+  adapter's SSM calls are exercised only by task 6.)*
+- [x] 4.3 `JobsConnectSubcommand`, registered in `JobsCommand`, applying the checks in the design's order
   (plugin → job item → instance state → agent online); tests with the fake cover: plugin missing (no AWS
   call at all), unknown id, `launching` with no instance, terminated instance, agent not online, a
   `launched` job with a live instance (allowed), and that `AccessDenied` or a missing document is
   reported as "re-run `baas admin deployment setup`".
-- [ ] 4.4 The deadline line before the shell opens (exact when `watchdogSeconds` is present, the generic
+- [x] 4.4 The deadline line before the shell opens (exact when `watchdogSeconds` is present, the generic
   warning otherwise), written through `Console` and flushed before hand-over; tested for both.
-- [ ] 4.5 The plugin launcher: `ProcessBuilder` with `inheritIO`, the AWS CLI's argument order, region and
+- [x] 4.5 The plugin launcher: `ProcessBuilder` with `inheritIO`, the AWS CLI's argument order, region and
   `ssm` endpoint, returning the plugin's exit status, and calling `TerminateSession` best effort when the
   plugin fails to start or exits abnormally; a test with a stub plugin script on `PATH` asserts the
   arguments carry the session id, stream URL and token, and that neither its arguments nor its
   environment contain any `AWS_*` credential variable.
-- [ ] 4.6 `baas jobs` usage lists `connect`, and `baas connect` is an unknown command; the existing
+- [x] 4.6 `baas jobs` usage lists `connect`, and `baas connect` is an unknown command; the existing
   command-tree tests are extended.
 
 ## 5. Image contract

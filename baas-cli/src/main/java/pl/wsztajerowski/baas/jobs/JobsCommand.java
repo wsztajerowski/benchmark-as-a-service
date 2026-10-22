@@ -14,14 +14,15 @@ import pl.wsztajerowski.baas.cli.LoggingMixin;
 @Command(
     name = "jobs",
     mixinStandardHelpOptions = true,
-    description = "The execution: run a benchmark job, list, show, diff, download or terminate one.",
+    description = "The execution: run a benchmark job, list, show, diff, download, terminate or connect to one.",
     subcommands = {
         RunCommand.class,
         JobsListSubcommand.class,
         JobsShowSubcommand.class,
         JobsDiffSubcommand.class,
         JobsDownloadSubcommand.class,
-        JobsTerminateSubcommand.class
+        JobsTerminateSubcommand.class,
+        JobsConnectSubcommand.class
     }
 )
 public class JobsCommand implements Runnable {

@@ -20,6 +20,7 @@ class DeploymentNamesTest {
         assertThat(names.runnerInstanceProfile()).isEqualTo("baas-123456789012-profile-runner");
         assertThat(names.runnerComponent()).isEqualTo("baas-123456789012-component-runner");
         assertThat(names.runnerRecipe()).isEqualTo("baas-123456789012-recipe-runner");
+        assertThat(names.sessionDocument()).isEqualTo("baas-123456789012-session-runner");
     }
 
     /** A named deployment's prefix is used verbatim: nothing prepends the `baas-` namespace. */
