@@ -104,7 +104,16 @@ plugin's exit status, and calls `TerminateSession` best effort when the plugin e
 never started after a successful `StartSession` (an unattached session otherwise lingers until the
 idle timeout).
 
-`Console` is flushed before the hand-over; nothing is written while the plugin owns the terminal.
+`Console` is flushed before the hand-over; nothing is written while the plugin owns the terminal,
+with one exception below.
+
+While the plugin runs, `connect` checks the instance every 15 s. Session Manager does **not** close a
+session whose target terminated, and the plugin has no escape key — in raw mode Ctrl+C goes to a
+shell that no longer exists — so without the check the terminal hangs on a dead prompt (found live,
+2026-10-22: a session stayed open well after its job's instance terminated itself). Once EC2 reports
+the instance ending or ended, `connect` prints one line (`\r\n`-framed, the terminal being raw), ends
+the session, gives the plugin 10 s to leave, then stops it, and exits 0. A describe that fails counts
+as live, silently: a hiccup must not cut a session or write over the shell.
 
 *Alternative: `aws ssm start-session`.* Lost: it makes the AWS CLI v2 a hard requirement (today only
 SSO users need it) and means exporting the operator session's keys into a child's environment.
