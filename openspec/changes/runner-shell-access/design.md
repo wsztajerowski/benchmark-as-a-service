@@ -184,11 +184,15 @@ sessions" is amended before implementation rather than quietly widened.
 ### The deployer gets one prefix-scoped statement for the document
 
 `SsmSessionDocument`: `ssm:CreateDocument`, `GetDocument`, `DescribeDocument`, `UpdateDocument`,
-`UpdateDocumentDefaultVersion`, `DeleteDocument`, `AddTagsToResource`, `ListTagsForResource` on
+`UpdateDocumentDefaultVersion`, `DeleteDocument`, `AddTagsToResource`, `RemoveTagsFromResource`,
+`ListTagsForResource` on
 `arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/${PREFIX}-*` — about 300 characters, inside the ~1050
 left under the 5632 test budget. Unconditioned, so the setup preflight probes it like every other
-statement. Task 1.3 confirms the list against the `AWS::SSM::Document` handler on a real create, update
-and delete; a missing action is found there, not at a user's setup.
+statement. Task 1.3 (2026-10-22) checked the list against the `AWS::SSM::Document` handler
+permissions in CloudFormation's published resource schema: it added `RemoveTagsFromResource` (update),
+and left out the handler's `s3:GetObject` and `iam:PassRole`, which serve only `Attachments` and
+`Requires` — properties this document does not use. A real create, update and delete under the
+deployer policy is part of task 6.1.
 
 ### The contract checks the agent; the base is untouched
 
@@ -270,4 +274,7 @@ deferred question.
 - *Image?* Contract checks the agent; no base change (2026-10-22).
 - *Does `ssm-user` get created on first session?* Yes, since agent 2.3.612.0 — moot now that nothing
   is marked.
+- *Which actions does CloudFormation need for the document, and does a content change replace it?*
+  The handler permissions above (task 1.3). `Name` and `DocumentType` are create-only; `UpdateMethod`
+  defaults to `Replace`, so `NewVersion` is set explicitly to update content in place.
 - *Does a registered agent cost measurable throughput?* Not at ±3% (spike, 2026-10-21).
