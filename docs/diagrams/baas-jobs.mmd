@@ -27,7 +27,7 @@ sequenceDiagram
         alt no job item in this deployment
             RT-->>User: "No job found", exit 1 -- nothing is terminated (R6)
         end
-        RT->>EC2: describeInstances(instanceId), else by the job-id tag AND baas-deployment
+        RT->>EC2: describeInstances(job-id tag AND baas-deployment, state pending|running) -- the one rule every command uses
         alt terminal status and no live instance
             RT-->>User: "already ended", exit 0 -- nothing changed
         else completed, failed:n or timed-out with a live instance
