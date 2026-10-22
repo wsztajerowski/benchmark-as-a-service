@@ -85,7 +85,7 @@
 
 ## 6. End-to-end verification — manual, on the `baas run` path (no automated test covers it)
 
-- [ ] 6.1 Second deployment (infra and IAM change): with the reactor CLI on `baas-development`, run
+- [x] 6.1 Second deployment (infra and IAM change): with the reactor CLI on `baas-development`, run
   `admin deployment setup` (update), `admin image build`, a `fake-jmh-benchmarks` run, `jobs connect`
   to it, and `admin deployment teardown` + setup again to confirm the document is removed and re-created
   with the stack; record each step in verify.md.
