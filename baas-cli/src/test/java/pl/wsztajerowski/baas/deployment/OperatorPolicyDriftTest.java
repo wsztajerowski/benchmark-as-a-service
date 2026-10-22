@@ -191,6 +191,8 @@ class OperatorPolicyDriftTest {
             .replace("${AWS::Region}", "REGION")
             .replace("${AWS::AccountId}", "ACCOUNT_ID")
             .replace("${ResourceNamePrefix}", "RESOURCE_PREFIX")
-            .replace("AWS::Region", "REGION");
+            .replace("AWS::Region", "REGION")
+            // !Sub's escape for a literal ${…}, here an IAM policy variable.
+            .replace("${!", "${");
     }
 }
