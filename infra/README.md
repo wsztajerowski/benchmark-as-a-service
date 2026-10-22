@@ -5,7 +5,8 @@ The infrastructure is split into two stacks. Run commands from this directory.
 ## Stack 1: `baas-core` — shared infrastructure
 
 Deploys networking (VPC, subnet, IGW, S3 and DynamoDB gateway endpoints, security group), the S3
-working bucket, the DynamoDB results table, the EC2 runner IAM role, and the EC2 Image Builder
+working bucket, the DynamoDB results table, the EC2 runner IAM role, the Session Manager document
+`<prefix>-session-runner` that `baas jobs connect` opens shells with, and the EC2 Image Builder
 resources that bake the runner AMI. This is the same stack that `baas admin deployment setup` deploys on a
 user's account.
 
@@ -34,8 +35,9 @@ reads results, launches instances, or touches IAM.
 The recipe runs three components in order: the **base**, rendered from the bundled
 `infra/runner-image.yaml`; the deployment's optional **extension** (below); and the BaaS
 **contract**, which writes the image label and, in its `test` phase on an instance booted from the
-new image, fails the build when Java ≥ the runner's version, the AWS CLI, async-profiler, a `perf`
-matching the kernel, `perf_event_paranoid ≤ 1` or `kptr_restrict = 0` is missing. Image tests are
+new image, fails the build when Java ≥ the runner's version, the AWS CLI, an enabled
+`amazon-ssm-agent`, async-profiler, a `perf` matching the kernel, `perf_event_paranoid ≤ 1` or
+`kptr_restrict = 0` is missing. Image tests are
 enabled on the pipeline for that reason; a failed contract leaves the pointer on the previous image.
 
 Eight stack parameters describe the image (`RunnerImageParameters.ALL`). `baas admin image build`
@@ -436,3 +438,9 @@ s3://<bucket>/jobs/<project>/<jobId>/cloud-init-output.log
 ```
 
 `baas run` prints that path when a job fails, and when the instance dies before reporting.
+
+A job still running — hung, or slower than it should be — can be looked at live with
+`baas jobs connect <jobId>` (needs the local `session-manager-plugin`). A deployment set up before
+`connect` existed lacks the document and the grants; `connect` says so, and re-running
+`baas admin deployment setup` adds them. If a session ever hangs on a dead prompt, end it from another
+terminal with `pkill -f session-manager-plugin`.
