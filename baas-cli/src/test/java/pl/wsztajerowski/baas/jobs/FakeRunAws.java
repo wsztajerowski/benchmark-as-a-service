@@ -173,12 +173,12 @@ public final class FakeRunAws implements RunAws {
         }
 
         @Override
-        public String state(String instanceId) {
+        public InstanceState state(String instanceId) {
             describes++;
             if (instance == Instance.COMPLETES) {
                 status = describes == 1 ? JobStatus.RUNNING : JobStatus.COMPLETED;
             }
-            return "running";
+            return InstanceState.RUNNING;
         }
 
         @Override

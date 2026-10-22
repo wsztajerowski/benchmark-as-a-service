@@ -99,31 +99,22 @@ public class Ec2ProvisioningService implements JobSession.Instances {
         return response.instances().getFirst().instanceId();
     }
 
-    private boolean describeFailureReported = false;
-
     /**
-     * Current EC2 state name, or "unknown" if the instance cannot be described.
-     * Used to fail a job fast when the runner dies before recording its outcome on the job item.
-     *
-     * <p>A persistent failure here (denied permission, expired session) silently
-     * disables that fail-fast, so the first one is reported rather than swallowed.
+     * The instance's state, or {@link InstanceState#UNKNOWN} when it cannot be described. Quiet: the
+     * caller decides what an unknown state means, and whether it is worth a warning.
      */
     @Override
-    public String state(String instanceId) {
+    public InstanceState state(String instanceId) {
         try {
             var response = ec2.describeInstances(r -> r.instanceIds(instanceId));
             return response.reservations().stream()
                 .flatMap(reservation -> reservation.instances().stream())
                 .findFirst()
-                .map(instance -> instance.state().nameAsString())
-                .orElse("unknown");
+                .map(instance -> InstanceState.of(instance.state().nameAsString()))
+                .orElse(InstanceState.UNKNOWN);
         } catch (Exception e) {
-            if (!describeFailureReported) {
-                describeFailureReported = true;
-                logger.warn("Cannot read the state of {} ({}) — this job will poll until the "
-                    + "wall-clock cap instead of failing fast if the runner dies.", instanceId, e.getMessage());
-            }
-            return "unknown";
+            logger.debug("Cannot read the state of {}: {}", instanceId, e.getMessage());
+            return InstanceState.UNKNOWN;
         }
     }
 
@@ -144,7 +135,7 @@ public class Ec2ProvisioningService implements JobSession.Instances {
         return ec2.describeInstancesPaginator(r -> r.filters(
                 Filter.builder().name("tag:baas-role").values("benchmark-runner").build(),
                 Filter.builder().name("tag:" + DEPLOYMENT_TAG).values(deployment).build(),
-                Filter.builder().name("instance-state-name").values("pending", "running").build()))
+                Filter.builder().name("instance-state-name").values(InstanceState.liveNames()).build()))
             .reservations().stream()
             .flatMap(res -> res.instances().stream())
             .map(i -> new LiveRunner(i.instanceId(), i.state().nameAsString(), tag(i, JOB_ID_TAG)))
@@ -173,7 +164,7 @@ public class Ec2ProvisioningService implements JobSession.Instances {
         return ec2.describeInstancesPaginator(r -> r.filters(
                 Filter.builder().name("tag:" + JOB_ID_TAG).values(jobId).build(),
                 Filter.builder().name("tag:" + DEPLOYMENT_TAG).values(deployment).build(),
-                Filter.builder().name("instance-state-name").values("pending", "running").build()))
+                Filter.builder().name("instance-state-name").values(InstanceState.liveNames()).build()))
             .reservations().stream()
             .flatMap(res -> res.instances().stream())
             .map(i -> new LiveInstance(i.instanceId(), i.launchTime()))
