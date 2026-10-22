@@ -274,6 +274,20 @@ deferred question.
 - *Image?* Contract checks the agent; no base change (2026-10-22).
 - *Does `ssm-user` get created on first session?* Yes, since agent 2.3.612.0 — moot now that nothing
   is marked.
+- *Task 1.2 (b), (c), live on `baas-development`, 2026-10-22* — the branch's stack deployed with
+  `admin deployment setup`, a `c5.large` job launched, its agent `Online` 24 s after launch (agent
+  3.3.4624.0). As the operator role with session name `baas-cli`: `StartSession` with
+  `baas-development-session-runner` succeeded, and the session's own `TerminateSession` succeeded under
+  the `ssm:resourceTag/aws:ssmmessages:session-id` condition (b). No document, `SSM-SessionManagerRunShell`
+  and `AWS-StartPortForwardingSession` were each denied `ssm:StartSession` (c). The deployer cannot
+  call `DescribeInstanceInformation`; the operator can.
+- *Task 1.2 (a), live 2026-10-22*: `baas jobs connect` from this branch's JAR opened a working shell
+  (`ssm-user`, `/app`, commands answered, `exit` → CLI exit 0) with the `OpenDataChannel` statement
+  as designed. The session id is `baas-cli-<random>` — the role session name, while `${aws:userid}`
+  for an assumed role is `AROA…:baas-cli` — so the statement's resource looks as if it cannot match.
+  Either AWS authorises the data channel against something else, or the statement is not what allows
+  it; a working session cannot tell the two apart. Kept as designed, since it works and is no wider
+  than documented; noted in verify.md rather than claimed proven.
 - *Which actions does CloudFormation need for the document, and does a content change replace it?*
   The handler permissions above (task 1.3). `Name` and `DocumentType` are create-only; `UpdateMethod`
   defaults to `Replace`, so `NewVersion` is set explicitly to update content in place.
