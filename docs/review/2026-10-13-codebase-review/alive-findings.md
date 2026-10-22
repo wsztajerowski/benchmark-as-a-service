@@ -1,5 +1,9 @@
 # Alive findings after the slice-architecture refactor
 
+> **Superseded 2026-10-22.** Every finding still open was re-checked against `next-release` and
+> moved into [`docs/review/open-findings.md`](../open-findings.md), which is now the list to work
+> from. This file stays as the record of the triage and its decisions.
+
 Every finding from the 2026-10-13 codebase review that is **still open** on `slice-architecture`
 (code final at `72df695`), re-checked finding by finding against the refactored code on 2026-10-15
 and 2026-10-19. This is the list to triage together. Each ID links to its report, where the

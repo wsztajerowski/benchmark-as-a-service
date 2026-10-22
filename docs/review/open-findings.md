@@ -7,7 +7,8 @@ Those files are gone; `git log -- docs/review docs/analysis` holds them.
 
 - **IDs are kept from where each finding was filed** — `S`/`A`/`D`/`C` (module reviews), `P`
   (prebaked-image review), `U` (CLI usage analysis), `N` (new on 2026-10-05), `E` (live end-to-end
-  test, 2026-10-10), and `<change>/W<n>` (a change's verify warning) — so commits, change artifacts
+  test, 2026-10-10), `X`/`G`/`K`/`T`/`B` (the 2026-10-13 codebase review: security, API gaps, code
+  and test complexity, architecture), and `<change>/W<n>` (a change's verify warning) — so commits, change artifacts
   and `openspec/config.yaml` rules that cite them still resolve.
 - **Closing a finding deletes its entry here.** If the decision is worth keeping, it becomes an ADR
   in [`docs/adr/`](../adr/). ADRs 0002–0005 hold what was closed or declined up to 2026-10-05.
@@ -48,6 +49,12 @@ decides what to pick up next.
 | pr83/W5 | A JCStress row's `mode` is the string `"null"` in CSV and JSON | XS | Low | open |
 | pr83/W3 | `avgt` scores in `s/op` print as `0.000000` in JSON and CSV | S | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
+| G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
+| G4 | No score comparison between jobs or against a baseline; CI regression gates hand-roll `jq` | M | — | users first |
+| G8 | The job record does not say what ran: benchmark arguments, runner version or override, timeout, JCStress mode, JAR digest | S | — | users first |
+| G5 | No `jobs wait` (or `terminal` field); CI copies the terminal-status set into bash | S | — | deferred |
+| G10 | The runner cannot pass JMH `-p` overrides or more than one include regex | S | — | deferred |
+| G13 | No way to forget a deployment locally, or reset a preference to its default | XS | — | deferred |
 
 ### Could
 
@@ -60,6 +67,38 @@ decides what to pick up next.
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
 | C4 | MongoDB retirement; every service IT runs on the Mongo adapter | L | — | `retire-mongodb` |
 | A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | XS | Low | `retire-mongodb` |
+| X3 | The runner role can create job items (`UpdateItem` upserts) and malformed `RESULT#` rows, which make every reader throw; the template's comments claiming it cannot are wrong ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
+| X5 | `--github-org`/`--github-repo` and setup's GitHub prompts are not validated, so `*` or `?` widen the OIDC trust silently ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
+| X6 | Every operator session is named `baas-cli`, so CloudTrail cannot tell operators apart without a join ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
+| X7 | Runner-written strings reach the terminal unsanitised; `jobs show --format json` splices raw `environment.json` ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
+| X8 | The CLI and runner-JAR checksums come from the same release as the assets: integrity, not authenticity (CLAUDE.md calls it closed) ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
+| G7 | Exit codes do not separate failure kinds; the runner's exit code is not propagated; unattended setup exits 1 for a failure and for a step awaiting an IAM admin alike ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
+| G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
+| G11 | `jobs diff` has no JSON and exits 0 whether or not the environments differ ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
+| G12 | `config show`, `admin image show`/`build`, unattended setup, `jobs terminate` and `jobs download` have no machine-readable output ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS each | — | open, when nearby |
+| G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
+| G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
+| G17 | `results query` JSON lacks `project`, `kind` and artifact keys (its escaping is fixed) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G18 | No non-interactive project listing ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), `StoredMeasurement` (Mongo), CLAUDE.md "CI mints its id", `admin image show` "for this account", a user-data comment on the manifest's identity ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G20 | Image-build logs under `image-builds/` are pointed to by neither `admin image build` nor setup's image step ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
+| K3 | JSON payloads hand-built in four commands, the job object twice ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
+| K4 | `--format` validated by hand in five commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
+| K9 | `session()`/`console()` plumbing copied into 6–9 commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | S | — | open, when nearby |
+| K11 | `JobSession.Outcome.exitCode` is derivable from the status; `completed ? 0 : 1` is written four times ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
+| K12 | A mutable `static` `CommandSpec` in the runner's `ApiJmhOptions`, shared by three subcommands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
+| K14 | Setup's AccessDenied catch-and-log is written twice (`SetupWalkthrough`, `StackStep`); the hand-over itself is now shared ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
+| T5 | No common command-test harness: several seam idioms, `IFactory` boilerplate in eight test classes ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
+| T6 | Positional records (`JobItem`, `StoredMeasurement`) rebuilt by private helpers in every test class ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
+| T7 | `Thread.sleep(100)` then an assertion on thread state in `JobSessionTest` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T8 | `DeployerPreflightTest` pins the call count (14) to today's policy shape ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T9 | Global-state mutation (`System.err`, `Locale`, `TimeZone`) in nine test classes, none under `@ResourceLock` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T10 | Test isolation from `~/.baas`/`~/.aws` exists only in the surefire config ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T11 | The LocalStack pin is repeated in five ITs, one container per class, with a stale `java.wonderland` label ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T12 | Every IT is `disabledWithoutDocker`, so a Docker-less `mvn verify` silently skips every store and S3 test, the contract's only real binding included ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| B11 | The runner uploads inside `JmhRunResults`, and its parse DTOs carry `@Entity` ([architecture](2026-10-13-codebase-review/architecture.md)) | S | — | `retire-mongodb` |
+| B13 | EC2 instance-state strings are compared inside the job domain (`JobSession`, `JobTermination`) ([architecture](2026-10-13-codebase-review/architecture.md)) | XS | — | open, when nearby |
 
 ### Informational
 
@@ -220,6 +259,21 @@ views and between machines. **Decide:** keep the locale on purpose (and say so i
 `JobsDiffSubcommand` builds a fixed-width `Table` (91 columns). A value wider than its column, such as
 `Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz`, pushes the next column right instead of being
 clipped or wrapping, so that row no longer lines up with the header. Seen 2026-10-10 on c5 vs c6i.
+
+### Codebase review 2026-10-13 — X, G, K, T, B
+
+Filed by the review in [`2026-10-13-codebase-review/`](2026-10-13-codebase-review/README.md), triaged 2026-10-20
+([`alive-findings.md`](2026-10-13-codebase-review/alive-findings.md) holds the decisions), and moved here on 2026-10-22 after
+each was re-checked against `next-release`: all still open. Each ID's evidence, failure scenario and
+recommendation stay in its report, linked from the index. *When nearby* means fixed when work touches
+that code, not scheduled. B6's remainder (thin read commands building clients inline) is not listed:
+ADR 0009 adds a port only when a sequence test needs one.
+
+- **G3, G4, G8 — users first.** Each needs a decision about what BaaS records or offers before it is
+  built; the proposals are in [`user-discussion.md`](2026-10-13-codebase-review/user-discussion.md).
+- **G5, G10, G13 — deferred in triage.** Valid and small; not scheduled.
+- **K14** is smaller than filed: `StackStep.permissionFailure` is the one hand-over, and only the
+  catch-and-log around it is duplicated.
 
 ## Informational
 
