@@ -124,6 +124,17 @@ class Ec2ProvisioningServiceTest {
                 org.assertj.core.groups.Tuple.tuple("instance-state-name", java.util.List.of("pending", "running")));
     }
 
+    @Test
+    void aJobsLiveInstanceCarriesItsLaunchTime() {
+        var ec2 = new CapturingEc2();
+        var launched = java.time.Instant.parse("2026-10-22T10:00:00Z");
+        ec2.answer = DescribeInstancesResponse.builder()
+            .reservations(r -> r.instances(Instance.builder().instanceId("i-9").launchTime(launched).build())).build();
+
+        assertThat(new Ec2ProvisioningService(ec2, "wiktor-dev").findLiveInstance("run-1"))
+            .contains(new Ec2ProvisioningService.LiveInstance("i-9", launched));
+    }
+
     /** R6: a job's instance is never looked up across deployments, not even by omission. */
     @Test
     void aJobsInstanceIsNotLookedUpWithoutADeployment() {
