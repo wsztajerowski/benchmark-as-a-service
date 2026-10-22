@@ -606,6 +606,79 @@ class CoreTemplateTest {
             .containsExactlyInAnyOrder("s3:PutObject", "s3:GetObject", "s3:ListBucket");
     }
 
+    // ─── Session Manager shell access (runner-shell-access) ──────────────────────
+
+    /**
+     * The stack's own document, so preferences someone sets on the account-global default cannot
+     * make sessions need grants the runner lacks. No logging or KMS key: nothing the runner must
+     * reach, and no transcript by decision.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theSessionDocumentIsTheStacksOwnAndLogsNothing() {
+        var document = InfraFixtures.properties(template, "RunnerSessionDocument");
+
+        assertThat(document.get("Name")).isEqualTo("${ResourceNamePrefix}-session-runner");
+        assertThat(document.get("DocumentType")).isEqualTo("Session");
+        assertThat(document.get("UpdateMethod"))
+            .as("a custom-named document is otherwise replaced on a content change, which fails on its own name")
+            .isEqualTo("NewVersion");
+        var inputs = (Map<String, Object>) ((Map<String, Object>) document.get("Content")).get("inputs");
+        assertThat(inputs).doesNotContainKeys("s3BucketName", "cloudWatchLogGroupName", "kmsKeyId");
+        assertThat(inputs.get("runAsEnabled")).isEqualTo(false);
+        assertThat(((Map<String, Object>) inputs.get("shellProfile")).get("linux").toString())
+            .contains("cd /app", "exec bash");
+    }
+
+    /** Session channels and nothing else of SSM: no Run Command, no managed policy. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theRunnerRegistersForSessionsAndNothingMore() {
+        var runner = InfraFixtures.properties(template, "RunnerRole");
+        var policies = (List<Map<String, Object>>) runner.get("Policies");
+        var ssmActions = policies.stream()
+            .flatMap(policy -> InfraFixtures.actions((Map<String, Object>) policy.get("PolicyDocument")).stream())
+            .filter(action -> action.startsWith("ssm") || action.startsWith("ec2messages"))
+            .toList();
+
+        assertThat(ssmActions).containsExactlyInAnyOrder("ssm:UpdateInstanceInformation",
+            "ssmmessages:CreateControlChannel", "ssmmessages:CreateDataChannel",
+            "ssmmessages:OpenControlChannel", "ssmmessages:OpenDataChannel");
+        assertThat(runner).doesNotContainKey("ManagedPolicyArns");
+    }
+
+    /** Sessions need no inbound path: the agent dials out over the existing 443 egress. */
+    @Test
+    void theRunnerSecurityGroupStillHasNoIngress() {
+        assertThat(InfraFixtures.properties(template, "RunnerSecurityGroup")).doesNotContainKey("SecurityGroupIngress");
+    }
+
+    /**
+     * A session reaches only this deployment's runners — the tag every live-runner query scopes by —
+     * and only through this deployment's document, which the access check makes mandatory.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void theOperatorStartsSessionsOnlyOnItsOwnRunnersWithItsOwnDocument() {
+        var policies = (List<Map<String, Object>>) InfraFixtures.properties(template, "OperatorRole").get("Policies");
+        var starts = policies.stream()
+            .map(policy -> (Map<String, Object>) policy.get("PolicyDocument"))
+            .flatMap(document -> ((List<Map<String, Object>>) document.get("Statement")).stream())
+            .filter(statement -> "ssm:StartSession".equals(statement.get("Action")))
+            .toList();
+
+        assertThat(starts).extracting(statement -> statement.get("Resource")).containsExactlyInAnyOrder(
+            "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*",
+            "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${ResourceNamePrefix}-session-runner");
+        assertThat(starts).allSatisfy(statement -> assertThat(statement.get("Condition").toString())
+            .contains("ssm:SessionDocumentAccessCheck"));
+        assertThat(starts).anySatisfy(statement -> assertThat(statement.get("Condition").toString())
+            .contains("aws:ResourceTag/baas-deployment=${ResourceNamePrefix}"));
+        assertThat(policies.stream().flatMap(policy -> InfraFixtures.actions(
+                (Map<String, Object>) policy.get("PolicyDocument")).stream()))
+            .doesNotContain("ssm:SendCommand");
+    }
+
     // ─── GitHub OIDC federation on the operator role ─────────────────────────────
     //
     // The intrinsic-tolerant YAML loader collapses !If to its argument list, so the conditional

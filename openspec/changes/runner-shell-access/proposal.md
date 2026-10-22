@@ -58,8 +58,8 @@ difference between a registered and an unregistered agent at its ±3% resolution
   and `JobItemMapper` (one new attribute); `jobs show`; the contract renderer. `baas-model` —
   `JobItemMapper`. The runner (`benchmark-runner`) and user-data are unchanged.
 - **Infra**: `cf-template-core.yaml` (one `AWS::SSM::Document`, `RunnerRole` and `OperatorRole`
-  statements), `infra/operator-policy.json`, `infra/deployer-policy.json` (one statement, about 150
-  characters against the roughly 1050 left under the 5632 test budget).
+  statements), `infra/operator-policy.json`, `infra/deployer-policy.json` (one statement; the rendered
+  policy grows to 4936 non-whitespace characters, 696 under the 5632 test budget).
 - **Dependencies**: none in the build — `baas-cli` already depends on the SDK's `ssm` module.
   `session-manager-plugin` on the operator's machine, for `connect` only.
 - **Cost**: none standing. Session Manager is free for EC2 instances, a session document is free, and

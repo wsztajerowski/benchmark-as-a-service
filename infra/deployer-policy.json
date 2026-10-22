@@ -73,6 +73,22 @@
       "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/${PREFIX}/runner/ami-id"
     },
     {
+      "Sid": "SsmSessionDocument",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:CreateDocument",
+        "ssm:GetDocument",
+        "ssm:DescribeDocument",
+        "ssm:UpdateDocument",
+        "ssm:UpdateDocumentDefaultVersion",
+        "ssm:DeleteDocument",
+        "ssm:AddTagsToResource",
+        "ssm:RemoveTagsFromResource",
+        "ssm:ListTagsForResource"
+      ],
+      "Resource": "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/${PREFIX}-*"
+    },
+    {
       "Sid": "ImageBuilder",
       "Effect": "Allow",
       "Action": [
