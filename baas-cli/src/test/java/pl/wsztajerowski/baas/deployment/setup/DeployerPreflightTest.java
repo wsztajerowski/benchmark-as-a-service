@@ -38,7 +38,7 @@ class DeployerPreflightTest {
         Set<String> probed = probes().stream().map(DeployerPreflight.Probe::sid).collect(java.util.stream.Collectors.toSet());
 
         assertThat(probed).containsExactlyInAnyOrder(
-            "CloudFormation", "SsmRunnerAmiPointer", "ImageBuilder", "PassRolesToServices",
+            "CloudFormation", "SsmRunnerAmiPointer", "SsmSessionDocument", "ImageBuilder", "PassRolesToServices",
             "GitHubOidcProvider", "AssumeOwnOperatorRole", "IAM", "PreflightSimulation",
             "ResultsTableLifecycle", "S3WorkingBucketLifecycle");
     }
@@ -102,7 +102,7 @@ class DeployerPreflightTest {
         new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
 
         assertThat(iam.refused).as("wildcard and plain actions are never mixed").isZero();
-        assertThat(iam.requests).hasSize(14);
+        assertThat(iam.requests).hasSize(15);
     }
 
     /**
