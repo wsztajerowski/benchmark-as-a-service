@@ -77,7 +77,7 @@
 
 ## 5. Image contract
 
-- [ ] 5.1 Add the `systemctl is-enabled amazon-ssm-agent` check to the contract rendered by
+- [x] 5.1 Add the `systemctl is-enabled amazon-ssm-agent` check to the contract rendered by
   `RunnerImageRenderer`, failing with a message that names the SSM agent; the rendered-contract test
   asserts the check and the contract stays under the 4096-byte parameter cap test.
 
