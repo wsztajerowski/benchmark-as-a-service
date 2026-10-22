@@ -83,6 +83,24 @@ class JobItemMapperTest {
     }
 
     @Test
+    void theWatchdogBoundIsAnIdentityAttributeAndRoundTrips() {
+        var bounded = new JobItem("r", "p", Instant.parse("2026-10-03T00:00:00Z"), null, null,
+            JobStatus.LAUNCHING, null, null, Map.of(), null, 900);
+
+        assertThat(JobItemMapper.identityAttributes(bounded).get(JobItemMapper.WATCHDOG_SECONDS).n())
+            .isEqualTo("900");
+        assertThat(JobItemMapper.fromItem(stored(bounded, JobStatus.RUNNING, "i-0abc")).watchdogSeconds())
+            .isEqualTo(900);
+    }
+
+    /** Items reserved before the bound was recorded carry none, and must still read. */
+    @Test
+    void anItemWithoutAWatchdogBoundReadsItAsAbsent() {
+        assertThat(JobItemMapper.identityAttributes(run())).doesNotContainKey(JobItemMapper.WATCHDOG_SECONDS);
+        assertThat(JobItemMapper.fromItem(stored(run(), JobStatus.RUNNING, null)).watchdogSeconds()).isNull();
+    }
+
+    @Test
     void aMeasurementIsNotAJobItem() {
         var measurement = MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh());
 

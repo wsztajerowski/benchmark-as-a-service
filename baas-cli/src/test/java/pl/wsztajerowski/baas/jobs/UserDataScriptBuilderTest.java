@@ -88,6 +88,12 @@ class UserDataScriptBuilderTest {
         return stdout.lines().toList();
     }
 
+    /** The instance writes only status and instanceId; the watchdog bound is the reservation's. */
+    @Test
+    void theInstanceNeverWritesTheWatchdogBound() {
+        assertThat(script()).doesNotContain(pl.wsztajerowski.baas.model.dynamodb.JobItemMapper.WATCHDOG_SECONDS);
+    }
+
     @Test
     void shipsCloudInitLogToS3BeforeTerminating() {
         String script = script();

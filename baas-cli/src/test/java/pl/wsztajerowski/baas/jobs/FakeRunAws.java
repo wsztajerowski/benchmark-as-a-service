@@ -42,6 +42,8 @@ public final class FakeRunAws implements RunAws {
     public RuntimeException reserveFailure;
     public List<ResultRow> rows = List.of();
     public String userData;
+    /** The item as the reservation wrote it. */
+    public JobItem reserved;
     public String status;
     private int describes;
 
@@ -108,6 +110,7 @@ public final class FakeRunAws implements RunAws {
             if (reserveFailure != null) throw reserveFailure;
             if (status != null) throw new IllegalStateException("ConditionalCheckFailed: already reserved");
             status = JobStatus.LAUNCHING;
+            reserved = job;
         }
 
         @Override
@@ -133,7 +136,7 @@ public final class FakeRunAws implements RunAws {
         @Override
         public Optional<JobItem> read(JobItem job) {
             return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
-                job.createdAt(), job.resultPath(), job.instanceType(), status, null, null, job.tags(), null));
+                job.createdAt(), job.resultPath(), job.instanceType(), status, null, null, job.tags(), null, job.watchdogSeconds()));
         }
 
         @Override

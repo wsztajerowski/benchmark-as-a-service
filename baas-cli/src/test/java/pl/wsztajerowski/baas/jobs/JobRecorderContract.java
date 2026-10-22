@@ -21,7 +21,7 @@ public abstract class JobRecorderContract {
 
     private static final JobItem JOB = new JobItem("20261003T000000000Z-c0ffee00", "p",
         Instant.parse("2026-10-03T00:00:00Z"), "jobs/p/20261003T000000000Z-c0ffee00", "c5.2xlarge",
-        JobStatus.LAUNCHING, null, null, Map.of("project", "p"), null);
+        JobStatus.LAUNCHING, null, null, Map.of("project", "p"), null, 900);
 
     private String status() {
         return recorder().read(JOB).map(JobItem::status).orElse(null);
@@ -68,6 +68,16 @@ public abstract class JobRecorderContract {
         assertThat(recorder().stop(JOB, JobStatus.TIMED_OUT)).isEqualTo(JobRecorder.Write.REFUSED);
         assertThat(recorder().launchFailed(JOB, "InsufficientInstanceCapacity")).isEqualTo(JobRecorder.Write.REFUSED);
         assertThat(status()).isEqualTo(JobStatus.CANCELLED);
+    }
+
+    /** Written once by the reservation; no later write may drop or change it. */
+    @Test
+    void theWatchdogBoundSurvivesEveryLaterWrite() {
+        recorder().reserve(JOB);
+        recorder().launched(JOB, "i-1");
+        recorder().stop(JOB, JobStatus.CANCELLED);
+
+        assertThat(recorder().read(JOB).map(JobItem::watchdogSeconds)).contains(900);
     }
 
     @Test

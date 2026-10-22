@@ -79,7 +79,7 @@ class JobSessionTest {
         @Override
         public Optional<JobItem> read(JobItem job) {
             return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
-                job.createdAt(), job.resultPath(), job.instanceType(), status, instanceId, null, Map.of(), null));
+                job.createdAt(), job.resultPath(), job.instanceType(), status, instanceId, null, Map.of(), null, job.watchdogSeconds()));
         }
 
         @Override
