@@ -2,9 +2,9 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 *(user)* Install the plugin locally (`brew install --cask session-manager-plugin`) and confirm
+- [x] 1.1 *(user)* Install the plugin locally (`brew install --cask session-manager-plugin`) and confirm
   `session-manager-plugin --version` prints a version.
-- [ ] 1.2 *(user applies the IAM; the classifier blocks IAM writes from the agent)* On `baas-development`,
+- [x] 1.2 *(user applies the IAM; the classifier blocks IAM writes from the agent)* On `baas-development`,
   attach the design's runner grants to `<prefix>-role-runner` and the design's operator statements to
   `<prefix>-role-operator` as temporary inline policies, launch a `fake-jmh-benchmarks` job, and open a
   session as the operator role with `aws ssm start-session --target <id>`. Confirm, from the result and
@@ -13,7 +13,9 @@
   delta's "on those sessions" before any implementation if it must be unscoped; (b) `TerminateSession`
   on the caller's own session succeeds under the `ssm:resourceTag/aws:ssmmessages:session-id` condition;
   (c) `StartSession` with no `--document-name` is denied once `SessionDocumentAccessCheck` is in force.
-  Remove both temporary policies and record the outcomes in design.md's Resolved Questions.
+  Remove both temporary policies and record the outcomes in design.md's Resolved Questions. *(Done on
+  the branch's deployed stack instead of temporary policies, by the user's choice; outcomes in
+  design.md.)*
 - [x] 1.3 Confirm the deployer statement's action list against the `AWS::SSM::Document` handler
   permissions (`aws cloudformation describe-type --type RESOURCE --type-name AWS::SSM::Document`,
   `handlers.{create,read,update,delete}.permissions`), and confirm that `UpdateMethod: NewVersion` is
@@ -29,7 +31,7 @@
   actions; `CoreTemplateTest` pins exactly that set (no `ssm:SendCommand`, no `ec2messages`, no managed
   policy) and that `RunnerSecurityGroup`'s ingress, egress and `GroupDescription` are unchanged
   (`theRunnerSecurityGroupDescriptionIsNeverEdited` still passes).
-- [ ] 2.3 Add the operator statements (StartSession on tagged instances and on the document, both with
+- [x] 2.3 Add the operator statements (StartSession on tagged instances and on the document, both with
   `SessionDocumentAccessCheck`; own-session Terminate/Resume; `OpenDataChannel` as task 1.2 found;
   `DescribeInstanceInformation`) to the template and `infra/operator-policy.json`; the sync test and a
   new `CoreTemplateTest` case pin the tag key `baas-deployment` and the document ARN. *(Written in the
