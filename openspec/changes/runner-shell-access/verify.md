@@ -1,7 +1,87 @@
 # Verify — runner-shell-access
 
-*Draft: live evidence gathered during apply. The requirement → code → test → gap table is written by
-task 8.1.*
+Run 2026-10-22 on branch `runner-shell-access` (last code commit `1e3d31a`; `mvn test` for
+`baas-model` + `baas-cli`: 102 + 1001 green, `DynamoDbJobRecorderIT` green on LocalStack;
+`openspec validate --strict` valid).
+
+## Summary
+
+| Dimension | Status |
+|---|---|
+| Completeness | 27/27 tasks (this one included); 21 requirements across 5 capabilities, all implemented |
+| Correctness | 21/21 requirements covered by code; 19 by automated tests, all 21 by the live checks below; 1 divergence (W1) |
+| Coherence | Design followed, with four recorded deviations (D1–D4); 3 warnings, 2 suggestions |
+
+No critical issues. Three warnings to consider. Ready for archive with the noted improvements.
+
+## Requirement → code → test → gap
+
+`C` = `baas-cli/src/main/java/pl/wsztajerowski/baas`, `T` = its `src/test` twin.
+
+| Requirement | Code | Tests | Gap |
+|---|---|---|---|
+| **runner-shell-access** | | | |
+| `jobs connect` opens a shell on a job's live instance | `C/jobs/JobsConnectSubcommand.java:110-139`, `AwsConnectSources.java` | `T/jobs/JobsConnectCommandTest` (`aRunningJob…`, `anUnknownId…`) | Shell as `ssm-user` in `/app`: live only. Instance found by job tag, not item — **W1** |
+| Connecting is decided by the instance, not the status | `JobsConnectSubcommand.java:124-130` | `aJobStillLaunched…`, `aFinishedJob…`, `aJobStillReserving…`, `anInstanceWhoseAgent…` | — |
+| Any job of the deployment, whoever launched it | nothing distinguishes launchers | none specific | A CI-launched job was not connected to live; detached jobs from a separate process were — **S1** |
+| Missing plugin refused before any session | `SessionPlugin.java`, `JobsConnectSubcommand.java:117` | `aMissingPluginIsRefusedBeforeAnyAwsCall`, `SessionPluginTest` | "Other commands do not need it": by construction (`SessionPlugin` used only by `connect`), no test |
+| The AWS CLI is not required | `SessionLauncher.java` | `thePluginGetsTheAwsCliArgumentsAndNoCredential` | Never run on a machine without `aws` |
+| States when the instance ends, never extends it | `WatchdogDeadline.java`, `JobsConnectSubcommand.java:132,159-190` | `theDeadlineIsPrinted…`, `aJobWithoutARecordedBound…`, `anInstanceThatTerminatesEndsTheSession`, `aPluginThatDoesNotLeave…` | — (found live as a bug, fixed in `1e3d31a`) |
+| Sessions leave no record in the job's results | nothing writes one | none | Live: connected jobs' tags equal untouched jobs' (score table below) |
+| **job-tracking** | | | |
+| The reservation records the watchdog bound | `baas-model/…/JobItemMapper.java:29,57,94`, `C/jobs/JobLaunch.java:160` | `JobItemMapperTest`, `RunCommandLaunchTest.theReservationRecordsTheWatchdogBound`, `JobRecorderContract.theWatchdogBoundSurvivesEveryLaterWrite` (fakes + LocalStack), `UserDataScriptBuilderTest.theInstanceNeverWritesTheWatchdogBound` | — |
+| The `jobs` group is subcommands only (+ `connect`) | `C/jobs/JobsCommand.java` | `CommandTreeTest`, `HelpAndHintsTest` | `JobsCommandTest`'s usage assertion names only `list`, `terminate` |
+| `jobs show` reports one job (+ deadline) | `C/jobs/JobsShowSubcommand.java:131-147,204` | `JobsShowCommandTest` (4 new), `Ec2ProvisioningServiceTest.aJobsLiveInstanceCarriesItsLaunchTime` | — |
+| **cli-command-structure** | | | |
+| Nouns with verbs, aliases only for one-noun verbs | `JobsCommand.java` | `CommandTreeTest` (root has no `connect`) | — |
+| **core-stack-provisioning** | | | |
+| The stack owns the runner session document | `infra/cf-template-core.yaml:432` | `CoreTemplateTest.theSessionDocumentIsTheStacksOwnAndLogsNothing` | Created/deleted/recreated live (6.1); an in-place content update never exercised — **W2** |
+| Every runner registers with Session Manager | `cf-template-core.yaml:401` | `theRunnerRegistersForSessionsAndNothingMore`, `theRunnerSecurityGroupStillHasNoIngress` | — (agent Online ~24 s after launch, live) |
+| Operator role permissions (+ sessions) | `cf-template-core.yaml:800`, `infra/operator-policy.json` | `theOperatorStartsSessionsOnlyOnItsOwnRunnersWithItsOwnDocument`, `OperatorPolicyDriftTest` | `OpenDataChannel` resource unexplained — **W3** |
+| Deployer policy covers the full setup path (+ document) | `infra/deployer-policy.json:76` | `DeployerPolicyTest.managesOnlyItsOwnSessionDocument`, budget test, `DeployerPreflightTest` | — (setup create/update/teardown live) |
+| **runner-image-provisioning** | | | |
+| The contract fails a bake that breaks a BaaS workflow (+ agent) | `C/image/RunnerImageRenderer.java:233` | `RunnerImageRendererTest.theContractChecksEverything…` | Passing bake live (1.4.0, twice); a failing bake not exercised — **S2** |
+
+## Warnings
+
+- **W1 — `connect` finds the instance by its job tag, not by the job item's `instanceId`.**
+  `JobsConnectSubcommand.java:124` calls `Ec2ProvisioningService.findLiveInstance(jobId)` — the
+  `baas-job-id` tag within the `baas-deployment`, state pending/running — the same lookup `jobs show`
+  and `jobs terminate` use. The spec says "take the instance identifier it records". The behaviour
+  differs only in a race: a job whose item still reads `launching` while its instance already exists is
+  connected rather than refused. The tag lookup is the better rule (deployment-scoped, works before the
+  `launched` write lands). *Recommendation:* amend the `runner-shell-access` requirement to "find the
+  job's pending or running instance within the deployment", and the *A job still reserving* scenario to
+  "records no instance **and none is running**", before archiving.
+- **W2 — the session document's in-place update is pinned, not exercised.** `UpdateMethod: NewVersion`
+  is pinned by `CoreTemplateTest` and is what the schema says lets a named document change content, but
+  no deployment has yet taken a content change. *Recommendation:* the next change that edits the
+  document checks its setup update live; nothing to do now.
+- **W3 — the `OpenDataChannel` statement works, but not visibly because of its resource.** The resource
+  `session/${aws:userid}-*` looks as if it cannot match a session id `baas-cli-<random>`, yet sessions
+  work. Either AWS authorises the data channel against something else, or this statement grants nothing
+  and another path allows it. *Recommendation:* leave it as designed (no wider than documented); if it
+  matters later, test by removing the statement on `baas-development` and opening a session.
+
+## Suggestions
+
+- **S1** — connect to a CI-launched job from a laptop once, when `e2e-cloud-test.yml` next runs with
+  this CLI, to see the documented use case end to end.
+- **S2** — a failing contract (an extension that disables `amazon-ssm-agent`) was not baked; the check
+  is one line beside checks whose failure path is already exercised by design. Worth trying only if the
+  contract changes shape.
+
+## Deviations from design and tasks
+
+- **D1** — the reservation stores `watchdogSeconds`, not a `terminatesBy` timestamp; the deadline is
+  `LaunchTime + watchdogSeconds` (design, *The reservation stores the watchdog bound*).
+- **D2** — no shared contract suite for `connect`'s AWS port: LocalStack does not emulate Session
+  Manager; `AwsConnectSources` is exercised only live (tasks 4.2 note). SDK types moved out of the
+  command by `SliceBoundaryTest`.
+- **D3** — `connect` watches the instance while the plugin runs (15 s) and ends the session when it
+  goes — added after a live hang; the spec already required it.
+- **D4** — task 1.2 ran on the branch's deployed stack instead of temporary policies; the setup
+  preflight now makes 15 `SimulatePrincipalPolicy` calls (CLAUDE.md and `baas-setup.mmd` updated).
 
 ## Live checks on `baas-development` (2026-10-22, this branch's JAR and stack)
 
