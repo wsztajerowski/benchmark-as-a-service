@@ -340,7 +340,7 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **Setup is a walkthrough that records no progress; each step re-checks AWS.** On a terminal it
   asks and waits at a step the user must do outside `baas`; unattended (`--non-interactive`, a
   redirect, CI) the same steps exit 1 there. A waiting step is re-checked only when the user presses
-  Enter, never on a timer: the permission check is 14 `SimulatePrincipalPolicy` calls and IAM
+  Enter, never on a timer: the permission check is 15 `SimulatePrincipalPolicy` calls and IAM
   throttles that API hard enough to turn the check off. Every prompt has an option that answers it,
   which the repeat-command round-trip test pins. The deployer profile is stored only on evidence it
   can deploy — a met check, or a stack operation that changed something — because a no-op re-run
