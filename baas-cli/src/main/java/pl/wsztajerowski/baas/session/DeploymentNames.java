@@ -77,4 +77,7 @@ public record DeploymentNames(String prefix) {
     public String runnerComponent() { return prefix + "-component-runner"; }
 
     public String runnerRecipe() { return prefix + "-recipe-runner"; }
+
+    /** The Session Manager document {@code baas jobs connect} opens shells with; created by the core stack. */
+    public String sessionDocument() { return prefix + "-session-runner"; }
 }
