@@ -186,8 +186,8 @@ sessions" is amended before implementation rather than quietly widened.
 `SsmSessionDocument`: `ssm:CreateDocument`, `GetDocument`, `DescribeDocument`, `UpdateDocument`,
 `UpdateDocumentDefaultVersion`, `DeleteDocument`, `AddTagsToResource`, `RemoveTagsFromResource`,
 `ListTagsForResource` on
-`arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/${PREFIX}-*` — about 300 characters, inside the ~1050
-left under the 5632 test budget. Unconditioned, so the setup preflight probes it like every other
+`arn:aws:ssm:${REGION}:${ACCOUNT_ID}:document/${PREFIX}-*`. Rendered for `baas-<accountId>` the policy
+is 4936 non-whitespace characters with it, leaving 696 under the 5632 test budget. Unconditioned, so the setup preflight probes it like every other
 statement. Task 1.3 (2026-10-22) checked the list against the `AWS::SSM::Document` handler
 permissions in CloudFormation's published resource schema: it added `RemoveTagsFromResource` (update),
 and left out the handler's `s3:GetObject` and `iam:PassRole`, which serve only `Attachments` and

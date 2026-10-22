@@ -21,19 +21,20 @@
 
 ## 2. Core stack and policies
 
-- [ ] 2.1 Add `<prefix>-session-runner` to `DeploymentNames` and the `AWS::SSM::Document` to
+- [x] 2.1 Add `<prefix>-session-runner` to `DeploymentNames` and the `AWS::SSM::Document` to
   `cf-template-core.yaml` (type `Session`, `UpdateMethod: NewVersion`, bash in `/app`, idle timeout, no
   logging or KMS keys); `CoreTemplateTest` pins its name, type, update method and the absence of
   `s3BucketName`, `cloudWatchLogGroupName` and `kmsKeyId`.
-- [ ] 2.2 Grant `RunnerRole` `ssm:UpdateInstanceInformation` and the four `ssmmessages:*Channel`
+- [x] 2.2 Grant `RunnerRole` `ssm:UpdateInstanceInformation` and the four `ssmmessages:*Channel`
   actions; `CoreTemplateTest` pins exactly that set (no `ssm:SendCommand`, no `ec2messages`, no managed
   policy) and that `RunnerSecurityGroup`'s ingress, egress and `GroupDescription` are unchanged
   (`theRunnerSecurityGroupDescriptionIsNeverEdited` still passes).
 - [ ] 2.3 Add the operator statements (StartSession on tagged instances and on the document, both with
   `SessionDocumentAccessCheck`; own-session Terminate/Resume; `OpenDataChannel` as task 1.2 found;
   `DescribeInstanceInformation`) to the template and `infra/operator-policy.json`; the sync test and a
-  new `CoreTemplateTest` case pin the tag key `baas-deployment` and the document ARN.
-- [ ] 2.4 Add the `SsmSessionDocument` statement to `infra/deployer-policy.json`, scoped to
+  new `CoreTemplateTest` case pin the tag key `baas-deployment` and the document ARN. *(Written in the
+  design's form; left open until task 1.2(a) confirms or replaces the `OpenDataChannel` resource.)*
+- [x] 2.4 Add the `SsmSessionDocument` statement to `infra/deployer-policy.json`, scoped to
   `document/${PREFIX}-*`; `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` still passes, and a
   renderer test asserts the statement names no other document.
 

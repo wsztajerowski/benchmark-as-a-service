@@ -287,6 +287,18 @@ class DeployerPolicyTest {
                 .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
     }
 
+    /** The stack's session document only — never the account-global SSM-SessionManagerRunShell. */
+    @Test
+    void managesOnlyItsOwnSessionDocument() {
+        String resource = (String) statementWithSid("SsmSessionDocument").get("Resource");
+
+        assertThat(resource).isEqualTo("arn:aws:ssm:%s:%s:document/%s-*"
+            .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID, InfraFixtures.PREFIX));
+        assertThat("arn:aws:ssm:%s:%s:document/SSM-SessionManagerRunShell"
+            .formatted(InfraFixtures.REGION, InfraFixtures.ACCOUNT_ID))
+            .doesNotMatch(resource.replace("*", ".*"));
+    }
+
     /**
      * The policy is attached as the customer-managed {@code BaasCliDeployerPolicy-<deployment>},
      * which IAM caps at 6144 non-whitespace characters, to itself. (An inline policy gets 5120,
