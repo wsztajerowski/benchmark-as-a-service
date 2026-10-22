@@ -443,7 +443,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   push is retired instead, or the runners would get the superseded extension. Two
   `baas admin image build` runs started in the same seconds can still both start a build and have
   the second deregister what the first published: deliberately not guarded.
-- **A deployer policy is prefix-exact, so it covers one deployment only.** Each is attached as its
+- **A deployer policy is prefix-exact, so it covers one deployment only** — except its Image
+  Builder statement, whose `<prefix>-*` also matches a deployment named `<prefix>-<more>` (accepted
+  below). Each is attached as its
   own customer-managed `BaasCliDeployerPolicy-<deployment>` (6144 characters each): two rendered
   documents are ~9k non-whitespace characters, far over IAM's 5120-character *inline* budget,
   which is shared across every inline policy on the principal. Setup hands over the one it needs
@@ -680,7 +682,7 @@ CLI fetches the runner JAR from GitHub releases, for one. Not a gap to close pie
 **`deployer-policy.json` is a template, never a policy.** It carries `${ACCOUNT_ID}` / `${REGION}`
 / `${PREFIX}` placeholders and is rendered per caller by `DeployerPolicyRenderer` — every resource
 it names is prefix-exact, so two developers cannot reach each other's stack, bucket or SSM
-parameter. Attaching the file as-is grants nothing. There is no command that prints it:
+parameter (Image Builder alone is `<prefix>-*`; see *Accepted risks*). Attaching the file as-is grants nothing. There is no command that prints it:
 `baas admin deployment setup` renders it for the deployment it is about to create — `--region`
 included, since the region is in seven of its ARNs and conditions — and, when the caller's rights
 fall short, hands it over having created nothing: unattended it prints it on standard output and
@@ -871,6 +873,7 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Area | Position |
 |---|---|
 | Deployer privilege | `iam:CreateRole` also writes the trust policy, so a deployer can recreate `<prefix>-operator-role` trusting itself with `Action:*` and assume it — the deployer policy is effectively account admin. Accepted: internal tool, development environments, deployer is a trusted developer. A permissions boundary was built and removed as not worth the bootstrap cost. Don't reintroduce one without a multi-principal account to justify it. |
+| Deployer Image Builder wildcard | The deployer policy's `ImageBuilder` statement names `…:*/<prefix>-*`, so the deployer of `baas-123456789012` may also update, delete or start the Image Builder resources of a deployment named `baas-123456789012-dev` — never its stack, bucket, table, roles, pointer or AMIs, which are exact (finding X4). Accepted (2026-10-22): it needs one deployment's name to extend another's, the deployer is already effectively account admin (above), and the CLI only composes exact names through `DeploymentNames`. The exact form — seven `*/<prefix>-<suffix>` patterns, ~550 characters, inside the policy budget — was declined as mechanism for a case no deployment has. |
 
 | Relaxed kernel isolation on the runner | The image sets `perf_event_paranoid=1` and `kptr_restrict=0` so async-profiler can walk kernel stacks *and resolve kernel symbols* — without them the profiler is crippled. This weakens kernel isolation on a box that runs arbitrary benchmark JARs. Accepted: single-tenant, throwaway, terminated within `timeout + margin` (300 s by default). Recorded because these were previously AL2023 defaults that nobody chose; now they are a decision. |
 | Runners can terminate each other | `RunnerRole`'s `ec2:TerminateInstances` is scoped by the shared `baas-role=benchmark-runner` tag, not to the calling instance, so code on one runner can kill every concurrent job. Accepted (2026-10-02): only an operator can supply a benchmark JAR, and `OperatorRole` already terminates any runner; the runner role's remaining bucket and table writes are the larger exposure — it can overwrite another job's objects under `jobs/*` (finding S7), though no longer delete them or touch `releases/`. The self-only scoping (`ec2:SourceInstanceARN`) was declined because a subtly wrong condition would silently disable self-termination *and* the watchdog, found only when a paid job hangs. Revisit if more than one team ever shares a deployment. |
