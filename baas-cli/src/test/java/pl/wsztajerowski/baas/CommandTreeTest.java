@@ -27,14 +27,14 @@ class CommandTreeTest {
     void theRootHoldsNounsAndTheTwoAliasesOnly() {
         assertThat(root().getSubcommands().keySet())
             .containsExactlyInAnyOrder("admin", "config", "jobs", "results", "run", "query")
-            .doesNotContain("download", "env");
+            .doesNotContain("download", "env", "connect");
     }
 
     @Test
     void eachNounOffersItsVerbs() {
         var root = root();
         assertThat(root.getSubcommands().get("jobs").getSubcommands().keySet())
-            .contains("run", "list", "show", "diff", "download", "terminate");
+            .contains("run", "list", "show", "diff", "download", "terminate", "connect");
         assertThat(root.getSubcommands().get("results").getSubcommands().keySet())
             .containsExactlyInAnyOrder("query");
         var admin = root.getSubcommands().get("admin").getSubcommands();

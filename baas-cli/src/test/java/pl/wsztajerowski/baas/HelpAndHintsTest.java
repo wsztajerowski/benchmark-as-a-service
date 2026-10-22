@@ -25,7 +25,7 @@ class HelpAndHintsTest {
         assertThat(shortcuts).isNotNegative().isLessThan(operator);
         assertThat(operator).isLessThan(deployer);
         assertThat(help.substring(deployer)).contains("admin deployment", "setup, teardown", "admin image", "build, show");
-        assertThat(help.substring(operator, deployer)).contains("run, list, show, diff, download, terminate");
+        assertThat(help.substring(operator, deployer)).contains("run, list, show, diff, download, terminate, connect");
     }
 
     @Test
