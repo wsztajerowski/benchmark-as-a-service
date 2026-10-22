@@ -24,6 +24,8 @@ baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 
   JAR — `baas run` builds nothing, so this is not a prerequisite of `baas` itself. Building `baas`
   from source (see *Developing BaaS itself* below) does need Maven.
 - Docker, for integration tests and local development of `baas` itself.
+- AWS's **`session-manager-plugin`**, only for `baas jobs connect` (`brew install --cask
+  session-manager-plugin` on macOS; the RPM or DEB package on Linux). Nothing else needs it.
 
 ## Getting started
 
@@ -222,6 +224,7 @@ must come before the `--` separator, or it is passed to the benchmark instead.
 baas jobs list                 # the 20 most recent jobs, every project and status
 baas jobs list --in-flight     # only jobs whose instance is still pending or running
 baas jobs terminate <jobId>    # record it as cancelled and terminate its instance
+baas jobs connect <jobId>      # a shell on its instance while it is pending or running
 ```
 
 A job whose CLI died — killed, a laptop gone to sleep, a dropped network — is still listed, and can
@@ -229,6 +232,12 @@ still be stopped. `list` shows `JOB_ID | PROJECT | STATUS | SOURCE | INSTANCE | 
 STARTED | ELAPSED`, takes `--limit`, `--project`, `--tag key=value` and `--format table|json|csv`, and
 hides nothing by default, CI jobs included. A job whose instance is gone without an outcome shows as
 `vanished`. `terminate` asks first on a terminal; pass `--yes` in scripts.
+
+`connect` opens bash as `ssm-user` in `/app` through Session Manager — no inbound port, no key — on
+any job of the deployment whose instance is still alive, including one CI launched or one stuck before
+`running`. It says first when the watchdog will terminate the instance; the session never keeps it
+alive and ends when the instance does. Nothing about a session is recorded: the job's results look
+exactly as they would without it.
 
 > **Upgrade every `baas` that points at the deployment.** A CLI from before job tracking reads
 > job items as measurements: its `baas results query --all-projects`, project picker and lookups by job id
