@@ -230,6 +230,7 @@ public class RunnerImageRenderer {
                         fail "no java on PATH"
                       fi
                       aws --version >/dev/null 2>&1 || fail "the aws CLI does not run"
+                      systemctl is-enabled amazon-ssm-agent >/dev/null 2>&1 || fail "the amazon-ssm-agent service is not enabled, so baas jobs connect cannot reach runners"
                       test -f '{{ASYNC_PROFILER_LIB}}' || fail "no async-profiler library at {{ASYNC_PROFILER_LIB}}"
                       test -x '{{ASPROF}}' || fail "no asprof at {{ASPROF}}"
                       kernel=$(uname -r | sed 's/\\.x86_64$//')
