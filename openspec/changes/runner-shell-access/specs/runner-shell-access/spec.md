@@ -6,9 +6,11 @@ benchmark while it still runs — through Session Manager, with no inbound port 
 ## ADDED Requirements
 
 ### Requirement: `baas jobs connect` opens a shell on a job's live instance
-`baas jobs connect <jobId>` SHALL resolve the job item by its identifier, take the instance identifier
-it records, and open an interactive shell on that instance through Session Manager, using the
-deployment's own session document. It SHALL run under operator credentials and SHALL return the
+`baas jobs connect <jobId>` SHALL resolve the job item by its identifier, find the job's pending or
+running instance within the deployment — by the job-identifier tag the instance carries from launch, the
+lookup `baas jobs show` uses, not by the instance identifier the item may record — and open an
+interactive shell on that instance through Session Manager, using the deployment's own session
+document. It SHALL run under operator credentials and SHALL return the
 session's exit status when the shell ends. A job id with no job item SHALL fail naming the id, before
 any session is started.
 
@@ -22,8 +24,8 @@ any session is started.
 
 ### Requirement: Connecting is decided by the instance, not by the stored status
 `baas jobs connect` SHALL allow a session whenever the job's instance is `pending` or `running`,
-whatever status the job item holds. When the instance is in any other state, or the job item records
-no instance, it SHALL refuse, naming the job's stored status. When the instance is live but its agent
+whatever status the job item holds, and whether or not the item records the instance yet. When the job
+has no pending or running instance, it SHALL refuse, naming the job's stored status. When the instance is live but its agent
 has not yet registered, it SHALL refuse with a message saying the instance is not reachable yet and
 to retry shortly, and SHALL NOT start a session.
 
@@ -36,8 +38,13 @@ to retry shortly, and SHALL NOT start a session.
 - **THEN** `baas jobs connect` exits non-zero naming the stored status, and starts no session
 
 #### Scenario: A job still reserving has nothing to connect to
-- **WHEN** a job's item reads `launching` and records no instance
+- **WHEN** a job's item reads `launching`, records no instance, and no instance carries its tag
 - **THEN** `baas jobs connect` exits non-zero naming the status `launching`
+
+#### Scenario: A job whose instance the item never recorded can be reached
+- **WHEN** the CLI's `launched` write failed and the instance has not yet recorded `running`, but it is
+  running with an online agent
+- **THEN** `baas jobs connect` finds it by its tag and opens a shell on it
 
 #### Scenario: An instance still booting
 - **WHEN** a job's instance is running but its agent is not yet registered

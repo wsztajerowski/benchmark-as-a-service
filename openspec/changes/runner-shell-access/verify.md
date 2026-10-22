@@ -9,10 +9,10 @@ Run 2026-10-22 on branch `runner-shell-access` (last code commit `1e3d31a`; `mvn
 | Dimension | Status |
 |---|---|
 | Completeness | 27/27 tasks (this one included); 21 requirements across 5 capabilities, all implemented |
-| Correctness | 21/21 requirements covered by code; 19 by automated tests, all 21 by the live checks below; 1 divergence (W1) |
+| Correctness | 21/21 requirements covered by code; 19 by automated tests, all 21 by the live checks below; 1 divergence (W1), resolved by a spec amendment |
 | Coherence | Design followed, with four recorded deviations (D1–D4); 3 warnings, 2 suggestions |
 
-No critical issues. Three warnings to consider. Ready for archive with the noted improvements.
+No critical issues. Two open warnings (W2, W3); W1 resolved. Ready for archive with the noted improvements.
 
 ## Requirement → code → test → gap
 
@@ -21,7 +21,7 @@ No critical issues. Three warnings to consider. Ready for archive with the noted
 | Requirement | Code | Tests | Gap |
 |---|---|---|---|
 | **runner-shell-access** | | | |
-| `jobs connect` opens a shell on a job's live instance | `C/jobs/JobsConnectSubcommand.java:110-139`, `AwsConnectSources.java` | `T/jobs/JobsConnectCommandTest` (`aRunningJob…`, `anUnknownId…`) | Shell as `ssm-user` in `/app`: live only. Instance found by job tag, not item — **W1** |
+| `jobs connect` opens a shell on a job's live instance | `C/jobs/JobsConnectSubcommand.java:110-139`, `AwsConnectSources.java` | `T/jobs/JobsConnectCommandTest` (`aRunningJob…`, `anUnknownId…`) | Shell as `ssm-user` in `/app`: live only. Lookup by job tag (W1, resolved) |
 | Connecting is decided by the instance, not the status | `JobsConnectSubcommand.java:124-130` | `aJobStillLaunched…`, `aFinishedJob…`, `aJobStillReserving…`, `anInstanceWhoseAgent…` | — |
 | Any job of the deployment, whoever launched it | nothing distinguishes launchers | none specific | A CI-launched job was not connected to live; detached jobs from a separate process were — **S1** |
 | Missing plugin refused before any session | `SessionPlugin.java`, `JobsConnectSubcommand.java:117` | `aMissingPluginIsRefusedBeforeAnyAwsCall`, `SessionPluginTest` | "Other commands do not need it": by construction (`SessionPlugin` used only by `connect`), no test |
@@ -44,15 +44,12 @@ No critical issues. Three warnings to consider. Ready for archive with the noted
 
 ## Warnings
 
-- **W1 — `connect` finds the instance by its job tag, not by the job item's `instanceId`.**
-  `JobsConnectSubcommand.java:124` calls `Ec2ProvisioningService.findLiveInstance(jobId)` — the
-  `baas-job-id` tag within the `baas-deployment`, state pending/running — the same lookup `jobs show`
-  and `jobs terminate` use. The spec says "take the instance identifier it records". The behaviour
-  differs only in a race: a job whose item still reads `launching` while its instance already exists is
-  connected rather than refused. The tag lookup is the better rule (deployment-scoped, works before the
-  `launched` write lands). *Recommendation:* amend the `runner-shell-access` requirement to "find the
-  job's pending or running instance within the deployment", and the *A job still reserving* scenario to
-  "records no instance **and none is running**", before archiving.
+- ~~**W1**~~ — *resolved 2026-10-22 by amending the spec, not the code.* `connect` finds the instance by
+  its `baas-job-id` tag within the deployment (`JobsConnectSubcommand.java:124`), while the spec said
+  it took the item's recorded `instanceId`. The two differ when the CLI's best-effort `launched` write
+  failed and the instance has not yet written `running`: by tag the job is reachable, by item it is not
+  — and if the instance hangs before `running`, never. The owner chose the tag lookup; the requirement,
+  its scenarios (one added) and the design now say so.
 - **W2 — the session document's in-place update is pinned, not exercised.** `UpdateMethod: NewVersion`
   is pinned by `CoreTemplateTest` and is what the schema says lets a named document change content, but
   no deployment has yet taken a content change. *Recommendation:* the next change that edits the

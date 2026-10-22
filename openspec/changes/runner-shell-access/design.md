@@ -127,10 +127,14 @@ the ECS Exec ecosystem depends on it; a change breaks `connect` loudly, never si
    exit 1 naming `brew install --cask session-manager-plugin` on macOS and the AWS RPM/DEB package on
    Linux; nothing reaches AWS.
 2. Job item by id through the job-ID index (`JobReference`, as `show`/`terminate` do). Absent: exit 1
-   naming the id. No `instanceId`: exit 1 naming the stored status.
-3. `DescribeInstances` on that id: `pending` or `running` qualifies whatever the stored status says,
-   the same instance-first rule `jobs list` uses to infer `vanished`. Anything else: exit 1 naming
-   the stored status.
+   naming the id.
+3. The job's pending or running instance, found by its `baas-job-id` tag within the
+   `baas-deployment` (`Ec2ProvisioningService.findLiveInstance`, as `jobs show` does) — not by the
+   item's `instanceId`, which the item lacks until the CLI's best-effort `launched` write or the
+   instance's own `running` write lands: a job whose instance hangs before `running` after a failed
+   `launched` write would otherwise be unreachable for its whole life, the case `connect` exists for.
+   The tag is applied in the `RunInstances` call itself. Qualifies whatever the stored status says.
+   None: exit 1 naming the stored status. (Settled 2026-10-22 at verify, W1.)
 4. `ssm:DescribeInstanceInformation` filtered to the instance: not `Online` → exit 1, "not reachable
    yet — the agent registers about a minute after boot; retry shortly". Without this check a booting
    instance surfaces as `TargetNotConnected` from `StartSession`, which reads as a permission problem.
