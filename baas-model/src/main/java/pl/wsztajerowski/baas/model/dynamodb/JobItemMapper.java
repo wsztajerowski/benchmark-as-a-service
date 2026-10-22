@@ -26,6 +26,7 @@ public final class JobItemMapper {
     public static final String ERROR_CODE = "errorCode";
     public static final String TAGS = "tags";
     public static final String UPDATED_AT = "updatedAt";
+    public static final String WATCHDOG_SECONDS = "watchdogSeconds";
 
     private JobItemMapper() {}
 
@@ -53,6 +54,9 @@ public final class JobItemMapper {
         attributes.put(CREATED_AT, s(ResultKeys.formatTimestamp(job.createdAt())));
         putIfPresent(attributes, RESULT_PATH, job.resultPath());
         putIfPresent(attributes, INSTANCE_TYPE, job.instanceType());
+        if (job.watchdogSeconds() != null) {
+            attributes.put(WATCHDOG_SECONDS, AttributeValue.fromN(Integer.toString(job.watchdogSeconds())));
+        }
         if (!job.tags().isEmpty()) {
             attributes.put(TAGS, AttributeValue.fromM(job.tags().entrySet().stream()
                 .collect(Collectors.toMap(Map.Entry::getKey, e -> s(e.getValue())))));
@@ -82,7 +86,13 @@ public final class JobItemMapper {
             str(item, INSTANCE_ID),
             str(item, ERROR_CODE),
             tagsFrom(item),
-            updatedAt == null ? null : Instant.parse(updatedAt));
+            updatedAt == null ? null : Instant.parse(updatedAt),
+            watchdogSecondsFrom(item));
+    }
+
+    private static Integer watchdogSecondsFrom(Map<String, AttributeValue> item) {
+        AttributeValue value = item.get(WATCHDOG_SECONDS);
+        return value == null || value.n() == null ? null : Integer.valueOf(value.n());
     }
 
     private static Map<String, String> tagsFrom(Map<String, AttributeValue> item) {

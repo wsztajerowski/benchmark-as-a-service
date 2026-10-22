@@ -5,6 +5,7 @@ import org.slf4j.LoggerFactory;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.ec2.model.*;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -158,6 +159,14 @@ public class Ec2ProvisioningService implements JobSession.Instances {
      */
     @Override
     public Optional<String> findLive(String jobId) {
+        return findLiveInstance(jobId).map(LiveInstance::instanceId);
+    }
+
+    /** A job's pending or running instance, and when EC2 launched it. */
+    public record LiveInstance(String instanceId, Instant launchTime) {}
+
+    /** {@link #findLive}, keeping the launch time the watchdog's deadline is counted from. */
+    public Optional<LiveInstance> findLiveInstance(String jobId) {
         if (deployment == null) {
             throw new IllegalStateException("A job's instance is looked up within a deployment; none was given.");
         }
@@ -167,7 +176,7 @@ public class Ec2ProvisioningService implements JobSession.Instances {
                 Filter.builder().name("instance-state-name").values("pending", "running").build()))
             .reservations().stream()
             .flatMap(res -> res.instances().stream())
-            .map(Instance::instanceId)
+            .map(i -> new LiveInstance(i.instanceId(), i.launchTime()))
             .findFirst();
     }
 

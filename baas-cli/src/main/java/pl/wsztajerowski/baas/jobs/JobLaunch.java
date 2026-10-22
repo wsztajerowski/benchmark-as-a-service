@@ -157,7 +157,7 @@ public final class JobLaunch {
         // 4. Build user-data. The job item's sort key is built here, once, by ResultKeys, and
         //    handed to the instance verbatim; see UserDataScriptBuilder's JOB_SORT_KEY.
         JobItem job = new JobItem(jobId, request.project(), jobInstant, resultPath, request.instanceType(),
-            JobStatus.LAUNCHING, null, null, request.runnerTags(), null);
+            JobStatus.LAUNCHING, null, null, request.runnerTags(), null, request.watchdogSeconds());
         String userData = new UserDataScriptBuilder().build(
             aws.region(), deployment, job, runnerImage, request, runnerJarS3Key);
         // The script is what actually decides whether a job works; when a runner dies before it

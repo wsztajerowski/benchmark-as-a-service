@@ -85,6 +85,15 @@ class RunCommandLaunchTest {
         assertThat(armedHooks).as("the hook is armed once the job is reserved").isEqualTo(1);
     }
 
+    /** The bound connect and show report from; the same value the watchdog sleeps for. */
+    @Test
+    void theReservationRecordsTheWatchdogBound() throws Exception {
+        int exit = run(args("--detach", "--timeout", "600", "--watchdog-margin", "300"));
+
+        assertThat(exit).isZero();
+        assertThat(aws.reserved.watchdogSeconds()).isEqualTo(900);
+    }
+
     @Test
     void aDetachedJobIsReportedAsLaunched() throws Exception {
         int exit = run(args("--detach"));

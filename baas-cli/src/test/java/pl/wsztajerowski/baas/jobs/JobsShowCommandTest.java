@@ -31,6 +31,9 @@ class JobsShowCommandTest {
          "jvm": {"version": "25.0.4", "vendor": "Amazon.com Inc."}}
         """;
 
+    /** When the live instance in these tests was launched: ten minutes ago. */
+    private static final Instant LAUNCHED = Instant.now().minusSeconds(600);
+
     @TempDir Path dir;
 
     private final List<String> reads = new ArrayList<>();
@@ -53,7 +56,9 @@ class JobsShowCommandTest {
                     Sources sources(BaasConfig config) {
                         return new Sources() {
                             public Optional<JobItem> job(String id) { return Optional.ofNullable(job); }
-                            public Optional<String> liveInstance(String id) { return Optional.ofNullable(live); }
+                            public Optional<Ec2ProvisioningService.LiveInstance> liveInstance(String id) {
+                                return Optional.ofNullable(live).map(i -> new Ec2ProvisioningService.LiveInstance(i, LAUNCHED));
+                            }
                             public Optional<String> manifest(String path) { reads.add(path); return Optional.ofNullable(manifest); }
                             public List<String> keys(String path) { reads.add(path); return keys; }
                             public void close() { }
@@ -72,8 +77,43 @@ class JobsShowCommandTest {
     }
 
     private static JobItem job(String status, String errorCode) {
+        return job(status, errorCode, null);
+    }
+
+    private static JobItem job(String status, String errorCode, Integer watchdogSeconds) {
         return new JobItem(ID, "baas-e2e", Instant.parse("2026-10-06T16:52:41.024Z"), PATH, "c5.2xlarge",
-            status, "i-0a5605864eb16d146", errorCode, Map.of("type", "jmh-with-async", "branch", "main"), null);
+            status, "i-0a5605864eb16d146", errorCode, Map.of("type", "jmh-with-async", "branch", "main"), null,
+            watchdogSeconds);
+    }
+
+    @Test
+    void aRunningJobShowsWhenItsWatchdogTerminatesIt() throws Exception {
+        var run = show(job(JobStatus.RUNNING, null, 3600), "i-0a5605864eb16d146", MANIFEST, List.of());
+
+        assertThat(run.out()).containsPattern("Terminates +about \\d\\d:\\d\\d UTC \\(in (49|50) min\\), or earlier when the job finishes");
+    }
+
+    @Test
+    void aJobReservedBeforeTheBoundWasRecordedShowsNoDeadline() throws Exception {
+        var run = show(job(JobStatus.RUNNING, null), "i-0a5605864eb16d146", MANIFEST, List.of());
+
+        assertThat(run.out()).doesNotContain("Terminates");
+    }
+
+    @Test
+    void aFinishedJobShowsNoDeadline() throws Exception {
+        var run = show(job(JobStatus.COMPLETED, null, 3600), null, MANIFEST, List.of());
+
+        assertThat(run.out()).doesNotContain("Terminates");
+    }
+
+    @Test
+    void jsonCarriesTheWatchdogBound() throws Exception {
+        var run = show(job(JobStatus.RUNNING, null, 900), "i-0a5605864eb16d146", MANIFEST, List.of(), "--format", "json");
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parsed = new ObjectMapper().readValue(run.out(), Map.class);
+        assertThat((Map<String, Object>) parsed.get("job")).containsEntry("watchdogSeconds", 900);
     }
 
     @Test

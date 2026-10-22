@@ -76,7 +76,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
     interface Sources extends AutoCloseable {
         Optional<JobItem> job(String jobId);
 
-        Optional<String> liveInstance(String jobId);
+        Optional<Ec2ProvisioningService.LiveInstance> liveInstance(String jobId);
 
         Optional<String> manifest(String resultPath);
 
@@ -97,7 +97,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
         String bucket = config.bucket();
         return new Sources() {
             public Optional<JobItem> job(String id) { return recorder.find(id); }
-            public Optional<String> liveInstance(String id) { return instances.findLive(id); }
+            public Optional<Ec2ProvisioningService.LiveInstance> liveInstance(String id) { return instances.findLiveInstance(id); }
             public Optional<String> manifest(String path) { return storage.getObjectIfExists(bucket, JobLayout.artifactKey(path, JobLayout.ENVIRONMENT_NAME)); }
             public List<String> keys(String path) { return storage.listKeys(bucket, path + "/"); }
             public void close() {
@@ -128,10 +128,14 @@ public class JobsShowSubcommand implements Callable<Integer> {
             }
             JobItem job = found.get();
             Map<String, String> live = new LinkedHashMap<>();
+            Optional<Instant> deadline = Optional.empty();
             if (!job.isTerminal()) {
-                sources.liveInstance(jobId).ifPresent(instance -> live.put(jobId, instance));
+                Optional<Ec2ProvisioningService.LiveInstance> instance = sources.liveInstance(jobId);
+                instance.ifPresent(i -> live.put(jobId, i.instanceId()));
+                deadline = instance.flatMap(i -> WatchdogDeadline.of(i.launchTime(), job.watchdogSeconds()));
             }
-            JobListing.Row row = JobListing.resolve(job, live, Instant.now());
+            Instant now = Instant.now();
+            JobListing.Row row = JobListing.resolve(job, live, now);
             String path = trimmed(job.resultPath());
             Optional<String> manifestJson = sources.manifest(path);
             Optional<EnvironmentManifest> manifest = manifestJson.map(json -> EnvironmentManifest.parse(jobId, json));
@@ -140,7 +144,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
             if (format.equals("json")) {
                 printJson(row, manifestJson.orElse("null"), artifacts);
             } else {
-                printView(console(), row, manifest, artifacts);
+                printView(console(), row, deadline.map(d -> WatchdogDeadline.describe(d, now)), manifest, artifacts);
             }
         }
         Hints.show(console(), logger, "measurements", Hints.command(config.getPrefix(), "query --job-id " + jobId),
@@ -148,7 +152,8 @@ public class JobsShowSubcommand implements Callable<Integer> {
         return 0;
     }
 
-    void printView(Console out, JobListing.Row row, Optional<EnvironmentManifest> manifest, List<String> artifacts) {
+    void printView(Console out, JobListing.Row row, Optional<String> terminates,
+                   Optional<EnvironmentManifest> manifest, List<String> artifacts) {
         JobItem job = row.job();
         String status = row.status().equals(job.status()) ? row.status()
             : row.status() + " (stored: " + job.status() + ")";
@@ -158,6 +163,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
         line(out, "Created", CREATED.format(job.createdAt()) + " UTC");
         String instance = row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId();
         line(out, "Instance", (instance == null ? "—" : instance) + " · " + orDash(job.instanceType()));
+        terminates.ifPresent(when -> line(out, "Terminates", when + ", or earlier when the job finishes"));
         line(out, "Result path", trimmed(job.resultPath()) + "/");
         if (job.errorCode() != null) {
             line(out, "Error", job.errorCode());
@@ -193,9 +199,10 @@ public class JobsShowSubcommand implements Callable<Integer> {
         String jobJson = "{\"jobId\":%s,\"project\":%s,\"status\":%s,\"storedStatus\":%s,\"instanceId\":%s,"
             .formatted(json(job.jobId()), json(job.project()), json(row.status()), json(job.status()),
                 json(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()))
-            + "\"instanceType\":%s,\"createdAt\":%s,\"resultPath\":%s,\"errorCode\":%s,\"tags\":%s}"
+            + "\"instanceType\":%s,\"createdAt\":%s,\"resultPath\":%s,\"errorCode\":%s,\"watchdogSeconds\":%s,\"tags\":%s}"
             .formatted(json(job.instanceType()), json(job.createdAt().toString()), json(job.resultPath()),
-                json(job.errorCode()), Json.object(job.tags()));
+                json(job.errorCode()), job.watchdogSeconds() == null ? "null" : job.watchdogSeconds().toString(),
+                Json.object(job.tags()));
         String artifactsJson = artifacts.stream().map(JobsShowSubcommand::json)
             .collect(java.util.stream.Collectors.joining(",", "[", "]"));
         out.println("{\"job\":" + jobJson + ",\"environment\":" + environmentJson.strip()

@@ -14,7 +14,7 @@
   on the caller's own session succeeds under the `ssm:resourceTag/aws:ssmmessages:session-id` condition;
   (c) `StartSession` with no `--document-name` is denied once `SessionDocumentAccessCheck` is in force.
   Remove both temporary policies and record the outcomes in design.md's Resolved Questions.
-- [ ] 1.3 Confirm the deployer statement's action list against the `AWS::SSM::Document` handler
+- [x] 1.3 Confirm the deployer statement's action list against the `AWS::SSM::Document` handler
   permissions (`aws cloudformation describe-type --type RESOURCE --type-name AWS::SSM::Document`,
   `handlers.{create,read,update,delete}.permissions`), and confirm that `UpdateMethod: NewVersion` is
   what lets a custom-named document change content in place; update design.md if either differs.
@@ -39,12 +39,12 @@
 
 ## 3. Job item carries the watchdog bound
 
-- [ ] 3.1 Add nullable `watchdogSeconds` to `JobItem` and `JobItemMapper`; mapper tests round-trip it and
+- [x] 3.1 Add nullable `watchdogSeconds` to `JobItem` and `JobItemMapper`; mapper tests round-trip it and
   read an item without it as absent.
-- [ ] 3.2 Write it in `RunCommand`'s reservation from `watchdogBound`, and only there; a test asserts
+- [x] 3.2 Write it in `RunCommand`'s reservation from `watchdogBound`, and only there; a test asserts
   `--timeout 600 --watchdog-margin 300` reserves 900, and that `DynamoDbJobRecorder`'s later updates
   and `UserDataScriptBuilder`'s rendered `job_status` never name the attribute.
-- [ ] 3.3 `baas jobs show`: print "terminates by about HH:MM (in N min)" from `LaunchTime +
+- [x] 3.3 `baas jobs show`: print "terminates by about HH:MM (in N min)" from `LaunchTime +
   watchdogSeconds` while the instance is `pending`/`running`, nothing otherwise, and carry
   `watchdogSeconds` in `--format json`'s `job` member; `JobsShowSubcommandTest` covers running, terminated
   and bound-absent jobs.
