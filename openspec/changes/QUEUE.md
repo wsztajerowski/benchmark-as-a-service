@@ -7,8 +7,9 @@ Set 2026-10-02. A row may be a review walkthrough rather than a change: it has n
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
-| 2 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
+| 1 | [`runner-shell-access`](runner-shell-access/proposal.md) | Exploration 2026-10-21/22 (Session Manager over EC2 Instance Connect; noise spike) | Proposed 2026-10-22 with every decision taken; put first by the user. Branch `runner-shell-access`, worktree `../benchmark-as-a-service-shell-access` | Tasks 1.1–1.2 need the user: `session-manager-plugin` installed, and the temporary IAM applied by hand. Then `/opsx:apply runner-shell-access` |
+| 2 | [`export-before-teardown`](export-before-teardown/brainstorm.md) | U2 | `brainstorm.md`; its dated 2026-10-02 block overrides the text above it | `/opsx:propose export-before-teardown` |
+| 3 | `retire-mongodb` | C4, A13 | Decided 2026-10-04, no change directory yet. Design in `docs/review/open-findings.md` (*retire-mongodb*): service ITs onto LocalStack DynamoDB first, then delete the Mongo adapter, `-m`, Morphia, the driver, the Mongo testcontainer, the compose service and local storage mode; `--results-table` and `--s3-bucket` become required | `/opsx:propose retire-mongodb` |
 
 ## Deferred checks
 
