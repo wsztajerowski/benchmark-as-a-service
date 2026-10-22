@@ -24,7 +24,7 @@ sequenceDiagram
         SC-->>User: setup --region THERE, exit 1, no delete advice
     end
 
-    SC->>AWS: 4. render the deployer policy, SimulatePrincipalPolicy (14 calls, Enter only)
+    SC->>AWS: 4. render the deployer policy, SimulatePrincipalPolicy (15 calls, Enter only)
     alt denied
         SC-->>User: saved to policy.json or printed (unattended - stdout), and the IAM admin's commands
         User->>SC: Enter once attached -- check again
