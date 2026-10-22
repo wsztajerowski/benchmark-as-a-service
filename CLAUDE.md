@@ -90,8 +90,8 @@ the deleted schema breaks nothing.
 
 **Open review findings live in one file, [`docs/review/open-findings.md`](docs/review/open-findings.md)**
 — every finding neither fixed nor accepted, with the designs of the changes queued to close them. IDs
-keep the prefix of the review that filed them (`S`/`A`/`D`/`C`, `P`, `U`, `N`), so citations
-still resolve. Read it before proposing security or architecture work. Closing a finding deletes its
+keep the prefix of the review that filed them (`S`/`A`/`D`/`C`, `P`, `U`, `N`, `X`/`G`/`K`/`T`/`B`),
+so citations still resolve. Read it before proposing security or architecture work. Closing a finding deletes its
 entry; a decision worth keeping becomes an ADR (`docs/adr/0005` collects the declined hardenings).
 Items in *Accepted risks* below are excluded on purpose. The per-module review files and the CLI
 usage analysis were merged into it on 2026-10-05 — `git log -- docs/review docs/analysis`.
