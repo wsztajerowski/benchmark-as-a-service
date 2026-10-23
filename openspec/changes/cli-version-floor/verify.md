@@ -64,3 +64,43 @@ No catch swallows or rewords the refusal, so task 4.5 needs no code change beyon
 
 No commit on the branch carries `BREAKING` in its subject or body (`git log origin/next-release..HEAD`
 scanned); the installer change ships as `feat`, per the proposal.
+
+## 8.1 Full reactor build (2026-10-23)
+
+`mvn -B verify` at 40ac662: `BUILD SUCCESS`; `baas-cli` 1097 unit tests and 51 integration tests,
+no failures, no skips (LocalStack ITs included).
+
+## 8.2 Live, on `baas-development`
+
+JARs stamped as releases by copying `baas-cli/target/baas-cli.jar` and rewriting its manifest
+(`jar --update --manifest`, `Implementation-Version: 9.0.0 / 9.0.1 / 9.0.2`) — scratch only, never
+committed; `--version` reported each. Every command non-interactive, `--deployment baas-development`.
+
+| As | Command | Exit | Standard error (version lines) | Standard output |
+|---|---|---|---|---|
+| 9.0.1 | `admin deployment setup` | 0 | `Deployment baas-development now records baas 9.0.1: CLIs older than 9.0.1 refuse it (none was recorded).` after `Stack baas-development updated successfully.` | — |
+| 9.0.0 | `jobs list` | 1 | `…was set up with baas 9.0.1; this is baas 9.0.0, which is older. Nothing was done.` + the `curl … \| sh` line (`wsztajerowski/benchmark-as-a-service`) | empty |
+| 9.0.0 | `admin deployment setup` | 1 | the same refusal, from the names step, after credentials and permissions; no stack call | empty |
+| 9.0.0 | `admin image show` | 1 | the same refusal | empty |
+| 9.0.0 | `jobs terminate 20000101T000000000Z-00000000 --yes` | 1 | `No job found with id …` — the command ran; no version line (exempt) | empty |
+| 9.0.1 | `jobs list --limit 2` | 0 | none | the table |
+| 9.0.2 | `jobs list --limit 2 --format json` | 0 | `…set up with baas 9.0.1; this is baas 9.0.2. Ask its admin to record the newer release: baas --deployment baas-development admin deployment setup` | valid JSON only |
+| 9.0.2 | `admin image show` | 0 | `…Record it, so older CLIs are refused: baas --deployment baas-development admin deployment setup` | the image report |
+| reactor | `jobs list --limit 2` | 0 | `Unreleased build (baas 0.0.0-semantically-released): not checked against the release deployment baas-development was set up with.` | the table |
+| reactor | `admin deployment setup` | 0 | the unreleased line; `Stack baas-development is already up to date.` | — |
+
+After the reactor setup the stack still recorded `9.0.1`.
+
+## 8.3 Live, on `baas-development` (partial)
+
+- `baas run jmh` from the reactor build (`--runner-jar`, `fake-jmh-benchmarks`,
+  `Incrementing_Synchronized -f 1 -wi 1 -i 1`, project `version-floor-check`,
+  `exclude_from_results=true`): job `20261023T170136685Z-709cd6a3`, c5.2xlarge, `completed`, one
+  `thrpt` row. The unreleased line is the first line of the run, before `Job … results will land
+  under`, which reads as intended.
+- `BaasCliVersion` reset to empty afterwards (direct `update-stack`, every other parameter
+  `UsePreviousValue`), so `baas-development` keeps no fake `9.x` floor.
+- Not yet run: `admin image build` leaving the value unchanged, and teardown. The image build's
+  update shape — the parameter carried with `UsePreviousValue` — was exercised live in 1.1 (step d,
+  "No updates are to be performed", value kept) and is unit-tested
+  (`anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot`).
