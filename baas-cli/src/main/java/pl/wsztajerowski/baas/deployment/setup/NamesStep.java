@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.deployment.setup;
 
+import pl.wsztajerowski.baas.session.CliVersionCheck;
+import pl.wsztajerowski.baas.session.CoreStack;
 import pl.wsztajerowski.baas.session.DeploymentNames;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -26,8 +28,9 @@ final class NamesStep implements SetupStep {
     public Outcome run(SetupContext context) {
         context.stackState = context.aws().stackState(context.deployment);
         if (!context.creating()) {
-            // An existing stack's bucket and table are its own.
-            return SetupStep.next();
+            // An existing stack's bucket and table are its own. What it may refuse is this CLI.
+            return olderThanRecorded(context).<Outcome>map(refusal -> new Outcome.Stop(1, refusal))
+                .orElseGet(SetupStep::next);
         }
         BucketProbe bucket = context.aws().bucket(context.deployment);
         boolean tableExists = context.aws().tableExists(DeploymentNames.of(context.deployment).resultsTable());
@@ -50,6 +53,26 @@ final class NamesStep implements SetupStep {
         return new Outcome.Wait(conflict.get() + (context.interactive()
             ? "\nOnce it is gone, press Enter to check again."
             : ""));
+    }
+
+    /**
+     * Why this CLI may not update the stack: it is older than the release that last set it up, and
+     * its template would revert the newer one's. Read once a run — a permission hand-over resumes
+     * before this step. Not a wait: the process that would wait is the CLI that has to be replaced.
+     */
+    private static Optional<String> olderThanRecorded(SetupContext context) {
+        if (context.recordedCliVersion != null) {
+            return Optional.empty();
+        }
+        context.recordedCliVersion = context.aws().stackParameters(context.deployment)
+            .getOrDefault(CoreStack.PARAM_BAAS_CLI_VERSION, "");
+        try {
+            context.versionCheck.check(context.deployment, CliVersionCheck.Role.SETUP,
+                () -> Optional.of(context.recordedCliVersion));
+            return Optional.empty();
+        } catch (CliVersionCheck.Refused refused) {
+            return Optional.of(refused.getMessage());
+        }
     }
 
     /**

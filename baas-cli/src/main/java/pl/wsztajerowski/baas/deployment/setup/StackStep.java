@@ -8,6 +8,7 @@ import pl.wsztajerowski.baas.aws.CloudFormationService;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Step 8: create or update the stack. Waits first for any operation still running on it — an
@@ -37,6 +38,10 @@ final class StackStep implements SetupStep {
             }
             Map<String, String> parameters = new LinkedHashMap<>();
             parameters.put(CoreStack.PARAM_RESOURCE_NAME_PREFIX, stack);
+            // This release, recorded so that older CLIs refuse the stack. An unreleased build sends
+            // nothing: a create records none, an update carries the deployed value forward.
+            Optional<String> recording = context.versionCheck.recordable();
+            recording.ifPresent(version -> parameters.put(CoreStack.PARAM_BAAS_CLI_VERSION, version));
             if (state.creating()) {
                 if (state == SetupAws.StackState.ROLLED_BACK) {
                     logger.info("Stack {} is in ROLLBACK_COMPLETE: an earlier create failed and left nothing behind. "
@@ -62,6 +67,10 @@ final class StackStep implements SetupStep {
                 parameters.putAll(GitHubStep.forUpdate(context));
                 parameters.putAll(aws.imageParameters(aws.stackParameters(stack)));
                 context.stackChanged = aws.update(stack, parameters);
+                if (context.stackChanged && recording.isPresent()
+                    && !recording.get().equals(context.recordedCliVersion)) {
+                    context.versionCheck.announceRecorded(stack, recording.get(), context.recordedCliVersion);
+                }
             }
         } catch (CloudFormationService.StackOperationException e) {
             if (!e.permissionFailure()) {

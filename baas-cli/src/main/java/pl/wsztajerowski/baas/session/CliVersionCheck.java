@@ -88,6 +88,16 @@ public final class CliVersionCheck {
         return BaasVersion.comparable(running) ? Optional.of(running) : Optional.empty();
     }
 
+    /**
+     * Setup's line after an update that raised the recorded release: from now on, older CLIs that
+     * check are refused. Asks nothing — undoing it is the teammates' `curl`, not a prompt here.
+     */
+    public void announceRecorded(String deployment, String recorded, String previous) {
+        String was = previous == null || previous.isBlank() ? "none was recorded" : "it was " + previous;
+        warnings.accept("Deployment %s now records baas %s: CLIs older than %s refuse it (%s)."
+            .formatted(deployment, recorded, recorded, was));
+    }
+
     private String refusal(String deployment, String recorded) {
         return """
             Deployment %s was set up with baas %s; this is baas %s, which is older. Nothing was done.
