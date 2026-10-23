@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.image;
 
-import pl.wsztajerowski.baas.cli.BaasVersion;
+import pl.wsztajerowski.baas.session.BaasVersion;
 
 import java.util.LinkedHashMap;
 import java.util.List;

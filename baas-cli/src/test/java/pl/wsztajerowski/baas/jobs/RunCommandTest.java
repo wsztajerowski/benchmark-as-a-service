@@ -488,7 +488,7 @@ class RunCommandTest {
 
     @Test
     void theUnreleasedBuildIsWhatTriggersTheRefusalNotTheTypeCheck() {
-        assertThat(pl.wsztajerowski.baas.cli.BaasVersion.isReleased())
+        assertThat(pl.wsztajerowski.baas.session.BaasVersion.isReleased())
             .as("a reactor build always carries the placeholder version")
             .isFalse();
     }

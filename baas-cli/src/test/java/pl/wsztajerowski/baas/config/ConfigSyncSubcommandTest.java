@@ -212,6 +212,10 @@ class ConfigSyncSubcommandTest {
                                 public Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String from) {
                                     return Optional.ofNullable(bucketRegion);
                                 }
+
+                                public Optional<String> recordedCliVersion(AwsCredentialsProvider credentials, String region, String stack) {
+                                    return Optional.empty();
+                                }
                             };
                         }
 

@@ -35,6 +35,7 @@ class OperatorSessionTest {
         String callerArn = USER;
         boolean canAssume = true;
         String bucketRegion = "eu-central-1";
+        String recordedCliVersion = "";
         final List<String> calls = new ArrayList<>();
         final List<AwsCredentialsProvider> sources = new ArrayList<>();
         final AwsCredentialsProvider assumed =
@@ -64,6 +65,12 @@ class OperatorSessionTest {
         public Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String fromRegion) {
             calls.add("HeadBucket " + bucket + " from " + fromRegion);
             return Optional.ofNullable(bucketRegion);
+        }
+
+        @Override
+        public Optional<String> recordedCliVersion(AwsCredentialsProvider credentials, String region, String stack) {
+            calls.add("DescribeStacks " + stack + " in " + region);
+            return Optional.ofNullable(recordedCliVersion);
         }
     }
 
@@ -256,5 +263,72 @@ class OperatorSessionTest {
         assertThatThrownBy(factory::region)
             .isInstanceOf(DeploymentSelectionException.class)
             .hasMessageContaining("No deployment named 'ghost'");
+    }
+
+    // ─── The version check (cli-version-floor) ──────────────────────────────────
+
+    private final List<String> warnings = new ArrayList<>();
+
+    private OperatorSession sessionRunning(String version) {
+        return new OperatorSession(new ConfigService(dir, Optional.empty()), aws, Map.of(),
+            new CliVersionCheck(version, "o/r", warnings::add));
+    }
+
+    @Test
+    void anOlderCliIsRefusedWhenItsFirstClientIsBuilt() throws Exception {
+        TestDeployments.write(dir, "wiktor-dev");
+        aws.recordedCliVersion = "8.2.0";
+        var factory = sessionRunning("8.1.0").factory();
+
+        assertThat(aws.calls).isEmpty();
+        assertThatThrownBy(factory::sts)
+            .isInstanceOf(CliVersionCheck.Refused.class)
+            .hasMessageContaining("baas 8.2.0").hasMessageContaining("baas 8.1.0")
+            .hasMessageContaining("curl -fsSL https://github.com/o/r/releases/latest/download/install.sh | sh");
+        assertThat(aws.calls).last().asString().startsWith("DescribeStacks wiktor-dev in ");
+    }
+
+    @Test
+    void theRecordedVersionIsReadOncePerSession() throws Exception {
+        TestDeployments.write(dir, "wiktor-dev");
+        aws.recordedCliVersion = "8.2.0";
+        var session = sessionRunning("8.2.0");
+
+        try (var a = session.factory().sts(); var b = session.factory().ec2()) {
+            assertThat(aws.calls).filteredOn(call -> call.startsWith("DescribeStacks")).hasSize(1);
+        }
+        assertThat(warnings).isEmpty();
+    }
+
+    @Test
+    void theUncheckedFactoryNeverReadsTheRecordedVersion() throws Exception {
+        TestDeployments.write(dir, "wiktor-dev");
+        aws.recordedCliVersion = "9.0.0";
+
+        try (var sts = sessionRunning("8.1.0").uncheckedFactory().sts()) {
+            assertThat(aws.calls).noneMatch(call -> call.startsWith("DescribeStacks"));
+        }
+    }
+
+    @Test
+    void aNewerCliRunsAndSaysWhomToAsk() throws Exception {
+        TestDeployments.write(dir, "wiktor-dev");
+        aws.recordedCliVersion = "8.1.0";
+
+        try (var sts = sessionRunning("8.2.0").factory().sts()) {
+            assertThat(warnings).singleElement().asString()
+                .contains("8.1.0", "8.2.0", "Ask its admin", "baas --deployment wiktor-dev admin deployment setup");
+        }
+    }
+
+    @Test
+    void anUnreleasedBuildIsNotCheckedAndSaysSo() throws Exception {
+        TestDeployments.write(dir, "wiktor-dev");
+        aws.recordedCliVersion = "8.1.0";
+
+        try (var sts = sessionRunning(BaasVersion.PLACEHOLDER).factory().sts()) {
+            assertThat(aws.calls).noneMatch(call -> call.startsWith("DescribeStacks"));
+            assertThat(warnings).singleElement().asString().startsWith("Unreleased build");
+        }
     }
 }

@@ -3,7 +3,7 @@ package pl.wsztajerowski.baas.deployment;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.aws.AwsErrors;
-import pl.wsztajerowski.baas.cli.BaasVersion;
+import pl.wsztajerowski.baas.session.BaasVersion;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.image.RunnerImageExtension;
