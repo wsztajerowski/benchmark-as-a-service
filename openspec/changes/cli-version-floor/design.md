@@ -62,10 +62,14 @@ resource. A **parameter alone** was the first design and does not work (above).
 
 ### The check runs where credentials are resolved, once per session
 
-`session.CliVersionCheck` (kernel; imports `aws` and `cli` only) takes the CLI's version, the
-deployment name, a role (`OPERATOR` or `ADMIN`, which only picks the hint's wording) and a lookup of
-the recorded version, and returns one of: proceed silently, proceed with the newer hint, proceed with
-the unreleased warning, or throw a `CommandRefusal.refused` (exit 1) carrying the installer command.
+`session.CliVersionCheck` takes the CLI's version, the deployment name, a role (`OPERATOR`,
+`ADMIN` or `SETUP`, which only picks the hint's wording — setup's is none) and a lookup of the
+recorded version, and returns one of: proceed silently, proceed with the newer hint, proceed with the
+unreleased warning, or throw `CliVersionCheck.Refused` carrying the installer command, which
+`BaasApp.reportFailure` exits 1 on without the `-v` hint. Not `CommandRefusal`: `session` may import
+only `aws` (`SliceBoundaryTest`'s kernel order), so it cannot reach `cli` or `console` — which is
+also why `BaasVersion` moved from `cli` into `session`, and why the hint spells
+`baas --deployment <name> …` itself instead of calling `Hints.command`.
 Unreleased or non-`x.y.z` builds return before the lookup, so a reactor build makes no extra call.
 
 - **Operator side:** `OperatorSession.factory()` passes `AwsClientFactory.deferred` a credentials
@@ -75,7 +79,8 @@ Unreleased or non-`x.y.z` builds return before the lookup, so a reactor build ma
   twice. The lookup goes through `OperatorSession.Aws` — a new `recordedCliVersion(credentials,
   region, stack)` — so `OperatorSessionTest`'s fake stands it in like every other call.
 - **Admin side:** `DeployerSession.factory(config)` runs the check **eagerly**, before it returns the
-  factory. Admin commands have no deferred-resolution requirement, and their tests replace the
+  factory, and remembers per deployment that it did — teardown builds a second factory for its
+  export, which would otherwise repeat the call and the hint. Admin commands have no deferred-resolution requirement, and their tests replace the
   `awsFor` function that calls `factory(config)`, so tests still make no call. Eager also means the
   check happens at a command's start, outside any `try`.
 - **Exemption:** `OperatorSession.uncheckedFactory()`, used by `JobsTerminateSubcommand` alone. A
@@ -100,8 +105,8 @@ exit 1 anyway is safe but loses the message, so it is fixed too.
 
 The names step already learns whether the stack is present. When it is, it reads
 `SetupAws.stackParameters` — the same read the GitHub step makes — and runs the same
-`CliVersionCheck` with a lookup over that map. An older CLI ends the walkthrough with
-`Outcome.Stop(1, …)`: not a `Wait`, because the process that would wait is the CLI that has to be
+`CliVersionCheck` with a lookup over that map, once a run (a permission hand-over resumes before the
+names step). An older CLI ends the walkthrough with `Outcome.Stop(1, …)`: not a `Wait`, because the process that would wait is the CLI that has to be
 replaced. The newer hint is not printed by setup — setup is about to record the newer version, and
 announces it afterwards. The recorded value is kept on `SetupContext` for the stack step.
 
@@ -116,7 +121,7 @@ the names step does not already have.
 
 ### The comparison lives in the kernel and the image slice delegates to it
 
-`BaasVersion.compare(a, b)` — numeric, field by field — and `BaasVersion.comparable(v)` (`x.y.z`
+`BaasVersion.compare(a, b)` (now in `session`, above) — numeric, field by field — and `BaasVersion.comparable(v)` (`x.y.z`
 only). `RunnerImageParameters.compareVersions` becomes a call to it, so one ordering governs both
 the base-version refusal and the CLI one. A released version that is not `x.y.z` — semantic-release
 pre-release channels, which this repository does not configure — counts as unreleased: never
