@@ -87,10 +87,10 @@
       - a bundle without a manifest;
       - an unknown `schemaVersion`;
       - a part the bundle lacks;
-      - a target whose table or bucket is missing (naming setup);
-      - a run with no terminal.
-- [x] 6.2 Print the source and the target (deployment, account, region) with the parts and counts, and
-      require the target name typed back.
+      - a target whose table or bucket is missing (naming setup).
+- [x] 6.2 Print the source and the target (deployment, account, region) with the parts and counts.
+      *Changed 2026-10-23, after the live check: the typed-name confirmation and the terminal
+      requirement were dropped (user decision). Import asks nothing.*
 - [x] 6.3 Load the parts:
       - `results`: one `PutItem` per line with `attribute_not_exists(pk)`.
       - `recordings`: one `PutObject` per file with `If-None-Match: *`, never under `releases/`.
