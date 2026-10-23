@@ -31,9 +31,9 @@
 
 ## 6. Installer
 
-- [ ] 6.1 Remove `--update`, `store_installer`, `installed_version`, `latest_tag`, `version_newer`, the two test seams and the usage line from `scripts/install.sh`; keep `--uninstall` deleting a stored `install.sh`; replace the "re-fetch it" line with the curl command; `sh -n` and `shellcheck` (if installed) pass
-- [ ] 6.2 Delete `scripts/tests/version-compare-probe.sh`; in `install-test.sh` drop the update cases and the stored-installer assertion, and add cases for `--update` being refused, nothing stored beside the jar, and `--uninstall` removing a planted earlier-release `install.sh`; `sh scripts/tests/install-test.sh` passes locally
-- [ ] 6.3 Update `install-test.yml`'s comment that ties the `baas --version` step to `--update`; the workflow still parses (`actionlint` if installed)
+- [x] 6.1 Remove `--update`, `store_installer`, `installed_version`, `latest_tag`, `version_newer`, the two test seams and the usage line from `scripts/install.sh`; keep `--uninstall` deleting a stored `install.sh`; replace the "re-fetch it" line with the curl command; `sh -n` and `shellcheck` (if installed) pass
+- [x] 6.2 Delete `scripts/tests/version-compare-probe.sh`; in `install-test.sh` drop the update cases and the stored-installer assertion, and add cases for `--update` being refused, nothing stored beside the jar, and `--uninstall` removing a planted earlier-release `install.sh`; `sh scripts/tests/install-test.sh` passes locally
+- [x] 6.3 Update `install-test.yml`'s comment that ties the `baas --version` step to `--update`; the workflow still parses (`actionlint` if installed)
 
 ## 7. Docs
 
