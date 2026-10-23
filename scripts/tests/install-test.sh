@@ -53,9 +53,6 @@ FIXTURE=$(mktemp -d)
 trap 'rm -rf "$FIXTURE"' EXIT
 mkdir -p "$FIXTURE/releases/download/v9.9.9-test"
 printf 'not-really-a-jar' > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar"
-# store_installer fetches this on every successful install, not only in the case that asserts on
-# it, so the fixture needs it from the start.
-cp "$INSTALLER" "$FIXTURE/releases/download/v9.9.9-test/install.sh"
 if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
         > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
@@ -96,18 +93,22 @@ sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
 if cmp -s "$SANDBOX/good-baas-cli.jar" "$BAAS_SHARE/baas-cli.jar"; then pass
 else fail "pre-existing jar was modified or removed by the failed re-verify"; fi
 
-# --- prerequisites, PATH reporting and the stored installer -------------------
+# --- prerequisites, PATH reporting, and nothing stored beside the jar --------
 
-run_case "stores an installer alongside the jar"
+run_case "stores nothing but the jar in the share directory"
 rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
-cp "$INSTALLER" "$FIXTURE/releases/download/v9.9.9-test/install.sh"
 # restore the good checksum clobbered by the previous case
 sha256_fixture=$(command -v sha256sum >/dev/null 2>&1 \
     && sha256sum "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1 \
     || shasum -a 256 "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar" | cut -d' ' -f1)
 printf '%s' "$sha256_fixture" > "$FIXTURE/releases/download/v9.9.9-test/baas-cli.jar.sha256"
 sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
-if [ -f "$BAAS_SHARE/install.sh" ]; then pass; else fail "no stored installer"; fi
+stored=$(ls "$BAAS_SHARE" | tr '\n' ' ')
+assert_eq "$stored" "$JAR_NAME "
+
+run_case "says how to update, by the newest release's installer"
+out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1)
+assert_contains "$out" "releases/latest/download/install.sh | sh"
 
 run_case "creates only its own directories, never a configuration directory"
 created=$(ls "$SANDBOX" | sort | tr '\n' ' ')
@@ -233,21 +234,14 @@ else
 fi
 unset FAKE_CURL_COUNT_FILE
 
-# --- version comparison and --update --------------------------------------
+# --- there is no update mode ------------------------------------------------
 
-run_case "orders versions numerically, not lexically"
-if sh scripts/tests/version-compare-probe.sh 3.10.0 3.9.0 \
-   && ! sh scripts/tests/version-compare-probe.sh 3.9.0 3.10.0 \
-   && ! sh scripts/tests/version-compare-probe.sh 2.1.0 2.1.0; then pass
-else fail "3.10.0 should outrank 3.9.0, and equal versions are not newer"; fi
-
-run_case "update reports current and downloads nothing"
-out=$(BAAS_INSTALLED_VERSION=9.9.9-test BAAS_LATEST_TAG=9.9.9-test sh "$INSTALLER" --update 2>&1)
-assert_contains "$out" "current"
-
-run_case "update refuses to downgrade"
-out=$(BAAS_INSTALLED_VERSION=9.9.9-test BAAS_LATEST_TAG=0.0.1 sh "$INSTALLER" --update 2>&1)
-assert_contains "$out" "newer than"
+run_case "--update is refused as an unknown option, and installs nothing"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+out=$(sh "$INSTALLER" --update 2>&1); rc=$?
+if [ "$rc" -eq 0 ]; then fail "expected --update to be refused, got success: $out"
+elif [ -e "$BAAS_BIN/baas" ] || [ -d "$BAAS_SHARE" ]; then fail "--update created files: $out"
+else assert_contains "$out" "Unknown option: --update"; fi
 
 # --- uninstall ------------------------------------------------------------
 
@@ -280,6 +274,17 @@ else
     remaining=$(ls "$SANDBOX" | sort | tr '\n' ' ')
     assert_eq "$remaining" "bin dot-baas share "
 fi
+
+# Earlier releases stored their installer beside the jar for --update. Uninstalling an
+# installation one of them made must still leave nothing of it behind.
+run_case "uninstall removes an installer copy an earlier release stored"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+printf '#!/bin/sh\n' > "$BAAS_SHARE/install.sh"
+sh "$INSTALLER" --uninstall >/dev/null 2>&1
+if [ -e "$BAAS_SHARE/install.sh" ]; then fail "the earlier release's stored installer survived"
+elif [ -d "$BAAS_SHARE" ]; then fail "share directory not removed: $BAAS_SHARE"
+else pass; fi
 
 # This is the case that pins rmdir vs. rm -rf on $BAAS_SHARE directly — the single highest-risk
 # line in the uninstall arm, and none of the cases above actually distinguish the two: they never
@@ -381,64 +386,6 @@ else
     # check_prerequisites' only git-related output; a mutation that dropped the warning, or made
     # it fatal, is caught either by this text going missing or by rc becoming non-zero above.
     assert_contains "$out" "git not found. baas run derives project, commit and branch from git"
-fi
-
-# --- update hands off to the newer release's own installer (W4e) -----------
-# --update (install.sh:292) must never install the newer artifact itself; it execs the newer
-# release's own installer. A marker installer stands in for that here: it never touches
-# BAAS_SHARE/BAAS_BIN itself, so a calling script that fell back to installing directly would have
-# to fetch a real baas-cli.jar for the marker version — which does not exist in the fixture — and
-# fail loudly instead of quietly succeeding.
-
-MARKER_VERSION=42.0.0
-mkdir -p "$FIXTURE/releases/download/v$MARKER_VERSION"
-
-run_case "update hands off to the newer release's own installer"
-rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
-MARKER_SENTINEL="$SANDBOX/marker-ran"
-cat > "$FIXTURE/releases/download/v$MARKER_VERSION/install.sh" <<MARKEREOF
-#!/bin/sh
-printf 'marker-installer-ran\n' > '$MARKER_SENTINEL'
-MARKEREOF
-chmod +x "$FIXTURE/releases/download/v$MARKER_VERSION/install.sh"
-out=$(BAAS_INSTALLED_VERSION=1.0.0 BAAS_LATEST_TAG="$MARKER_VERSION" sh "$INSTALLER" --update 2>&1); rc=$?
-if [ "$rc" -ne 0 ]; then fail "expected the hand-off to succeed, got: $out"
-elif [ ! -f "$MARKER_SENTINEL" ]; then fail "the newer release's own installer never ran: $out"
-elif [ -f "$BAAS_SHARE/$JAR_NAME" ]; then
-    fail "the calling installer installed the jar itself instead of handing off"
-elif [ -e "$BAAS_BIN/baas" ]; then
-    fail "the calling installer wrote a shim itself instead of handing off"
-else
-    assert_contains "$out" "Updating baas 1.0.0 -> $MARKER_VERSION"
-fi
-rm -rf "$FIXTURE/releases/download/v$MARKER_VERSION"
-
-# --- an unreadable installed version stops the update (W4f) -----------------
-
-run_case "update with no installed shim reports it and changes nothing"
-rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
-out=$(sh "$INSTALLER" --update 2>&1); rc=$?
-if [ "$rc" -eq 0 ]; then fail "expected update to fail with no installed shim, got success: $out"
-elif [ -e "$BAAS_BIN/baas" ] || [ -d "$BAAS_SHARE" ]; then
-    fail "update created files despite finding nothing installed"
-else
-    assert_contains "$out" "No installed baas found at $BAAS_BIN/baas"
-fi
-
-run_case "update with an unreadable installed version reports it and changes nothing"
-rm -rf "$SANDBOX"; mkdir -p "$BAAS_BIN"
-cat > "$BAAS_BIN/baas" <<'FAKESHIM'
-#!/bin/sh
-exit 1
-FAKESHIM
-chmod +x "$BAAS_BIN/baas"
-out=$(sh "$INSTALLER" --update 2>&1); rc=$?
-if [ "$rc" -eq 0 ]; then
-    fail "expected update to fail when the version cannot be read, got success: $out"
-elif [ -d "$BAAS_SHARE" ]; then
-    fail "update created $BAAS_SHARE despite an unreadable installed version"
-else
-    assert_contains "$out" "Could not read the installed version. Nothing was changed."
 fi
 
 printf '\n%s case(s), %s failure(s)\n' "$CASES" "$FAILURES"

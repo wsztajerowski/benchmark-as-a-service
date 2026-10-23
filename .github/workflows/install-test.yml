@@ -49,7 +49,6 @@ jobs:
           mvn --batch-mode -DskipTests package
           mkdir -p fixture/releases/download/v9.9.9-ci
           cp baas-cli/target/baas-cli.jar fixture/releases/download/v9.9.9-ci/
-          cp scripts/install.sh           fixture/releases/download/v9.9.9-ci/
           if command -v sha256sum >/dev/null 2>&1; then
             sha256sum baas-cli/target/baas-cli.jar | cut -d' ' -f1 \
               > fixture/releases/download/v9.9.9-ci/baas-cli.jar.sha256
@@ -66,8 +65,9 @@ jobs:
           BAAS_BASE_URL: file://${{ github.workspace }}/fixture
         run: sh scripts/install.sh --version 9.9.9-ci
 
-      # The single assertion covering the failure class this change exists to prevent, and the one
-      # that pins the `baas <version>` output format --update parses.
+      # The single assertion covering the failure class this change exists to prevent: the shim
+      # runs the jar that was installed, and the jar reports the version it was built as — the
+      # version the CLI compares against the one its deployment records.
       - name: The installed CLI reports the fixture version
         run: |
           export PATH="$HOME/.local/bin:$PATH"
