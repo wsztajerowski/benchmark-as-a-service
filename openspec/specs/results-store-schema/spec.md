@@ -237,24 +237,7 @@ index items or key encoding.
 
 #### Scenario: The interface is storage-neutral
 - **WHEN** the store interface is inspected
-- **THEN** its signatures name domain types only, with no DynamoDB or MongoDB type in any position
-
-### Requirement: MongoDB remains available as a runner-local adapter
-`benchmark-runner` SHALL retain a MongoDB-backed implementation of the store port, selectable when the
-JAR is used standalone. `baas-cli` SHALL NOT offer, reference or depend on MongoDB, and `baas run` SHALL
-NOT be able to select it.
-
-#### Scenario: Standalone runner writes to MongoDB
-- **WHEN** `benchmark-runner.jar` is invoked directly with a MongoDB connection string
-- **THEN** the benchmark runs and its measurements are written to that MongoDB
-
-#### Scenario: The CLI has no MongoDB surface
-- **WHEN** `baas` and its subcommands are inspected for options and dependencies
-- **THEN** no MongoDB option, connection string or driver dependency is present
-
-#### Scenario: Both adapters satisfy the same contract
-- **WHEN** the store contract test suite is run against the DynamoDB adapter and the MongoDB adapter
-- **THEN** both pass it
+- **THEN** its signatures name domain types only, with no DynamoDB type in any position
 
 ### Requirement: `project` is supplied explicitly or derived from the benchmark JAR's repository
 `baas run` SHALL take `project` from `--project`, or — only when `git.resolveProject` is enabled — from
@@ -276,18 +259,41 @@ runner SHALL reject an unresolved `project` outright rather than substituting a 
 - **THEN** it exits non-zero rather than storing a measurement under a placeholder project
 
 ### Requirement: Every job names a results store
-The runner SHALL require exactly one of `--results-table` or `--mongo-connection-string`, and SHALL fail
-before executing any benchmark when neither or both are given. No option SHALL select a store that
-discards measurements. Local runner invocations SHALL name a table on a local endpoint such as LocalStack.
+The runner SHALL require `--results-table`, and SHALL fail before executing any benchmark when it is
+not given. It SHALL offer no other results store, and no option SHALL select a store that discards
+measurements. Local runner invocations SHALL name a table on a local endpoint such as LocalStack.
 
 #### Scenario: Missing configuration fails fast
-- **WHEN** the runner is invoked with no table name and no connection string
-- **THEN** it exits non-zero before running any benchmark, naming the missing configuration
+- **WHEN** the runner is invoked with no table name
+- **THEN** it exits non-zero before running any benchmark, naming the missing option
 
 #### Scenario: The discard option is gone
 - **WHEN** the runner is invoked with `--no-database`
 - **THEN** it rejects the option as unknown and runs no benchmark
 
+#### Scenario: The MongoDB option is gone
+- **WHEN** the runner is invoked with `--mongo-connection-string` or `-m`
+- **THEN** it rejects the option as unknown and runs no benchmark, and a `MONGO_CONNECTION_STRING`
+  environment variable has no effect on any run
+
 #### Scenario: A local job names a local table
 - **WHEN** a benchmark is run locally with `--results-table` and a DynamoDB endpoint override
 - **THEN** its measurements are written to that local table
+
+### Requirement: Every job names an artifact bucket
+The runner SHALL require `--s3-bucket`, and SHALL fail before executing any benchmark when it is not
+given. It SHALL NOT write a job's artifacts to the local file system in place of the bucket. Local
+runner invocations SHALL name a bucket on a local endpoint such as LocalStack.
+
+#### Scenario: Missing bucket fails fast
+- **WHEN** the runner is invoked with no `--s3-bucket`
+- **THEN** it exits non-zero before running any benchmark, naming the missing option
+
+#### Scenario: A local job names a local bucket
+- **WHEN** a benchmark is run locally with `--s3-bucket` and an S3 endpoint override
+- **THEN** its process output, result JSON and profiler artifacts are written to that local bucket
+
+#### Scenario: Binary artifacts upload like any other
+- **WHEN** a job produces a binary artifact such as a JFR recording or a compressed JCStress result
+- **THEN** it is uploaded to the job's prefix and the job's outcome does not depend on the
+  artifact being readable as text
