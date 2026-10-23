@@ -103,7 +103,7 @@
       - an unknown part exits 2 before any AWS call;
       - a re-run skips everything;
       - a target item is never replaced;
-      - a cross-deployment import prompts with both names;
+      - a cross-deployment import names both deployments before writing;
       - every refusal in 6.1;
       - all three extension cases.
 - [x] 6.6 An IT on LocalStack: create a table and a bucket, seed them with real-shaped items (a
@@ -174,10 +174,10 @@
 - [x] 9.6 Run the import again and confirm everything is reported as skipped.
 - [ ] 9.6a Import the same bundle into a second set-up deployment with `--parts results`, and confirm
       the table is loaded while the bucket holds no `jobs/` key and no extension command is printed.
-- [ ] 9.7 Record each result in `verify.md`.
+- [x] 9.7 Record each result in `verify.md`.
 
 ## 10. Verify
 
-- [ ] 10.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory: a
+- [x] 10.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory: a
       requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any
       deviation from the design or tasks.
