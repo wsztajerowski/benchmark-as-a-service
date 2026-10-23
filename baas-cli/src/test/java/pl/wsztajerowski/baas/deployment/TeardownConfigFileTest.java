@@ -52,6 +52,7 @@ class TeardownConfigFileTest {
     /** Runs teardown against a fake AWS: exit 0 completes it, 1 stops it at a live runner. */
     private int teardown(int awsExit, String... global) {
         var aws = new FakeTeardownAws();
+        String deployment = global.length == 2 ? global[1] : TestDeployments.DEFAULT;
         if (awsExit != 0) {
             aws.live = java.util.List.of(new pl.wsztajerowski.baas.jobs.Ec2ProvisioningService.LiveRunner("i-1", "running", null));
         }
@@ -63,14 +64,18 @@ class TeardownConfigFileTest {
                 if (cls == TeardownCommand.class) {
                     var command = new TeardownCommand();
                     command.awsFor = config -> aws;
+                    command.console = pl.wsztajerowski.baas.console.Console.withFlags(
+                        new PrintWriter(new StringWriter()), true, false);
+                    // Decline the export, then type the deployment's name.
+                    command.answerReader = new ScriptedAnswers("n", deployment);
                     return (K) command;
                 }
                 return defaults.create(cls);
             }
         };
-        String[] args = new String[global.length + 4];
+        String[] args = new String[global.length + 3];
         System.arraycopy(global, 0, args, 0, global.length);
-        System.arraycopy(new String[]{"admin", "deployment", "teardown", "--yes"}, 0, args, global.length, 4);
+        System.arraycopy(new String[]{"admin", "deployment", "teardown"}, 0, args, global.length, 3);
         return BaasApp.commandLine(new BaasApp(dir), factory)
             .setOut(new PrintWriter(new StringWriter()))
             .setErr(new PrintWriter(new StringWriter()))
