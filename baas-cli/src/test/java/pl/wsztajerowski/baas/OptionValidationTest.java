@@ -76,6 +76,25 @@ class OptionValidationTest {
         assertThat(captured.err()).contains("--tag project").doesNotContain("Benchmark JAR not found");
     }
 
+    /** -m was the runner's MongoDB option and is now no option at all; the refusal names --mode. */
+    @Test
+    void aShortModeFlagIsRefusedNamingTheLongOne() throws Exception {
+        var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
+            "--benchmark-jar", "/nonexistent.jar", "--project", "p", "jcstress", "--", "-m", "sanity");
+
+        assertThat(captured.exitCode()).isEqualTo(2);
+        assertThat(captured.err()).contains("--mode").doesNotContain("Benchmark JAR not found");
+    }
+
+    /** The removed MongoDB option is no longer the CLI's to refuse: nothing types it. */
+    @Test
+    void theRemovedMongoOptionIsNotRefusedByTheCli() throws Exception {
+        var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
+            "--benchmark-jar", "/nonexistent.jar", "--project", "p", "jmh", "--", "--mongo-connection-string", "x");
+
+        assertThat(captured.err()).doesNotContain("after --").contains("Benchmark JAR not found");
+    }
+
     /** U26: `timeout 0` disables the process timeout on the instance. */
     @Test
     void aZeroTimeoutIsRefusedOnRun() throws Exception {

@@ -254,6 +254,10 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         if (!VALID_TYPES.contains(benchmarkType)) {
             throw CommandRefusal.usage("Unknown benchmark type '" + benchmarkType + "'. Valid: " + VALID_TYPES);
         }
+        if (benchmarkParams.contains(JCSTRESS_MODE_MISTYPED)) {
+            throw CommandRefusal.usage("-m after -- is not a runner option. A JCStress mode is --mode: "
+                + "baas run jcstress -- --mode sanity\nNothing was launched.");
+        }
         Optional<String> setByTheCli = RunnerArgs.firstSetByTheCli(benchmarkParams);
         if (setByTheCli.isPresent()) {
             throw CommandRefusal.usage(setByTheCli.get() + " after -- names a runner option baas run sets itself. "
@@ -442,6 +446,13 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
 
     /**
+     * JCStress's own mode flag, which the runner deliberately does not accept: it was the MongoDB
+     * connection string, and retire-mongodb left it unassigned rather than make it an alias. Passed
+     * through, it would fail the job on the instance, after a paid boot, so it is refused here.
+     */
+    static final String JCSTRESS_MODE_MISTYPED = "-m";
+
+    /**
      * What to type instead of a runner option the benchmark's arguments may not name. The arguments
      * reach the runner after the CLI's own options, and picocli keeps the last value, so each of
      * these would silently override what {@code baas run} set, or fail the job on the instance.
@@ -450,8 +461,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         return switch (option) {
             case RunnerArgs.TAG -> "Pass tags to baas run, before --: baas run --tag key=value ...";
             case RunnerArgs.PROJECT -> "Pass the project to baas run, before --: baas run --project <name> ...";
-            case RunnerArgs.MONGO_CONNECTION_STRING_SHORT, RunnerArgs.MONGO_CONNECTION_STRING ->
-                "BaaS stores results in its deployment's table. A JCStress mode is --mode, not -m.";
             default -> "It names the job's own deployment resources, which no benchmark argument may change.";
         };
     }
