@@ -77,9 +77,12 @@ public class JmhWithProfilerSubcommandService {
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
         uploadProfilerArtifacts();
 
-        List<StoredMeasurement> measurements = JmhRunResults.uploadJsonAndMap(
-            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
-            this::profilerOutputPathFor);
+        Path resultJson = jmhOptions.outputOptions().machineReadableOutput();
+        // Uploaded before the store write, so a job that fails at the store keeps its result.
+        Path resultJsonKey = JmhRunResults.resultJsonKey(commonOptions);
+        logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
+        storageService.saveFile(resultJsonKey, resultJson);
+        List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson, this::profilerOutputPathFor);
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);
