@@ -10,14 +10,13 @@ public interface StorageService {
     void saveFile(Path storagePath, Path localPath);
 
     /**
-     * S3 when a bucket is named, the local file system otherwise — a runner invoked without
-     * {@code --s3-bucket} keeps its artifacts on disk.
+     * The job's bucket. There is no local-disk mode: {@code --s3-bucket} is required, so a runner
+     * cannot quietly keep a job's artifacts on an instance about to terminate.
      */
     static StorageService of(S3Options s3Options) {
         String bucketName = s3Options.s3BucketName();
         if (bucketName == null || bucketName.isBlank()) {
-            LOGGER.info("Using Local storage service");
-            return new LocalStorageService();
+            throw new IllegalStateException("No artifact bucket configured. Pass --s3-bucket.");
         }
         S3Client client = Optional.ofNullable(s3Options.s3ServiceEndpoint())
             .map(uri -> S3Client.builder().endpointOverride(uri).build())
