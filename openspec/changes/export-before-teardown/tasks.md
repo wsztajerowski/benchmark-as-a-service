@@ -157,7 +157,7 @@
       export --parts results` under the old one and confirm the `dynamodb:Scan` and setup hint.
 - [x] 9.2 Re-run `admin deployment setup` for `baas-development`, attach the handed-over policy
       customer-managed, then check that setup's preflight passes.
-- [ ] 9.3 Run `admin image build` with an extension, then a `fake-jmh-benchmarks` job
+- [x] 9.3 Run `admin image build` with an extension, then a `fake-jmh-benchmarks` job
       (`jmh-with-async`, so there are profiler artifacts).
 - [ ] 9.4 Teardown at a terminal: accept the export offer into a named directory. Confirm that the
       manifest's counts match `baas results query --format json | jq length`, that
