@@ -49,6 +49,22 @@ template's placeholder defaults stand would register a no-op component at a vers
 Builder would then reject the real one at that same version — and on update only those the stack
 lacks, carrying the rest forward, so a plain setup never reverts an image or drops an extension.
 
+One more parameter, `BaasCliVersion`, records the release of the CLI that last ran
+`baas admin deployment setup` on the stack — empty, or `x.y.z` (`AllowedPattern`). Every command
+that reaches AWS reads it and refuses a CLI older than it, so an older setup can never submit its
+older template over a newer one. Only setup writes it, and only from a released build; an image
+build carries it forward. It creates no resource, but a conditional output, also `BaasCliVersion`,
+references it: CloudFormation answers "No updates are to be performed" to a change of a parameter
+nothing references, and stores nothing. The output is not read — delete it and every later raise
+silently fails to record.
+
+Upgrading a deployment is therefore two steps, in this order: update the CLI
+(`curl -fsSL …/releases/latest/download/install.sh | sh`), then run `baas admin deployment setup`,
+which applies the new template and announces that CLIs older than the new release now refuse the
+deployment. Lowering the recorded release is deliberately not a command — setup from an older CLI
+is itself refused. If it is ever needed, change the parameter in the CloudFormation console
+(Update stack → use current template).
+
 Deploying this template **by hand** with `aws cloudformation deploy` leaves those parameters at
 their defaults, which registers the placeholder components. Use `baas admin deployment setup` unless you are
 deliberately deploying without an image and intend to pass the parameters yourself; the next

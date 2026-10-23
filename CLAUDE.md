@@ -474,9 +474,25 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **The installer installs released artifacts only, and the repository copy refuses.**
   `scripts/install.sh` carries `BAAS_VERSION_DEFAULT`, rewritten at release time by `release.yml`'s
   `prepareCmd` and never committed back. A checkout copy holds the placeholder and exits naming
-  `--version`, the same no-fallback stance `RunCommand` takes on an unreleased build. `--update`
-  never installs anything itself: it resolves the newest release and re-executes *that release's*
-  installer, so the script installing version X is always version X's own.
+  `--version`, the same no-fallback stance `RunCommand` takes on an unreleased build. There is no
+  `--update` and no installer copy stored beside the jar (`cli-version-floor`): updating is running
+  the newest release's published installer, the line the version refusal prints, so the script
+  installing version X is always version X's own. `--uninstall` still deletes a stored
+  `install.sh` an earlier release left; that copy's `--update` keeps working, because it hands off
+  to the newest installer in plain install mode.
+- **A deployment records the release that last ran setup on it, and every command that reaches AWS
+  refuses a CLI older than that — patch level included.** The record is the stack parameter
+  `BaasCliVersion`, written only by setup and only from a released `x.y.z` build; an image build
+  carries it forward, and a reactor build's setup sends nothing, so the value stays. The check lives
+  in the two sessions, not in commands: `OperatorSession.factory()` runs it when the first client is
+  built, `DeployerSession.factory(config)` before it returns, setup in its names step — so a new
+  command is covered by construction. `jobs terminate` alone takes `uncheckedFactory()` (stopping a
+  paid instance never waits on an install), and `VersionCheckCoverageTest` pins that, and that no
+  client is built outside a session. A newer CLI runs with one stderr line; an unreleased build
+  runs unchecked and says so. **The parameter's conditional output looks unused and is not:**
+  CloudFormation answers "No updates are to be performed" to a change of a parameter nothing
+  references and stores nothing, so without it every raise would silently fail to record (verified
+  live, `cli-version-floor` `verify.md` 1.1). CLIs released before the check ignore the parameter.
 - **`commit` and `branch` are absent unless the caller tags them, never `"unknown"`.** A placeholder
   value is indistinguishable from a real one at query time — the same non-answer wearing a value's
   clothing that produced `RESULT#unknown` (*What isn't there*). Tags are the entire query surface, so a fake value
@@ -519,10 +535,9 @@ The watchdog is the only one that survives a deadlocked JVM.
 - **A reactor build cannot launch a job.** The CLI pins the runner JAR to its own released version,
   and `0.0.0-semantically-released` names no release — so `baas run` fails immediately, before
   resolving the project or the results table, unless `--runner-jar` is passed. Same no-fallback
-  stance as the runner AMI. Every `baas` in
-  existence is currently an alias onto a reactor build, so this is the case, not the exception;
-  the reactor checkout is now the developer's explicit special case rather than the implicit
-  default.
+  stance as the runner AMI. Installed releases are the ordinary case; a reactor build is the
+  developer's explicit special case — the `baas-dev` alias and CI's `e2e-cloud-test.yml` — which
+  is also why the version check skips it with a warning instead of comparing.
 - **The runner refuses an unresolved project.** `getProject()` used to fall back to `"unknown"`,
   and CI had been writing `RESULT#unknown` because of it — a partition nobody queries. It now
   throws, before the benchmark runs.

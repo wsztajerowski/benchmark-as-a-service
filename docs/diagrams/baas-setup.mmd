@@ -39,6 +39,14 @@ sequenceDiagram
     else leftover bucket or table here
         SC-->>User: name it and its removal command, delete nothing -- wait, or exit 1
     end
+    opt the stack is present
+        SC->>CF: DescribeStacks - the BaasCliVersion it records
+        alt this CLI is an older release
+            SC-->>User: both versions and the installer's curl line -- exit 1, never a wait
+        else an unreleased build
+            SC-->>User: not checked (stderr)
+        end
+    end
 
     Note over SC: 6. GitHub Actions - asked on a terminal, or from the options.<br/>Unchanged federation is carried forward
     opt federation trusted
@@ -58,11 +66,14 @@ sequenceDiagram
         SC->>AWS: CreateOpenIDConnectProvider (Url, ClientIDList only)
     end
     alt create
-        SC->>CF: CreateStack (explicit federation and every image parameter)
+        SC->>CF: CreateStack (explicit federation, every image parameter, BaasCliVersion if released)
         SC->>FS: write deployments/D.yaml as soon as the create is accepted (region, profile if proven)
         SC->>CF: wait for CREATE_COMPLETE
     else update
-        SC->>CF: UpdateStack (changed params, UsePreviousValue for every other declared one)
+        SC->>CF: UpdateStack (changed params and a released BaasCliVersion, UsePreviousValue for every other declared one)
+        opt BaasCliVersion raised
+            SC-->>User: CLIs older than this release now refuse the deployment (stderr, nothing asked)
+        end
     end
     alt a permission failure
         SC-->>User: the policy and the admin's commands -- Enter returns to 4. Unattended - exit 1

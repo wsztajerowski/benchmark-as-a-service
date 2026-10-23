@@ -35,29 +35,42 @@ baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 
 curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh
 ```
 
-Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/`, a launcher shim to
-`~/.local/bin/baas`, and a copy of the installer itself alongside the jar — that stored copy is
-what makes `--update` reachable later, since a piped install leaves nothing else on disk to
-re-invoke. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never touches
-`~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config sync`.
+Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/` and a launcher shim to
+`~/.local/bin/baas`. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never
+touches `~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config
+sync`.
 
 Installer options: `--version <v>` (install a specific release instead of the latest),
-`--update`, `--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides:
-`BAAS_VERSION`, `BAAS_REPO`, `BAAS_SHARE`, `BAAS_BIN`, `BAAS_JAVA` (the JVM the shim execs).
+`--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides: `BAAS_VERSION`,
+`BAAS_REPO`, `BAAS_SHARE`, `BAAS_BIN`, `BAAS_JAVA` (the JVM the shim execs).
 
-`--update` resolves the newest release, compares it field-wise against what's installed, and hands
-off to *that release's own installer* rather than installing anything itself — it never downgrades,
-and if your installed version is already newer it reports both and changes nothing. Re-run it as:
+**Updating is the same command.** The newest release's installer replaces whatever is installed,
+atomically, so a `baas run` already in flight keeps the jar it started with:
 
 ```bash
-~/.local/share/baas/install.sh --update
+curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh
 ```
 
-A *saved* `install.sh` — the one under `~/.local/share/baas/`, or a copy you kept yourself —
-reinstalls its own baked-in version when run plain; it does not upgrade on its own. That's the
-whole reason `--update` exists. Note also that `--update` ignores `--version`: pairing them
-(`install.sh --update --version X`) silently drops the requested version, since `--version` only
-makes sense for a separate install-mode invocation.
+You rarely have to remember to. A deployment records the release that last ran
+`baas admin deployment setup` on it, and every command that reaches AWS compares itself with that
+release first:
+
+| Your `baas` is | What happens |
+|---|---|
+| older — patch level included | Refused, exit 1, before it does anything, printing the command above |
+| the same | Runs |
+| newer | Runs, with one line on standard error: an admin is told to run setup, anyone else to ask the admin |
+| a build from a checkout (`0.0.0-semantically-released`) | Runs unchecked, saying so on standard error |
+
+`baas jobs terminate` is never refused — stopping a paid instance does not wait on an install — and
+`config list`, `config show` and `config set` make no AWS call. CLIs released before the check
+ignore what the deployment records, so the first time, update every `baas` that points at the
+deployment, then have an admin run setup. After that the order is always the same: the admin
+updates and runs setup, which says that older CLIs now refuse the deployment, and everyone else
+updates when their next command tells them to.
+
+An installer copy left in `~/.local/share/baas/` by an earlier release still works — its
+`--update` hands off to the newest installer — and `--uninstall` removes it.
 
 ### Developing BaaS itself
 
@@ -239,9 +252,9 @@ any job of the deployment whose instance is still alive, including one CI launch
 alive and ends when the instance does. Nothing about a session is recorded: the job's results look
 exactly as they would without it.
 
-> **Upgrade every `baas` that points at the deployment.** A CLI from before job tracking reads
-> job items as measurements: its `baas results query --all-projects`, project picker and lookups by job id
-> fail once one exists. `baas results query --project <name>` keeps working.
+> **A CLI older than the deployment is refused** (see [Install](#1-install)), so the older-CLI
+> failures this section once warned about — job items read as measurements — cannot happen to a
+> CLI that checks. One from before the check still can: update it.
 
 ### 6. Read results
 

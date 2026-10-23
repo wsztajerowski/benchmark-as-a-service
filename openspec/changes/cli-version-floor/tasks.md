@@ -37,11 +37,11 @@
 
 ## 7. Docs
 
-- [ ] 7.1 README: replace the `--update` paragraphs with updating by the curl line, describe the version check, and turn the "Upgrade every `baas`" warning into the check's description
-- [ ] 7.2 `infra/README.md`: the `BaasCliVersion` parameter and the upgrade order (CLI, then setup)
-- [ ] 7.3 CLAUDE.md: rewrite the installer invariant (no `--update`, no stored copy), add the version-floor invariant (only setup writes it; `jobs terminate` exempt; unreleased builds unchecked), and correct the "every `baas` is an alias onto a reactor build" line
-- [ ] 7.4 Update the setup sequence diagram in `docs/diagrams/` for the names-step check and the stack step's parameter, render it with `mmdc` to the scratchpad and look at the PNG
-- [ ] 7.5 Draft the release-notes paragraph (update every CLI once, then run setup) in the PR description; check no commit message carries a `BREAKING CHANGE` footer or prose that parses as one
+- [x] 7.1 README: replace the `--update` paragraphs with updating by the curl line, describe the version check, and turn the "Upgrade every `baas`" warning into the check's description
+- [x] 7.2 `infra/README.md`: the `BaasCliVersion` parameter and the upgrade order (CLI, then setup)
+- [x] 7.3 CLAUDE.md: rewrite the installer invariant (no `--update`, no stored copy), add the version-floor invariant (only setup writes it; `jobs terminate` exempt; unreleased builds unchecked), and correct the "every `baas` is an alias onto a reactor build" line
+- [x] 7.4 Update the setup sequence diagram in `docs/diagrams/` for the names-step check and the stack step's parameter, render it with `mmdc` to the scratchpad and look at the PNG
+- [x] 7.5 Draft the release-notes paragraph (update every CLI once, then run setup) in the PR description; check no commit message carries a `BREAKING CHANGE` footer or prose that parses as one
 
 ## 8. Build and manual verification
 
