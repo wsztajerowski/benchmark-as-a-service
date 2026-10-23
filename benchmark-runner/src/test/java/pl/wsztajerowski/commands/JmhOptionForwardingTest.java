@@ -23,7 +23,8 @@ import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopu
 class JmhOptionForwardingTest {
 
     private static List<String> jmhCommandLine(Path jar, String... jmhArgs) {
-        List<String> argv = new ArrayList<>(List.of("jmh", RunnerArgs.BENCHMARK_PATH, jar.toString()));
+        List<String> argv = new ArrayList<>(List.of("jmh", RunnerArgs.BENCHMARK_PATH, jar.toString(),
+            RunnerArgs.RESULTS_TABLE, "t", RunnerArgs.S3_BUCKET, "b"));
         argv.addAll(List.of(jmhArgs));
         var parsed = new CommandLine(new TestWrapper()).parseArgs(argv.toArray(String[]::new));
         var options = (ApiJmhOptions) parsed.subcommand().commandSpec().mixins().get("apiJmhOptions").userObject();
