@@ -35,40 +35,40 @@
 
 ## 3. Item codec
 
-- [ ] 3.1 Write an `AttributeValue` ↔ JSON codec in `deployment`, covering
+- [x] 3.1 Write an `AttributeValue` ↔ JSON codec in `deployment`, covering
       `S N B BOOL NULL M L SS NS BS` in DynamoDB's typed JSON, with `N` kept as its string and `B` as
       base64.
-- [ ] 3.2 Tests: a round trip for every type, nesting included. A real measurement item and a real job
+- [x] 3.2 Tests: a round trip for every type, nesting included. A real measurement item and a real job
       item round-trip byte-identically. An unknown type key in the input is refused.
 
 ## 4. Export port and bundle
 
-- [ ] 4.1 Define `ExportAws`: scan the table, list keys under a prefix, download a key to a file, read
+- [x] 4.1 Define `ExportAws`: scan the table, list keys under a prefix, download a key to a file, read
       the stack parameters, a conditional put of an item and of an object (each reporting
       written or skipped), and whether the table and bucket exist. Implement `AwsExportAws` over a
       `DeployerSession` factory.
-- [ ] 4.2 Write `Bundle`, which owns the layout (`results.jsonl`, `recordings/<key>`,
+- [x] 4.2 Write `Bundle`, which owns the layout (`results.jsonl`, `recordings/<key>`,
       `runner-image-extension.yaml`, `manifest.json`) and reads and writes the manifest
       (`schemaVersion: 1`). The manifest's fields are the ones design.md lists.
-- [ ] 4.3 Define the `Part` vocabulary: `results`, `recordings` and `extension`, each with the one-line
+- [x] 4.3 Define the `Part` vocabulary: `results`, `recordings` and `extension`, each with the one-line
       description the help prints. `--parts` parses to it, and an unknown name exits 2 listing all
       three.
 
 ## 5. `baas admin deployment export`
 
-- [ ] 5.1 Add the command under `DeploymentCommand`, with `--parts`, `--without-inputs` and
+- [x] 5.1 Add the command under `DeploymentCommand`, with `--parts`, `--without-inputs` and
       `--output-dir` (default `./baas-export-<deployment>-<instant>`). Refuse a non-empty directory
       before any AWS call.
-- [ ] 5.2 Export each part:
+- [x] 5.2 Export each part:
       - `results`: stream the scan into `results.jsonl`, counting measurement items and job items.
       - `extension`: write the extension with `withMarker`, or record that none is deployed.
       - `recordings`: list `jobs/`, skip `*/input/` under `--without-inputs`, download through the
         `destinationFor` escape rule on a pool of eight, then check every size.
-- [ ] 5.3 Write the manifest last, then print the bundle path and the counts on the console.
-- [ ] 5.4 Write help text that describes each part, names what a bundle never contains, and states
+- [x] 5.3 Write the manifest last, then print the bundle path and the counts on the console.
+- [x] 5.4 Write help text that describes each part, names what a bundle never contains, and states
       that a standalone export racing a live job can miss its later writes.
-- [ ] 5.5 On `AccessDenied`, name the denied action and `baas admin deployment setup`.
-- [ ] 5.6 Tests against a fake `ExportAws`:
+- [x] 5.5 On `AccessDenied`, name the denied action and `baas admin deployment setup`.
+- [x] 5.6 Tests against a fake `ExportAws`:
       - the default and single-part selections;
       - `--without-inputs`;
       - `releases/` and `image-builds/` never listed;
