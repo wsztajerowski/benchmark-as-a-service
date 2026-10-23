@@ -2,19 +2,19 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm CloudFormation treats a changed value of a parameter no resource references as an update (not "No updates are to be performed"), and that `AllowedPattern` rejects a malformed value: on `baas-development`, a change set from the branch's template with `BaasCliVersion` set shows a parameter change and executes; record the commands and output in `verify.md`
-- [ ] 1.2 Confirm `aws cloudformation validate-template` accepts the template with the unreferenced `BaasCliVersion` parameter, and record the output
-- [ ] 1.3 List every broad `catch` an operator command can reach before its first client is built, and note in `verify.md` which would reword or swallow a `CommandRefusal`
+- [x] 1.1 Confirm CloudFormation treats a changed value of a parameter no resource references as an update (not "No updates are to be performed"), and that `AllowedPattern` rejects a malformed value: on `baas-development`, a change set from the branch's template with `BaasCliVersion` set shows a parameter change and executes; record the commands and output in `verify.md`
+- [x] 1.2 Confirm `aws cloudformation validate-template` accepts the template with the unreferenced `BaasCliVersion` parameter, and record the output
+- [x] 1.3 List every broad `catch` an operator command can reach before its first client is built, and note in `verify.md` which would reword or swallow a `CommandRefusal`
 
 ## 2. Version comparison in the kernel
 
-- [ ] 2.1 Add `BaasVersion.compare` (numeric, field by field) and `BaasVersion.comparable` (`x.y.z` only); unit tests cover `8.10.0 > 8.9.0`, equality, patch order, and the placeholder and a pre-release being non-comparable
-- [ ] 2.2 Make `RunnerImageParameters.compareVersions` delegate to `BaasVersion.compare`; the existing image-base tests still pass
+- [x] 2.1 Add `BaasVersion.compare` (numeric, field by field) and `BaasVersion.comparable` (`x.y.z` only); unit tests cover `8.10.0 > 8.9.0`, equality, patch order, and the placeholder and a pre-release being non-comparable
+- [x] 2.2 Make `RunnerImageParameters.compareVersions` delegate to `BaasVersion.compare`; the existing image-base tests still pass
 
 ## 3. The stack parameter
 
-- [ ] 3.1 Declare `BaasCliVersion` in `cf-template-core.yaml` (`Default: ""`, `AllowedPattern: '^$|^[0-9]+\.[0-9]+\.[0-9]+$'`, a description saying only setup writes it) and `CoreStack.PARAM_BAAS_CLI_VERSION`; `CoreStackTemplateTest`'s name pin and `theDeclaredParametersAreTheBundledTemplatesParameters` pass
-- [ ] 3.2 Test that `updateStackParameters` without the parameter named sends it as `UsePreviousValue` when deployed and omits it when the deployed stack lacks it
+- [x] 3.1 Declare `BaasCliVersion` in `cf-template-core.yaml` (`Default: ""`, `AllowedPattern: '^$|^[0-9]+\.[0-9]+\.[0-9]+$'`, a description saying only setup writes it) with the conditional output that makes a value change an update (1.1), and `CoreStack.PARAM_BAAS_CLI_VERSION`; a `CoreTemplateTest` case pins the output's reference; `CoreStackTemplateTest`'s name pin and `theDeclaredParametersAreTheBundledTemplatesParameters` pass
+- [x] 3.2 Test that `updateStackParameters` without the parameter named sends it as `UsePreviousValue` when deployed and omits it when the deployed stack lacks it
 
 ## 4. The check
 
@@ -22,7 +22,7 @@
 - [ ] 4.2 Wire it into `OperatorSession.factory()` (deferred, once per session, region memoised and shared) with `Aws.recordedCliVersion`; `OperatorSessionTest` covers refuse, proceed, once-only, and that a refusal is thrown before any client of the command is built
 - [ ] 4.3 Add `OperatorSession.uncheckedFactory()` and use it in `JobsTerminateSubcommand`; a source-reading test pins that it has exactly that one caller
 - [ ] 4.4 Run the check eagerly in `DeployerSession.factory(config)`, with a package-private overload taking the lookup so a test covers refuse and proceed
-- [ ] 4.5 Apply the audit from 1.3: let `CommandRefusal` pass through each catch that would reword or swallow it; a test drives at least `jobs list` and `run` against a refusing session and asserts exit 1 and the refusal text
+- [ ] 4.5 Apply the audit from 1.3 (no catch swallows the refusal, so no catch changes): remember the check's outcome per deployment for the process, so teardown's second deployer factory neither repeats the hint nor the call; a test covers it
 
 ## 5. Setup
 

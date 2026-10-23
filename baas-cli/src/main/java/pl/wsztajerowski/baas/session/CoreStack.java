@@ -24,6 +24,11 @@ public final class CoreStack {
     public static final String PARAM_GITHUB_ORG = "GitHubOrg";
     /** Already-composed {@code repo:<org>/<name>:*} subject patterns. */
     public static final String PARAM_GITHUB_REPO = "GitHubRepo";
+    /**
+     * The release of the CLI that last ran setup on the stack; empty when none is recorded. Only
+     * setup submits it, and every command refuses a CLI older than it.
+     */
+    public static final String PARAM_BAAS_CLI_VERSION = "BaasCliVersion";
 
     private CoreStack() {
     }
