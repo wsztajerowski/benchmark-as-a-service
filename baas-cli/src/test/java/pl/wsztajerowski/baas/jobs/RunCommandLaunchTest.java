@@ -68,6 +68,19 @@ class RunCommandLaunchTest {
         assertThat(aws.uploads).isEmpty();
     }
 
+    /** -m is JCStress's mode flag but no runner option; refused before it can fail a paid boot. */
+    @Test
+    void aShortModeFlagIsRefusedAfterTheDoubleDashBeforeAnyAwsCall() throws Exception {
+        Path jar = Files.writeString(dir.resolve("b.jar"), "jar");
+
+        int exit = run("--benchmark-jar", jar.toString(), "--runner-jar", jar.toString(), "--project", "lynx-journal",
+            "jcstress", "--", "-m", "sanity");
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(aws.events).as("nothing reached AWS").isEmpty();
+        assertThat(aws.uploads).isEmpty();
+    }
+
     @Test
     void aCompletedJobExitsZeroAndPrintsOneSummaryObject() throws Exception {
         aws.instance = FakeRunAws.Instance.COMPLETED_BEFORE_CONFIRM;

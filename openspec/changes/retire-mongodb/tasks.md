@@ -48,21 +48,22 @@
 
 ## 5. Remove local storage mode
 
-- [ ] 5.1 Delete `LocalStorageService`; `StorageService.of` always builds `S3StorageService`;
+- [x] 5.1 Delete `LocalStorageService`; `StorageService.of` always builds `S3StorageService`;
   `--s3-bucket` leaves its `ArgGroup` as a plain `required = true` option; `ApiCommonSharedOptionsTest`
   covers a missing bucket exiting non-zero naming `--s3-bucket`; `JobLogs`' comment no longer cites
   local storage
 
 ## 6. CLI and model
 
-- [ ] 6.1 Drop `MONGO_CONNECTION_STRING`/`_SHORT` from `RunnerArgs` and `SET_BY_THE_CLI`; update
+- [x] 6.1 Drop `MONGO_CONNECTION_STRING`/`_SHORT` from `RunnerArgs` and `SET_BY_THE_CLI`; update
   `RunnerArgsTest`; verify `RunnerArgsContractTest` still passes
-- [ ] 6.2 `RunCommand` refuses a `-m` among the benchmark's arguments with its own message naming
+- [x] 6.2 `RunCommand` refuses a `-m` among the benchmark's arguments with its own message naming
   `--mode`, exit 2, before any AWS call; the existing `-m` test in `RunCommand`'s tests moves to the new
   wording, plus one asserting `--mongo-connection-string` is no longer refused by the CLI
-- [ ] 6.3 Update the stale comments: `StoredMeasurement`, `ConfigShowSubcommand`,
+- [x] 6.3 Update the stale comments: `StoredMeasurement`, `ConfigShowSubcommand`,
   `UserDataScriptBuilder`, `simplelogger.properties`, `e2e-cloud-test.yml`'s `--mode` note; verify by
-  `git grep -i mongo` returning only history-describing lines
+  `git grep -i mongo` returning only history-describing lines (`ConfigShowSubcommand` and
+  `UserDataScriptBuilder` already describe the removed SSM fetch as history and are unchanged)
 
 ## 7. Documentation
 

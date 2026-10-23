@@ -4,8 +4,8 @@ import java.time.Instant;
 import java.util.Map;
 
 /**
- * One stored measurement — one DynamoDB item, one Mongo document. The port speaks this shape;
- * each adapter owns its own physical layout.
+ * One stored measurement — one DynamoDB item. The store port speaks this shape; the adapter owns
+ * the physical layout.
  *
  * <p>Full-fidelity data (rawData, scorePercentiles, logs, profiling artifacts) is NOT here. It
  * lives in S3 under {@code resultPath}, reachable via {@code resultJsonKey}.
