@@ -131,7 +131,7 @@
 
 ## 8. Documentation
 
-- [ ] 8.1 Update CLAUDE.md:
+- [x] 8.1 Update CLAUDE.md:
       - *Results table*: "Data leaves a deployment before a teardown through export" becomes the
         command's name, with no more "queued change".
       - The deployer-policy paragraph: `PutObject` is granted by name for import, and `s3:Put*`
@@ -140,15 +140,16 @@
       - Teardown is terminal-only.
       - Add a short entry for the bundle and the conditional import under *What isn't there*, or
         beside the S3 layout: no overwrite mode, `releases/` never exported.
-- [ ] 8.2 Update `infra/README.md`'s teardown steps: no `--yes`, and the export offer.
-- [ ] 8.3 Update `docs/diagrams/baas-teardown.mmd` (offer, then confirmation) and
+- [x] 8.2 Update `infra/README.md`'s teardown steps: no `--yes`, and the export offer.
+- [x] 8.3 Update `docs/diagrams/baas-teardown.mmd` (offer, then confirmation) and
       `baas-lifecycle.mmd` (export and import arrows). Render each with `mmdc` into the scratchpad
       and look at the PNG before committing.
-- [ ] 8.4 Delete U2's row and its *export-before-teardown* section from
+- [x] 8.4 Delete U2's row and its *export-before-teardown* section from
       `docs/review/open-findings.md`.
-- [ ] 8.5 Update `openspec/changes/QUEUE.md`: remove row 1 at archive time. In the deferred
-      two-deployment check, the teardown step is run by a person at a terminal.
-- [ ] 8.6 Mark `brainstorm.md` superseded by `design.md` with a one-line header, keeping the file.
+- [x] 8.5 Update `openspec/changes/QUEUE.md`: remove row 1 at archive time. In the deferred
+      two-deployment check, the teardown step is run by a person at a terminal. *Row 1 now points at
+      the live check; deleting it is left to the archive.*
+- [x] 8.6 Mark `brainstorm.md` superseded by `design.md` with a one-line header, keeping the file.
 
 ## 9. Live verification on a second deployment (manual: needs a person at a terminal)
 

@@ -234,7 +234,9 @@ The watchdog is the only one that survives a deadlocked JVM.
   `build-image --extension` changes it.** It is the only copy — overwritten, it cannot be recovered
   from AWS — so a push whose `# baas-extension-base:` marker no longer names the deployed extension
   is refused. With none deployed, any file is accepted (a file kept across a teardown), and a file a
-  teammate deliberately emptied can come back that way: accepted. Two pushes in the same seconds are
+  teammate deliberately emptied can come back that way: accepted. The copy that outlives a teardown
+  is the export's `extension` part, marker included; teardown itself saves nothing, and `import`
+  only prints the push, so this same guard decides it. Two pushes in the same seconds are
   not guarded, as for concurrent builds below. Anyone with `DescribeStacks` can read it, so it must
   never hold a credential. **ASCII only, trailing whitespace dropped:** `DescribeStacks` returns
   each non-ASCII character as `?` (the component itself gets the real bytes) and drops the trailing
@@ -486,6 +488,21 @@ The watchdog is the only one that survives a deadlocked JVM.
   what is measured — and `baas results query` from the working directory's repository, skipping its
   project picker. A derived default that applied without being asked is what made the same command
   record or read a different partition depending on where it was typed.
+- **Teardown runs only on a terminal, offers the export first, and saves nothing itself.** There is
+  no `--yes`: every teardown passes the offer, so nothing is deleted without someone having been
+  asked whether to keep it. The offer comes after the in-flight gate — the export then sees a quiet
+  table, the one case where a scan is as good as a snapshot — and before the typed name, so a
+  failed export never leaves a confirmed teardown half-done. Teardown used to save the extension
+  unasked; that copy now lives only in a bundle. Live teardowns are therefore run by a person, never
+  from an agent's shell, which has no terminal.
+- **A bundle is the wire shape, and import never overwrites.** `results.jsonl` is every item in
+  DynamoDB's typed JSON, decoded through no mapper, so an attribute the model does not know survives
+  and `aws dynamodb put-item` can read any line. `manifest.json` is written last: a directory
+  without one is an export that did not finish. Import writes each item under
+  `attribute_not_exists(pk)` and each object under `If-None-Match: *`, has no overwrite mode, and
+  uploads only keys under `jobs/` — never `releases/`, which stays write-once. It targets whatever
+  `--deployment` resolves to, never the deployment the manifest names; that works because every
+  stored pointer is a bucket key, never an `s3://` URI.
 
 ## What isn't there, and what fails silently
 
@@ -686,13 +703,16 @@ because the CLI renders them at runtime.
 **The deployer policy has a size ceiling.** It is attached as the customer-managed
 `BaasCliDeployerPolicy-<deployment>`, which IAM caps at 6144 non-whitespace characters to itself (an
 inline policy gets 5120, shared across every inline policy on the principal, so two deployments'
-documents never fit inline side by side). The rendered document sits at about 4580 non-whitespace
-characters, and `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` holds it under 5632,
+documents never fit inline side by side). The rendered document sits at about 4990 non-whitespace
+characters (measured 2026-10-23), and `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` holds it under 5632,
 keeping 512 in reserve. That is why whole verb classes are wildcarded (`ec2:Describe*`, `s3:Get*`,
 `imagebuilder:Get*`, `dynamodb:Describe*`) rather than enumerated — naming every action
 CloudFormation's bucket read handler needs is what pushed it over. `Create` is deliberately *not*
-wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would grant `PutObject`,
-which the deployer has no business holding.
+wildcarded: `imagebuilder:CreateImage` must stay excluded, and `s3:Put*` would grant bucket policies
+and ACLs. The deployer's object and item writes are named: `s3:PutObject` and `dynamodb:PutItem`
+(with `dynamodb:Scan`) exist for `admin deployment export`/`import` alone, and no batch write,
+item update or delete is granted — import's writes are conditional, and a batch cannot carry the
+condition.
 
 **BaaS targets the commercial `aws` partition only.** `deployer-policy.json` writes `arn:aws:`
 literally while `cf-template-core.yaml` uses `${AWS::Partition}`; the template's form is free and
@@ -770,7 +790,8 @@ Never infer the environment of a past run from the declaration in the working tr
 `baas-<prefix>-results`, DynamoDB, on-demand, `DeletionPolicy: Delete` — like the bucket, it leaves
 with its deployment: **nothing survives a teardown**. Teardown says so before its prompt and empties
 the bucket first (CloudFormation will not delete a non-empty one). Data leaves a deployment before a
-teardown through export (the queued `export-before-teardown` change), not by being retained.
+teardown through `baas admin deployment export`, which teardown offers before its confirmation, not
+by being retained.
 
 Two kinds of item: one per measurement — per JMH benchmark method, per JCStress *job* (JCStress
 names only non-passing tests, so per-test items would cover failures alone) — and one per job (*Job

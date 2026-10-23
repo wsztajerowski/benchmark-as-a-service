@@ -43,7 +43,6 @@ decides what to pick up next.
 
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
-| U2 | Nothing exports a deployment's data before a teardown, which now deletes everything | M | Low | `export-before-teardown` |
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | S | Low | open |
 | pr83/W5 | A JCStress row's `mode` is the string `"null"` in CSV and JSON | XS | Low | open |
@@ -112,23 +111,6 @@ describe product behaviour rather than a test gap, moved here so that this file 
 
 Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEUE.md). Each design
 below is what the proposal starts from.
-
-### `export-before-teardown` — U2
-
-**U2.** Since `jobs-command`, a teardown deletes the bucket and the results table with the stack
-(nothing is retained), so the only way to keep a deployment's history is to export it first — and no
-`baas` command does that yet. The image part was already fixed: teardown retires it.
-
-The design lives in
-[`openspec/changes/export-before-teardown/brainstorm.md`](../../openspec/changes/export-before-teardown/brainstorm.md)
-(its dated 2026-10-02 block overrides the text above it): an export command decoupled from teardown,
-then a teardown that deletes the bucket and table behind a second typed confirmation.
-
-**Seen live on 2026-10-10:** keeping `baas-development`'s history across the end-to-end test's
-teardown took `aws s3 sync s3://baas-development … --exclude 'releases/*' --exclude '*/input/*'`
-and `aws dynamodb scan --table-name baas-development-results` (46 items) under the operator profile.
-That is the only way today, and the scan's JSON cannot be loaded back into a new deployment by any
-`baas` command. Teardown's warning was accurate: everything was gone afterwards.
 
 ## Open, not scheduled
 
@@ -261,7 +243,8 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
   end-to-end test's teardown and setup: `aws --profile baas-operator-baas-dev sts get-caller-identity`
   failed while `baas` on the same profile worked; deleting the one cache file naming
   `baas-development-role-operator` fixed it. It matters only to someone using the AWS CLI beside
-  `baas`, such as when backing up data (U2) or removing a leftover. A one-line note in teardown's or
+  `baas`, such as when removing a leftover (backing up data no longer needs it: `baas admin deployment
+  export`). A one-line note in teardown's or
   setup's output would save the search.
 - **E6.** One instance type does not pin the CPU. On 2026-10-10, `c5.2xlarge` jobs ran on a
   Skylake `Platinum 8124M`, and the day before on a Cascade Lake `Platinum 8275CL`: same image, kernel,
