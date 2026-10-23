@@ -44,6 +44,11 @@ public class TeardownCommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    @Option(names = "--yes",
+        description = "Skip the export offer and the confirmation, so teardown runs without a terminal. "
+            + "Nothing is exported: run `admin deployment export` first to keep the deployment's data.")
+    boolean yes;
+
     @Override
     public Integer call() {
         BaasConfig config = Invocation.configService(spec).load();
@@ -77,11 +82,12 @@ public class TeardownCommand implements Callable<Integer> {
      * the ones whose failure must stop it have succeeded.
      */
     int removeDeployment(BaasConfig config, String resolvedStack) {
-        // A terminal first: the export offer and the confirmation are both asked there, and no
-        // option skips them, so a teardown without one would have nothing to go on.
-        if (!console().interactive()) {
+        // A terminal first, unless --yes: the export offer and the confirmation are both asked there,
+        // and reading a closed stdin used to crash with "No line found".
+        if (!yes && !console().interactive()) {
             logger.error("Refusing to tear down {}: teardown asks for confirmation on a terminal, and there is "
-                + "none here. Nothing was deleted.", resolvedStack);
+                + "none here. Pass --yes to tear down without asking, after `{}` if the data is to be kept. "
+                + "Nothing was deleted.", resolvedStack, Hints.command(resolvedStack, "admin deployment export"));
             return 1;
         }
         TeardownAws aws = awsFor.apply(config);
@@ -106,13 +112,19 @@ public class TeardownCommand implements Callable<Integer> {
         }
         logger.warn("{}", everythingGoesNotice(resolvedStack, extension));
 
-        // The export, before the confirmation: whoever confirms knows a complete bundle exists, and a
-        // failed export never leaves a confirmed teardown half-done.
-        offerExport(config, resolvedStack);
+        if (yes) {
+            // --yes asks nothing, so it offers nothing: whoever passes it has exported already, or
+            // decided not to.
+            logger.warn("--yes: no export offered, no confirmation asked.");
+        } else {
+            // The export, before the confirmation: whoever confirms knows a complete bundle exists,
+            // and a failed export never leaves a confirmed teardown half-done.
+            offerExport(config, resolvedStack);
 
-        // Gate 2: explicit confirmation
-        if (!confirmed(resolvedStack)) {
-            return 1;
+            // Gate 2: explicit confirmation
+            if (!confirmed(resolvedStack)) {
+                return 1;
+            }
         }
 
         // CloudFormation refuses to delete a non-empty bucket, so it is emptied first. A bucket that
@@ -189,8 +201,8 @@ public class TeardownCommand implements Callable<Integer> {
     Supplier<String> answerReader = () -> System.console().readLine();
 
     /**
-     * The stack name typed back on the terminal, the only confirmation there is. An abort exits 1,
-     * so a script can tell it from a teardown done.
+     * The stack name typed back on the terminal; {@code --yes} skips it. An abort exits 1, so a
+     * script can tell it from a teardown done.
      */
     boolean confirmed(String stack) {
         // Stays on stdout: the prompt has to sit on the cursor's line, and every logger line

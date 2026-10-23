@@ -34,11 +34,13 @@ deployment's data in a second place with a second set of rules.
   pushes it, and the existing stale-copy guard then decides whether the push is accepted.
 - **Teardown saves nothing, and offers to export first.** The extension rescue and its refusal are
   removed. Teardown's notice names the extension when one is deployed. Before the typed
-  confirmation, teardown offers to run the export into a default directory. A failed export stops
+  confirmation, teardown offers on a terminal to run the export into a default directory. A failed export stops
   the teardown before anything is deleted.
-- **BREAKING: `baas admin deployment teardown --yes` is removed.** Teardown runs only on an
-  interactive terminal. Without one it refuses and deletes nothing, so every teardown passes through
-  the export offer. Nothing in CI or `scripts/` runs a teardown.
+- **`--yes` skips the offer as well as the confirmation, and exports nothing.** Without a terminal,
+  teardown refuses unless `--yes` is passed, and the refusal names `admin deployment export`.
+  (`--yes` was first removed, to send every teardown through the offer. It was restored on
+  2026-10-23, because nothing but a person at a terminal could then run a live teardown, and the
+  agent running the verification could not.)
 - **The deployer policy gains `dynamodb:Scan` and `dynamodb:PutItem` on the results table, and
   `s3:PutObject` on the bucket.** These are the reads export needs and the conditional writes import
   needs. The operator role's policy is unchanged.
@@ -52,18 +54,17 @@ deployment's data in a second place with a second set of rules.
 
 ### Modified Capabilities
 
-- `core-stack-provisioning`: *Teardown safety gates* confirms only by the typed name on a terminal,
-  offers the export, and no longer has `--yes`. A new requirement covers the deployer grants for
-  export and import. Every teardown scenario written with `--yes` is restated without it.
-- `cli-command-structure`: `admin deployment` gains the verbs `export` and `import`, and the
-  teardown scenarios lose `--yes`.
-- `results-store-schema`: the history-leaves-with-teardown scenario is restated without `--yes`.
+- `core-stack-provisioning`: *Teardown safety gates* offers the export on a terminal, and `--yes`
+  skips both the offer and the confirmation. A new requirement covers the deployer grants for
+  export and import.
+- `cli-command-structure`: `admin deployment` gains the verbs `export` and `import`.
 
 ## Impact
 
 - **Code.** `baas-cli`'s `deployment` slice gets two commands, and AWS calls go behind a port
-  (`ExportAws`) in the shape of `TeardownAws`. `TeardownCommand` loses `--yes` and `saveExtension`
-  and gains the export offer. Teardown's tests move from `--yes` to the existing answer-reader seam.
+  (`ExportAws`) in the shape of `TeardownAws`. `TeardownCommand` loses `saveExtension` and gains
+  the export offer, which `--yes` skips. Teardown's tests script the offer through the existing
+  answer-reader seam.
   `deployer-policy.json` gains three actions. `JobsDownloadSubcommand.destinationFor`'s path-escape
   guard is reused for the mirror. A hand-written `AttributeValue` ↔ JSON codec is added.
 - **Docs.** CLAUDE.md's teardown and extension statements are updated, along with *Results table*

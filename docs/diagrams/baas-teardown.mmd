@@ -8,10 +8,10 @@ sequenceDiagram
     participant IB as EC2 Image Builder
 
     Note over User,IB: baas admin deployment teardown -- needs the elevated BaasCliDeployerPolicy.<br/>Nothing survives it: empties the bucket, deletes the CORE stack (bucket and results table with it),<br/>then retires the runner image `admin image build` created outside it. The CI stack is untouched.
-    User->>TD: baas [--deployment D] admin deployment teardown
+    User->>TD: baas [--deployment D] admin deployment teardown [--yes]
     Note over TD: ConfigService.load() -- ~/.baas/deployments/D.yaml, or the only one configured.<br/>Two or more configured and no --deployment: refused, listing them. stack = the prefix (the stack IS the prefix)
-    alt no terminal to ask on
-        TD-->>User: refuse -- exit 1, no AWS call, nothing deleted. There is no --yes:<br/>every teardown passes the export offer and the typed name
+    alt no terminal to ask on, and no --yes
+        TD-->>User: refuse naming --yes and admin deployment export -- exit 1, no AWS call, nothing deleted
     end
 
     rect rgb(255, 235, 235)
@@ -29,8 +29,12 @@ sequenceDiagram
     end
     TD-->>User: warn: the stack, the bucket and the results table, every job and<br/>measurement in them, the image -- and the extension when one is deployed, whose only copy<br/>is the stack -- will be deleted, none of it recoverable except from an export
 
+    opt --yes
+        Note over TD: no offer, no confirmation, nothing exported -- export first with admin deployment export
+    end
+
     rect rgb(235, 255, 235)
-        Note over TD,User: The export offer -- after gate 1, so the export sees no running job,<br/>and before gate 2, so a confirmed teardown never waits on a failed export
+        Note over TD,User: Without --yes. The export offer -- after gate 1, so the export sees no running job,<br/>and before gate 2, so a confirmed teardown never waits on a failed export
         TD->>User: Export D first, into a local bundle? [Y/n]
         User-->>TD: answer
         opt yes
@@ -46,7 +50,7 @@ sequenceDiagram
     end
 
     rect rgb(255, 235, 235)
-        Note over TD,User: Gate 2 -- explicit confirmation, the only one there is
+        Note over TD,User: Without --yes. Gate 2 -- explicit confirmation
         TD->>User: prompt: type the deployment name to confirm deletion
         User-->>TD: typed input
         alt input does not match the deployment name exactly
