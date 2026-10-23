@@ -67,16 +67,16 @@
 
 ## 7. Documentation
 
-- [ ] 7.1 CLAUDE.md: delete the MongoDB accepted-risk row, the Morphia and connection-string gotchas,
+- [x] 7.1 CLAUDE.md: delete the MongoDB accepted-risk row, the Morphia and connection-string gotchas,
   the `baas-cli` "no MongoDB path" and runner-keeps-Mongo lines in *What isn't there*; reword the
   `--mode` gotcha (no "can follow once retire-mongodb frees `-m`"); *Adding a benchmark type* says
   `--results-table` and `--s3-bucket` are both required and drops `LocalStorageService`; the
   Testcontainers gotcha drops `mongo:7.0.5`
-- [ ] 7.2 README (integration tests, docker-compose, local runs), `infra/README.md` (the Atlas section's
+- [x] 7.2 README (integration tests, docker-compose, local runs), `infra/README.md` (the Atlas section's
   "still carries a MongoDB adapter" paragraph), `jmh-with-async.sh`/`jmh-with-profiler.sh` notes
-- [ ] 7.3 `docs/diagrams/c4-3-component-runner.mmd`: remove the Mongo adapter and local storage; render
+- [x] 7.3 `docs/diagrams/c4-3-component-runner.mmd`: remove the Mongo adapter and local storage; render
   with `mmdc` and look at the PNG before committing
-- [ ] 7.4 Delete C4, A13 and B11 from `docs/review/open-findings.md` (table rows and the
+- [x] 7.4 Delete C4, A13 and B11 from `docs/review/open-findings.md` (table rows and the
   *retire-mongodb* design section); delete the `retire-mongodb` row from `openspec/changes/QUEUE.md`
 
 ## 8. End-to-end verification (manual — no automated test covers the `baas run` path)

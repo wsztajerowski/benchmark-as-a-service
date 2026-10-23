@@ -65,8 +65,6 @@ decides what to pick up next.
 | A4 | A store failure after the upload loses the measurement row | M | Med → reduced | open |
 | S7 | A runner can overwrite another job's objects under `jobs/*` | M | Med → reduced | open |
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
-| C4 | MongoDB retirement; every service IT runs on the Mongo adapter | L | — | `retire-mongodb` |
-| A13 | `LocalStorageService` reads every file as UTF-8 to trace-log it; binary output throws | XS | Low | `retire-mongodb` |
 | X3 | The runner role can create job items (`UpdateItem` upserts) and malformed `RESULT#` rows, which make every reader throw; the template's comments claiming it cannot are wrong ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
 | X5 | `--github-org`/`--github-repo` and setup's GitHub prompts are not validated, so `*` or `?` widen the OIDC trust silently ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
 | X6 | Every operator session is named `baas-cli`, so CloudTrail cannot tell operators apart without a join ([security](2026-10-13-codebase-review/security.md)). Since `runner-shell-access`, it also makes "own sessions" in the session-control grant mean every operator's of the deployment (accepted in CLAUDE.md) | XS | — | open, when nearby |
@@ -80,7 +78,7 @@ decides what to pick up next.
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
 | G17 | `results query` JSON lacks `project`, `kind` and artifact keys (its escaping is fixed) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G18 | No non-interactive project listing ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
-| G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), `StoredMeasurement` (Mongo), CLAUDE.md "CI mints its id", `admin image show` "for this account", a user-data comment on the manifest's identity ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), CLAUDE.md "CI mints its id", `admin image show` "for this account", a user-data comment on the manifest's identity ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G20 | Image-build logs under `image-builds/` are pointed to by neither `admin image build` nor setup's image step ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | K3 | JSON payloads hand-built in four commands, the job object twice ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
@@ -97,7 +95,6 @@ decides what to pick up next.
 | T10 | Test isolation from `~/.baas`/`~/.aws` exists only in the surefire config ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T11 | The LocalStack pin is repeated in five ITs, one container per class, with a stale `java.wonderland` label ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T12 | Every IT is `disabledWithoutDocker`, so a Docker-less `mvn verify` silently skips every store and S3 test, the contract's only real binding included ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
-| B11 | The runner uploads inside `JmhRunResults`, and its parse DTOs carry `@Entity` ([architecture](2026-10-13-codebase-review/architecture.md)) | S | — | `retire-mongodb` |
 
 ### Informational
 
@@ -115,26 +112,6 @@ describe product behaviour rather than a test gap, moved here so that this file 
 
 Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEUE.md). Each design
 below is what the proposal starts from.
-
-### `retire-mongodb` — C4, A13
-
-**C4.** The largest removal left: `MongoResultsStore`, `MongoMeasurementDocument`,
-`ResultsStoreBuilder.mongoStore`, `--mongo-connection-string`/`-m` and its `MONGO_CONNECTION_STRING`
-default, the `mongodb-driver-sync`, `morphia-core` and `testcontainers-mongodb` dependencies, the
-`mongo` service in `docker-compose.yaml`. CLAUDE.md's *Accepted risks* already records that no live
-user is known. **Every service IT stores through `MongoResultsStore`** (via
-`TestcontainersWithS3AndMongoBaseIT`), so the DynamoDB adapter — the only one BaaS uses — is
-exercised by the store contract suite but by no end-to-end runner test.
-
-**A13.** `LocalStorageService.saveFile` evaluates `Files.readString` as a `logger.trace` argument
-whatever the level, so a binary file (`profile.jfr`, a `.bin.gz`) throws and fails the job. Local mode
-only (no `--s3-bucket`), which no script, test or README section uses.
-
-**Decided (2026-10-04), as its own change:** first move the service ITs onto LocalStack DynamoDB —
-so the production path is tested end to end. Then delete the Mongo adapter,
-`-m`/`MONGO_CONNECTION_STRING`, Morphia, the driver, the Mongo testcontainer, the compose service and
-local storage mode, so `--results-table` and `--s3-bucket` become required. Update CLAUDE.md: the
-*Accepted risks* MongoDB row, the Morphia and connection-string gotchas, *Adding a benchmark type*.
 
 ### `export-before-teardown` — U2
 
