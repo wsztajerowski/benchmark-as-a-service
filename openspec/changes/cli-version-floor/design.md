@@ -43,16 +43,22 @@ What the code offers today:
 ### The recorded version is a stack parameter with a strict pattern and an empty default
 
 `BaasCliVersion`, `Type: String`, `Default: ""`, `AllowedPattern: '^$|^[0-9]+\.[0-9]+\.[0-9]+$'`,
-referenced by nothing. `DescribeStacks` already returns parameters, so readers need no new call and
-no new grant. The pattern means the recorded value is always comparable — there is no "garbage on the
+referenced by one conditional output of the same name (`Condition: RecordsCliVersion`, the value
+non-empty). The output is not read; it exists because CloudFormation refuses an update whose only
+change is the value of a parameter nothing references — "No updates are to be performed", and the
+value is not stored, not even when the parameter is new (task 1.1, live on `baas-development`). With
+the output, a value-only change is an update, an omitted parameter is carried forward, and empty
+drops the output (an output may not be empty). The CLI reads the parameter. `DescribeStacks` already
+returns parameters, so readers need no new call and no new grant. The pattern means the recorded value is always comparable — there is no "garbage on the
 stack" branch to design — and the empty default is what lets every other update leave it alone: an
 image build neither names it nor needs to know it exists, and on a stack that predates it the
 template default fills it with empty.
 
 *Rejected:* a stack **tag** propagates to every taggable resource, so changing it would churn the
 whole stack. An **SSM parameter** or a **results-table item** needs a new grant for both roles and a
-second call on `run`. A stack **output** would need a resource-free `!Ref` of the parameter and gives
-nothing `Parameters` does not.
+second call on `run`. A **reference from a resource** (a tag, or a `WaitConditionHandle`'s metadata)
+would also register the change, but as a resource update on every raise; the output touches no
+resource. A **parameter alone** was the first design and does not work (above).
 
 ### The check runs where credentials are resolved, once per session
 
@@ -134,9 +140,9 @@ same curl line the refusal prints.
   refusal; an admin can also lower the floor only by running setup from an older CLI, which the same
   check refuses — so a bad floor is fixed by a release, not by hand. Editing the parameter in the
   console stays possible as a last resort.
-- **[A parameter-only update might be "no updates"]** → CloudFormation treats a changed parameter
-  value as an update even when no resource uses it; if it does not, the announcement would claim a
-  raise that did not happen. Task 1.1 verifies this before anything is built on it.
+- **[Someone removes the "unused" output]** → the template comment says why it is there, and a
+  `CoreTemplateTest` case pins that the output references the parameter. Without it every raise
+  would silently be "already up to date".
 - **[Every operator command gains a `DescribeStacks`]** → ~100 ms, within the operator's existing
   grant; `baas run` makes a second one rather than threading the first through `RunAws`.
 - **[The reactor-build warning is noise on every CI and `baas-dev` command]** → accepted: it is one

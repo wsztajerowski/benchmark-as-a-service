@@ -104,6 +104,17 @@ Parameters:
       without a template migration.
     Type: CommaDelimitedList
     Default: ""
+  # The release of the CLI that last ran `baas admin deployment setup` here: every command refuses
+  # a CLI older than it. Only setup submits it — every other update carries it forward, and a stack
+  # that predates it gets the empty default, which records nothing. It creates no resource. The
+  # pattern keeps the value comparable, so no reader has a malformed one to decide about.
+  BaasCliVersion:
+    Description: >-
+      Version of the baas CLI that last ran `baas admin deployment setup` on this stack; empty when
+      none is recorded. Written only by setup.
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[0-9]+\.[0-9]+\.[0-9]+$'
 
 Conditions:
   # Both are required together: an org with no repository would have nothing to scope the
@@ -112,6 +123,7 @@ Conditions:
     - !Not [!Equals [!Ref GitHubOrg, ""]]
     - !Not [!Equals [!Join ["", !Ref GitHubRepo], ""]]
   HasRunnerImageExtension: !Not [!Equals [!Ref RunnerImageExtensionData, ""]]
+  RecordsCliVersion: !Not [!Equals [!Ref BaasCliVersion, ""]]
 
 Resources:
 
@@ -869,3 +881,10 @@ Outputs:
     Value: !Ref RunnerSecurityGroup
   VpcId:
     Value: !Ref BaasVpc
+
+  # Not read by the CLI, which reads the parameter. It is here because CloudFormation answers "No
+  # updates are to be performed" to a change of a parameter nothing references, and stores
+  # nothing — so without this, setup could never record a new version on an unchanged template.
+  BaasCliVersion:
+    Condition: RecordsCliVersion
+    Value: !Ref BaasCliVersion

@@ -146,6 +146,31 @@ class CloudFormationServiceTest {
             .singleElement().satisfies(parameter -> assertThat(parameter.usePreviousValue()).isTrue());
     }
 
+    private static final String TEMPLATE_WITH_CLI_VERSION = TEMPLATE.replace("""
+        Resources:""", """
+          BaasCliVersion:
+            Type: String
+            Default: ""
+        Resources:""");
+
+    /**
+     * Only setup names the recorded CLI version. An image build's update carries a deployed value
+     * forward, and on a stack that predates the parameter sends nothing, so the template's empty
+     * default fills it rather than a rejected UsePreviousValue (cli-version-floor, verify.md 1.1).
+     */
+    @Test
+    void anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot() {
+        var recorded = new DeployedStack("ResourceNamePrefix", "GitHubOrg", "BaasCliVersion");
+        new CloudFormationService(recorded).updateStackParameters("d", TEMPLATE_WITH_CLI_VERSION, Map.of("GitHubOrg", "o"));
+        assertThat(recorded.submitted.parameters()).filteredOn(p -> p.parameterKey().equals("BaasCliVersion"))
+            .singleElement().satisfies(p -> assertThat(p.usePreviousValue()).isTrue());
+
+        var predating = new DeployedStack("ResourceNamePrefix", "GitHubOrg");
+        new CloudFormationService(predating).updateStackParameters("d", TEMPLATE_WITH_CLI_VERSION, Map.of("GitHubOrg", "o"));
+        assertThat(predating.submitted.parameters()).extracting(Parameter::parameterKey)
+            .doesNotContain("BaasCliVersion");
+    }
+
     /** The indentation read agrees with a full parse of the bundled template. */
     @Test
     void theDeclaredParametersAreTheBundledTemplatesParameters() throws Exception {

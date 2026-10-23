@@ -45,4 +45,35 @@ public final class BaasVersion {
     static boolean isReleased(String version) {
         return version != null && !version.isBlank() && !PLACEHOLDER.equals(version);
     }
+
+    /**
+     * Whether {@code version} can be ordered against another: a released, numeric
+     * {@code <major>.<minor>.<patch>}. The placeholder is not, and neither is a pre-release such as
+     * {@code 8.0.0-rc.1}, which this repository's releases never produce — both are treated as
+     * unreleased wherever versions are compared.
+     */
+    public static boolean comparable(String version) {
+        return isReleased(version) && NUMERIC.matcher(version).matches();
+    }
+
+    /**
+     * Orders two {@code x.y.z} versions numerically — {@code 1.10.0} after {@code 1.9.0}, which a
+     * string comparison gets wrong. Callers pass only {@link #comparable} versions, or ones a
+     * stack's {@code AllowedPattern} has already shaped.
+     */
+    public static int compare(String a, String b) {
+        String[] left = a.split("\\.");
+        String[] right = b.split("\\.");
+        for (int i = 0; i < Math.max(left.length, right.length); i++) {
+            int l = i < left.length ? Integer.parseInt(left[i]) : 0;
+            int r = i < right.length ? Integer.parseInt(right[i]) : 0;
+            if (l != r) {
+                return Integer.compare(l, r);
+            }
+        }
+        return 0;
+    }
+
+    private static final java.util.regex.Pattern NUMERIC =
+        java.util.regex.Pattern.compile("^[0-9]+\\.[0-9]+\\.[0-9]+$");
 }
