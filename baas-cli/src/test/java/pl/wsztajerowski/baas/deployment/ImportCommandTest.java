@@ -38,7 +38,6 @@ class ImportCommandTest {
     private final StringWriter out = new StringWriter();
     private Path bundle;
     private boolean interactive = true;
-    private String answer = TARGET;
 
     @BeforeEach
     void exportASource() throws Exception {
@@ -67,7 +66,6 @@ class ImportCommandTest {
                     var command = new ImportCommand();
                     command.awsFor = config -> target;
                     command.console = Console.withFlags(new PrintWriter(out, true), interactive, false);
-                    command.answerReader = () -> answer;
                     return (K) command;
                 }
                 return defaults.create(cls);
@@ -176,20 +174,13 @@ class ImportCommandTest {
         assertThat(out.toString()).contains(SOURCE + " held none; nothing to push.");
     }
 
+    /** Nothing is asked: import runs unattended, right after an unattended setup. */
     @Test
-    void aWrongNameAbortsBeforeAnyWrite() throws Exception {
-        answer = "baas-1234";
-
-        assertThat(importAll()).isEqualTo(1);
-        assertThat(target.calls).noneMatch(c -> c.startsWith("put"));
-    }
-
-    @Test
-    void withoutATerminalNothingIsAskedOrWritten() throws Exception {
+    void importRunsWithoutATerminal() throws Exception {
         interactive = false;
 
-        assertThat(importAll()).isEqualTo(1);
-        assertThat(target.calls).isEmpty();
+        assertThat(importAll()).isZero();
+        assertThat(target.table).hasSize(2);
     }
 
     @Test
