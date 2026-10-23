@@ -79,8 +79,8 @@ across two places in the tree. The user chose to keep them together (2026-10-23)
 
 `dynamodb:Scan` and `dynamodb:PutItem` are added to the table statement. `s3:PutObject` is added to
 the bucket statement. `s3:Put*` stays excluded, because it would also grant bucket-policy and ACL
-writes. `BatchWriteItem` is not needed (see the next decision). Together these add about 60
-non-whitespace characters, about 4640 against the 5632 budget, and
+writes. `BatchWriteItem` is not needed (see the next decision). Together these add 50
+non-whitespace characters, 4936 → 4986 against the 5632 budget (measured), and
 `renderedPolicyLeavesRoomInACustomerManagedPolicyBudget` still holds. The setup preflight simulates
 every unconditioned statement it renders, so the new actions are probed with no list kept beside
 the policy.

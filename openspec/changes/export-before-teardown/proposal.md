@@ -75,8 +75,8 @@ deployment's data in a second place with a second set of rules.
 - **IAM.** Every existing deployment's attached deployer policy lacks the new actions until a
   re-run of `admin deployment setup` hands over the new document. Until then, export and import fail
   with `AccessDenied`, which they translate into that hint. The setup preflight probes the new
-  actions automatically, because it reads the rendered policy. The rendered policy grows by about
-  60 non-whitespace characters, from ~4580, against the 5632 budget.
+  actions automatically, because it reads the rendered policy. The rendered policy grows by 50
+  non-whitespace characters, from 4936 to 4986, against the 5632 budget.
 - **Cost.** There is no standing cost: no point-in-time recovery and no new resource. An export pays
   for one table scan (on-demand reads, fractions of a cent at this size), S3 GET requests, and S3
   data transfer out to the internet at about $0.09/GB for `recordings`, which is the only
