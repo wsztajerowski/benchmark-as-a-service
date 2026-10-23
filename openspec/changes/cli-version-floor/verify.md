@@ -110,3 +110,54 @@ After the reactor setup the stack still recorded `9.0.1`.
 - **Teardown not run** — decided with the user (2026-10-23): it would delete `baas-development` for a
   path this change touches only through the deployer session's check, which `admin image show`
   exercised live (8.2) and `DeployerSessionTest` covers.
+
+## 8.4 /opsx:verify (2026-10-23)
+
+| Dimension | Status |
+|---|---|
+| Completeness | 26/26 tasks (8.4 is this); 8 delta requirements (6 added, 2 modified) + 2 removed |
+| Correctness | 8/8 requirements implemented and tested; 2 scenarios covered only indirectly (W1, W2) |
+| Coherence | Design followed after the recorded deviations below |
+
+### Requirement → code → test
+
+| Requirement | Code | Test | Gap |
+|---|---|---|---|
+| core-stack-provisioning: *The core stack records the CLI version that last set it up* | `infra/cf-template-core.yaml` (`BaasCliVersion`, `RecordsCliVersion`, output); `CoreStack.PARAM_BAAS_CLI_VERSION` | `CoreStackTemplateTest` (declared, output references it, pattern), `CloudFormationServiceTest.anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot`; live 1.1, 8.3 | — |
+| cli-command-structure: *A CLI older than the deployment's recorded version is refused* | `session/CliVersionCheck`, `OperatorSession.factory`, `DeployerSession.factory(config)`, `BaasApp.reportFailure` | `CliVersionCheckTest`, `OperatorSessionTest` (refused at first client, unchecked factory), `DeployerSessionTest`, `VersionCheckCoverageTest`; live 8.2 | W1 |
+| cli-command-structure: *A CLI newer than the recorded version says what to run* | `CliVersionCheck.check` (OPERATOR / ADMIN wording) | `CliVersionCheckTest`, `OperatorSessionTest.aNewerCliRunsAndSaysWhomToAsk`, `DeployerSessionTest`; live 8.2 (JSON stdout clean) | — |
+| cli-command-structure: *An unreleased build is not checked, and says so* | `CliVersionCheck.check` via `BaasVersion.comparable` | `CliVersionCheckTest.anUnreleasedBuildNeverAsks`, `aPreReleaseCountsAsUnreleased`, `OperatorSessionTest.anUnreleasedBuildIsNotCheckedAndSaysSo`; live 8.2, 8.3 (`baas run`) | — |
+| guided-setup: *Setup refuses a CLI older than the version recorded on the stack* | `NamesStep.olderThanRecorded` | `SetupStepsTest` (refused unattended and interactive without a wait, rolled-back stack unchecked, create unchecked); live 8.2 | — |
+| guided-setup: *Setup records its version and announces a raise* | `StackStep`, `CliVersionCheck.recordable`, `announceRecorded` | `SetupStepsTest` (raise from a version, from none, same version, create, reactor carry-forward and create); live 8.2 | — |
+| cli-distribution: *The installer never reads or writes the CLI's configuration* (MODIFIED) | `scripts/install.sh` | `install-test.sh` (configuration byte-for-byte, no configuration created) | — |
+| cli-distribution: *Uninstallation removes exactly what was installed* (MODIFIED) | `install.sh` uninstall arm | `install-test.sh` "uninstall removes an installer copy an earlier release stored" and the scoping cases | — |
+| cli-distribution: *Updating is re-running the published installer* (ADDED) | `install.sh` (no update mode, no stored copy, curl line printed) | `install-test.sh` "--update is refused…", "stores nothing but the jar…", "says how to update…" | W2 |
+| REMOVED: *Updating resolves…*, *The update path remains available…* | code removed | `version-compare-probe.sh` and the update cases deleted | names copied verbatim from the main spec |
+
+### Warnings
+
+- **W1** — *An admin command is refused too* names `admin deployment teardown`. The refusal is proven for the
+  deployer session (`DeployerSessionTest`) and live through `admin image show` and setup, but no test or
+  live run drives teardown itself; teardown builds its factory at the start of `removeDeployment`,
+  after only the local no-terminal refusal (`TeardownCommand.java:88-93`). Teardown live was declined
+  with the user (8.3).
+- **W2** — *The newest installer updates an existing installation*: the fixture has one version, so the
+  harness installs the same release over itself (atomic replacement) rather than a newer one over an
+  older. The replacement path is the same code; a two-version fixture would pin the scenario literally.
+
+### Deviations from design and tasks
+
+- **D1** — The parameter alone could not record anything (1.1); a conditional output referencing it was
+  added, and design, spec and template comment say why.
+- **D2** — `session` may import only `aws`: `BaasVersion` moved from `cli` to `session`, the refusal is
+  `CliVersionCheck.Refused` (mapped to exit 1 in `BaasApp.reportFailure`) rather than `CommandRefusal`,
+  and the hint spells the setup command itself. Design updated (1c494c5).
+- **D3** — Task 1.1 ran direct `update-stack` calls rather than a change set; the answer is the same.
+- **D4** — Task 4.5 needed no catch changes (1.3); the work became the per-deployment memo in
+  `DeployerSession`.
+- **D5** — The output's pin lives in `CoreStackTemplateTest` (the CLI↔template contract test), not
+  `CoreTemplateTest` as task 3.1 said.
+- **D6** — The stale `cp scripts/install.sh` into the fixture release was dropped from
+  `install-test.yml`; nothing reads it now.
+
+No critical issues. Two warnings to consider. Ready for archive (with noted improvements).

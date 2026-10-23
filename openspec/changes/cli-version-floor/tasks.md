@@ -48,4 +48,4 @@
 - [x] 8.1 `mvn -B verify` on the full reactor passes
 - [x] 8.2 Manual, on `baas-development` (second deployment): setup from a JAR stamped as a release (`mvn versions:set -DnewVersion=<x.y.z>` in a scratch copy, never committed) records the version and announces the raise; a JAR stamped lower is refused by `jobs list` and by setup; `jobs terminate` from the lower JAR still works; the reactor build warns and runs; record each command and its output in `verify.md`
 - [x] 8.3 Manual, on `baas-development`: `admin image build` leaves `BaasCliVersion` unchanged, a `baas run` of `fake-jmh-benchmarks` completes, and the check's line order on stderr reads sensibly; then teardown (export declined) succeeds; record in `verify.md`
-- [ ] 8.4 Run /opsx:verify and record the result in `verify.md` in the change directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
+- [x] 8.4 Run /opsx:verify and record the result in `verify.md` in the change directory — a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
