@@ -757,4 +757,94 @@ class SetupStepsTest {
         assertThat(run.aws.calledAny("buildImage")).isFalse();
         assertThat(run.aws.calledAny("createOidcProvider")).isFalse();
     }
+
+    // ─── The recorded CLI version (cli-version-floor) ─────────────────────────────
+
+    private SetupRun existingRecording(String recorded) throws Exception {
+        var run = existing("dev", DEV_FILE);
+        run.aws.stackParameters.put("dev", new java.util.LinkedHashMap<>(Map.of(
+            "ResourceNamePrefix", "dev", "BaasCliVersion", recorded)));
+        return run;
+    }
+
+    @Test
+    void anOlderCliIsRefusedBeforeAnyStackOperation() throws Exception {
+        var run = existingRecording("8.2.0").running("8.1.0");
+
+        assertThat(run.run()).isEqualTo(1);
+        assertThat(run.aws.calls).noneMatch(call -> call.startsWith("update:") || call.startsWith("submitCreate:"));
+        assertThat(run.aws.stackParameters.get("dev")).containsEntry("BaasCliVersion", "8.2.0");
+    }
+
+    @Test
+    void anOlderCliIsRefusedInteractivelyTooWithoutAWait() throws Exception {
+        var run = existingRecording("8.2.0").running("8.1.0").interactive("", "", "", "");
+
+        assertThat(run.run()).isEqualTo(1);
+        assertThat(run.asked("Press Enter")).isFalse();
+        assertThat(run.aws.calls).noneMatch(call -> call.startsWith("update:"));
+    }
+
+    @Test
+    void aNewerCliRecordsItselfAndAnnouncesTheRaise() throws Exception {
+        var run = existingRecording("8.1.0").running("8.2.0");
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.submitted).containsEntry("BaasCliVersion", "8.2.0");
+        assertThat(run.versionLines).singleElement().asString()
+            .contains("now records baas 8.2.0", "CLIs older than 8.2.0 refuse it", "it was 8.1.0");
+    }
+
+    @Test
+    void aRaiseFromNothingRecordedSaysSo() throws Exception {
+        var run = existing("dev", DEV_FILE).running("8.2.0");
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.submitted).containsEntry("BaasCliVersion", "8.2.0");
+        assertThat(run.versionLines).singleElement().asString().contains("none was recorded");
+    }
+
+    @Test
+    void theSameReleaseAnnouncesNothing() throws Exception {
+        var run = existingRecording("8.2.0").running("8.2.0");
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.submitted).containsEntry("BaasCliVersion", "8.2.0");
+        assertThat(run.versionLines).isEmpty();
+    }
+
+    @Test
+    void aCreateRecordsTheReleaseAndAnnouncesNothing() throws Exception {
+        var run = setup().running("8.2.0");
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.stackParameters.get(DERIVED)).containsEntry("BaasCliVersion", "8.2.0");
+        assertThat(run.versionLines).isEmpty();
+    }
+
+    @Test
+    void anUnreleasedBuildLeavesTheRecordedVersionAsItWas() throws Exception {
+        var run = existingRecording("8.2.0").running(pl.wsztajerowski.baas.session.BaasVersion.PLACEHOLDER);
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.submitted).doesNotContainKey("BaasCliVersion");
+        assertThat(run.aws.stackParameters.get("dev")).containsEntry("BaasCliVersion", "8.2.0");
+        assertThat(run.versionLines).singleElement().asString().startsWith("Unreleased build");
+    }
+
+    @Test
+    void anUnreleasedBuildRecordsNothingOnCreate() throws Exception {
+        var run = setup().running(pl.wsztajerowski.baas.session.BaasVersion.PLACEHOLDER);
+
+        assertThat(run.run()).isZero();
+        assertThat(run.aws.stackParameters.get(DERIVED)).doesNotContainKey("BaasCliVersion");
+    }
+
+    @Test
+    void aRolledBackStackIsNotChecked() throws Exception {
+        var run = existingRecording("9.0.0").running("8.1.0");
+        run.aws.stacks.put("dev", StackStatus.ROLLBACK_COMPLETE);
+
+        assertThat(run.run()).isZero();
+    }
 }

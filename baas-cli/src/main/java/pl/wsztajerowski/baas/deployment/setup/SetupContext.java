@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.deployment.setup;
 
 import pl.wsztajerowski.baas.session.BaasConfig;
+import pl.wsztajerowski.baas.session.CliVersionCheck;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.console.Console;
 
@@ -66,6 +67,10 @@ final class SetupContext {
 
     // ─── Step 5: names; the stack's status as found before anything changed ───
     SetupAws.StackState stackState = SetupAws.StackState.ABSENT;
+    /** Replaced in tests, which pin the running version. */
+    CliVersionCheck versionCheck = CliVersionCheck.current();
+    /** What an existing stack recorded as the CLI that last set it up; null until read, empty for none. */
+    String recordedCliVersion;
 
     // ─── Step 6: GitHub Actions ───
     /** What the stack trusts now; empty when it trusts no repository. */

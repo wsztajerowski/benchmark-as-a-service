@@ -35,6 +35,10 @@ final class SetupRun {
     List<String> githubRepos = List.of();
     boolean revoke;
     boolean buildImage;
+    /** The version check the run uses; null keeps the build's own. */
+    pl.wsztajerowski.baas.session.CliVersionCheck versionCheck;
+    /** What the version check wrote to standard error. */
+    final List<String> versionLines = new ArrayList<>();
 
     SetupContext context;
 
@@ -45,6 +49,12 @@ final class SetupRun {
     SetupRun interactive(String... typed) {
         interactive = true;
         answers.addAll(Arrays.asList(typed));
+        return this;
+    }
+
+    /** Runs as release {@code version}, collecting the check's lines in {@link #versionLines}. */
+    SetupRun running(String version) {
+        versionCheck = new pl.wsztajerowski.baas.session.CliVersionCheck(version, "o/r", versionLines::add);
         return this;
     }
 
@@ -84,6 +94,9 @@ final class SetupRun {
         });
         context = new SetupContext(options(), new ConfigService(root, deployment), interactive, prompter, console,
             aws.factory(), slept::add);
+        if (versionCheck != null) {
+            context.versionCheck = versionCheck;
+        }
         return new SetupWalkthrough(SetupSteps.all()).run(context);
     }
 

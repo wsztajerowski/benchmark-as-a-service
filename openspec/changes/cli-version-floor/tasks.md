@@ -26,8 +26,8 @@
 
 ## 5. Setup
 
-- [ ] 5.1 In the names step, for a present stack, run the check over `stackParameters`, keep the recorded value on `SetupContext`, and stop with exit 1 on an older CLI; `SetupWalkthroughTest`-style tests cover refuse (interactive and not), absent stack, rolled-back stack, empty value, and an unreleased build
-- [ ] 5.2 In the stack step, submit `BaasCliVersion` for a released `x.y.z` build on create and update, nothing otherwise, and log the raise announcement after an update that changed it; tests cover raise from a version, raise from none, same version, create, and a reactor build carrying the value forward
+- [x] 5.1 In the names step, for a present stack, run the check over `stackParameters`, keep the recorded value on `SetupContext`, and stop with exit 1 on an older CLI; `SetupWalkthroughTest`-style tests cover refuse (interactive and not), absent stack, rolled-back stack, empty value, and an unreleased build
+- [x] 5.2 In the stack step, submit `BaasCliVersion` for a released `x.y.z` build on create and update, nothing otherwise, and log the raise announcement after an update that changed it; tests cover raise from a version, raise from none, same version, create, and a reactor build carrying the value forward
 
 ## 6. Installer
 
