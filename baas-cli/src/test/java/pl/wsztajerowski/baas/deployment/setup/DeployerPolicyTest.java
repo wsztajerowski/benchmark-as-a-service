@@ -202,20 +202,23 @@ class DeployerPolicyTest {
     }
 
     /**
-     * {@code s3:Put*} would grant {@code PutObject}: the deployer provisions the bucket, it does not
-     * write results into it. The reads are wildcarded because CloudFormation's bucket read handler
-     * needs about twenty of them, and naming each one is what pushed this document over IAM's
+     * {@code s3:Put*} would grant bucket policies and ACLs as well: the deployer provisions the
+     * bucket, and writes objects into it only to restore a bundle, which {@code s3:PutObject} named
+     * alone covers. The reads are wildcarded because CloudFormation's bucket read handler needs
+     * about twenty of them, and naming each one is what pushed this document over IAM's
      * inline-policy limit.
      */
     @Test
-    void deployerProvisionsTheBucketWithoutWritingObjectsIntoIt() {
+    void deployerProvisionsTheBucketAndWritesObjectsOnlyByName() {
         var policy = InfraFixtures.deployerPolicy();
 
         assertThat(InfraFixtures.grants(policy, "s3:GetBucketVersioning")).isTrue();
         assertThat(InfraFixtures.grants(policy, "s3:PutLifecycleConfiguration")).isTrue();
-        assertThat(InfraFixtures.grants(policy, "s3:PutObject"))
-            .as("uploading benchmark JARs is the operator's job, on operator credentials")
-            .isFalse();
+        assertThat(InfraFixtures.grants(policy, "s3:GetObject")).as("export downloads recordings").isTrue();
+        assertThat(InfraFixtures.grants(policy, "s3:PutObject")).as("import uploads recordings").isTrue();
+        assertThat(InfraFixtures.actions(policy)).doesNotContain("s3:Put*", "s3:*");
+        assertThat(InfraFixtures.grants(policy, "s3:PutBucketPolicy")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "s3:PutBucketAcl")).isFalse();
     }
 
     /**
@@ -357,14 +360,22 @@ class DeployerPolicyTest {
         assertThat(InfraFixtures.grants(policy, "dynamodb:ListTagsOfResource")).isTrue();
     }
 
+    /**
+     * Export scans the table and import writes each item back with a condition, so those two and
+     * nothing else: a batch write cannot carry the condition, and no admin command reads, updates or
+     * deletes a single item.
+     */
     @Test
-    void theDeployerHasNoDataPlaneAccessToResults() {
+    void theDeployerReachesResultsOnlyToExportAndImport() {
         var policy = InfraFixtures.deployerPolicy();
 
-        assertThat(InfraFixtures.grants(policy, "dynamodb:PutItem")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:Scan")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:PutItem")).isTrue();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:BatchWriteItem")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:DeleteItem")).isFalse();
+        assertThat(InfraFixtures.grants(policy, "dynamodb:UpdateItem")).isFalse();
         assertThat(InfraFixtures.grants(policy, "dynamodb:GetItem")).isFalse();
         assertThat(InfraFixtures.grants(policy, "dynamodb:Query")).isFalse();
-        assertThat(InfraFixtures.grants(policy, "dynamodb:Scan")).isFalse();
     }
 
     @Test

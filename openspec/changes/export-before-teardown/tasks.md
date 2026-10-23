@@ -1,31 +1,37 @@
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm that no stored attribute names a bucket, account or region. Check every pointer
+- [x] 1.1 Confirm that no stored attribute names a bucket, account or region. Check every pointer
       `MeasurementItemMapper` and `JobItemMapper` write (`resultPath`, `resultJsonKey`,
       `environmentJsonKey`, `profilerOutputPath`, the job item's path fields), and read one real item
       from `baas-development`. If any carries `s3://` or a bucket name, the verbatim import is wrong:
       stop and revise the design.
-- [ ] 1.2 Confirm `PutObject` with `If-None-Match: *` answers 412 or 409 for an existing key on
+- [x] 1.2 Confirm `PutObject` with `If-None-Match: *` answers 412 or 409 for an existing key on
       LocalStack 4.14.0, which the round-trip IT relies on. The real bucket already does this for
       `releases/`. If LocalStack ignores the header, the IT asserts skip-counting with a pre-check
       instead, and the task records that.
-- [ ] 1.3 Render the deployer policy with `dynamodb:Scan`, `dynamodb:PutItem` and `s3:PutObject` added.
+- [x] 1.3 Render the deployer policy with `dynamodb:Scan`, `dynamodb:PutItem` and `s3:PutObject` added.
       Record its non-whitespace length (expected about 4640, budget 5632).
-- [ ] 1.4 Confirm the setup preflight (`DeployerPreflight`) simulates both edited statements. They must
+      *Measured 2026-10-23: 4936 before, 4986 after (fixture prefix `baas-123456789012`). CLAUDE.md's
+      "about 4580" was already stale; 646 characters remain.*
+- [x] 1.4 Confirm the setup preflight (`DeployerPreflight`) simulates both edited statements. They must
       carry no `Condition`.
-- [ ] 1.5 Grep the repository, `docs/`, `infra/README.md` and `.github/` for `teardown --yes` and
+- [x] 1.5 Grep the repository, `docs/`, `infra/README.md` and `.github/` for `teardown --yes` and
       `teardown … --yes`, and list every call site outside tests and specs. Expected: only the two
       diagrams.
-- [ ] 1.6 Confirm `TeardownCommand`'s tests can mark the console interactive and script answers through
+- [x] 1.6 Confirm `TeardownCommand`'s tests can mark the console interactive and script answers through
       `answerReader`. If not, add that seam first, as its own commit.
 
 ## 2. Deployer policy
 
-- [ ] 2.1 Add `dynamodb:Scan` and `dynamodb:PutItem` to the results-table statement of
+- [x] 2.1 Add `dynamodb:Scan` and `dynamodb:PutItem` to the results-table statement of
       `deployer-policy.json`, and `s3:PutObject` to `S3WorkingBucketLifecycle`.
-- [ ] 2.2 Test: the rendered policy names the three actions and names neither `s3:Put*` nor
-      `dynamodb:BatchWriteItem`. The budget test still passes.
-- [ ] 2.3 Test: the operator policy grants no `dynamodb:PutItem`. Pin the absence.
+- [x] 2.2 Test: the rendered policy names the three actions and names neither `s3:Put*` nor
+      `dynamodb:BatchWriteItem`. The budget test still passes. *Done by rewriting the two tests that
+      pinned the old boundary (`deployerProvisionsTheBucketWithoutWritingObjectsIntoIt`,
+      `theDeployerHasNoDataPlaneAccessToResults`): the deployer may now `PutObject`, `Scan` and
+      `PutItem`, and still not `s3:Put*`, `PutBucketPolicy`, `BatchWriteItem`, `DeleteItem`,
+      `UpdateItem`, `GetItem` or `Query`.*
+- [x] 2.3 Test: the operator policy grants no `dynamodb:PutItem`. Pin the absence.
 
 ## 3. Item codec
 
