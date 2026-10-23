@@ -155,7 +155,7 @@
 
 - [x] 9.1 Before attaching the new policy, run `baas --deployment baas-development admin deployment
       export --parts results` under the old one and confirm the `dynamodb:Scan` and setup hint.
-- [ ] 9.2 Re-run `admin deployment setup` for `baas-development`, attach the handed-over policy
+- [x] 9.2 Re-run `admin deployment setup` for `baas-development`, attach the handed-over policy
       customer-managed, then check that setup's preflight passes.
 - [ ] 9.3 Run `admin image build` with an extension, then a `fake-jmh-benchmarks` job
       (`jmh-with-async`, so there are profiler artifacts).
