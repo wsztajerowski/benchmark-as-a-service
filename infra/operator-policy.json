@@ -166,12 +166,6 @@
       }
     },
     {
-      "Sid": "SsmMessagesOwnDataChannel",
-      "Effect": "Allow",
-      "Action": "ssmmessages:OpenDataChannel",
-      "Resource": "arn:aws:ssm:*:ACCOUNT_ID:session/${aws:userid}-*"
-    },
-    {
       "Sid": "SsmDescribeInstanceInformation",
       "Effect": "Allow",
       "Action": "ssm:DescribeInstanceInformation",
