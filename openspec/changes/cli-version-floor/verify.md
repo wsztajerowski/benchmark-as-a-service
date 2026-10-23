@@ -100,7 +100,13 @@ After the reactor setup the stack still recorded `9.0.1`.
   under`, which reads as intended.
 - `BaasCliVersion` reset to empty afterwards (direct `update-stack`, every other parameter
   `UsePreviousValue`), so `baas-development` keeps no fake `9.x` floor.
-- Not yet run: `admin image build` leaving the value unchanged, and teardown. The image build's
-  update shape — the parameter carried with `UsePreviousValue` — was exercised live in 1.1 (step d,
-  "No updates are to be performed", value kept) and is unit-tested
-  (`anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot`).
+- `admin image build` from the reactor build, after setup as `9.0.1` recorded `9.0.1`: published
+  `ami-0297bfbcd7b91bc34` (`1.4.0+ext.de4980bc`), retired `ami-0b3bf428d5e535b2a`; the stack still
+  recorded `9.0.1`. Its own stack submission changed nothing (the stack's last update stayed setup's,
+  17:13:43 UTC), so this is again the "No updates", `UsePreviousValue` shape of 1.1 (d); a build that
+  does change an image parameter carries the value the same way (unit-tested,
+  `anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot`).
+- `BaasCliVersion` reset to empty again afterwards.
+- **Teardown not run** — decided with the user (2026-10-23): it would delete `baas-development` for a
+  path this change touches only through the deployer session's check, which `admin image show`
+  exercised live (8.2) and `DeployerSessionTest` covers.
