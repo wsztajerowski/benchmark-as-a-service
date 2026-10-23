@@ -12,6 +12,7 @@ import java.io.StringWriter;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The construction: `baas [admin] <noun> <verb>`, with a top-level alias only for a verb that
@@ -39,8 +40,19 @@ class CommandTreeTest {
             .containsExactlyInAnyOrder("query");
         var admin = root.getSubcommands().get("admin").getSubcommands();
         assertThat(admin.keySet()).containsExactlyInAnyOrder("deployment", "image");
-        assertThat(admin.get("deployment").getSubcommands().keySet()).contains("setup", "teardown");
+        assertThat(admin.get("deployment").getSubcommands().keySet())
+            .containsExactlyInAnyOrder("setup", "teardown", "export", "import");
         assertThat(admin.get("image").getSubcommands().keySet()).contains("build", "show");
+    }
+
+    /** A deployment's data moves only under `admin deployment`, with the deployer's credentials. */
+    @Test
+    void exportAndImportHaveNoOtherForm() {
+        for (String[] args : new String[][]{{"export"}, {"import", "b"}, {"jobs", "export"}, {"admin", "export"}}) {
+            assertThatThrownBy(() -> root().parseArgs(args))
+                .as(String.join(" ", args))
+                .isInstanceOf(picocli.CommandLine.UnmatchedArgumentException.class);
+        }
     }
 
     @Test

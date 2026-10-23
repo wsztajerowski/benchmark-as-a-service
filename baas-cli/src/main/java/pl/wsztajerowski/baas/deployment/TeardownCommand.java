@@ -21,11 +21,11 @@ import pl.wsztajerowski.baas.image.RunnerImageExtension;
 import pl.wsztajerowski.baas.image.RunnerImageParameters;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
+import java.time.Instant;
+import java.util.EnumSet;
 import java.util.concurrent.Callable;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -43,11 +43,6 @@ public class TeardownCommand implements Callable<Integer> {
     @Mixin LoggingMixin loggingMixin;
 
     @Spec CommandSpec spec;
-
-    @Option(names = "--yes", description = "Skip interactive confirmation.")
-    boolean yes;
-
-
 
     @Override
     public Integer call() {
@@ -73,12 +68,22 @@ public class TeardownCommand implements Callable<Integer> {
     /** The deployer's AWS calls. Replaced by tests with a recording fake. */
     Function<BaasConfig, TeardownAws> awsFor = config -> new AwsTeardownAws(DeployerSession.factory(config));
 
+    /** The export the offer runs, under the same deployer credentials. Replaced by tests. */
+    Function<BaasConfig, ExportAws> exportAwsFor = config -> new AwsExportAws(DeployerSession.factory(config));
+
     /**
-     * Everything teardown does in AWS — both gates, the extension's rescue, the bucket, the stack and
+     * Everything teardown does in AWS — the gates, the export it offers, the bucket, the stack and
      * the image — returning the command's exit code. The order is the point: each step runs only once
      * the ones whose failure must stop it have succeeded.
      */
     int removeDeployment(BaasConfig config, String resolvedStack) {
+        // A terminal first: the export offer and the confirmation are both asked there, and no
+        // option skips them, so a teardown without one would have nothing to go on.
+        if (!console().interactive()) {
+            logger.error("Refusing to tear down {}: teardown asks for confirmation on a terminal, and there is "
+                + "none here. Nothing was deleted.", resolvedStack);
+            return 1;
+        }
         TeardownAws aws = awsFor.apply(config);
 
         // Gate 1: no active jobs
@@ -87,26 +92,27 @@ public class TeardownCommand implements Callable<Integer> {
             throw CommandRefusal.refused(inFlightRefusal(resolvedStack, running));
         }
 
-        // Gate 2: explicit confirmation, after saying what goes: nothing survives a teardown.
-        logger.warn("{}", everythingGoesNotice(resolvedStack));
-        if (!confirmed(resolvedStack)) {
-            return 1;
-        }
-
-        // Before anything is deleted: the extension exists only as a stack parameter, so deleting
-        // the stack deletes the only copy. A teardown that cannot save it deletes nothing — a
-        // re-run costs a minute, a lost extension cannot be recovered.
-        Optional<Path> savedExtension;
+        // What goes, said before anything is asked: the extension's only copy is a stack parameter.
         boolean federated;
+        boolean extension;
         try {
             Map<String, String> parameters = aws.stackParameters(resolvedStack);
             federated = !parameters.getOrDefault(CoreStack.PARAM_GITHUB_ORG, "").isBlank();
-            String extension = parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "");
-            savedExtension = saveExtension(extension, Invocation.configService(spec).root(), resolvedStack);
-        } catch (IOException | RuntimeException e) {
-            throw CommandRefusal.refused("Could not save the runner-image extension of " + resolvedStack + " (" + e.getMessage()
-                + "). Nothing was deleted.\n  Save it by hand with `"
-                + Hints.command(resolvedStack, "admin image show --extension > <file>") + "`, then re-run teardown.");
+            extension = !RunnerImageExtension.parse(
+                parameters.getOrDefault(RunnerImageParameters.EXTENSION_DATA, "")).content().isEmpty();
+        } catch (RuntimeException e) {
+            throw CommandRefusal.refused("Could not read the stack parameters of " + resolvedStack + " ("
+                + e.getMessage() + "). Nothing was deleted.");
+        }
+        logger.warn("{}", everythingGoesNotice(resolvedStack, extension));
+
+        // The export, before the confirmation: whoever confirms knows a complete bundle exists, and a
+        // failed export never leaves a confirmed teardown half-done.
+        offerExport(config, resolvedStack);
+
+        // Gate 2: explicit confirmation
+        if (!confirmed(resolvedStack)) {
+            return 1;
         }
 
         // CloudFormation refuses to delete a non-empty bucket, so it is emptied first. A bucket that
@@ -134,7 +140,6 @@ public class TeardownCommand implements Callable<Integer> {
             logger.warn("{}", imageLeftoverNotice(resolvedStack, imageLeftovers));
         }
 
-        savedExtension.ifPresent(file -> logger.warn("{}", extensionSavedNotice(resolvedStack, file)));
         if (federated) {
             logger.info("{}", providerLeftNotice(resolvedStack));
         }
@@ -142,26 +147,28 @@ public class TeardownCommand implements Callable<Integer> {
     }
 
     /**
-     * Writes a non-empty extension, with the marker a pull prints, to
-     * {@code runner-image-extension.<deployment>.yaml} in {@code directory}; writes nothing for
-     * a deployment without one. A later setup's stack holds no extension, so
-     * {@code build-image --extension} accepts the file as it is.
+     * Asks whether to export first and, on a yes, runs the whole export into the directory the user
+     * names. Teardown writes nothing locally except through this. A failed export stops the teardown.
      */
-    static Optional<Path> saveExtension(String extension, Path directory, String deployment) throws IOException {
-        if (extension == null || extension.isBlank()) {
-            return Optional.empty();
+    void offerExport(BaasConfig config, String deployment) {
+        console().print("Export " + deployment + " first, into a local bundle? [Y/n]: ");
+        String answer = answerReader.get();
+        if (answer == null || answer.strip().toLowerCase(java.util.Locale.ROOT).startsWith("n")) {
+            return;
         }
-        Files.createDirectories(directory);
-        Path file = directory.resolve("runner-image-extension." + deployment + ".yaml");
-        Files.writeString(file, RunnerImageExtension.withMarker(extension));
-        return Optional.of(file);
-    }
-
-    static String extensionSavedNotice(String deployment, Path file) {
-        return """
-            Runner-image extension saved to %1$s
-              The stack held its only copy. After a later setup, push it back with:
-                %2$s""".formatted(file, Hints.command(deployment, "admin image build --extension " + file));
+        Instant now = Instant.now();
+        Path defaultDirectory = DeploymentExport.defaultDirectory(deployment, now);
+        console().print("Bundle directory [" + defaultDirectory + "]: ");
+        String chosen = answerReader.get();
+        Path directory = chosen == null || chosen.isBlank() ? defaultDirectory : Path.of(chosen.strip());
+        try (ExportAws exportAws = exportAwsFor.apply(config)) {
+            var outcome = new DeploymentExport(exportAws, deployment, config.getAws().resolveRegion(), () -> now)
+                .run(directory, EnumSet.allOf(Part.class), false);
+            ExportCommand.report(console(), deployment, outcome);
+        } catch (IOException | RuntimeException e) {
+            throw CommandRefusal.refused("The export of " + deployment + " failed: " + e.getMessage()
+                + "\n  Nothing was deleted. Re-run teardown and decline the export, or fix the cause and export again.");
+        }
     }
 
     /**
@@ -182,19 +189,10 @@ public class TeardownCommand implements Callable<Integer> {
     Supplier<String> answerReader = () -> System.console().readLine();
 
     /**
-     * {@code --yes}, or the stack name typed back on a terminal. Without a terminal only
-     * {@code --yes} proceeds, as for {@code baas jobs terminate}: reading a closed stdin used to
-     * crash with "No line found". An abort exits 1, so a script can tell it from a teardown done.
+     * The stack name typed back on the terminal, the only confirmation there is. An abort exits 1,
+     * so a script can tell it from a teardown done.
      */
     boolean confirmed(String stack) {
-        if (yes) {
-            return true;
-        }
-        if (!console().interactive()) {
-            logger.error("Refusing to tear down {} without confirmation: no terminal to ask on. "
-                + "Pass --yes. Nothing was deleted.", stack);
-            return false;
-        }
         // Stays on stdout: the prompt has to sit on the cursor's line, and every logger line
         // comes with a timestamp prefix and a newline. The Console flushes it.
         console().print("Type the deployment name to confirm deletion [" + stack + "]: ");
@@ -245,11 +243,12 @@ public class TeardownCommand implements Callable<Integer> {
     }
 
     /** Said before the prompt, so nobody confirms a teardown believing their history is kept. */
-    static String everythingGoesNotice(String deployment) {
+    static String everythingGoesNotice(String deployment, boolean extension) {
         return """
             Tearing down %1$s deletes everything it holds: the stack, the bucket %1$s and the
               results table %1$s-results, with every job and measurement in them, and the runner
-              image. None of it can be recovered.""".formatted(deployment);
+              image%2$s. None of it can be recovered, except from an export.""".formatted(deployment,
+            extension ? ", and the runner-image extension, whose only copy is in the stack" : "");
     }
 
     /**

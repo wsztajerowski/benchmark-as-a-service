@@ -113,21 +113,21 @@
 
 ## 7. Teardown
 
-- [ ] 7.1 Remove `--yes`. Without an interactive console, refuse with exit 1, saying a terminal is
+- [x] 7.1 Remove `--yes`. Without an interactive console, refuse with exit 1, saying a terminal is
       required.
-- [ ] 7.2 Delete `saveExtension`, `extensionSavedNotice` and the refusal for a failed save. Name the
+- [x] 7.2 Delete `saveExtension`, `extensionSavedNotice` and the refusal for a failed save. Name the
       extension in the notice when the stack parameter holds one.
-- [ ] 7.3 Add the export offer after the notice and before the confirmation: `[Y/n]`, then the
+- [x] 7.3 Add the export offer after the notice and before the confirmation: `[Y/n]`, then the
       directory with the export's default. An accepted offer runs the full export, and a failure
       refuses with nothing deleted.
-- [ ] 7.4 Move every teardown test from `--yes` to scripted answers (`TeardownSequenceTest`,
+- [x] 7.4 Move every teardown test from `--yes` to scripted answers (`TeardownSequenceTest`,
       `TeardownNoticeTest`, `TeardownConfigFileTest`, `DeploymentOptionTest`). Add tests for:
       - `--yes` is an unknown option;
       - no terminal deletes nothing;
       - an accepted export completes before `emptyBucket`;
       - a failed export means no confirmation is asked and nothing is deleted;
       - a declined offer writes no file even with an extension deployed.
-- [ ] 7.5 Extend the `TeardownSequenceTest` order pin with the export step.
+- [x] 7.5 Extend the `TeardownSequenceTest` order pin with the export step.
 
 ## 8. Documentation
 

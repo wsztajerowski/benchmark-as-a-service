@@ -83,7 +83,7 @@ class DeploymentOptionTest {
         TestDeployments.write(dir, TestDeployments.DEFAULT);
         TestDeployments.write(dir, "wiktor-dev");
 
-        var run = baas("admin", "deployment", "teardown", "--yes");
+        var run = baas("admin", "deployment", "teardown");
 
         assertThat(run.exitCode()).isNotZero();
         assertThat(run.err()).contains("2 deployments are configured");

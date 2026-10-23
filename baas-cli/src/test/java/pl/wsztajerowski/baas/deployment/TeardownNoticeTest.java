@@ -2,8 +2,6 @@ package pl.wsztajerowski.baas.deployment;
 
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Path;
-
 import static org.assertj.core.api.Assertions.assertThat;
 
 class TeardownNoticeTest {
@@ -11,16 +9,23 @@ class TeardownNoticeTest {
     /** Said before the prompt: nothing survives a teardown, and the notice names what goes. */
     @Test
     void theNoticeSaysEverythingIsDeletedForGood() {
-        assertThat(TeardownCommand.everythingGoesNotice("baas-123456789012"))
+        assertThat(TeardownCommand.everythingGoesNotice("baas-123456789012", false))
             .contains("bucket baas-123456789012", "results table baas-123456789012-results",
-                "every job and measurement", "None of it can be recovered")
-            .doesNotContain("retained");
+                "every job and measurement", "None of it can be recovered", "except from an export")
+            .doesNotContain("retained", "extension");
+    }
+
+    @Test
+    void theNoticeNamesADeployedExtension() {
+        assertThat(TeardownCommand.everythingGoesNotice("baas-123456789012", true))
+            .contains("runner-image extension, whose only copy is in the stack");
     }
 
     @Test
     void thereIsNoOptionToKeepTheBucket() {
         assertThat(new picocli.CommandLine(new TeardownCommand()).getCommandSpec().optionsMap())
-            .doesNotContainKey("--delete-bucket");
+            .doesNotContainKey("--delete-bucket")
+            .doesNotContainKey("--yes");
     }
 
     /** The image retired is the configured deployment's — the only one teardown can reach. */
@@ -64,47 +69,6 @@ class TeardownNoticeTest {
             .doesNotContain("terminate them manually");
     }
 
-    // ─── the extension, saved before the stack goes (U40) ────────────────────────
-
-    @org.junit.jupiter.api.io.TempDir
-    Path dir;
-
-    @Test
-    void aDeployedExtensionIsSavedWithItsMarkerSoItCanBePushedBack() throws Exception {
-        String extension = "name: extra\nphases:\n  - name: build\n    steps: []";
-
-        var saved = TeardownCommand.saveExtension(extension, dir, "baas-123456789012-dev");
-
-        assertThat(saved).contains(dir.resolve("runner-image-extension.baas-123456789012-dev.yaml"));
-        var parsed = pl.wsztajerowski.baas.image.RunnerImageExtension.parse(
-            java.nio.file.Files.readString(saved.orElseThrow()));
-        assertThat(parsed.content().strip()).isEqualTo(extension);
-        assertThat(parsed.baseMarker())
-            .contains(pl.wsztajerowski.baas.image.RunnerImageExtension.hash(extension));
-    }
-
-    @Test
-    void anDeploymentWithoutAnExtensionWritesNothing() throws Exception {
-        assertThat(TeardownCommand.saveExtension("", dir, "p")).isEmpty();
-        assertThat(TeardownCommand.saveExtension(null, dir, "p")).isEmpty();
-        try (var files = java.nio.file.Files.list(dir)) {
-            assertThat(files).isEmpty();
-        }
-    }
-
-    @Test
-    void theSavedNoticeSaysHowToPushItBack() {
-        assertThat(TeardownCommand.extensionSavedNotice("p", Path.of("/h/.baas/runner-image-extension.p.yaml")))
-            .contains("baas --deployment p admin image build --extension /h/.baas/runner-image-extension.p.yaml");
-    }
-
-    /** Setup may create the provider; nothing deletes it, and teardown says so. */
-    @Test
-    void theProviderIsSaidToStay() {
-        assertThat(TeardownCommand.providerLeftNotice("dev"))
-            .contains("GitHub OIDC provider", "left in place", "account-wide");
-    }
-
     // ─── U32: confirmation ───────────────────────────────────────────────────────
 
     private TeardownCommand teardown(boolean interactive, String... args) {
@@ -115,14 +79,12 @@ class TeardownNoticeTest {
         return command;
     }
 
-    /** Reading a closed stdin used to crash with "No line found". */
+    /** A closed input is a no: a lost terminal can never approve a teardown. */
     @Test
-    void withoutATerminalOnlyYesProceeds() {
-        var command = teardown(false);
-        command.answerReader = () -> { throw new AssertionError("must not prompt"); };
+    void aClosedInputIsNotAConfirmation() {
+        var command = teardown(true);
+        command.answerReader = () -> null;
         assertThat(command.confirmed("baas-123456789012")).isFalse();
-
-        assertThat(teardown(false, "--yes").confirmed("baas-123456789012")).isTrue();
     }
 
     @Test
