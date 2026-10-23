@@ -78,6 +78,13 @@ class DeployerPreflightTest {
             .contains("iam:UpdateAssumeRolePolicy", "iam:UpdateRole", "sts:AssumeRole");
     }
 
+    /** Export's and import's grants are probed, so a policy attached before them reports them missing. */
+    @Test
+    void theExportAndImportGrantsAreProbed() {
+        assertThat(probes()).extracting(DeployerPreflight.Probe::action)
+            .contains("dynamodb:Scan", "dynamodb:PutItem", "s3:PutObject");
+    }
+
     @Test
     void aDeniedActionIsReportedOnceAndAllowedOnesNot() {
         var iam = new FakeIam(action -> action.equals("sts:AssumeRole"));

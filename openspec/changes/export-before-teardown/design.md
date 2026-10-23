@@ -252,8 +252,8 @@ export object as the command.
   it knows and refuses a newer one by name (brainstorm Q4).
 - *Operator-run export?* Declined for now. The whole pair is admin (brainstorm Q5; user,
   2026-10-23).
-- *Second typed phrase on teardown (dated block)?* Superseded by the export offer and the removal of
-  `--yes`. One typed confirmation stays.
+- *Second typed phrase on teardown (dated block)?* Superseded by the export offer. One typed
+  confirmation stays, which `--yes` skips.
 - *U12, the table retained after a rolled-back create?* Closed already by `DeletionPolicy: Delete`
   and the `ROLLBACK_COMPLETE` recreate. Nothing is left for this change.
 
