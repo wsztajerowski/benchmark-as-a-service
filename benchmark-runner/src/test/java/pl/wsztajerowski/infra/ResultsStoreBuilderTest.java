@@ -2,8 +2,6 @@ package pl.wsztajerowski.infra;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URI;
-
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -23,34 +21,14 @@ class ResultsStoreBuilderTest {
         assertThatThrownBy(() -> ResultsStoreBuilder.builder().build())
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("--results-table")
-            .hasMessageContaining("--mongo-connection-string")
             .as("no option discards measurements any more")
             .hasMessageNotContaining("--no-database");
     }
 
     @Test
-    void anEmptyConnectionStringIsAlsoAHardFailure() {
-        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
-            .withConnectionString(URI.create("")).build())
-            .as("the previous behaviour silently discarded measurements here")
+    void aBlankTableNameIsAlsoAHardFailure() {
+        assertThatThrownBy(() -> ResultsStoreBuilder.builder().withTableName(" ").build())
+            .as("a blank name used to fall through to another store or none")
             .isInstanceOf(IllegalStateException.class);
-    }
-
-    @Test
-    void namingBothStoresIsRejectedRatherThanPickingOne() {
-        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
-            .withTableName("results")
-            .withConnectionString(URI.create("mongodb://localhost:27017/baas"))
-            .build())
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("both");
-    }
-
-    @Test
-    void aConnectionStringWithoutADatabaseNameIsRejected() {
-        assertThatThrownBy(() -> ResultsStoreBuilder.builder()
-            .withConnectionString(URI.create("mongodb://localhost:27017"))
-            .build())
-            .hasMessageContaining("database name");
     }
 }

@@ -33,17 +33,17 @@
 
 ## 4. Remove the MongoDB store
 
-- [ ] 4.1 Delete `MongoResultsStore`, `MongoMeasurementDocument`, `MongoResultsStoreContractIT`,
+- [x] 4.1 Delete `MongoResultsStore`, `MongoMeasurementDocument`, `MongoResultsStoreContractIT`,
   `TestcontainersWithS3AndMongoBaseIT`, `MongoDbTestHelpers`, and the Mongo branch and
   `withConnectionString` of `ResultsStoreBuilder`; `ResultsStoreBuilderTest` keeps the blank-table
   refusal and loses the exactly-one-of cases; verify `mvn -pl benchmark-runner test` is green
-- [ ] 4.2 Remove `--mongo-connection-string`/`-m` from `ApiCommonSharedOptions`, make
+- [x] 4.2 Remove `--mongo-connection-string`/`-m` from `ApiCommonSharedOptions`, make
   `--results-table` `required = true`; `ApiCommonSharedOptionsTest` covers a missing table and an
   unknown `-m`, each exiting non-zero before any benchmark
-- [ ] 4.3 Remove the Morphia annotations from `JmhResult`, `Metric`, `JCStressResult`, and the
+- [x] 4.3 Remove the Morphia annotations from `JmhResult`, `Metric`, `JCStressResult`, and the
   `mongodb-driver-sync`, `morphia-core`, `testcontainers-mongodb` dependencies from the POMs; verify
   `mvn dependency:tree` lists no `org.mongodb` or `dev.morphia` artifact and the reactor builds
-- [ ] 4.4 Remove the `mongo` service from `docker-compose.yaml` and the Mongo block from
+- [x] 4.4 Remove the `mongo` service from `docker-compose.yaml` and the Mongo block from
   `.github/dependabot.yml`; verify `docker compose config` parses
 
 ## 5. Remove local storage mode

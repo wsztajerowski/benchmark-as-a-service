@@ -7,8 +7,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    # retire-mongodb removes MongoDB and Morphia, so updates to them are churn. Drop this block
-    # with them.
-    ignore:
-      - dependency-name: "org.mongodb:*"
-      - dependency-name: "dev.morphia.morphia:*"

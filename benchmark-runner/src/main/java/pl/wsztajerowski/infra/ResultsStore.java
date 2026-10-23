@@ -9,7 +9,7 @@ import java.util.List;
  * physical layout, so one item per measurement maps cleanly to one document per measurement and
  * nothing DynamoDB-specific leaks through.
  *
- * <p>Write-only by design. Reads belong to {@code baas-cli}, which never learns MongoDB exists.
+ * <p>Write-only by design. Reads belong to {@code baas-cli}.
  */
 public interface ResultsStore {
 
