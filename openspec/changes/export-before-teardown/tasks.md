@@ -171,7 +171,7 @@
       `results query`, `jobs list` and `jobs download <jobId>` show the exported data. Run
       `admin image build --extension <bundle>/runner-image-extension.yaml` and confirm the label
       carries the same `+ext.<hash>`.
-- [ ] 9.6 Run the import again and confirm everything is reported as skipped.
+- [x] 9.6 Run the import again and confirm everything is reported as skipped.
 - [ ] 9.6a Import the same bundle into a second set-up deployment with `--parts results`, and confirm
       the table is loaded while the bucket holds no `jobs/` key and no extension command is printed.
 - [ ] 9.7 Record each result in `verify.md`.
