@@ -828,11 +828,6 @@ Resources:
                 Condition:
                   StringLike:
                     ssm:resourceTag/aws:ssmmessages:session-id: "${aws:userid}*"
-              # The documented form for IAM users; whether it admits an assumed-role session is
-              # verified live (runner-shell-access task 1.2).
-              - Effect: Allow
-                Action: ssmmessages:OpenDataChannel
-                Resource: !Sub "arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:session/${!aws:userid}-*"
               # Whether a live runner's agent has registered yet; takes no narrower resource.
               - Effect: Allow
                 Action: ssm:DescribeInstanceInformation

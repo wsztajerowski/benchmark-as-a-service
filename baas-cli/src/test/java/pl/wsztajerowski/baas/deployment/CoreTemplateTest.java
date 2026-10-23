@@ -676,7 +676,10 @@ class CoreTemplateTest {
             .contains("aws:ResourceTag/baas-deployment=${ResourceNamePrefix}"));
         assertThat(policies.stream().flatMap(policy -> InfraFixtures.actions(
                 (Map<String, Object>) policy.get("PolicyDocument")).stream()))
-            .doesNotContain("ssm:SendCommand");
+            .doesNotContain("ssm:SendCommand")
+            .as("the plugin opens the data channel with StartSession's token, not the operator's "
+                + "IAM rights: a grant here was shown live to allow nothing (ADR 0010)")
+            .noneMatch(action -> action.startsWith("ssmmessages:"));
     }
 
     // ─── GitHub OIDC federation on the operator role ─────────────────────────────
