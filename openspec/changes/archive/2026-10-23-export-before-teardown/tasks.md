@@ -174,6 +174,7 @@
 - [x] 9.6 Run the import again and confirm everything is reported as skipped.
 - [ ] 9.6a Import the same bundle into a second set-up deployment with `--parts results`, and confirm
       the table is loaded while the bucket holds no `jobs/` key and no extension command is printed.
+      *Not run: accepted as W1 by the user on 2026-10-23 (needs a second deployment and an IAM admin).*
 - [x] 9.7 Record each result in `verify.md`.
 
 ## 10. Verify

@@ -7,7 +7,6 @@ Set 2026-10-02. A row may be a review walkthrough rather than a change: it has n
 
 | # | Change | From | State | Starts with |
 |---|---|---|---|---|
-| 1 | [`export-before-teardown`](export-before-teardown/design.md) | U2 | Implemented on branch `export-before-teardown` (worktree `../benchmark-as-a-service-export`); live checks 9.4–9.6a remain (tasks section 9) | Tasks section 9, then `/opsx:verify export-before-teardown` |
 
 ## Deferred checks
 

@@ -36,7 +36,7 @@ package in `src/test`.
 
 ## Warnings
 
-- **W1** — 9.6a was not run live. Importing `--parts results` into a *second* deployment needs one set
+- **W1** — *Accepted by the user, 2026-10-23.* 9.6a was not run live. Importing `--parts results` into a *second* deployment needs one set
   up with its own deployer policy, which an IAM admin must attach. `ImportCommandTest` covers it
   against the fake (`oneSelectedPartLeavesTheOthersUntouched`, and the cross-deployment names in
   `aFullBundleRestoresEverythingAndHandsTheExtensionOver`), and the IT imports into a second table
