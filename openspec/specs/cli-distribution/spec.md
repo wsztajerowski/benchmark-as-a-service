@@ -101,7 +101,7 @@ commands but not others, and SHALL state what each is needed for.
 - **THEN** the installer completes, and reports which commands are affected
 
 ### Requirement: The installer never reads or writes the CLI's configuration
-Installation, update and uninstallation SHALL leave the CLI's configuration directory untouched. The
+Installation and uninstallation SHALL leave the CLI's configuration directory untouched. The
 installer SHALL NOT create, modify or delete any file the CLI's own commands own.
 
 #### Scenario: Configuration survives uninstallation
@@ -112,46 +112,10 @@ installer SHALL NOT create, modify or delete any file the CLI's own commands own
 - **WHEN** the CLI is installed on a machine with no configuration present
 - **THEN** no configuration file is created
 
-### Requirement: Updating resolves the current release and defers to that release's installer
-The installer SHALL provide an update mode that determines the newest published release, compares it
-against the installed version, and SHALL delegate the installation to the installer published with
-the newer release rather than installing the newer artifact itself. When the installed version is
-already the newest, it SHALL report so and download no artifact. When the installed version is newer
-than the newest published release, it SHALL report both versions and change nothing.
-
-#### Scenario: Already current does no work
-- **WHEN** update is invoked and the installed version equals the newest published release
-- **THEN** it reports that the installation is current and downloads no artifact
-
-#### Scenario: A newer release is installed by its own installer
-- **WHEN** update is invoked and a newer release exists
-- **THEN** the installer published with that newer release performs the installation
-
-#### Scenario: Update never downgrades
-- **WHEN** the installed version is newer than the newest published release
-- **THEN** update reports both versions and leaves the installation unchanged
-
-#### Scenario: Version ordering is numeric, not lexical
-- **WHEN** the installed version is `3.9.0` and the newest published release is `3.10.0`
-- **THEN** the newer release is recognised as newer
-
-#### Scenario: An unreadable installed version stops the update
-- **WHEN** update is invoked and the installed version cannot be determined
-- **THEN** it reports that and changes nothing, rather than assuming a version
-
-### Requirement: The update path remains available after a piped installation
-The installer SHALL store, alongside the installed CLI, the installer for the version it installed,
-so that update is reachable without re-obtaining the installer. The stored copy SHALL be the
-published installer for that version.
-
-#### Scenario: Update is reachable after installing through a pipe
-- **WHEN** the CLI is installed by piping the installer into a shell
-- **THEN** an installer for the installed version is present alongside the CLI and can be run with
-  the update option
-
 ### Requirement: Uninstallation removes exactly what was installed
-The installer SHALL provide an uninstall mode that removes the launcher, the installed CLI artifact
-and the stored installer, and nothing else.
+The installer SHALL provide an uninstall mode that removes the launcher and the installed CLI
+artifact, and nothing else — except a stored installer copy that an earlier release placed beside
+the CLI artifact, which it SHALL also remove.
 
 #### Scenario: Uninstallation removes the command
 - **WHEN** uninstall is invoked
@@ -160,6 +124,11 @@ and the stored installer, and nothing else.
 #### Scenario: Uninstallation is scoped
 - **WHEN** uninstall is invoked
 - **THEN** no file outside the installation directories is removed
+
+#### Scenario: An earlier release's stored installer is removed too
+- **WHEN** uninstall is invoked on an installation an earlier release made, which holds a stored
+  installer copy beside the CLI artifact
+- **THEN** that copy is removed along with the launcher and the artifact
 
 ### Requirement: The installer runs on macOS and Linux
 The installer SHALL work on both macOS and Linux without per-platform variants, relying only on
@@ -173,3 +142,21 @@ use.
 #### Scenario: Installation succeeds on a stock Linux machine
 - **WHEN** the installer runs on Linux
 - **THEN** it verifies the download and installs successfully
+
+### Requirement: Updating is re-running the published installer
+The installer SHALL NOT offer an update mode and SHALL NOT store a copy of itself beside the
+installed CLI. Updating an installation SHALL be running the newest release's published installer,
+which installs that release over the existing installation by the same atomic replacement as a
+first installation.
+
+#### Scenario: The newest installer updates an existing installation
+- **WHEN** an older release is installed and the newest release's published installer is run
+- **THEN** the newest release is installed in its place, and the configuration directory is untouched
+
+#### Scenario: The update option is refused
+- **WHEN** the installer is run with `--update`
+- **THEN** it exits non-zero as for any unknown option, and installs nothing
+
+#### Scenario: Nothing is stored beside the CLI
+- **WHEN** the CLI is installed
+- **THEN** the installation directory holds the CLI artifact and no installer copy
