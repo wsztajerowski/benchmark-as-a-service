@@ -167,7 +167,7 @@
       manifest's counts match `baas results query --format json | jq length`, that
       `baas jobs list` was captured before the teardown, and that the extension file exists. Then
       confirm the teardown completed.
-- [ ] 9.5 `admin deployment setup`, then `admin deployment import <bundle>`. Confirm that
+- [x] 9.5 `admin deployment setup`, then `admin deployment import <bundle>`. Confirm that
       `results query`, `jobs list` and `jobs download <jobId>` show the exported data. Run
       `admin image build --extension <bundle>/runner-image-extension.yaml` and confirm the label
       carries the same `+ext.<hash>`.
