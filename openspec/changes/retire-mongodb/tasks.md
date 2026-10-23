@@ -2,27 +2,27 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm nothing outside the files named in the proposal reads Mongo, Morphia,
+- [x] 1.1 Confirm nothing outside the files named in the proposal reads Mongo, Morphia,
   `MONGO_CONNECTION_STRING` or `LocalStorageService` (`git grep -i -e mongo -e morphia -e LocalStorage`
   excluding archives, reviews and ADRs); record any surprise in design.md before going on
-- [ ] 1.2 Confirm every caller already passes both options: `UserDataScriptBuilder` (user-data passes
+- [x] 1.2 Confirm every caller already passes both options: `UserDataScriptBuilder` (user-data passes
   `--s3-bucket` and `--results-table` on every job), `jmh-with-async.sh`, `jmh-with-profiler.sh`;
   verify by reading each and by `UserDataScriptBuilderTest`'s existing assertions
-- [ ] 1.3 Confirm picocli rejects a missing `required = true` option declared in
+- [x] 1.3 Confirm picocli rejects a missing `required = true` option declared in
   `ApiCommonSharedOptions` for every subcommand (it is shared across the four types): a throwaway
   `ApiCommonSharedOptionsTest` case without `--s3-bucket` exits non-zero naming it; keep the case if it
   holds
 
 ## 2. Move the service ITs onto DynamoDB (one commit, green before any deletion)
 
-- [ ] 2.1 `JmhSubcommandServiceIT`, `JmhWithProfilerSubcommandServiceIT` and
+- [x] 2.1 `JmhSubcommandServiceIT`, `JmhWithProfilerSubcommandServiceIT` and
   `JmhWithAsyncProfilerSubcommandServiceIT` extend `TestcontainersWithDynamoDbBaseIT`, store through
   `DynamoDbResultsStore`, and assert the same fields through `MeasurementItemMapper.fromItem`; verify
   with `mvn -pl benchmark-runner verify` (full reactor built first; `ASYNC_PATH` exported for the
   async IT)
-- [ ] 2.2 `JCStressSubcommandServiceIT` likewise, asserting the JCStress item's counts; verify the same
+- [x] 2.2 `JCStressSubcommandServiceIT` likewise, asserting the JCStress item's counts; verify the same
   way
-- [ ] 2.3 Commit with the Mongo code still present; the full reactor `mvn verify` is green
+- [x] 2.3 Commit with the Mongo code still present; the full reactor `mvn verify` is green
 
 ## 3. Close B11's upload half
 
