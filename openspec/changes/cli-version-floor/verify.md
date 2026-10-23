@@ -50,3 +50,17 @@ parameter (`DefaultValue: ""`) and no error, before and after the output was add
 | admin commands | `DeployerSession.factory(config)`, eager | No — every call site is at the command's start, outside a `try`; teardown's export builds a second factory, so the check's outcome is remembered per deployment for the process |
 
 No catch swallows or rewords the refusal, so task 4.5 needs no code change beyond the memo.
+
+## 7.5 Release-notes paragraph (for the PR description)
+
+> **Update every `baas` once, then have an admin run setup.** A deployment now records the release
+> that last ran `baas admin deployment setup` on it, and every command that reaches AWS refuses a
+> CLI older than that release — patch level included — printing the one command that updates it:
+> `curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh`.
+> `baas jobs terminate` is never refused. CLIs released before this one ignore the record, so it
+> protects nobody until every machine has updated once. `install.sh --update` and the installer copy
+> stored beside the CLI are gone: updating is that same `curl` line, and `--uninstall` removes an
+> old stored copy.
+
+No commit on the branch carries `BREAKING` in its subject or body (`git log origin/next-release..HEAD`
+scanned); the installer change ships as `feat`, per the proposal.
