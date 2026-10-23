@@ -10,8 +10,9 @@ shaped from `baas run` without the runner silently dropping or reinterpreting JC
 The runner's JCStress subcommand SHALL accept a `--mode <mode>` option and pass its value to JCStress
 as JCStress's run mode. When `--mode` is not given, the runner SHALL pass no mode at all, so that
 JCStress applies its own default exactly as it did before this option existed. The runner SHALL NOT
-validate the value itself: JCStress owns its mode vocabulary. The option SHALL have no short form
-while `-m` names the MongoDB connection string.
+validate the value itself: JCStress owns its mode vocabulary. The option SHALL have no short form, and
+`-m` SHALL NOT be a runner option at all. `baas run` SHALL refuse a `-m` among the benchmark's
+arguments before any AWS call, naming `--mode` as what to type instead.
 
 #### Scenario: Sanity mode is requested
 - **WHEN** a job is launched as `baas run jcstress … -- --mode sanity`
@@ -28,6 +29,11 @@ while `-m` names the MongoDB connection string.
 - **THEN** the job ends failed, with JCStress's own error in `jcstress-output.txt`, rather than
   running in some other mode
 
+#### Scenario: The short option is refused before launch
+- **WHEN** `baas run jcstress … -- -m sanity` is invoked
+- **THEN** it exits non-zero naming `--mode`, before any upload or launch
+
 #### Scenario: The short option keeps its meaning
-- **WHEN** `-m` is passed to the runner
-- **THEN** it is still read as the MongoDB connection string, not as a JCStress mode
+- **WHEN** `-m` is passed to the runner directly
+- **THEN** it is still not read as a JCStress mode: the runner rejects it as an unknown option and
+  runs no benchmark
