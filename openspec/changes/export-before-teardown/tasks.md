@@ -81,7 +81,7 @@
 
 ## 6. `baas admin deployment import`
 
-- [ ] 6.1 Add the command under `DeploymentCommand`, taking `<bundle>` and `--parts`, which reuses
+- [x] 6.1 Add the command under `DeploymentCommand`, taking `<bundle>` and `--parts`, which reuses
       the `Part` vocabulary and its help descriptions from 4.3 and defaults to the bundle's parts.
       Refuse, before any write:
       - a bundle without a manifest;
@@ -89,15 +89,15 @@
       - a part the bundle lacks;
       - a target whose table or bucket is missing (naming setup);
       - a run with no terminal.
-- [ ] 6.2 Print the source and the target (deployment, account, region) with the parts and counts, and
+- [x] 6.2 Print the source and the target (deployment, account, region) with the parts and counts, and
       require the target name typed back.
-- [ ] 6.3 Load the parts:
+- [x] 6.3 Load the parts:
       - `results`: one `PutItem` per line with `attribute_not_exists(pk)`.
       - `recordings`: one `PutObject` per file with `If-None-Match: *`, never under `releases/`.
       - Report the written and skipped counts for each.
-- [ ] 6.4 Extension hand-off: when the manifest's hash equals the target's deployed hash, say so.
+- [x] 6.4 Extension hand-off: when the manifest's hash equals the target's deployed hash, say so.
       Otherwise print the `admin image build --extension <bundle file>` command for the target.
-- [ ] 6.5 Tests against the fake:
+- [x] 6.5 Tests against the fake:
       - `--parts` selects a subset of a full bundle: only `results`, only `recordings`, only
         `extension`, and no unselected part is written or acted on;
       - an unknown part exits 2 before any AWS call;
@@ -106,7 +106,7 @@
       - a cross-deployment import prompts with both names;
       - every refusal in 6.1;
       - all three extension cases.
-- [ ] 6.6 An IT on LocalStack: create a table and a bucket, seed them with real-shaped items (a
+- [x] 6.6 An IT on LocalStack: create a table and a bucket, seed them with real-shaped items (a
       measurement with `params`, a job item) and objects, export, import into a second table and
       bucket, and compare them item by item and object by object. Then run the import again and
       assert that everything is skipped.
