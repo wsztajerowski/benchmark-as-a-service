@@ -168,7 +168,7 @@ overwritten, and an import into the wrong deployment adds rows that can be remov
 
 #### Scenario: Importing one part of a full bundle
 - **WHEN** `baas admin deployment import <bundle> --parts results` is given a bundle holding all three parts
-- **THEN** the prompt names only `results` and its counts, the table is loaded, and no object is written to the bucket and no extension command is printed
+- **THEN** the summary before the writes names only `results` and its counts, the table is loaded, and no object is written to the bucket and no extension command is printed
 
 #### Scenario: Importing the extension alone
 - **WHEN** `baas admin deployment import <bundle> --parts extension` runs
