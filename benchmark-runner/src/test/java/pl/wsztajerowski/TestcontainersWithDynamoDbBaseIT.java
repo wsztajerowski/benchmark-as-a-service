@@ -19,6 +19,10 @@ import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 import software.amazon.awssdk.services.dynamodb.model.ScanRequest;
 
+import pl.wsztajerowski.baas.model.StoredMeasurement;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
+import pl.wsztajerowski.infra.DynamoDbResultsStore;
+
 import java.util.List;
 import java.util.Map;
 
@@ -83,6 +87,19 @@ public class TestcontainersWithDynamoDbBaseIT extends TestcontainersWithS3BaseIT
     /** Production code never scans; a test may, and it is the cheapest way to see every item. */
     protected List<Map<String, AttributeValue>> scanTestTable() {
         return dynamoDbClient.scan(ScanRequest.builder().tableName(TEST_TABLE_NAME).build()).items();
+    }
+
+    /** The production adapter over the test table. */
+    protected DynamoDbResultsStore resultsStore() {
+        return new DynamoDbResultsStore(dynamoDbClient, TEST_TABLE_NAME);
+    }
+
+    /**
+     * Every stored measurement, read back through the model's mapper rather than by attribute
+     * name, so a test cannot hand-encode the item it asserts on.
+     */
+    protected List<StoredMeasurement> storedMeasurements() {
+        return scanTestTable().stream().map(MeasurementItemMapper::fromItem).toList();
     }
 
     protected long countItemsInTestTable() {

@@ -19,6 +19,11 @@ See proposal.md — *Why*. The state that shapes the approach:
   services call it. JCStress already uploads in its service.
 - `RunnerArgs.SET_BY_THE_CLI` lists both Mongo spellings, so `baas run` refuses them after `--` with
   `insteadOf`'s "A JCStress mode is --mode, not -m".
+- Task 1.1 found Mongo references beyond the proposal's list. In `baas-cli` and `baas-model` tests
+  they are absence tests and history comments (no Atlas egress, `--mongo-uri` gone, the SSM fetch
+  gone) and stay. In the runner, `ApiCommonSharedOptionsTest`, `JCStressSubcommandTest`,
+  `ResultsStoreBuilderTest` and the comments in `ApiJCStressOptions`, `ResultsStore` and
+  `JCStressHtmlResultParserTest` assert or describe the Mongo option and change with section 4.
 - Comparability: nothing here reaches a stored measurement or the instance. User-data, the options
   the CLI passes, the AMI and the item shape are unchanged, so results before and after compare as
   before.
