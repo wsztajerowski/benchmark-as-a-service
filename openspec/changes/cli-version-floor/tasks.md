@@ -18,11 +18,11 @@
 
 ## 4. The check
 
-- [ ] 4.1 Add `session.CliVersionCheck`: refuse (exit 1, both versions, the `curl -fsSL https://github.com/<sourceRepo>/releases/latest/download/install.sh | sh` line), newer hint (operator and admin wording), unreleased warning with no lookup, silent proceed for equal / empty / absent stack; unit tests for each outcome
-- [ ] 4.2 Wire it into `OperatorSession.factory()` (deferred, once per session, region memoised and shared) with `Aws.recordedCliVersion`; `OperatorSessionTest` covers refuse, proceed, once-only, and that a refusal is thrown before any client of the command is built
-- [ ] 4.3 Add `OperatorSession.uncheckedFactory()` and use it in `JobsTerminateSubcommand`; a source-reading test pins that it has exactly that one caller
-- [ ] 4.4 Run the check eagerly in `DeployerSession.factory(config)`, with a package-private overload taking the lookup so a test covers refuse and proceed
-- [ ] 4.5 Apply the audit from 1.3 (no catch swallows the refusal, so no catch changes): remember the check's outcome per deployment for the process, so teardown's second deployer factory neither repeats the hint nor the call; a test covers it
+- [x] 4.1 Add `session.CliVersionCheck`: refuse (exit 1, both versions, the `curl -fsSL https://github.com/<sourceRepo>/releases/latest/download/install.sh | sh` line), newer hint (operator and admin wording), unreleased warning with no lookup, silent proceed for equal / empty / absent stack; unit tests for each outcome
+- [x] 4.2 Wire it into `OperatorSession.factory()` (deferred, once per session, region memoised and shared) with `Aws.recordedCliVersion`; `OperatorSessionTest` covers refuse, proceed, once-only, and that a refusal is thrown before any client of the command is built
+- [x] 4.3 Add `OperatorSession.uncheckedFactory()` and use it in `JobsTerminateSubcommand`; a source-reading test pins that it has exactly that one caller
+- [x] 4.4 Run the check eagerly in `DeployerSession.factory(config)`, with a package-private overload taking the lookup so a test covers refuse and proceed
+- [x] 4.5 Apply the audit from 1.3 (no catch swallows the refusal, so no catch changes): remember the check's outcome per deployment for the process, so teardown's second deployer factory neither repeats the hint nor the call; a test covers it
 
 ## 5. Setup
 

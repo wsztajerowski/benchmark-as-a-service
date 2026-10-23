@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas.cli;
+package pl.wsztajerowski.baas.session;
 
 import org.junit.jupiter.api.Test;
 

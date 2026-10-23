@@ -96,7 +96,12 @@ public class AwsClientFactory {
         return builder.build();
     }
 
-    private static <T> Supplier<T> memoize(Supplier<T> supplier) {
+    /**
+     * {@code supplier}, called at most once. Public so that a session can share one deferred value
+     * between a factory and its own first-use work — the operator session's version check needs
+     * the same region the factory will address.
+     */
+    public static <T> Supplier<T> memoize(Supplier<T> supplier) {
         return new Supplier<>() {
             private T value;
 

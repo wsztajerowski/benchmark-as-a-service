@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas;
 
 import pl.wsztajerowski.baas.cli.LoggingMixin;
-import pl.wsztajerowski.baas.cli.BaasVersion;
+import pl.wsztajerowski.baas.session.BaasVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;

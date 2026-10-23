@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas;
 
-import pl.wsztajerowski.baas.cli.BaasVersion;
+import pl.wsztajerowski.baas.session.BaasVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -20,6 +20,7 @@ import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.cli.Root;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
+import pl.wsztajerowski.baas.session.CliVersionCheck;
 import pl.wsztajerowski.baas.session.DeploymentSelectionException;
 
 import java.nio.file.Path;
@@ -200,7 +201,8 @@ public class BaasApp implements Runnable, Root {
      * <p>A {@link DeploymentSelectionException} gets no {@code -v} hint: its message already says what
      * to type, and its trace would show only where the files were read. Nor does a
      * {@link CommandRefusal}, which also chooses its exit code: a command's refusals are logged here,
-     * once, rather than by each command.
+     * once, rather than by each command. A {@link CliVersionCheck.Refused} — this CLI is older than
+     * the deployment — is one too, exit 1, thrown from the session rather than by a command.
      */
     public static int reportFailure(Exception ex, CommandLine commandLine,
                              CommandLine.ParseResult parseResult) {
@@ -209,6 +211,9 @@ public class BaasApp implements Runnable, Root {
         logger.error("{}", message);
         if (ex instanceof CommandRefusal refusal) {
             return refusal.exitCode();
+        }
+        if (ex instanceof CliVersionCheck.Refused) {
+            return 1;
         }
         if (logger.isDebugEnabled()) {
             logger.debug("Stack trace:", ex);

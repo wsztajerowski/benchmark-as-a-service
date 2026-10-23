@@ -1,4 +1,4 @@
-package pl.wsztajerowski.baas.cli;
+package pl.wsztajerowski.baas.session;
 
 /**
  * The CLI's own released version, which is what pins the runner JAR a job executes.

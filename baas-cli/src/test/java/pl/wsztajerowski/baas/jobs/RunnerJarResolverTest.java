@@ -93,7 +93,7 @@ class RunnerJarResolverTest {
 
     @Test
     void theBuildNamesTheUpstreamRepositoryByDefault() {
-        assertThat(pl.wsztajerowski.baas.cli.BaasVersion.sourceRepo())
+        assertThat(pl.wsztajerowski.baas.session.BaasVersion.sourceRepo())
             .isEqualTo("wsztajerowski/benchmark-as-a-service");
     }
 

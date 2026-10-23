@@ -3,9 +3,11 @@ package pl.wsztajerowski.baas.session;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.AwsErrors;
 import pl.wsztajerowski.baas.aws.BucketProbe;
+import pl.wsztajerowski.baas.aws.CloudFormationService;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.sts.StsClient;
 import software.amazon.awssdk.services.sts.auth.StsAssumeRoleCredentialsProvider;
@@ -55,6 +57,12 @@ public final class OperatorSession {
 
         /** The region {@code bucket} lives in, asked from {@code fromRegion}; empty when there is none. */
         Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String fromRegion);
+
+        /**
+         * The release {@code stack} records as the CLI that last ran setup on it; empty when the stack
+         * does not exist or records none.
+         */
+        Optional<String> recordedCliVersion(AwsCredentialsProvider credentials, String region, String stack);
     }
 
     public record Caller(String arn, String account) {}
@@ -64,15 +72,22 @@ public final class OperatorSession {
     private final ConfigService configs;
     private final Aws aws;
     private final Map<String, String> environment;
+    private final CliVersionCheck versionCheck;
 
     private BaasConfig config;
     private Caller caller;
     private AwsCredentialsProvider source;
+    private boolean versionChecked;
 
     public OperatorSession(ConfigService configs, Aws aws, Map<String, String> environment) {
+        this(configs, aws, environment, CliVersionCheck.current());
+    }
+
+    OperatorSession(ConfigService configs, Aws aws, Map<String, String> environment, CliVersionCheck versionCheck) {
         this.configs = configs;
         this.aws = aws;
         this.environment = environment;
+        this.versionCheck = versionCheck;
     }
 
     /** The session real commands use. */
@@ -85,7 +100,12 @@ public final class OperatorSession {
      * deployment before it writes anything.
      */
     public static OperatorSession adopting(BaasConfig config, Aws aws, Map<String, String> environment) {
-        var session = new OperatorSession(null, aws, environment);
+        return adopting(config, aws, environment, CliVersionCheck.current());
+    }
+
+    static OperatorSession adopting(BaasConfig config, Aws aws, Map<String, String> environment,
+                                    CliVersionCheck versionCheck) {
+        var session = new OperatorSession(null, aws, environment, versionCheck);
         session.config = config;
         return session;
     }
@@ -123,11 +143,36 @@ public final class OperatorSession {
     /**
      * Clients for the deployment, running as its operator role. Nothing is resolved until the first
      * client is built, so a command that fails earlier, or a test that stands its AWS step in, makes
-     * no call.
+     * no call. Building the first one also checks this CLI against the release the deployment
+     * records ({@link CliVersionCheck}), once per session: an older CLI is refused before it sends
+     * any request of its own.
      */
     public AwsClientFactory factory() {
+        return factory(true);
+    }
+
+    /**
+     * {@link #factory()} without the version check — for {@code baas jobs terminate} alone, because
+     * stopping a paid instance must never wait on an install. A source-reading test pins that it has
+     * no other caller.
+     */
+    public AwsClientFactory uncheckedFactory() {
+        return factory(false);
+    }
+
+    private AwsClientFactory factory(boolean checked) {
         BaasConfig resolved = config();
-        return AwsClientFactory.deferred(() -> region(resolved), () -> operatorCredentials(resolved));
+        // Shared with the check, so it asks the region the factory will address — once.
+        var region = AwsClientFactory.memoize(() -> region(resolved));
+        return AwsClientFactory.deferred(region, () -> {
+            AwsCredentialsProvider credentials = operatorCredentials(resolved);
+            if (checked && !versionChecked) {
+                versionCheck.check(resolved.requirePrefix(), CliVersionCheck.Role.OPERATOR,
+                    () -> aws.recordedCliVersion(credentials, region.get(), resolved.stackName()));
+                versionChecked = true;
+            }
+            return credentials;
+        });
     }
 
     /** A&nbsp;/ B&nbsp;/ C, as the class comment draws them. */
@@ -258,6 +303,15 @@ public final class OperatorSession {
             BucketProbe probe = BucketProbe.of(bucket, fromRegion,
                 r -> S3Client.builder().region(Region.of(r)).credentialsProvider(credentials).build());
             return probe instanceof BucketProbe.Reachable(String found) ? Optional.of(found) : Optional.empty();
+        }
+
+        @Override
+        public Optional<String> recordedCliVersion(AwsCredentialsProvider credentials, String region, String stack) {
+            try (CloudFormationClient cf = CloudFormationClient.builder().region(Region.of(region))
+                .credentialsProvider(credentials).build()) {
+                return Optional.ofNullable(new CloudFormationService(cf).getStackParameters(stack)
+                    .get(CoreStack.PARAM_BAAS_CLI_VERSION));
+            }
         }
     };
 }

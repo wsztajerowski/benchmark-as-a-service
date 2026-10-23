@@ -14,9 +14,9 @@ C4Component
     }
 
     Container_Boundary(kernel, "Kernel — every slice may use it, it imports no slice") {
-        Component(cli, "cli", "Root, Invocation, LoggingMixin, BaasVersion", "How a command reads the root's --deployment and config root without importing BaasApp")
+        Component(cli, "cli", "Root, Invocation, LoggingMixin", "How a command reads the root's --deployment and config root without importing BaasApp")
         Component(console, "console", "Console, StatusLine, Table, Json, Csv, Hints, Watch, Elapsed", "stdout payload; colour and redraw only when interactive")
-        Component(session, "session", "ConfigService, BaasConfig, DeploymentNames, OperatorSession, DeployerSession, CoreStack, GitProject, DeploymentNameRule", "Which deployment, which credentials; DeploymentNames composes every resource name")
+        Component(session, "session", "ConfigService, BaasConfig, DeploymentNames, OperatorSession, DeployerSession, CoreStack, GitProject, DeploymentNameRule, BaasVersion, CliVersionCheck", "Which deployment, which credentials; DeploymentNames composes every resource name; CliVersionCheck refuses a CLI older than the deployment")
         Component(aws, "aws", "AwsClientFactory, CloudFormationService, S3UploadService, BucketProbe, AwsErrors, Checksums", "Shared AWS SDK v2 readers and writers")
     }
 

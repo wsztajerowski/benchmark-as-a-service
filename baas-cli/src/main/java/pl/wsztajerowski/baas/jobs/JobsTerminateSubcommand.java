@@ -58,7 +58,9 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
     @Override
     public Integer call() {
         BaasConfig config = session().config();
-        var factory = session().factory();
+        // Unchecked against the deployment's recorded release: stopping a paid instance never
+        // waits on an install, and an older CLI's stop step does no harm.
+        var factory = session().uncheckedFactory();
         try (var dynamoDb = factory.dynamoDb();
              var quickDynamoDb = factory.dynamoDb(pl.wsztajerowski.baas.jobs.JobSession.STOP_WRITE_TIMEOUT);
              var ec2 = factory.ec2()) {
