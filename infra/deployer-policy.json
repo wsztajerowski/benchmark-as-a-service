@@ -200,7 +200,9 @@
         "dynamodb:UpdateTimeToLive",
         "dynamodb:TagResource",
         "dynamodb:UntagResource",
-        "dynamodb:ListTagsOfResource"
+        "dynamodb:ListTagsOfResource",
+        "dynamodb:Scan",
+        "dynamodb:PutItem"
       ],
       "Resource": "arn:aws:dynamodb:${REGION}:${ACCOUNT_ID}:table/${PREFIX}-results"
     },
@@ -218,7 +220,8 @@
         "s3:PutBucketTagging",
         "s3:PutBucketVersioning",
         "s3:PutEncryptionConfiguration",
-        "s3:PutLifecycleConfiguration"
+        "s3:PutLifecycleConfiguration",
+        "s3:PutObject"
       ],
       "Resource": [
         "arn:aws:s3:::${PREFIX}",

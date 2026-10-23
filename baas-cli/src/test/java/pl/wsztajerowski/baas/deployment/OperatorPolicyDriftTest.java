@@ -67,6 +67,18 @@ class OperatorPolicyDriftTest {
     }
 
     /**
+     * Import, which writes measurements and job items wholesale, is a deployer command. Through the
+     * CI federation (S2) any pushed branch holds operator credentials, so those must not be able to
+     * write a measurement directly.
+     */
+    @Test
+    void operatorCannotWriteMeasurements() {
+        Set<String> actions = InfraFixtures.actions(InfraFixtures.operatorPolicy());
+
+        assertThat(actions).doesNotContain("dynamodb:PutItem", "dynamodb:BatchWriteItem", "dynamodb:*");
+    }
+
+    /**
      * The whole point of the credential split: `baas run` resolves the image, `baas admin
      * build-image` publishes it. An operator who could also build or retire images could move
      * the measurement environment under results without holding deployer credentials.
