@@ -425,8 +425,7 @@ private-networking profile (private subnet + NAT gateway + PrivateLink, needing 
 roughly $32/month). With DynamoDB reached over a gateway endpoint, a private subnet no longer needs
 egress for the store at all — which is what the `private-runner-network` change builds on.
 
-`benchmark-runner` still carries a MongoDB adapter for standalone use against a user's own cluster,
-selected by `--mongo-connection-string` on that JAR. No BaaS infrastructure supports it.
+`benchmark-runner` no longer carries a MongoDB adapter either: `retire-mongodb` removed it.
 
 ## Debugging a failed job
 

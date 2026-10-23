@@ -511,13 +511,14 @@ The watchdog is the only one that survives a deadlocked JVM.
   throws, before the benchmark runs.
 - **Absent store configuration is a hard failure, and nothing discards measurements.** `baas run`
   resolves the table before the runner-image lookup and before any upload, and `benchmark-runner`
-  rejects a missing selection outright. `--no-database` is gone from both: every job records its
+  rejects a missing `--results-table` outright. `--no-database` is gone from both: every job records its
   status in the table, so a job without one could not be seen at all, and local runner invocations name a
   LocalStack table. The old behaviour — unset URI selects a no-op store, the job reports success,
   numbers vanish — is gone, and reintroducing any fallback brings it back.
-- **`baas-cli` has no MongoDB path at all**; it neither ships the driver nor offers an option.
-  `benchmark-runner` keeps one, selectable by `--mongo-connection-string`, purely so the JAR still
-  works standalone against a user's own MongoDB. BaaS itself never selects it.
+- **There is no MongoDB anywhere, and no local storage mode.** `retire-mongodb` removed the runner's
+  Mongo store, `--mongo-connection-string`/`-m` and `MONGO_CONNECTION_STRING`, and the runner's
+  write-to-disk mode: `--results-table` and `--s3-bucket` are both required, so a local run names a
+  LocalStack table and bucket. `baas-model`'s `ban-mongodb` enforcer rule stays as the guard.
 - **A runner's download of a missing key answers 403, not 404.** `RunnerRole` holds no
   `s3:ListBucket`, and without it S3 will not say whether a key exists. The only such reads are
   user-data's two `aws s3 cp` downloads of JARs the CLI wrote seconds earlier, so a 403 in
@@ -613,27 +614,22 @@ The watchdog is the only one that survives a deadlocked JVM.
   `fake-stress-tests` shaded JARs already in the local repo (`classifier=shaded`). Run the full
   reactor first.
 - **JUnit 6** (`6.0.2`) and **Testcontainers 2.x** — both differ from the versions you'd assume.
-  Integration tests pin `mongo:7.0.5`; DynamoDB runs on LocalStack. One store contract suite runs
-  against both adapters — a behavioural difference between them is a test failure, not a discovery.
+  Every integration test runs on LocalStack (S3 and DynamoDB); the store contract suite's one real
+  binding is the DynamoDB adapter.
 - **LocalStack is pinned to `4.14.0`, the newest release confirmed (2026-10-05) to start without an account.** `2026.09.0`
   (and so `latest`) exits 55 without `LOCALSTACK_AUTH_TOKEN`, and this repository holds no secrets. The pin
   replaced `0.12.16`, which took 25–65 s to start against Testcontainers' 60 s wait and stored the SDK's
   `aws-chunked` upload framing as object bytes — `StorageServiceIT` had asserted that corrupted size.
 - **A JCStress job's mode is `--mode`, not `-m`.** The runner forwards it to JCStress as `-m`, but
-  on the runner `-m` is `--mongo-connection-string` on every subcommand, so `baas run jcstress -- -m
-  sanity` would be read as a Mongo URI; `baas run` refuses it before launching, pointing at `--mode`.
-  The short form can follow once `retire-mongodb` frees `-m`.
+  `-m` is no runner option at all: it used to be the Mongo connection string, and was deliberately
+  left unassigned rather than made an alias (`retire-mongodb`). `baas run jcstress -- -m sanity` is
+  refused before launching, pointing at `--mode`; the runner itself rejects `-m` as unknown.
 - **Text after `--` may not name a runner option `baas run` sets** (`RunnerArgs.SET_BY_THE_CLI`:
-  `--tag`, `--project`, `--job-id`, `--results-table`, `--s3-bucket`, the endpoints, `-m`, …). User-data
+  `--tag`, `--project`, `--job-id`, `--results-table`, `--s3-bucket`, the endpoints, …). User-data
   passes it after the CLI's own options and picocli keeps the last value, so it would override the
   guarded tags or the project, or fail the job on the instance. Refused with exit 2, before any AWS call.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
-- **The mongo connection string must include a database name** (`mongodb://host:port/dbname`),
-  enforced in `ResultsStoreBuilder` — which is runner-side only; the CLI no longer validates or
-  even accepts one.
-- **Morphia auto-maps everything under `pl.wsztajerowski.entities`** — new entity classes must live
-  there.
 - **A delta spec's `## REMOVED Requirements` heading must repeat the main spec's requirement name
   *verbatim*.** `openspec archive` matches on the name; a paraphrase warns
   ("not in the current spec; treating it as already removed") and then archives anyway, leaving the
@@ -885,9 +881,8 @@ argument and an entry in `run`'s help, and it names the process-output file), th
 `options/`, and registration in `TestWrapper`'s `subcommands` list.
 `RunnerArgsContractTest` fails until the runner and the model agree.
 
-Storage is optional at runtime (no `--s3-bucket` → `LocalStorageService`); the results store is
-not. Exactly one of `--results-table` or `--mongo-connection-string` must be named, and
-both-or-neither is an error. `AWS_ENDPOINT_URL_S3` / `--s3-service-endpoint` and
+`--s3-bucket` and `--results-table` are both required on every subcommand; there is no local-disk
+storage and no other store. `AWS_ENDPOINT_URL_S3` / `--s3-service-endpoint` and
 `AWS_ENDPOINT_URL_DYNAMODB` / `--dynamodb-endpoint` redirect to LocalStack.
 
 ## Accepted risks
@@ -908,6 +903,5 @@ Decisions already made and deliberately not revisited — don't file these as bu
 | Runner AMI snapshot cost | ~$0.20/month for the single retained 30 GB snapshot. The project previously had **zero** standing cost, so this is a real change in kind, not just degree. Bounded by the one-image-at-a-time rule: a build deregisters its predecessor and deletes that snapshot, so the figure does not grow with the number of builds. Teardown retires the image, so a torn-down deployment costs nothing. |
 | Operators can overwrite the pinned runner JAR | `OperatorRole` holds `s3:PutObject` on the whole bucket, so any operator — CI on any ref included — can replace `releases/<version>/benchmark-runner.jar` after it was seeded, and nothing re-checks it: every later job of that version runs whatever is there. Accepted (2026-10-21, review X1): only operators can supply benchmark code at all, which already runs on the same instance with the same rights. A per-launch check against a runner digest built into the CLI was implemented and reverted as not worth its build step. Revisit with the runner-terminates-runners risk above, if more than one team ever shares a deployment. |
 | ~~Runner JAR integrity~~ | **Closed, not dropped.** The risk was accepted while verification was impossible — the download happened on a throwaway instance mid-boot, with nothing to verify against. Moving the fetch to the laptop is what changed the trade-off: the CLI now verifies the asset against a `.sha256` published by the same release build, and a mismatch uploads nothing and launches nothing. |
-| MongoDB | Retained in `benchmark-runner`, connect-only, and **no live user is known**. The standalone justification named java-wonderland, which sits on a branch frozen 2024-06-22 that cannot run today's runner at all: `--s3-result-prefix` is gone, no `--project` makes `getProject()` throw, and naming no store fails the exactly-one-of check. So this is no longer a settled trade — retirement is an open decision, deserving its own change and spec delta rather than a rider on someone else's. `baas` itself never provisions, selects or reaches it: no SSM parameter, no IAM grant, no egress rule. |
 | `baas run` project layout | Assumes a pre-built JAR handed in by `--benchmark-jar`, which is required — `baas run` does not build. Anything that produces a JAR before invoking it is fine; the CLI has no opinion on how. |
 | Distribution | Installable via `scripts/install.sh` as of this change. Homebrew tap, jpackage, native image and Docker image were specified but never built — backlog, not decisions. |
