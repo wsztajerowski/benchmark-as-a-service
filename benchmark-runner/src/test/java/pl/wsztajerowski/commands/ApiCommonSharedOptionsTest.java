@@ -35,6 +35,14 @@ class ApiCommonSharedOptionsTest {
             .hasMessageContaining("--results-table");
     }
 
+    /** No local-disk mode: a job's artifacts go to its bucket or the job does not start. */
+    @Test
+    void aJobWithoutABucketIsRefusedBeforeItRuns() {
+        assertThatThrownBy(() -> parseAsGiven("--project", "p", "--results-table", "t"))
+            .isInstanceOf(CommandLine.MissingParameterException.class)
+            .hasMessageContaining("--s3-bucket");
+    }
+
     /** The MongoDB store is gone, and its options with it: -m is deliberately left unassigned. */
     @Test
     void theMongoOptionsAreUnknown() {

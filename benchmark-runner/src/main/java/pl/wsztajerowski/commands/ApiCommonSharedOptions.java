@@ -1,7 +1,6 @@
 package pl.wsztajerowski.commands;
 
 import pl.wsztajerowski.baas.model.RunnerArgs;
-import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.model.JobId;
@@ -46,18 +45,13 @@ public class ApiCommonSharedOptions {
         description = "Custom DynamoDB endpoint, for LocalStack.")
     URI dynamoDbEndpoint;
 
-    @CommandLine.ArgGroup(exclusive = false)
-    ApiS3Options s3Options;
+    @Option(names = RunnerArgs.S3_BUCKET, required = true, description = "S3 bucket the job's artifacts are written to.")
+    String s3BucketName;
 
-    static class ApiS3Options {
-        @Option(names = RunnerArgs.S3_BUCKET, required = true, description = "S3 bucket name where benchmark will be placed.")
-        String s3BucketName;
-
-        @Option(names = RunnerArgs.S3_SERVICE_ENDPOINT,
-            defaultValue = "${AWS_ENDPOINT_URL_S3}",
-            description = "Custom S3 Service endpoint")
-        URI s3ServiceEndpoint;
-    }
+    @Option(names = RunnerArgs.S3_SERVICE_ENDPOINT,
+        defaultValue = "${AWS_ENDPOINT_URL_S3}",
+        description = "Custom S3 Service endpoint")
+    URI s3ServiceEndpoint;
 
     private Instant resolvedCreatedAt;
 
@@ -123,12 +117,6 @@ public class ApiCommonSharedOptions {
     }
 
     public S3Options getS3Options() {
-        String s3BucketName = Optional.ofNullable(s3Options)
-            .map(s3Options -> s3Options.s3BucketName)
-            .orElse("");
-        URI s3ServiceEndpoint = Optional.ofNullable(s3Options)
-            .map(s3Options -> s3Options.s3ServiceEndpoint)
-            .orElse(null);
         return new S3Options(s3BucketName, s3ServiceEndpoint);
     }
 }
