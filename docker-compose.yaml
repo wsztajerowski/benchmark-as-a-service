@@ -24,11 +24,3 @@ services:
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
-  # Retained for the standalone benchmark-runner deployment, which still supports a user's own
-  # MongoDB. BaaS itself no longer stores anything here.
-  mongo:
-    container_name: mongodb
-    image: mongo
-    restart: always
-    ports:
-      - 27017:27017
