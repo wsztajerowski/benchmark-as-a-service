@@ -11,7 +11,7 @@ import pl.wsztajerowski.baas.cli.LoggingMixin;
     name = "deployment",
     mixinStandardHelpOptions = true,
     description = "The deployment's AWS resources and data: setup, teardown, export, import.",
-    subcommands = {SetupCommand.class, TeardownCommand.class, ExportCommand.class}
+    subcommands = {SetupCommand.class, TeardownCommand.class, ExportCommand.class, ImportCommand.class}
 )
 public class DeploymentCommand implements Runnable {
 
