@@ -1,3 +1,5 @@
+> **Superseded by [`design.md`](design.md) (2026-10-23).** Kept for its history; where they disagree, `design.md` wins.
+
 # Brainstorm — export before teardown
 
 ## Design Summary
