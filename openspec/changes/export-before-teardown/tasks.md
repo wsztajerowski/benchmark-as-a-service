@@ -153,7 +153,7 @@
 
 ## 9. Live verification on a second deployment (manual: needs a person at a terminal)
 
-- [ ] 9.1 Before attaching the new policy, run `baas --deployment baas-development admin deployment
+- [x] 9.1 Before attaching the new policy, run `baas --deployment baas-development admin deployment
       export --parts results` under the old one and confirm the `dynamodb:Scan` and setup hint.
 - [ ] 9.2 Re-run `admin deployment setup` for `baas-development`, attach the handed-over policy
       customer-managed, then check that setup's preflight passes.
