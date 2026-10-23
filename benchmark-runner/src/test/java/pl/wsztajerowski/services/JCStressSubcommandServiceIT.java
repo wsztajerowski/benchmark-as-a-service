@@ -1,14 +1,9 @@
 package pl.wsztajerowski.services;
 
-import dev.morphia.annotations.Entity;
 import org.json.JSONArray;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.MongoDbTestHelpers;
-import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
+import pl.wsztajerowski.TestcontainersWithDynamoDbBaseIT;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.entities.MongoMeasurementDocument;
-import pl.wsztajerowski.infra.MongoResultsStore;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.options.CommonSharedOptions;
 import pl.wsztajerowski.options.JCStressOptions;
@@ -22,22 +17,15 @@ import java.util.Collections;
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 import static org.assertj.core.api.InstanceOfAssertFactories.STRING;
-import static pl.wsztajerowski.MongoDbTestHelpers.all;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.SK;
 import static pl.wsztajerowski.options.JCStressOptionsBuilder.jcStressOptionsBuilder;
 
-class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
+class JCStressSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
 
     /** Fixed and in the past, so a clock read here cannot land near it by accident. */
     private static final Instant LAUNCH_INSTANT = Instant.parse("2026-08-20T17:44:32.812Z");
 
-    private static MongoDbTestHelpers helper;
-
-    @BeforeAll
-    static void setupHelper(){
-        helper = new MongoDbTestHelpers(getConnectionString());
-    }
 
     @Test
     void successful_scenario() throws IOException {
@@ -52,7 +40,7 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
                 .build();
         JCStressSubcommandService sut = new JCStressSubcommandService(
             new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
-            new MongoResultsStore(datastore()),
+            resultsStore(),
             new CommonSharedOptions(Path.of("test-1"), "req-1", LAUNCH_INSTANT, "test-project", Collections.emptyMap()),
             Path.of("target", "fake-stress-tests.jar").toAbsolutePath(),
             jcStressOptions);
@@ -61,17 +49,12 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         sut.executeCommand();
 
         // then
-        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
-        helper.assertFindResult(collectionName, all(), documents ->
-            assertThat(documents.first())
-                .isNotNull()
-                .extracting("measurement", as(MAP))
-                .extracting("jcstress", as(MAP))
-                    .containsEntry("totalTests", 2)
-                    .containsEntry("passedTests", 1)
-                    .extracting("failed", as(MAP))
-                        .containsKey("pl.wsztajerowski.IntegerIncrementing.TestWithForbiddenResults")
-        );
+        assertThat(storedMeasurements()).singleElement().satisfies(measurement -> {
+            assertThat(measurement.jcstress().totalTests()).isEqualTo(2);
+            assertThat(measurement.jcstress().passedTests()).isEqualTo(1);
+            assertThat(measurement.jcstress().failed())
+                .containsKey("pl.wsztajerowski.IntegerIncrementing.TestWithForbiddenResults");
+        });
 
         // and
         JSONArray objectsInTestBucket = listObjectsInTestBucket();
@@ -98,15 +81,12 @@ class JCStressSubcommandServiceIT extends TestcontainersWithS3AndMongoBaseIT {
         // launcher and instance clocks differ. JmhStoreIntegrationIT pins the same line for the
         // three JMH-flavoured services; this is the fourth.
         //
-        // Asserted through the document id rather than the createdAt field: MongoResultsStore
-        // builds it as partitionKey|sortKey, and ResultKeys.sortKey formats measurement.createdAt()
-        // directly — so this is a plain String with no Morphia type mapping in the way, and it
-        // additionally proves the value reached the key the store orders and de-duplicates on.
-        helper.assertFindResult(collectionName, all(), documents ->
-            assertThat(documents.first())
-                .isNotNull()
-                .extractingByKey("_id", as(STRING))
-                .contains(ResultKeys.formatTimestamp(LAUNCH_INSTANT)));
+        // Asserted through the sort key rather than the createdAt attribute: ResultKeys.sortKey
+        // formats measurement.createdAt() directly, so this also proves the value reached the key
+        // the table orders and de-duplicates on.
+        assertThat(scanTestTable()).singleElement()
+            .extracting(item -> item.get(SK).s(), as(STRING))
+            .contains(ResultKeys.formatTimestamp(LAUNCH_INSTANT));
     }
 
 }
