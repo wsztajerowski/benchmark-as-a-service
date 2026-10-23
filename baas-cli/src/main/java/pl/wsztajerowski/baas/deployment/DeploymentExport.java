@@ -184,7 +184,7 @@ final class DeploymentExport {
                 Path destination = destinations.get(i);
                 downloads.add(pool.submit(() -> aws.download(bucket, key, destination)));
             }
-            awaitAll(downloads, "s3:GetObject");
+            awaitAll(downloads, "s3:GetObject", deployment);
         } finally {
             pool.shutdownNow();
         }
@@ -213,8 +213,8 @@ final class DeploymentExport {
         }
     }
 
-    /** Waits for every task; the first failure fails the export, translated like a direct call. */
-    void awaitAll(List<? extends Future<?>> tasks, String action) {
+    /** Waits for every task; the first failure fails the command, translated like a direct call. */
+    static void awaitAll(List<? extends Future<?>> tasks, String action, String deployment) {
         RuntimeException first = null;
         for (var task : tasks) {
             try {

@@ -35,10 +35,16 @@ final class AwsExportAws implements ExportAws {
     private final Lazy<StsClient> sts;
 
     AwsExportAws(AwsClientFactory factory) {
-        this.s3 = new Lazy<>(factory::s3);
-        this.dynamoDb = new Lazy<>(factory::dynamoDb);
-        this.cloudFormation = new Lazy<>(factory::cloudFormation);
-        this.sts = new Lazy<>(factory::sts);
+        this(factory::s3, factory::dynamoDb, factory::cloudFormation, factory::sts);
+    }
+
+    /** Over clients built elsewhere — LocalStack's, in the round-trip IT. */
+    AwsExportAws(Supplier<S3Client> s3, Supplier<DynamoDbClient> dynamoDb,
+                 Supplier<CloudFormationClient> cloudFormation, Supplier<StsClient> sts) {
+        this.s3 = new Lazy<>(s3);
+        this.dynamoDb = new Lazy<>(dynamoDb);
+        this.cloudFormation = new Lazy<>(cloudFormation);
+        this.sts = new Lazy<>(sts);
     }
 
     @Override
