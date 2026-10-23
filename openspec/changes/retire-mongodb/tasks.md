@@ -81,17 +81,17 @@
 
 ## 8. End-to-end verification (manual — no automated test covers the `baas run` path)
 
-- [ ] 8.1 On `baas-development`, with the reactor build and `--runner-jar benchmark-runner/target/benchmark-runner.jar`:
+- [x] 8.1 On `baas-development`, with the reactor build and `--runner-jar benchmark-runner/target/benchmark-runner.jar`:
   one `jmh-with-async` job against `fake-jmh-benchmarks` and one JCStress job (`-- --mode sanity`);
   both complete, store their items, and upload `jmh-result.json`, `environment.json` and the profiler
   artifacts; record job IDs and outcomes in verify.md
-- [ ] 8.2 `baas run jcstress … -- -m sanity` is refused before any upload, naming `--mode`; record the
+- [x] 8.2 `baas run jcstress … -- -m sanity` is refused before any upload, naming `--mode`; record the
   output in verify.md
-- [ ] 8.3 Standalone runner refusals: `java -jar benchmark-runner.jar jmh …` without `--s3-bucket`,
+- [x] 8.3 Standalone runner refusals: `java -jar benchmark-runner.jar jmh …` without `--s3-bucket`,
   without `--results-table`, and with `-m mongodb://x/db` each exit non-zero naming the option and run
   nothing; record in verify.md
 
 ## 9. Verify
 
-- [ ] 9.1 Run `/opsx:verify` and record the result in verify.md: a requirement → code → test → gap
+- [x] 9.1 Run `/opsx:verify` and record the result in verify.md: a requirement → code → test → gap
   table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks
