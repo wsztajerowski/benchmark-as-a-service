@@ -1,21 +1,18 @@
 #!/bin/zsh
-# Runs benchmark-runner locally against LocalStack + local MongoDB, with a real
+# Runs benchmark-runner locally against LocalStack, with a real
 # async-profiler attached. `baas run jmh-with-async` is the remote equivalent —
 # this exists to eyeball profiler output without paying for EC2.
 #
 # Prerequisites:
 #   mvn clean package -DskipTests     (builds the runner and the fixture JAR)
-#   docker-compose up                 (LocalStack on 4566, MongoDB on 27017)
+#   docker-compose up                 (LocalStack on 4566)
 #   aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas
 #   the dynamodb create-table command in docker-compose.yaml
 #   an AWS_PROFILE=localstack entry in ~/.aws/config
 #   export ASYNC_PATH=/path/to/libasyncProfiler.{so,dylib}
 #
-# Absent store configuration is a hard failure rather than a silent discard, and no option
-# discards measurements, so this script names a LocalStack table explicitly.
-#
-# NOTE: --mongo-connection-string defaults from $MONGO_CONNECTION_STRING. If you have that
-# exported, naming a table too is rejected as ambiguous — unset it for local runs.
+# The runner requires --results-table and --s3-bucket, so this script names a LocalStack table
+# and bucket explicitly.
 #
 # Async profiler options passed via --async-additional-param:
 #  event=<event>                    Event to sample: cpu, alloc, lock, wall, itimer;

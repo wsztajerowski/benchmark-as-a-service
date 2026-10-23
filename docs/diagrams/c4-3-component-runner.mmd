@@ -6,11 +6,11 @@ C4Component
     Container_Boundary(runner, "benchmark-runner.jar — commands on top, options and the root package as leaves") {
         Component(wrapper, "commands: TestWrapper + four subcommands", "picocli", "JmhSubcommand, JmhWithAsyncProfilerSubcommand, JmhWithProfilerSubcommand, JCStressSubcommand; Api*Options mixins name their flags from RunnerArgs / BenchmarkType")
         Component(options, "options", "records, imports nothing internal", "CommonSharedOptions, JmhOptions (+ Benchmark/Iteration/Jvm/Output/Warmup), AsyncProfilerOptions, JCStressOptions, S3Options")
-        Component(services, "services: *SubcommandService", "Java, constructed directly — no builders", "One per type: run the process, save its output, JobLogs.upload, map, resultsStore.write")
+        Component(services, "services: *SubcommandService", "Java, constructed directly — no builders", "One per type: run the process, save its output (and jmh-result.json), JobLogs.upload, map, resultsStore.write")
         Component(process, "process", "BenchmarkProcessBuilder, JmhBenchmarkProcessBuilderFactory", "Spawns java -jar benchmark.jar with JMH / profiler / JCStress flags")
-        Component(results, "results", "JmhRunResults, JmhMeasurementMapper, JCStressMeasurementMapper", "uploadJsonAndMap: jmh-result.json to storage, then StoredMeasurement values")
-        Component(infra, "infra", "ResultsStore (DynamoDbResultsStore | MongoResultsStore, via ResultsStoreBuilder), StorageService.of (S3StorageService | LocalStorageService), ResultLoaderService, JCStressHtmlResultParser, HtmlParser", "Adapters and parsers; exactly one of --results-table, --mongo-connection-string")
-        Component(entities, "entities", "JmhResult, Metric, JCStressResult, MongoMeasurementDocument", "Parsed result shapes; Morphia maps this package")
+        Component(results, "results", "JmhRunResults, JmhMeasurementMapper, JCStressMeasurementMapper", "map: StoredMeasurement values, each naming the uploaded jmh-result.json")
+        Component(infra, "infra", "ResultsStore (DynamoDbResultsStore, via ResultsStoreBuilder), StorageService.of (S3StorageService), ResultLoaderService, JCStressHtmlResultParser, HtmlParser", "Adapters and parsers; --results-table and --s3-bucket both required")
+        Component(entities, "entities", "JmhResult, Metric, JCStressResult", "Parsed result shapes")
     }
 
 
@@ -18,11 +18,11 @@ C4Component
     ComponentDb_Ext(table, "Results table", "DynamoDB")
     ComponentDb_Ext(bucket, "Job bucket", "S3")
 
-    Rel(userData, wrapper, "timeout N java -jar benchmark-runner.jar <type> --results-table … --tag …")
+    Rel(userData, wrapper, "timeout N java -jar benchmark-runner.jar <type> --results-table … --s3-bucket … --tag …")
     Rel(wrapper, services, "new …SubcommandService(storage, store, options).executeCommand()")
     Rel(wrapper, infra, "buildResultsStore, StorageService.of")
     Rel(services, process, "spawns")
-    Rel(services, results, "uploadJsonAndMap")
+    Rel(services, results, "map")
     Rel(results, infra, "ResultLoaderService")
     Rel(services, options, "reads")
     Rel(infra, model, "items + keys")

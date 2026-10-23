@@ -415,9 +415,7 @@ mvn -pl benchmark-runner test -Dtest=MyTest    # single test
 mvn -pl benchmark-runner verify -Dit.test=MyIT # single integration test
 ```
 
-Integration tests (`*IT.java`) spin up LocalStack (S3 + DynamoDB) and MongoDB via Testcontainers —
-MongoDB because the runner keeps that adapter for standalone use, and one store contract suite runs
-against both. `mvn clean
+Integration tests (`*IT.java`) spin up LocalStack (S3 + DynamoDB) via Testcontainers. `mvn clean
 verify` copies `fake-jmh-benchmarks.jar` and `fake-stress-tests.jar` into
 `benchmark-runner/target/` during `pre-integration-test`.
 
@@ -433,12 +431,11 @@ used to.
 docker-compose up
 ```
 
-Starts LocalStack (`SERVICES=s3,ssm,dynamodb`) and MongoDB on 27017. Mongo is there for the
-runner's retained standalone adapter, not for BaaS. Credentials for LocalStack come from `.env` —
+Starts LocalStack (`SERVICES=s3,ssm,dynamodb`). Credentials for LocalStack come from `.env` —
 test values only, never real credentials.
 
-There is **no** init container, so create what you need yourself — the bucket, and the results
-table if you want the scripts below to store anything. `docker-compose.yaml` carries the exact
+There is **no** init container, so create what you need yourself — the bucket and the results
+table. The runner requires both `--s3-bucket` and `--results-table`; it has no local-disk mode. `docker-compose.yaml` carries the exact
 `create-table` command in a comment, with the key schema that must match `ResultsTable` in
 `infra/cf-template-core.yaml`:
 

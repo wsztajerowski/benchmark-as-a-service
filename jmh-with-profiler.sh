@@ -2,11 +2,8 @@
 # Prerequisites: see the header of jmh-with-async.sh. The results table must exist —
 # docker-compose.yaml carries the create-table command.
 #
-# Absent store configuration is a hard failure rather than a silent discard, and no option
-# discards measurements, so this script names a LocalStack table explicitly.
-#
-# NOTE: --mongo-connection-string defaults from $MONGO_CONNECTION_STRING. If you have that
-# exported, naming a table too is rejected as ambiguous — unset it for local runs.
+# The runner requires --results-table and --s3-bucket, so this script names a LocalStack table
+# and bucket explicitly.
 NOW=$(date "+%Y-%m-%d_%H:%M:%S")
 AWS_PROFILE=localstack \
 exec java -jar ./benchmark-runner/target/benchmark-runner.jar -v jmh-with-prof \
