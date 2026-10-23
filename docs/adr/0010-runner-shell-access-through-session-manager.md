@@ -73,6 +73,10 @@ second of CPU each against the benchmark JVM's 899 s — under about 0.1%.
 - The image contract fails a bake whose `amazon-ssm-agent` is not enabled, so an extension or a parent
   release cannot silently remove the shell.
 - The plugin's argument list is a de facto interface; a change breaks `connect` loudly.
-- The `OpenDataChannel` statement (`session/${aws:userid}-*`) works live, though a session id
-  (`baas-cli-<random>`) does not look as if it matches that resource; whether AWS authorises the data
-  channel against something else, or the statement is not what allows it, is not settled.
+- The operator holds no `ssmmessages` action. AWS's sample user policies list
+  `ssmmessages:OpenDataChannel`, and the first version granted it on `session/${aws:userid}-*`, a
+  resource no `baas-cli-<random>` session id can match. Settled live on 2026-10-23 (`baas-development`,
+  plugin 1.2.896.0): with the statement removed, three sessions opened over five minutes while the
+  policy simulator reported `implicitDeny` for the action, so the plugin's data channel is authorised
+  by `StartSession`'s token, not by the caller's IAM rights. The statement was deleted. Should AWS
+  start enforcing the action, `connect` fails loudly and the grant to add is on `session/baas-cli-*`.

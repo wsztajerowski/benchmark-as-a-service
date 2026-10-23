@@ -33,7 +33,7 @@ sequenceDiagram
         Note over SSM: operator role: only baas-deployment-tagged instances, only that document<br/>(SessionDocumentAccessCheck), so the account default and port forwarding are denied
         SSM-->>RC: SessionId, StreamUrl, TokenValue
         RC->>PL: exec with the AWS CLI's six arguments -- no credential reaches it
-        PL->>SSM: OpenDataChannel(StreamUrl, token)
+        PL->>SSM: OpenDataChannel(StreamUrl, token) -- authorised by the token, not the operator role
         SSM->>R: session as ssm-user, cd /app, exec bash
         loop while the plugin runs, every 15 s
             RC->>EC2: describeInstances(instanceId) -- a failed call counts as live
