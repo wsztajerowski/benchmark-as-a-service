@@ -21,7 +21,8 @@ import java.util.function.Consumer;
  */
 class FakeExportAws implements ExportAws {
 
-    final List<String> calls = Collections.synchronizedList(new ArrayList<>());
+    /** Shared with another fake's list when a test pins the order across both. */
+    List<String> calls = Collections.synchronizedList(new ArrayList<>());
     final List<Map<String, AttributeValue>> table = Collections.synchronizedList(new ArrayList<>());
     final Map<String, byte[]> bucket = new ConcurrentHashMap<>();
     final Map<String, String> parameters = new HashMap<>();

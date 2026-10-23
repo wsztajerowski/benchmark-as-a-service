@@ -15,29 +15,16 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.image.RunnerImageExtension;
 import pl.wsztajerowski.baas.image.RunnerImageParameters;
-import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.DeployerSession;
 import pl.wsztajerowski.baas.session.DeploymentNames;
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.EnumSet;
-import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.Callable;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
-import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 @Command(
     name = "import",
@@ -103,8 +90,8 @@ public class ImportCommand implements Callable<Integer> {
             throw CommandRefusal.refused(bundleDirectory + " holds no " + Part.ids(missing) + "; it holds "
                 + Part.ids(held) + ". Nothing was imported.");
         }
-        List<Path> recordings = selected.contains(Part.RECORDINGS) ? recordingFiles(bundle) : List.of();
-        List<Map<String, AttributeValue>> items = selected.contains(Part.RESULTS) ? items(bundle) : List.of();
+        // Everything local is checked before any AWS call: a damaged bundle fails here, whole.
+        DeploymentImport load = DeploymentImport.prepare(bundle, selected);
 
         BaasConfig config = Invocation.configService(spec).load();
         String target = config.requirePrefix();
@@ -131,11 +118,11 @@ public class ImportCommand implements Callable<Integer> {
             }
 
             if (selected.contains(Part.RESULTS)) {
-                long[] written = importResults(aws, names.resultsTable(), items, target);
+                long[] written = load.results(aws, names.resultsTable(), target);
                 console().printf("  results     %d written, %d already present%n", written[0], written[1]);
             }
             if (selected.contains(Part.RECORDINGS)) {
-                long[] written = importRecordings(aws, names.bucket(), bundle, recordings, target);
+                long[] written = load.recordings(aws, names.bucket(), target);
                 console().printf("  recordings  %d written, %d already present%n", written[0], written[1]);
             }
             if (selected.contains(Part.EXTENSION)) {
@@ -143,58 +130,6 @@ public class ImportCommand implements Callable<Integer> {
             }
         }
         return 0;
-    }
-
-    /** Every line decoded before anything is written, so a damaged file fails the import up front. */
-    private List<Map<String, AttributeValue>> items(Bundle bundle) throws IOException {
-        if (!Files.isRegularFile(bundle.results())) {
-            throw CommandRefusal.refused(bundle.results() + " is missing. Nothing was imported.");
-        }
-        List<Map<String, AttributeValue>> items = new ArrayList<>();
-        int number = 0;
-        for (String line : Files.readAllLines(bundle.results(), StandardCharsets.UTF_8)) {
-            number++;
-            if (line.isBlank()) {
-                continue;
-            }
-            try {
-                items.add(ItemJson.decode(line));
-            } catch (IllegalArgumentException e) {
-                throw CommandRefusal.refused(bundle.results() + " line " + number + ": " + e.getMessage()
-                    + ". Nothing was imported.");
-            }
-        }
-        return items;
-    }
-
-    /**
-     * Every file under {@code recordings/}, each of whose relative paths is the key it is uploaded at.
-     * Only keys under {@code jobs/} are accepted: import never writes {@code releases/}, which is
-     * seeded once and never overwritten, or any prefix a bundle cannot have come from.
-     */
-    static List<Path> recordingFiles(Bundle bundle) throws IOException {
-        if (!Files.isDirectory(bundle.recordings())) {
-            return List.of();
-        }
-        List<Path> files;
-        try (Stream<Path> walk = Files.walk(bundle.recordings())) {
-            files = walk.filter(Files::isRegularFile).sorted().toList();
-        }
-        List<String> outside = files.stream().map(f -> keyOf(bundle, f))
-            .filter(key -> !key.startsWith(JobLayout.JOBS_PREFIX + "/")).toList();
-        if (!outside.isEmpty()) {
-            throw CommandRefusal.refused(outside.size() + " file(s) under " + bundle.recordings() + " are not under "
-                + JobLayout.JOBS_PREFIX + "/, which is all a bundle holds: "
-                + String.join(", ", outside.subList(0, Math.min(5, outside.size()))) + ". Nothing was imported.");
-        }
-        return files;
-    }
-
-    static String keyOf(Bundle bundle, Path file) {
-        Path relative = bundle.recordings().relativize(file);
-        List<String> segments = new ArrayList<>();
-        relative.forEach(segment -> segments.add(segment.toString()));
-        return String.join("/", segments);
     }
 
     private void describe(Bundle.Manifest m, Set<Part> selected, String target, String account, String region) {
@@ -212,37 +147,6 @@ public class ImportCommand implements Callable<Integer> {
             console().println("  extension   " + (m.extensionHash() == null ? "none in the bundle" : m.extensionHash()));
         }
         console().println("Nothing the deployment already holds is overwritten.");
-    }
-
-    /** One conditional write per item; returns {written, skipped}. */
-    private long[] importResults(ExportAws aws, String table, List<Map<String, AttributeValue>> items, String target) {
-        long written = 0;
-        for (var item : items) {
-            if (call(target, "dynamodb:PutItem", () -> aws.putItemIfAbsent(table, item))) {
-                written++;
-            }
-        }
-        return new long[]{written, items.size() - written};
-    }
-
-    private long[] importRecordings(ExportAws aws, String bucket, Bundle bundle, List<Path> files, String target) {
-        AtomicLong written = new AtomicLong();
-        ExecutorService pool = Executors.newFixedThreadPool(DeploymentExport.POOL_SIZE);
-        try {
-            List<Future<?>> uploads = new ArrayList<>();
-            for (Path file : files) {
-                String key = keyOf(bundle, file);
-                uploads.add(pool.submit(() -> {
-                    if (aws.putObjectIfAbsent(bucket, key, file)) {
-                        written.incrementAndGet();
-                    }
-                }));
-            }
-            DeploymentExport.awaitAll(uploads, "s3:PutObject", target);
-        } finally {
-            pool.shutdownNow();
-        }
-        return new long[]{written.get(), files.size() - written.get()};
     }
 
     /**
