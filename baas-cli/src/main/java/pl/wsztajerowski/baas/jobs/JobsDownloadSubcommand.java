@@ -138,7 +138,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
      * so any code in a benchmark JAR — can write one under a job's prefix; {@code ../} or a leading
      * {@code /} in it must not choose where this command writes on the operator's machine.
      */
-    static Optional<Path> destinationFor(Path root, String prefix, String key) {
+    public static Optional<Path> destinationFor(Path root, String prefix, String key) {
         Path base = root.toAbsolutePath().normalize();
         Path target = base.resolve(key.substring(prefix.length())).normalize();
         return target.startsWith(base) && !target.equals(base) ? Optional.of(target) : Optional.empty();
