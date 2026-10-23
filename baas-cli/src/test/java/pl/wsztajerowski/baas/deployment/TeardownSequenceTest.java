@@ -20,9 +20,9 @@ import java.util.stream.Stream;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Teardown's order, one test per rule CLAUDE.md states for it (review T2): nothing is asked without
- * a terminal, and nothing deleted while a runner is live, before an accepted export has completed, or
- * before the name is typed back; the stack only after the bucket is empty; the image only after the
+ * Teardown's order, one test per rule CLAUDE.md states for it (review T2): nothing runs without a
+ * terminal unless --yes, and nothing is deleted while a runner is live, before an accepted export has
+ * completed, or before the name is typed back (or --yes); the stack only after the bucket is empty; the image only after the
  * stack is gone. Teardown itself writes no file.
  */
 class TeardownSequenceTest {
@@ -109,10 +109,30 @@ class TeardownSequenceTest {
         assertThat(dir.resolve("deployments").resolve(D + ".yaml")).exists();
     }
 
+    /** --yes runs without a terminal and asks nothing, so it offers no export either. */
     @Test
-    void confirmationCannotBeSkipped() throws Exception {
-        assertThat(teardown("--yes")).isEqualTo(2);
-        assertThat(aws.calls).isEmpty();
+    void yesSkipsTheOfferAndTheConfirmationAndExportsNothing() throws Exception {
+        interactive = false;
+        aws.parameters.put(RunnerImageParameters.EXTENSION_DATA, "name: ext\nphases: []");
+
+        assertThat(teardown("--yes")).isZero();
+
+        assertThat(answers.asked).isZero();
+        assertThat(aws.calls).containsExactly(
+            "liveRunners " + D,
+            "stackParameters " + D,
+            "emptyBucket " + D,
+            "deleteStack " + D,
+            "retireImage /" + D + "/runner/ami-id");
+        assertThat(dir.resolve("deployments").resolve(D + ".yaml")).doesNotExist();
+    }
+
+    @Test
+    void yesStillStopsAtALiveRunner() throws Exception {
+        aws.live = List.of(new LiveRunner("i-1", "running", "20261021T000000000Z-a3f9c21b"));
+
+        assertThat(teardown("--yes")).isEqualTo(1);
+        assertThat(aws.calls).containsExactly("liveRunners " + D);
     }
 
     /** The stack parameters name what the notice warns about; unreadable, nothing is asked or deleted. */
