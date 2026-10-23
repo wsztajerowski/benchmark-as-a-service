@@ -163,7 +163,7 @@
       customer-managed, then check that setup's preflight passes.
 - [x] 9.3 Run `admin image build` with an extension, then a `fake-jmh-benchmarks` job
       (`jmh-with-async`, so there are profiler artifacts).
-- [ ] 9.4 Teardown at a terminal: accept the export offer into a named directory. Confirm that the
+- [x] 9.4 Teardown at a terminal: accept the export offer into a named directory. Confirm that the
       manifest's counts match `baas results query --format json | jq length`, that
       `baas jobs list` was captured before the teardown, and that the extension file exists. Then
       confirm the teardown completed.
