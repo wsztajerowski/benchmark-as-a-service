@@ -1,7 +1,5 @@
 package pl.wsztajerowski.baas.deployment;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
@@ -47,8 +45,6 @@ import java.util.function.Supplier;
 )
 public class ImportCommand implements Callable<Integer> {
 
-    private static final Logger logger = LoggerFactory.getLogger(ImportCommand.class);
-
     @Mixin LoggingMixin loggingMixin;
 
     @Spec CommandSpec spec;
@@ -66,9 +62,6 @@ public class ImportCommand implements Callable<Integer> {
 
     /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
     Console console;
-
-    /** Replaced in tests; reads one answer from the terminal. */
-    Supplier<String> answerReader = () -> System.console().readLine();
 
     @Override
     public Integer call() throws Exception {
@@ -95,10 +88,8 @@ public class ImportCommand implements Callable<Integer> {
 
         BaasConfig config = Invocation.configService(spec).load();
         String target = config.requirePrefix();
-        if (!console().interactive()) {
-            throw CommandRefusal.refused("Import asks for the target deployment's name on a terminal, and there is "
-                + "none here. Nothing was imported.");
-        }
+        // No confirmation: the target is named or the only one configured, nothing is overwritten, and
+        // a bundle loaded into the wrong deployment adds rows that can be deleted, not lost ones.
 
         var names = DeploymentNames.of(target);
         try (ExportAws aws = awsFor.apply(config)) {
@@ -110,12 +101,6 @@ public class ImportCommand implements Callable<Integer> {
             }
 
             describe(manifest, selected, target, account, config.getAws().resolveRegion());
-            console().print("Type the target deployment's name to import into it [" + target + "]: ");
-            String answer = answerReader.get();
-            if (answer == null || !target.equals(answer.strip())) {
-                logger.info("Aborted. Nothing was imported.");
-                return 1;
-            }
 
             if (selected.contains(Part.RESULTS)) {
                 long[] written = load.results(aws, names.resultsTable(), target);

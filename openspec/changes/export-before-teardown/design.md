@@ -95,6 +95,15 @@ successful import. A part that isn't selected is not touched at all. For example
 writes no object and prints no extension command. This is how you restore only the table and drop
 gigabytes of old recordings, or take just the extension into a new deployment.
 
+### Import asks nothing
+
+Import prints the source and the target, deployment, account and region, then loads. A typed-name
+confirmation was built and dropped the same day (user, 2026-10-23). The only harm it guarded against
+is a bundle loaded into the wrong deployment, and that is not a loss: nothing is overwritten, and the
+extra rows can be removed by job id. The target is already explicit, because with two deployments
+configured every command needs `--deployment`. Import's moment is right after an unattended setup,
+and the prompt would have needed a terminal there.
+
 ### Import writes conditionally, one item at a time, and has no overwrite mode
 
 Each item is a `PutItem` with `attribute_not_exists(pk)`. Each object is a `PutObject` with

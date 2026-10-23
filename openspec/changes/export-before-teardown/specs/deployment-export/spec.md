@@ -134,9 +134,9 @@ report how many items and objects it wrote and how many it skipped as already pr
 write under `releases/`.
 
 Before writing, import SHALL state the bundle's source deployment, account and region, the target
-deployment, account and region, and the parts and counts it will load, and SHALL require the target
-deployment's name typed back on an interactive terminal. Without a terminal it SHALL refuse and write
-nothing.
+deployment, account and region, and the parts and counts it will load. It SHALL ask for no
+confirmation and SHALL need no terminal: the target is named or the only one configured, nothing is
+overwritten, and an import into the wrong deployment adds rows that can be removed, not loses any.
 
 #### Scenario: Restore into a fresh deployment
 - **WHEN** a deployment is exported, torn down and set up again, and the bundle is imported into it
@@ -152,7 +152,7 @@ nothing.
 
 #### Scenario: Import into another deployment
 - **WHEN** a bundle exported from `baas-123456789012` is imported with `--deployment wiktor-dev`
-- **THEN** both deployments are named before the prompt, the user must type `wiktor-dev`, and the data is written to `wiktor-dev`'s table and bucket
+- **THEN** both deployments are named before anything is written, and the data is written to `wiktor-dev`'s table and bucket
 
 #### Scenario: Incomplete bundle refused
 - **WHEN** `baas admin deployment import` is given a directory without `manifest.json`
@@ -164,7 +164,7 @@ nothing.
 
 #### Scenario: No terminal
 - **WHEN** `baas admin deployment import <bundle>` runs without an interactive terminal
-- **THEN** it refuses and writes nothing
+- **THEN** it asks nothing and loads the bundle
 
 #### Scenario: Importing one part of a full bundle
 - **WHEN** `baas admin deployment import <bundle> --parts results` is given a bundle holding all three parts
