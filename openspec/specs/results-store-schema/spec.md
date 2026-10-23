@@ -1,7 +1,10 @@
 # results-store-schema Specification
 
 ## Purpose
-TBD - created by archiving change dynamodb-results-store. Update Purpose after archive.
+Defines how one measurement is stored in the results table: its keys, its queryable summary and the
+tag vocabulary that forms the whole query surface, with the verbatim JMH result JSON kept in S3. It
+also covers the guarantees every write keeps: S3 before the store, idempotent writes, and every job
+naming a store.
 
 ## Requirements
 
