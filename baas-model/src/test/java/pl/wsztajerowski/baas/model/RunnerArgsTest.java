@@ -11,8 +11,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class RunnerArgsTest {
 
     @ParameterizedTest
-    @ValueSource(strings = {"--tag", "--project", "-id", "--job-id", "--results-table", "--s3-bucket", "-m",
-        "--mongo-connection-string", "--dynamodb-endpoint", "--s3-service-endpoint", "--benchmark-path",
+    @ValueSource(strings = {"--tag", "--project", "-id", "--job-id", "--results-table", "--s3-bucket",
+        "--dynamodb-endpoint", "--s3-service-endpoint", "--benchmark-path",
         "--created-at", "--result-path"})
     void everyOptionTheCliSetsIsFoundAmongTheBenchmarkArguments(String option) {
         assertThat(RunnerArgs.firstSetByTheCli(List.of("MyBenchmark", "-f", "1", option, "x"))).contains(option);
