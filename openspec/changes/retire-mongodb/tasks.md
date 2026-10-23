@@ -26,10 +26,10 @@
 
 ## 3. Close B11's upload half
 
-- [ ] 3.1 `JmhRunResults.uploadJsonAndMap` becomes `map(...)` without a `StorageService`; the three JMH
+- [x] 3.1 `JmhRunResults.uploadJsonAndMap` becomes `map(...)` without a `StorageService`; the three JMH
   services upload `jmh-result.json` immediately before mapping; verify `JmhStoreIntegrationIT`'s
   artifacts-survive-a-store-failure test and the service ITs still pass, and that `JmhRunResults`
-  imports nothing from `infra`
+  imports no `StorageService` (it keeps `ResultLoaderService`, the JSON parser, which is mapping)
 
 ## 4. Remove the MongoDB store
 
