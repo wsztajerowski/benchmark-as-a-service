@@ -13,7 +13,10 @@ user's account.
 **The results table** (`baas-<prefix>-results`, output as `ResultsTableName`) is on-demand billed,
 keyed `pk`/`sk`, with one GSI `jobId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
 it is `DeletionPolicy: Delete` / `UpdateReplacePolicy: Delete`: **nothing survives a teardown**, which
-empties the bucket and then deletes the stack. Export a deployment's data before tearing it down.
+empties the bucket and then deletes the stack. Teardown runs only on a terminal and offers to export
+first; `baas admin deployment export` writes the results, every job's recordings and the runner-image
+extension to a local bundle, and `baas admin deployment import <bundle>` loads it into a set-up
+deployment without overwriting anything.
 
 Runners reach it through a **gateway** endpoint, associated with the runner subnet's route table.
 Gateway, not interface: gateway endpoints are free, interface endpoints carry an hourly charge, and
@@ -382,7 +385,8 @@ alias baas-dev="java -jar $PWD/baas-cli/target/baas-cli.jar --deployment $DEV"
 baas-dev run --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar --project dev \
   --runner-jar benchmark-runner/target/benchmark-runner.jar jmh -- -f 1 -wi 1 -i 1
 
-# 4. Tear it down. Its file goes with it, and with one deployment left the flag is optional again.
+# 4. Tear it down, on a terminal: it offers to export first, then asks for the name. Its file goes
+#    with it, and with one deployment left the flag is optional again.
 baas-dev admin deployment teardown
 ```
 
@@ -394,7 +398,7 @@ Three things worth knowing:
 - **Runners carry `baas-deployment=<name>`**, so two deployments in one region never count each
   other's runners — neither in `jobs list` nor in teardown's in-flight gate.
 - **Teardown deletes everything**, bucket, results table and runner image included — nothing survives
-  it, for a dev deployment as for the account's own. While it exists it costs one AMI snapshot
+  it but an export, for a dev deployment as for the account's own. While it exists it costs one AMI snapshot
   (~$0.20/month for 30 GB).
 
 ## The runner source repository is the build's, not configuration
