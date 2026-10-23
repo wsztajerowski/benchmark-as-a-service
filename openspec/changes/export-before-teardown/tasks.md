@@ -129,6 +129,10 @@
       - a declined offer writes no file even with an extension deployed.
 - [x] 7.5 Extend the `TeardownSequenceTest` order pin with the export step.
 
+- [x] 7.6 *Added 2026-10-23, after the live check:* restore `--yes`. It skips the offer and the
+      confirmation and exports nothing; without a terminal and without it, teardown refuses naming both.
+      The scenario-only spec deltas that dropped `--yes` are removed.
+
 ## 8. Documentation
 
 - [x] 8.1 Update CLAUDE.md:

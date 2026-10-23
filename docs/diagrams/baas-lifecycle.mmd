@@ -55,10 +55,10 @@ sequenceDiagram
 
     rect rgb(245, 245, 245)
         Note over IA,AWS: 4. Retire
-        Adm->>CLI: baas admin deployment teardown (on a terminal)
+        Adm->>CLI: baas admin deployment teardown
         CLI-->>Adm: warns: the bucket, the results table, the image and any extension go
-        CLI->>Adm: offers the export first -- a bundle of results, recordings and the extension
-        Adm->>CLI: types the deployment name
+        CLI->>Adm: on a terminal, offers the export first -- a bundle of results, recordings and the extension
+        Adm->>CLI: types the deployment name (or passed --yes: no offer, no export)
         CLI->>AWS: refuse if a runner is pending/running -- empty the bucket -- DeleteStack, wait<br/>(bucket and table go with it) -- then retire the image (pointer, AMI, snapshot, Image Builder records)
         Note over Adm,AWS: Nothing is left in AWS. The data leaves in the bundle, and baas admin deployment import<br/>loads it into a later setup without overwriting anything, then prints the extension's push.
         Note over CFG: the deployment's file is deleted with it -- nothing names the deployment any more

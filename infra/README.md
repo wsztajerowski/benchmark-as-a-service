@@ -13,8 +13,8 @@ user's account.
 **The results table** (`baas-<prefix>-results`, output as `ResultsTableName`) is on-demand billed,
 keyed `pk`/`sk`, with one GSI `jobId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
 it is `DeletionPolicy: Delete` / `UpdateReplacePolicy: Delete`: **nothing survives a teardown**, which
-empties the bucket and then deletes the stack. Teardown runs only on a terminal and offers to export
-first; `baas admin deployment export` writes the results, every job's recordings and the runner-image
+empties the bucket and then deletes the stack. On a terminal, teardown offers to export first
+(`--yes` offers nothing and exports nothing); `baas admin deployment export` writes the results, every job's recordings and the runner-image
 extension to a local bundle, and `baas admin deployment import <bundle>` loads it into a set-up
 deployment without overwriting anything.
 
@@ -385,7 +385,7 @@ alias baas-dev="java -jar $PWD/baas-cli/target/baas-cli.jar --deployment $DEV"
 baas-dev run --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar --project dev \
   --runner-jar benchmark-runner/target/benchmark-runner.jar jmh -- -f 1 -wi 1 -i 1
 
-# 4. Tear it down, on a terminal: it offers to export first, then asks for the name. Its file goes
+# 4. Tear it down: on a terminal it offers to export first, then asks for the name. Its file goes
 #    with it, and with one deployment left the flag is optional again.
 baas-dev admin deployment teardown
 ```

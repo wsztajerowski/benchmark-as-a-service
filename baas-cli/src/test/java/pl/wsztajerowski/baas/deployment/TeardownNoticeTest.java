@@ -24,8 +24,14 @@ class TeardownNoticeTest {
     @Test
     void thereIsNoOptionToKeepTheBucket() {
         assertThat(new picocli.CommandLine(new TeardownCommand()).getCommandSpec().optionsMap())
-            .doesNotContainKey("--delete-bucket")
-            .doesNotContainKey("--yes");
+            .doesNotContainKey("--delete-bucket");
+    }
+
+    /** --yes offers no export, so its help says how to keep the data. */
+    @Test
+    void yesSaysItExportsNothing() {
+        assertThat(new picocli.CommandLine(new TeardownCommand()).getCommandSpec().optionsMap().get("--yes")
+            .description()[0]).contains("Nothing is exported", "admin deployment export");
     }
 
     /** The image retired is the configured deployment's — the only one teardown can reach. */

@@ -488,13 +488,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   what is measured — and `baas results query` from the working directory's repository, skipping its
   project picker. A derived default that applied without being asked is what made the same command
   record or read a different partition depending on where it was typed.
-- **Teardown runs only on a terminal, offers the export first, and saves nothing itself.** There is
-  no `--yes`: every teardown passes the offer, so nothing is deleted without someone having been
-  asked whether to keep it. The offer comes after the in-flight gate — the export then sees a quiet
-  table, the one case where a scan is as good as a snapshot — and before the typed name, so a
-  failed export never leaves a confirmed teardown half-done. Teardown used to save the extension
-  unasked; that copy now lives only in a bundle. Live teardowns are therefore run by a person, never
-  from an agent's shell, which has no terminal.
+- **Teardown offers the export first, and saves nothing itself.** On a terminal the offer comes after
+  the in-flight gate — the export then sees a quiet table, the one case where a scan is as good as a
+  snapshot — and before the typed name, so a failed export never leaves a confirmed teardown
+  half-done. `--yes` asks nothing, so it offers nothing and exports nothing: unattended, run
+  `admin deployment export` first. Teardown used to save the extension unasked; that copy now lives
+  only in a bundle. A teardown without `--yes` was tried and reverted the same day (2026-10-23): an
+  agent has no terminal, and every way of faking one is refused, so only a person could tear down.
 - **A bundle is the wire shape, and import never overwrites.** `results.jsonl` is every item in
   DynamoDB's typed JSON, decoded through no mapper, so an attribute the model does not know survives
   and `aws dynamodb put-item` can read any line. `manifest.json` is written last: a directory

@@ -186,13 +186,18 @@ still reads the stack parameters, for the notice and for the federation line. Th
 a failed export never leaves a half-confirmed teardown. The in-flight gate runs first, so the export
 sees no running job, which removes brainstorm's "scan is not point-in-time" limit for this path.
 
-### Teardown has no `--yes` and needs a terminal
+### `--yes` skips the offer and the confirmation, and exports nothing
 
-Teardown runs only on an admin's interactive terminal (user, 2026-10-23), so the export offer is
-never bypassed. Without a terminal it refuses with exit 1. That is today's behaviour without
-`--yes`, with the hint changed from "pass --yes" to "run it on a terminal". Tests drive the offer
-and the confirmation through the existing `answerReader` seam and a console marked interactive.
-`baas jobs terminate --yes` is unaffected.
+On a terminal, teardown offers the export before the typed name. `--yes` asks nothing, so it offers
+nothing either: whoever passes it has exported already with `admin deployment export`, or decided not
+to. Without a terminal and without `--yes`, teardown refuses with exit 1, naming both. Tests drive the
+offer and the confirmation through the existing `answerReader` seam and a console marked interactive.
+
+*Rejected after implementation: no `--yes` at all, so that every teardown passes the offer.* It was
+built and shipped in this change's first commits (user, 2026-10-23, "no CI pipelining here"). The
+live verification then showed its cost. An agent has no terminal, and the permission classifier
+refuses, rightly, every way of faking one or skipping the prompt. So only a person could ever run a
+teardown, the verification's own included. The user restored `--yes` the same day.
 
 ### Export and import translate `AccessDenied` into the setup hint
 
@@ -213,10 +218,8 @@ export object as the command.
 
 - [The export offer is the only safety net, and it can be declined] → This was decided: teardown
   advises and the operator decides. The notice names exactly what goes, the extension included.
-- [`--yes` removal is a breaking flag change] → Nothing automated calls it. The release notes name
-  it, and an old invocation fails with picocli's unknown-option error before any AWS call.
-- [The agent's shell has no terminal, so live teardowns become human-run] → The verification tasks
-  and QUEUE.md's deferred two-deployment check say who runs them.
+- [`--yes` bypasses the offer] → Its help says nothing is exported and names `admin deployment
+  export`, and so does the refusal without a terminal. The notice before any deletion names what goes.
 - [A standalone export racing a live job can miss that job's later writes] → It is stated in the
   export's help. The teardown path is not affected, because its in-flight gate comes first.
 - [`recordings` egress costs about $0.09/GB] → The manifest reports the byte count, and
