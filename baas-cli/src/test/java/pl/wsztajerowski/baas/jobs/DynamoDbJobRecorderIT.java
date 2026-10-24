@@ -1,15 +1,16 @@
 package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.JobItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.JobStatus;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -36,8 +37,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The job item's conditional writes against a real DynamoDB: the guard that keeps the first
  * terminal status, the {@code launching}-only {@code launched}, and the reservation as the only
- * write that creates an item. These are the rules the in-memory fake in {@code JobSessionTest}
- * imitates, so this is what keeps that fake honest.
+ * write that creates an item. These are the rules {@link JobRecorderContract} states;
+ * its nested {@code Contract} runs them here, and the two in-memory recorders run them too.
  */
 @Testcontainers(disabledWithoutDocker = true)
 class DynamoDbJobRecorderIT {
@@ -189,7 +190,7 @@ class DynamoDbJobRecorderIT {
             .tableName(tableName)
             .key(JobItemMapper.key(target))
             .updateExpression("SET #status = :s")
-            .conditionExpression("attribute_exists(pk) AND " + DynamoDbJobRecorder.NOT_TERMINAL)
+            .conditionExpression("attribute_exists(pk) AND " + pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL)
             .expressionAttributeNames(Map.of("#status", "status"))
             .expressionAttributeValues(guardValuesWith(status)));
     }
@@ -197,7 +198,7 @@ class DynamoDbJobRecorderIT {
     /** The guard's values as user-data sends them, built from the same generated map. */
     private static Map<String, AttributeValue> guardValuesWith(String status) {
         Map<String, AttributeValue> values = new java.util.HashMap<>(Map.of(":s", AttributeValue.fromS(status)));
-        DynamoDbJobRecorder.NOT_TERMINAL_VALUES.forEach((k, v) -> values.put(k, AttributeValue.fromS(v)));
+        pl.wsztajerowski.baas.model.dynamodb.JobItemConditions.NOT_TERMINAL_VALUES.forEach((k, v) -> values.put(k, AttributeValue.fromS(v)));
         return values;
     }
 
@@ -207,5 +208,14 @@ class DynamoDbJobRecorderIT {
 
     private static KeySchemaElement key(String name, KeyType type) {
         return KeySchemaElement.builder().attributeName(name).keyType(type).build();
+    }
+
+    /** The rules every recorder keeps, against the real table; see {@link JobRecorderContract}. */
+    @Nested
+    class Contract extends JobRecorderContract {
+        @Override
+        protected JobRecorder recorder() {
+            return recorder;
+        }
     }
 }

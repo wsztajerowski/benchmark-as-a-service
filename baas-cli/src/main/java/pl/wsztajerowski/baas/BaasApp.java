@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas;
 
+import pl.wsztajerowski.baas.session.BaasVersion;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine;
@@ -10,14 +11,17 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.ScopeType;
 import picocli.CommandLine.Spec;
 import picocli.CommandLine.ParseResult;
-import pl.wsztajerowski.baas.commands.ConfigCommand;
-import pl.wsztajerowski.baas.commands.ResultsCommand;
-import pl.wsztajerowski.baas.commands.ResultsQuerySubcommand;
-import pl.wsztajerowski.baas.commands.RunCommand;
-import pl.wsztajerowski.baas.commands.JobsCommand;
-import pl.wsztajerowski.baas.commands.admin.AdminCommand;
-import pl.wsztajerowski.baas.config.ConfigService;
-import pl.wsztajerowski.baas.config.DeploymentSelectionException;
+import pl.wsztajerowski.baas.config.ConfigCommand;
+import pl.wsztajerowski.baas.results.ResultsCommand;
+import pl.wsztajerowski.baas.results.ResultsQuerySubcommand;
+import pl.wsztajerowski.baas.jobs.RunCommand;
+import pl.wsztajerowski.baas.jobs.JobsCommand;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
+import pl.wsztajerowski.baas.cli.Root;
+import pl.wsztajerowski.baas.session.ConfigService;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
+import pl.wsztajerowski.baas.session.CliVersionCheck;
+import pl.wsztajerowski.baas.session.DeploymentSelectionException;
 
 import java.nio.file.Path;
 
@@ -49,7 +53,7 @@ import java.nio.file.Path;
         "    jmh -- MyBenchmark -f 1              # note the -- separator"
     }
 )
-public class BaasApp implements Runnable {
+public class BaasApp implements Runnable, Root {
 
     /**
      * The version cannot be a constant {@code version = ...} attribute: it is read from the JAR
@@ -97,26 +101,20 @@ public class BaasApp implements Runnable {
         this.configRoot = configRoot;
     }
 
-    /** The {@code --deployment} the command line named, if any. */
-    public static java.util.Optional<String> deployment(CommandSpec spec) {
-        if (spec != null && spec.root().userObject() instanceof BaasApp app && app.deployment != null
-            && !app.deployment.isBlank()) {
-            return java.util.Optional.of(app.deployment.strip());
-        }
-        return java.util.Optional.empty();
+    @Override
+    public Path configRoot() {
+        return configRoot;
     }
 
-    /**
-     * The deployments a command works with, bound to the {@code --deployment} it was given. Resolved
-     * at call time, never in a field initialiser: fields are initialised while picocli builds the
-     * command tree, before {@code --deployment} is parsed. A command constructed outside a
-     * {@code BaasApp} tree (a unit test) gets the default root and no name.
-     */
-    public static ConfigService configService(CommandSpec spec) {
-        if (spec != null && spec.root().userObject() instanceof BaasApp app) {
-            return new ConfigService(app.configRoot, deployment(spec));
-        }
-        return new ConfigService(ConfigService.defaultRoot(), java.util.Optional.empty());
+    @Override
+    public java.util.Optional<String> deploymentOption() {
+        return deployment == null || deployment.isBlank()
+            ? java.util.Optional.empty() : java.util.Optional.of(deployment.strip());
+    }
+
+    @Override
+    public LoggingMixin rootLoggingMixin() {
+        return loggingMixin;
     }
 
     /**
@@ -124,7 +122,17 @@ public class BaasApp implements Runnable {
      * here so that {@code main} and the tests render the same help.
      */
     public static CommandLine commandLine(BaasApp app) {
-        var commandLine = new CommandLine(app);
+        return commandLine(app, CommandLine.defaultFactory());
+    }
+
+    /**
+     * The command tree as {@code main} runs it, failure handling included: a {@link CommandRefusal}
+     * leaves through {@link #reportFailure}, which logs it and returns its exit code. Tests build
+     * the tree here too, with their own factory, so they see the exits a user sees.
+     */
+    public static CommandLine commandLine(BaasApp app, CommandLine.IFactory factory) {
+        var commandLine = new CommandLine(app, factory)
+            .setExecutionExceptionHandler(BaasApp::reportFailure);
         commandLine.getHelpSectionMap().put(CommandLine.Model.UsageMessageSpec.SECTION_KEY_COMMAND_LIST_HEADING,
             help -> System.lineSeparator());
         commandLine.getHelpSectionMap().put(CommandLine.Model.UsageMessageSpec.SECTION_KEY_COMMAND_LIST,
@@ -170,12 +178,11 @@ public class BaasApp implements Runnable {
         BaasApp app = new BaasApp();
         System.exit(commandLine(app)
             .setExecutionStrategy(app::executionStrategy)
-            .setExecutionExceptionHandler(BaasApp::reportFailure)
             .execute(args));
     }
 
     private int executionStrategy(ParseResult parseResult) {
-        if (loggingMixin.verbose) {
+        if (loggingMixin.verbose()) {
             System.setProperty(LoggingMixin.LEVEL_PROPERTY, "debug");
         }
         return new CommandLine.RunLast().execute(parseResult); // default execution strategy
@@ -192,13 +199,22 @@ public class BaasApp implements Runnable {
      * {@code -v} and the trace would be unreachable.
      *
      * <p>A {@link DeploymentSelectionException} gets no {@code -v} hint: its message already says what
-     * to type, and its trace would show only where the files were read.
+     * to type, and its trace would show only where the files were read. Nor does a
+     * {@link CommandRefusal}, which also chooses its exit code: a command's refusals are logged here,
+     * once, rather than by each command. A {@link CliVersionCheck.Refused} — this CLI is older than
+     * the deployment — is one too, exit 1, thrown from the session rather than by a command.
      */
-    static int reportFailure(Exception ex, CommandLine commandLine,
+    public static int reportFailure(Exception ex, CommandLine commandLine,
                              CommandLine.ParseResult parseResult) {
         Logger logger = LoggerFactory.getLogger(BaasApp.class);
         String message = ex.getMessage() != null ? ex.getMessage() : ex.toString();
         logger.error("{}", message);
+        if (ex instanceof CommandRefusal refusal) {
+            return refusal.exitCode();
+        }
+        if (ex instanceof CliVersionCheck.Refused) {
+            return 1;
+        }
         if (logger.isDebugEnabled()) {
             logger.debug("Stack trace:", ex);
         } else if (!(ex instanceof DeploymentSelectionException)) {

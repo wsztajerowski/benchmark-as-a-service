@@ -1,12 +1,12 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.infra.StorageService;
+import pl.wsztajerowski.services.JmhSubcommandService;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 
-import static pl.wsztajerowski.infra.StorageServiceBuilder.getS3ServiceBuilder;
-import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
-
-@Command(name = "jmh", description = "Run JHM benchmarks")
+@Command(name = BenchmarkType.JMH_NAME, description = "Run JHM benchmarks")
 public class JmhSubcommand implements Runnable {
     @Mixin LoggingMixin loggingMixin;
 
@@ -18,14 +18,12 @@ public class JmhSubcommand implements Runnable {
 
     @Override
     public void run() {
-        serviceBuilder()
-            .withCommonOptions(apiCommonSharedOptions.getRequestOptions())
-            .withJmhOptions(apiJmhOptions.getJmhOptions())
-            .withResultsStore(apiCommonSharedOptions.buildResultsStore())
-            .withStorageService(getS3ServiceBuilder()
-                .withS3Options(apiCommonSharedOptions.getS3Options())
-                .build())
-            .build()
-            .executeCommand();
+        // In the order the builder used to evaluate them: the request options can refuse the run
+        // (no project) before any client is built or any storage line is logged.
+        var common = apiCommonSharedOptions.getRequestOptions();
+        var jmh = apiJmhOptions.getJmhOptions();
+        var store = apiCommonSharedOptions.buildResultsStore();
+        var storage = StorageService.of(apiCommonSharedOptions.getS3Options());
+        new JmhSubcommandService(storage, store, common, jmh).executeCommand();
     }
 }

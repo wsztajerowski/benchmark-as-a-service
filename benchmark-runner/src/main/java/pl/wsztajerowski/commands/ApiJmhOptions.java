@@ -1,10 +1,12 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+import pl.wsztajerowski.baas.model.RunnerArgs;
 import picocli.CommandLine.ArgGroup;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
-import pl.wsztajerowski.services.options.*;
+import pl.wsztajerowski.options.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,7 +24,7 @@ public class ApiJmhOptions {
 
     Path benchmarkPath = getWorkingDirectory().resolve("jmh-benchmarks.jar");
 
-    @Option(names = "--benchmark-path", description = "Path to benchmark jar (default: ${DEFAULT-VALUE})")
+    @Option(names = RunnerArgs.BENCHMARK_PATH, description = "Path to benchmark jar (default: ${DEFAULT-VALUE})")
     public void setBenchmarkPath(Path path) {
         if(!Files.exists(path)){
             throw new ParameterException(spec.commandLine(),
@@ -35,7 +37,7 @@ public class ApiJmhOptions {
     Path machineReadableOutput = getWorkingDirectory().resolve("jmh-results.json");
 
     @Option(names = {"-o", "--process-output"}, description = "Write benchmark process output to a given file. (default: ${DEFAULT-VALUE})")
-    Path processOutput = getWorkingDirectory().resolve("jmh-output.txt");
+    Path processOutput = getWorkingDirectory().resolve(BenchmarkType.JMH.workingOutputName());
 
     @ArgGroup(validate = false, heading = "Benchmark options%n")
     BenchmarkSection benchmarkSection = new BenchmarkSection();

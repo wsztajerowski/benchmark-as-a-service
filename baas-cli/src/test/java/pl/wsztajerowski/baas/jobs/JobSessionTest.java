@@ -36,6 +36,7 @@ class JobSessionTest {
         @Override
         public void reserve(JobItem job) {
             if (failReserve != null) throw failReserve;
+            if (status != null) throw new IllegalStateException("ConditionalCheckFailed: already reserved");
             writes.add("reserve");
             status = JobStatus.LAUNCHING;
         }
@@ -78,7 +79,7 @@ class JobSessionTest {
         @Override
         public Optional<JobItem> read(JobItem job) {
             return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
-                job.createdAt(), job.resultPath(), job.instanceType(), status, instanceId, null, Map.of(), null));
+                job.createdAt(), job.resultPath(), job.instanceType(), status, instanceId, null, Map.of(), null, job.watchdogSeconds()));
         }
 
         @Override
@@ -99,8 +100,8 @@ class JobSessionTest {
         RuntimeException failTerminate;
 
         @Override
-        public String state(String instanceId) {
-            return states.getOrDefault(instanceId, "unknown");
+        public InstanceState state(String instanceId) {
+            return InstanceState.of(states.get(instanceId));
         }
 
         @Override

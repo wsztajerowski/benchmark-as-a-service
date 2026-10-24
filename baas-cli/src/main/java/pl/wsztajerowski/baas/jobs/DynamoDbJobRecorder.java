@@ -1,9 +1,10 @@
 package pl.wsztajerowski.baas.jobs;
 
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.JobItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemConditions;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.JobStatus;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -14,7 +15,6 @@ import software.amazon.awssdk.services.dynamodb.model.UpdateItemRequest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -22,38 +22,11 @@ import java.util.function.Predicate;
 import java.util.function.Supplier;
 
 /**
- * {@link JobRecorder} over the results table. The terminal guard below is the same expression
- * user-data's {@code job_status} evaluates, so the CLI and the instance agree on what "terminal"
- * means; both read the vocabulary from {@link JobStatus}.
+ * {@link JobRecorder} over the results table. Its terminal guard is {@link JobItemConditions}, the
+ * same expression user-data's {@code job_status} evaluates, so the CLI and the instance agree on
+ * what "terminal" means.
  */
 public class DynamoDbJobRecorder implements JobRecorder {
-
-    private static final String FAILED_PREFIX_VALUE = ":failedPrefix";
-
-    /**
-     * The values {@link #NOT_TERMINAL} names, by placeholder: one per {@link JobStatus#EXACT_TERMINAL}
-     * status, then the {@code failed:} prefix. Generated, so a terminal status added to
-     * {@link JobStatus} reaches the guard the CLI and the instance both evaluate.
-     */
-    public static final Map<String, String> NOT_TERMINAL_VALUES = notTerminalValues();
-
-    /**
-     * True unless the stored status is terminal. {@code failed:<n>} is matched by prefix, so exit
-     * codes need no enumeration; {@code status} is a reserved word, hence {@code #status}.
-     */
-    public static final String NOT_TERMINAL =
-        "(attribute_not_exists(#status) OR NOT (#status IN ("
-            + String.join(", ", NOT_TERMINAL_VALUES.keySet().stream().filter(k -> !k.equals(FAILED_PREFIX_VALUE)).toList())
-            + ") OR begins_with(#status, " + FAILED_PREFIX_VALUE + ")))";
-
-    private static Map<String, String> notTerminalValues() {
-        Map<String, String> values = new LinkedHashMap<>();
-        for (int i = 0; i < JobStatus.EXACT_TERMINAL.size(); i++) {
-            values.put(":terminal" + i, JobStatus.EXACT_TERMINAL.get(i));
-        }
-        values.put(FAILED_PREFIX_VALUE, JobStatus.FAILED_PREFIX);
-        return java.util.Collections.unmodifiableMap(values);
-    }
 
     private static final int PAGE_SIZE = 100;
 
@@ -98,13 +71,13 @@ public class DynamoDbJobRecorder implements JobRecorder {
         if (errorCode != null) {
             update.set(JobItemMapper.ERROR_CODE, errorCode);
         }
-        return attempt(update.request(job, "attribute_exists(#pk) AND " + NOT_TERMINAL, true));
+        return attempt(update.request(job, "attribute_exists(#pk) AND " + JobItemConditions.NOT_TERMINAL, true));
     }
 
     @Override
     public Write stop(JobItem job, String status) {
         var update = new Update().set(JobItemMapper.STATUS, status).stamp(clock.get());
-        return attempt(update.request(job, "attribute_exists(#pk) AND " + NOT_TERMINAL, true));
+        return attempt(update.request(job, "attribute_exists(#pk) AND " + JobItemConditions.NOT_TERMINAL, true));
     }
 
     @Override
@@ -202,7 +175,7 @@ public class DynamoDbJobRecorder implements JobRecorder {
                 names.put("#status", JobItemMapper.STATUS);
             }
             if (terminalGuard) {
-                NOT_TERMINAL_VALUES.forEach((placeholder, status) -> values.put(placeholder, AttributeValue.fromS(status)));
+                JobItemConditions.NOT_TERMINAL_VALUES.forEach((placeholder, status) -> values.put(placeholder, AttributeValue.fromS(status)));
             }
             return UpdateItemRequest.builder()
                 .tableName(tableName)

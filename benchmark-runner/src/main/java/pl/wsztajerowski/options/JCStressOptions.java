@@ -1,0 +1,21 @@
+package pl.wsztajerowski.options;
+
+import java.nio.file.Path;
+
+public record JCStressOptions(
+    Integer cpuNumber,
+    Integer forks,
+    Integer forkMultiplier,
+    Integer heapSize,
+    String jvmArgs,
+    String jvmArgsPrepend,
+    String spinStyle,
+    Path reportPath,
+    Boolean splitCompilationModes,
+    Boolean preTouchHeap,
+    Integer strideCount,
+    Integer strideSize,
+    String mode,
+    String testNameRegex,
+    Path processOutput) {
+}

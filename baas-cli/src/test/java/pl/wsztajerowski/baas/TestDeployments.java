@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas;
 
-import pl.wsztajerowski.baas.config.BaasConfig;
-import pl.wsztajerowski.baas.config.ConfigService;
+import pl.wsztajerowski.baas.session.BaasConfig;
+import pl.wsztajerowski.baas.session.ConfigService;
 
 import java.io.IOException;
 import java.nio.file.Files;

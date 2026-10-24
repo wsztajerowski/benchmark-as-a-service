@@ -1,11 +1,11 @@
 package pl.wsztajerowski.results;
 
+import pl.wsztajerowski.baas.model.JobLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jmh.JmhResult;
-import pl.wsztajerowski.infra.StorageService;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
 
 import java.nio.file.Path;
 import java.time.Instant;
@@ -16,8 +16,8 @@ import java.util.function.Function;
 import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 
 /**
- * Shared by the three JMH-flavoured services: upload the verbatim result JSON, then map every
- * result in it into the stored shape.
+ * Shared by the three JMH-flavoured services: maps every result in the JMH result JSON into the
+ * stored shape. Each service uploads the JSON itself, at {@link #resultJsonKey}, before mapping.
  *
  * <p>The stored item is deliberately thin — {@code rawData} and {@code scorePercentiles} are
  * dropped — so the unmodified JMH JSON has to go somewhere retrievable. It goes to S3 under the
@@ -34,16 +34,18 @@ public final class JmhRunResults {
     /** For runs with no profiler: every measurement gets a null profiler-output prefix. */
     public static final Function<JmhResult, String> NO_PROFILER_OUTPUT = result -> null;
 
-    public static List<StoredMeasurement> uploadJsonAndMap(
-        StorageService storageService, CommonSharedOptions commonOptions, Path machineReadableOutput,
+    /** Where the verbatim result JSON goes, and what every measurement's {@code resultJsonKey} names. */
+    public static Path resultJsonKey(CommonSharedOptions commonOptions) {
+        return commonOptions.resultPath().resolve(JobLayout.RESULT_JSON_NAME);
+    }
+
+    public static List<StoredMeasurement> map(
+        CommonSharedOptions commonOptions, Path machineReadableOutput,
         Function<JmhResult, String> profilerOutputPath) {
 
         Path outputPath = commonOptions.resultPath();
-        Path resultJsonKey = outputPath.resolve("jmh-result.json");
-        logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
-        storageService.saveFile(resultJsonKey, machineReadableOutput);
-
-        String environmentJsonKey = outputPath.resolve("environment.json").toString();
+        Path resultJsonKey = resultJsonKey(commonOptions);
+        String environmentJsonKey = outputPath.resolve(JobLayout.ENVIRONMENT_NAME).toString();
         // One timestamp per job, not one per result: the sort key already separates measurements
         // by class, method and mode, and a per-result clock read would make two results from the
         // same job differ by a stray millisecond. The instant comes from whoever named the job, so

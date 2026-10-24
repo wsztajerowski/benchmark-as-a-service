@@ -2,7 +2,7 @@ package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
-import pl.wsztajerowski.baas.results.ResultsFilters;
+import pl.wsztajerowski.baas.model.TagKeys;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -58,7 +58,7 @@ public final class JobListing {
     public static Predicate<JobItem> filter(String project, Map<String, String> tags, List<String> excludedTags,
                                             boolean inFlightOnly, Map<String, String> liveByJobId, Instant now) {
         List<String[]> excluded = excludedTags == null ? List.of()
-            : excludedTags.stream().map(ResultsFilters::pair).toList();
+            : excludedTags.stream().map(TagKeys::parsePair).toList();
         return job -> (project == null || project.equals(job.project()))
             && tags.entrySet().stream().allMatch(t -> t.getValue().equals(job.tags().get(t.getKey())))
             && excluded.stream().noneMatch(kv -> kv[1].equals(job.tags().get(kv[0])))

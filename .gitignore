@@ -32,6 +32,8 @@ buildNumber.properties
 #Others
 *.pem
 *.html
+# Test fixtures are sources, not generated reports.
+!**/src/test/resources/**/*.html
 /volume/
 **/.aws-sam/
 /**/.env

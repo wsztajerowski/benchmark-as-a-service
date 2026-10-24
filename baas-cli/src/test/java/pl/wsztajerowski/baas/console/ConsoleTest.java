@@ -99,4 +99,13 @@ class ConsoleTest {
 
         assertThat(out.toString()).isEqualTo("Type the stack name: ");
     }
+
+    /** The deployer policy goes through println, which never styles: pasteable as IAM JSON. */
+    @Test
+    void printlnNeverStyles() {
+        var out = new java.io.StringWriter();
+        Console.withFlags(new java.io.PrintWriter(out), true, true).println("{\"Version\":\"2012-10-17\"}");
+
+        assertThat(out.toString()).doesNotContain("\u001b");
+    }
 }

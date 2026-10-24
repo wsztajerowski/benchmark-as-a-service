@@ -1,6 +1,6 @@
 package pl.wsztajerowski.commands;
 
-import picocli.CommandLine;
+import pl.wsztajerowski.baas.model.RunnerArgs;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.baas.model.JobId;
@@ -8,8 +8,8 @@ import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.ResultsStoreBuilder;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.S3Options;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.S3Options;
 
 import java.net.URI;
 import java.nio.file.Path;
@@ -20,48 +20,38 @@ import java.util.Optional;
 
 @Command
 public class ApiCommonSharedOptions {
-    @Option(names = "--tag")
+    @Option(names = RunnerArgs.TAG)
     Map<String, String> tags;
 
-    @Option(names = "--result-path", description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
+    @Option(names = RunnerArgs.RESULT_PATH, description = "Local path or path within S3 bucket to save benchmark results. Default value: value of Request ID option.")
     Path resultPath;
 
-    @Option(names = {"-id","--job-id"}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
+    @Option(names = {RunnerArgs.JOB_ID_SHORT, RunnerArgs.JOB_ID}, description = "Request ID. Default value: a generated job identifier, minted from the job's instant.")
     String jobId;
 
-    @Option(names = "--created-at",
+    @Option(names = RunnerArgs.CREATED_AT,
         description = "The job's instant, supplied by the launching CLI so the job identifier and the "
             + "stored timestamp cannot disagree. Default: now.")
     String createdAt;
 
-    @Option(names = "--project", description = "Project name; composes the results partition key.")
+    @Option(names = RunnerArgs.PROJECT, description = "Project name; composes the results partition key.")
     String project;
 
-    @Option(names = "--results-table", description = "DynamoDB table holding benchmark measurements.")
+    @Option(names = RunnerArgs.RESULTS_TABLE, required = true, description = "DynamoDB table holding benchmark measurements.")
     String resultsTableName;
 
-    @Option(names = "--dynamodb-endpoint",
+    @Option(names = RunnerArgs.DYNAMODB_ENDPOINT,
         defaultValue = "${AWS_ENDPOINT_URL_DYNAMODB}",
         description = "Custom DynamoDB endpoint, for LocalStack.")
     URI dynamoDbEndpoint;
 
-    @Option(names = {"--mongo-connection-string", "-m"},
-        defaultValue = "${MONGO_CONNECTION_STRING}",
-        description = "MongoDB connection string - you could provide it as a option value or put in MONGO_CONNECTION_STRING env variable. For details see: https://www.mongodb.com/docs/manual/reference/connection-string/")
-    URI mongoConnectionString;
+    @Option(names = RunnerArgs.S3_BUCKET, required = true, description = "S3 bucket the job's artifacts are written to.")
+    String s3BucketName;
 
-    @CommandLine.ArgGroup(exclusive = false)
-    ApiS3Options s3Options;
-
-    static class ApiS3Options {
-        @Option(names = "--s3-bucket", required = true, description = "S3 bucket name where benchmark will be placed.")
-        String s3BucketName;
-
-        @Option(names = "--s3-service-endpoint",
-            defaultValue = "${AWS_ENDPOINT_URL_S3}",
-            description = "Custom S3 Service endpoint")
-        URI s3ServiceEndpoint;
-    }
+    @Option(names = RunnerArgs.S3_SERVICE_ENDPOINT,
+        defaultValue = "${AWS_ENDPOINT_URL_S3}",
+        description = "Custom S3 Service endpoint")
+    URI s3ServiceEndpoint;
 
     private Instant resolvedCreatedAt;
 
@@ -119,25 +109,14 @@ public class ApiCommonSharedOptions {
             "Cannot determine the project: pass --project <name> (or --tag project=<name>).");
     }
 
-    public URI getMongoConnectionString() {
-        return mongoConnectionString;
-    }
-
     public ResultsStore buildResultsStore() {
         return ResultsStoreBuilder.builder()
             .withTableName(resultsTableName)
-            .withConnectionString(mongoConnectionString)
             .withDynamoDbEndpoint(dynamoDbEndpoint)
             .build();
     }
 
     public S3Options getS3Options() {
-        String s3BucketName = Optional.ofNullable(s3Options)
-            .map(s3Options -> s3Options.s3BucketName)
-            .orElse("");
-        URI s3ServiceEndpoint = Optional.ofNullable(s3Options)
-            .map(s3Options -> s3Options.s3ServiceEndpoint)
-            .orElse(null);
         return new S3Options(s3BucketName, s3ServiceEndpoint);
     }
 }

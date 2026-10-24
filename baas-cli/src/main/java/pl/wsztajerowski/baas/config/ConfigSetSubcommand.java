@@ -1,0 +1,87 @@
+package pl.wsztajerowski.baas.config;
+
+import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import picocli.CommandLine.Command;
+import picocli.CommandLine.Mixin;
+import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Option;
+import picocli.CommandLine.Spec;
+import pl.wsztajerowski.baas.cli.LoggingMixin;
+import pl.wsztajerowski.baas.session.BaasConfig;
+
+import java.util.concurrent.Callable;
+
+@Command(
+    name = "set",
+    mixinStandardHelpOptions = true,
+    description = "Update configuration values."
+)
+public class ConfigSetSubcommand implements Callable<Integer> {
+
+    private static final Logger logger = LoggerFactory.getLogger(ConfigSetSubcommand.class);
+
+    @Mixin LoggingMixin loggingMixin;
+
+    @Option(names = "--deployer-aws-profile",
+        description = "AWS CLI profile for `baas admin` commands (deployer credentials).")
+    String deployerProfile;
+
+    @Option(names = "--operator-aws-profile",
+        description = "AWS CLI profile that assumes BaasCliOperatorRole — used by run/results/config.")
+    String operatorProfile;
+
+    @Option(names = "--instance-type", description = "Default EC2 instance type.")
+    String instanceType;
+
+    @Option(names = "--timeout", description = "Benchmark process timeout in seconds.")
+    Integer benchmarkTimeout;
+
+    @Option(names = "--watchdog-margin",
+        description = "Seconds the self-termination watchdog waits beyond the benchmark timeout "
+            + "(minimum " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS + ").")
+    Integer watchdogMargin;
+
+    // Arity 1, not a bare flag: a flag could turn derivation on but never back off.
+    @Option(names = "--git-resolve-project", arity = "1", paramLabel = "<true|false>",
+        description = "Derive the project from git when --project is absent: baas run from the "
+            + "benchmark JAR's repository, baas results query from the current directory's.")
+    Boolean gitResolveProject;
+
+    // No --prefix. Adopting a deployment is `baas config sync --deployment`, which checks the stack
+    // exists first; this option wrote the same field unchecked, so a typo surfaced only as the
+    // first real command's AWS error. It dated from when the prefix was a name you chose.
+    //
+    // No --region, for the same reason. The region is the deployment's: `baas admin deployment setup
+    // --region` chooses it and `config sync` finds it from the bucket. Set by hand, it aimed a
+    // machine at a region with no deployment, and `run` then advised building an image there.
+
+    @Spec CommandSpec spec;
+
+
+    @Override
+    public Integer call() {
+        if (benchmarkTimeout != null && benchmarkTimeout < 1) {
+            throw CommandRefusal.usage("--timeout must be at least 1 second; got " + benchmarkTimeout
+                + ". 0 would disable the process timeout on the instance.");
+        }
+        if (watchdogMargin != null && watchdogMargin < BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS) {
+            throw CommandRefusal.usage("--watchdog-margin must be at least " + BaasConfig.MIN_WATCHDOG_MARGIN_SECONDS
+                + " seconds; got " + watchdogMargin + ".");
+        }
+        BaasConfig config = Invocation.configService(spec).load();
+
+        if (deployerProfile != null) config.getAws().setDeployerProfile(deployerProfile);
+        if (operatorProfile != null) config.getAws().setOperatorProfile(operatorProfile);
+        if (instanceType != null) config.getEc2().setDefaultInstanceType(instanceType);
+        if (benchmarkTimeout != null) config.getEc2().setBenchmarkTimeoutSeconds(benchmarkTimeout);
+        if (watchdogMargin != null) config.getEc2().setWatchdogMarginSeconds(watchdogMargin);
+        if (gitResolveProject != null) config.getGit().setResolveProject(gitResolveProject);
+
+        Invocation.configService(spec).save(config);
+        logger.info("Configuration saved to {}", Invocation.configService(spec).fileOf(config.requirePrefix()));
+        return 0;
+    }
+}

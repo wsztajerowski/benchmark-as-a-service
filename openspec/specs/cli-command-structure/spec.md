@@ -9,8 +9,8 @@ privilege tier each grouping implies.
 
 ### Requirement: Deployer-privileged commands are grouped under `admin`
 The `baas` command tree SHALL group every command that needs deployer credentials under a nested `admin`
-subcommand, as two nouns: `admin deployment` with the verbs `setup` and `teardown`, and `admin image`
-with the verbs `build` and `show`. None of these SHALL be reachable as top-level commands, and
+subcommand, as two nouns: `admin deployment` with the verbs `setup`, `teardown`, `export` and
+`import`, and `admin image` with the verbs `build` and `show`. None of these SHALL be reachable as top-level commands, and
 `admin deployer-policy`, `admin setup`, `admin teardown`, `admin build-image` and `admin image` without
 a verb SHALL NOT exist as commands.
 
@@ -23,6 +23,14 @@ a verb SHALL NOT exist as commands.
 #### Scenario: The image is a noun with two verbs
 - **WHEN** a user runs `baas admin image`
 - **THEN** its usage, naming `build` and `show`, is printed and no AWS call is made
+
+#### Scenario: The deployment noun lists its four verbs
+- **WHEN** a user runs `baas admin deployment`
+- **THEN** its usage, naming `setup`, `teardown`, `export` and `import`, is printed and no AWS call is made
+
+#### Scenario: Export and import have no other form
+- **WHEN** a user runs `baas export`, `baas import` or `baas jobs export`
+- **THEN** picocli reports an unknown command error
 
 ### Requirement: `baas admin image build` builds the runner image
 `baas admin image build` SHALL render the base from the `infra/runner-image.yaml` bundled with the CLI,
@@ -392,9 +400,9 @@ instance is launched. `baas run` SHALL NOT offer an option that discards measure
 
 ### Requirement: Commands are nouns with verbs, and only a one-noun verb has a top-level alias
 Every canonical command SHALL have the form `baas [admin] <noun> <verb>`. The operator nouns SHALL be
-`jobs` (`run`, `list`, `show`, `diff`, `download`, `terminate`), `results` (`query`) and `config`
-(`show`, `set`, `sync`). A top-level alias SHALL exist only for a verb that belongs to exactly one
-noun, and the aliases SHALL be `baas run` for `baas jobs run` and `baas query` for `baas results
+`jobs` (`run`, `list`, `show`, `diff`, `download`, `terminate`, `connect`), `results` (`query`) and
+`config` (`show`, `set`, `sync`). A top-level alias SHALL exist only for a verb that belongs to exactly
+one noun, and the aliases SHALL be `baas run` for `baas jobs run` and `baas query` for `baas results
 query`. A noun given without a verb SHALL print its usage and do nothing else. No alias SHALL exist
 for a verb shared by several nouns.
 
@@ -409,6 +417,10 @@ for a verb shared by several nouns.
 #### Scenario: A shared verb has no alias
 - **WHEN** `baas list` or `baas show` is invoked
 - **THEN** picocli reports an unknown command error
+
+#### Scenario: Connect has no top-level alias
+- **WHEN** `baas connect` is invoked
+- **THEN** picocli reports an unknown command error, and `baas jobs connect` is the only form
 
 ### Requirement: Top-level help is grouped by workload
 `baas --help` SHALL list, in order: the shortcuts, each shown with its canonical command (`run = jobs
@@ -652,3 +664,68 @@ stay, and setup SHALL say that the profile was not stored because it could not b
 #### Scenario: A create is its own evidence
 - **WHEN** an identity that may not simulate policies creates a deployment successfully
 - **THEN** the file stores that identity's profile
+
+### Requirement: A CLI older than the deployment's recorded version is refused
+Every command that makes an AWS call, under `baas admin` or not, SHALL first read the deployment's
+recorded CLI version (the core stack's `BaasCliVersion`) and compare it numerically, field by field,
+with its own. When its own version is lower — patch level included — the command SHALL make no
+further AWS call, write to standard error the recorded version, its own version and the command
+`curl -fsSL https://github.com/<repository>/releases/latest/download/install.sh | sh`, where
+`<repository>` is the one the CLI was released from, and exit 1. When the stack does not exist or
+records no version, the command SHALL proceed. `baas jobs terminate` SHALL NOT perform this check.
+Commands that make no AWS call — `config list`, `config show`, `config set`, `--help`, `--version`
+— SHALL NOT perform it. `baas admin deployment setup` performs it as its own step (see
+*guided-setup*).
+
+#### Scenario: An older CLI is refused before it acts
+- **WHEN** the deployment records `8.1.0` and `baas results query` from `8.0.3` is run
+- **THEN** it writes the two versions and the installer command to standard error, queries nothing,
+  and exits 1
+
+#### Scenario: A patch-older CLI is refused
+- **WHEN** the deployment records `8.1.1` and a command from `8.1.0` is run
+- **THEN** it is refused as above
+
+#### Scenario: Versions compare numerically
+- **WHEN** the deployment records `8.9.0` and a command from `8.10.0` is run
+- **THEN** it is not refused
+
+#### Scenario: Terminating is never refused
+- **WHEN** the deployment records `8.1.0` and `baas jobs terminate <jobId>` from `8.0.3` is run
+- **THEN** it terminates the job as it would for a current CLI
+
+#### Scenario: No recorded version means no refusal
+- **WHEN** the deployment's stack predates the recorded version, or records none
+- **THEN** every command proceeds without a version message
+
+#### Scenario: An admin command is refused too
+- **WHEN** the deployment records `8.1.0` and `baas admin deployment teardown` from `8.0.3` is run
+- **THEN** it is refused before deleting or exporting anything
+
+### Requirement: A CLI newer than the recorded version says what to run
+When a checked command's own version is higher than the recorded one, it SHALL proceed and SHALL
+write one line to standard error naming both versions. Under `baas admin` the line SHALL name the
+command that records the newer version (`baas --deployment <name> admin deployment setup`);
+elsewhere it SHALL tell the user to ask the deployment's admin to run that setup with the newer
+release. The line SHALL NOT appear on standard output.
+
+#### Scenario: An operator ahead of the deployment is told whom to ask
+- **WHEN** the deployment records `8.1.0` and `baas jobs list --format json` from `8.2.0` is run
+- **THEN** the list is printed on standard output unchanged, and standard error carries one line
+  naming `8.1.0`, `8.2.0` and asking the deployment's admin to run setup
+
+#### Scenario: An admin ahead of the deployment is told to run setup
+- **WHEN** the deployment records `8.1.0` and `baas admin image show` from `8.2.0` is run
+- **THEN** standard error carries one line naming both versions and
+  `baas --deployment <name> admin deployment setup`
+
+### Requirement: An unreleased build is not checked, and says so
+A CLI whose version is the unreleased placeholder `0.0.0-semantically-released`, or is not a numeric
+`x.y.z`, SHALL NOT compare versions and SHALL NOT read the recorded version for that purpose. Each
+command that would otherwise check SHALL write one line to standard error saying the build is
+unreleased and was not checked against the deployment, and SHALL proceed.
+
+#### Scenario: CI's reactor build runs unchecked
+- **WHEN** a reactor-built CLI runs `baas run` against a deployment recording `8.1.0`
+- **THEN** the job launches as it would from a current release, and standard error carries the
+  unreleased-build line

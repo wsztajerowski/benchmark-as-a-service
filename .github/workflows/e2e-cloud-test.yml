@@ -309,8 +309,8 @@ jobs:
       # No `config sync` and no deployment name: with no configuration file, `baas` takes the
       # deployment from the operator role this job federated into (<name>-role-operator).
 
-      # --mode is the runner's, forwarded to JCStress as -m: on the runner -m is the MongoDB
-      # connection string. --runner-jar and exclude_from_results as in the job above.
+      # --mode is the runner's, forwarded to JCStress as -m; -m itself is no runner option and
+      # baas run refuses it. --runner-jar and exclude_from_results as in the job above.
       - name: Run the JCStress tests on EC2
         id: run
         run: |

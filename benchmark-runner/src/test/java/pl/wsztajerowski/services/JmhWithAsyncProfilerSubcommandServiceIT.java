@@ -1,18 +1,13 @@
 package pl.wsztajerowski.services;
 
-import dev.morphia.annotations.Entity;
 import org.json.JSONArray;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import pl.wsztajerowski.MongoDbTestHelpers;
-import pl.wsztajerowski.TestcontainersWithS3AndMongoBaseIT;
-import pl.wsztajerowski.entities.MongoMeasurementDocument;
-import pl.wsztajerowski.infra.MongoResultsStore;
+import pl.wsztajerowski.TestcontainersWithDynamoDbBaseIT;
 import pl.wsztajerowski.infra.S3StorageService;
-import pl.wsztajerowski.services.options.AsyncProfilerOptions;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JmhOptions;
+import pl.wsztajerowski.options.AsyncProfilerOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -21,26 +16,16 @@ import java.time.Instant;
 import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
-import static org.assertj.core.api.Assertions.as;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
-import static pl.wsztajerowski.MongoDbTestHelpers.all;
-import static pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceBuilder.serviceBuilder;
-import static pl.wsztajerowski.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhIterationOptions.jmhIterationOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhJvmOptions.jmhJvmOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhOutputOptions.jmhOutputOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
+import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
+import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
+import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
+import static pl.wsztajerowski.options.JmhOutputOptions.jmhOutputOptionsBuilder;
+import static pl.wsztajerowski.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
 
 @EnabledIfEnvironmentVariable(named = "ASYNC_PATH", matches = ".*")
-class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMongoBaseIT {
+class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithDynamoDbBaseIT {
 
-    private static MongoDbTestHelpers helper;
-
-    @BeforeAll
-    static void setupHelper(){
-        helper = new MongoDbTestHelpers(getConnectionString());
-    }
 
     @Test
     void successful_scenario() throws IOException {
@@ -49,11 +34,11 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
         Path result = Files.createTempFile("results", "jmh.json");
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path asyncOutput = Files.createTempDirectory("async-outputs");
-        JmhWithAsyncProfilerSubcommandService sut = serviceBuilder()
-            .withResultsStore(new MongoResultsStore(datastore()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()))
-            .withJmhOptions( new JmhOptions(
+        JmhWithAsyncProfilerSubcommandService sut = new JmhWithAsyncProfilerSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            resultsStore(),
+            new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()),
+            new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
@@ -68,31 +53,26 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithS3AndMo
                 jmhIterationOptionsBuilder()
                     .withIterations(1)
                     .build(),
-                jmhJvmOptionsBuilder().build()))
-            .withAsyncProfilerOptions(AsyncProfilerOptions.asyncProfilerOptionsBuilder()
+                jmhJvmOptionsBuilder().build()),
+            AsyncProfilerOptions.asyncProfilerOptionsBuilder()
                 .withAsyncPath(Path.of(System.getenv("ASYNC_PATH")))
                 .withAsyncOutputType("flamegraph")
                 .withAsyncOutputPath(asyncOutput)
                 .withAsyncInterval(9990)
                 .withAsyncEvent("cpu")
-                .build())
-            .build();
+                .build());
 
         // when
         sut.executeCommand();
 
         // then
-        String collectionName = MongoMeasurementDocument.class.getAnnotation(Entity.class).value();
-        helper.assertFindResult(collectionName, all(), documents ->
-            // The item points at the prefix rather than listing each artifact; the bucket
-            // assertion below confirms the files actually landed under it.
-            assertThat(documents.first())
-                .isNotNull()
-                .extracting("measurement", as(MAP))
-                .containsEntry("benchmarkMethod", "incrementUsingSynchronized")
-                .containsEntry("profilerOutputPath",
-                    "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput")
-        );
+        // The item points at the prefix rather than listing each artifact; the bucket assertion
+        // below confirms the files actually landed under it.
+        assertThat(storedMeasurements()).singleElement().satisfies(measurement -> {
+            assertThat(measurement.benchmarkMethod()).isEqualTo("incrementUsingSynchronized");
+            assertThat(measurement.profilerOutputPath()).isEqualTo(
+                "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput");
+        });
 
         // and
         JSONArray objectsInTestBucket = listObjectsInTestBucket();

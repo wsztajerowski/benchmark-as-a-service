@@ -80,12 +80,23 @@ holds the runner every later job of that version executes.
 `baas admin deployment teardown` SHALL abort if any EC2 instance tagged `baas-role=benchmark-runner` and
 `baas-deployment=<the deployment being torn down>` is in the `pending` or `running` state; runners of
 another deployment SHALL NOT block it. It SHALL require explicit confirmation — retyping the
-deployment's name, or `--yes`. Both gates SHALL pass before anything is deleted, the runner image
+deployment's name on an interactive terminal, or `--yes`. Without an interactive terminal and without
+`--yes` it SHALL refuse, delete nothing and exit 1, naming `--yes` and `baas admin deployment export`. Both gates SHALL pass before anything is deleted, the runner image
 included. When it aborts over in-flight jobs, it SHALL name each job by the identifier in its
 instance's `baas-job-id` tag, alongside the instance identifier and state, and SHALL name
 `baas jobs terminate <jobId>` as the way to stop one. It SHALL read those identifiers from the
 instances, not from the results table. Before the prompt it SHALL state that the deployment's bucket
-and results table, with every job and measurement in them, will be deleted and cannot be recovered.
+and results table, with every job and measurement in them, will be deleted and cannot be recovered,
+and, when the deployment holds a runner-image extension, that the extension will be deleted with the
+stack.
+
+Without `--yes`, after the in-flight gate and the notice, and before the confirmation, teardown SHALL offer to export
+the deployment, naming a default bundle directory the user may replace. An accepted offer SHALL run
+`baas admin deployment export` with every part into that directory; an export that fails SHALL stop
+the teardown with nothing deleted. A declined offer SHALL proceed to the confirmation. Teardown SHALL
+write nothing to the local filesystem itself — not the extension, not any part of the deployment's
+data — other than through an export the user accepted. `--yes` SHALL skip both the offer and the
+confirmation and export nothing, and its help SHALL say so and name `baas admin deployment export`.
 
 #### Scenario: Abort when a job is in flight
 - **WHEN** `baas admin deployment teardown` runs while a runner instance of the same deployment is `running`
@@ -110,6 +121,30 @@ and results table, with every job and measurement in them, will be deleted and c
 - **WHEN** `baas admin deployment teardown` prompts for confirmation
 - **THEN** the prompt states that the bucket and the results table will be deleted, and `--delete-bucket`
   is not an option
+
+#### Scenario: The notice names a deployed extension
+- **WHEN** `baas admin deployment teardown` runs for a deployment holding a runner-image extension
+- **THEN** the notice before the prompt says the extension is deleted with the stack
+
+#### Scenario: --yes asks nothing and exports nothing
+- **WHEN** `baas admin deployment teardown --yes` runs without a terminal for a deployment holding an extension
+- **THEN** no export is offered, no confirmation is asked, the deployment is torn down, and no file is written
+
+#### Scenario: No terminal, no --yes, no teardown
+- **WHEN** `baas admin deployment teardown` runs with standard input not a terminal and no `--yes`
+- **THEN** it exits 1 naming `--yes` and `baas admin deployment export`, and nothing is deleted
+
+#### Scenario: An accepted export runs before the confirmation
+- **WHEN** the user accepts the export offer and then types the deployment's name
+- **THEN** a complete bundle, manifest included, exists in the chosen directory before the bucket is emptied
+
+#### Scenario: A failed export stops the teardown
+- **WHEN** the user accepts the export offer and the export fails
+- **THEN** teardown exits non-zero without asking for the confirmation, and nothing is deleted
+
+#### Scenario: A declined export saves nothing
+- **WHEN** the user declines the export offer and confirms the teardown of a deployment holding an extension
+- **THEN** the deployment is torn down and no file is written, the extension included
 
 ### Requirement: Bucket emptying handles object versions
 `S3UploadService.deleteAllObjects` SHALL delete every object version and delete marker, not only current versions. This SHALL remain true after versioning is suspended, because versions written before suspension persist until a lifecycle rule reaps them. A bucket that does not exist SHALL count as already empty, so that teardown proceeds to delete the stack; any other failure to empty the bucket SHALL stop the teardown before the stack is deleted.
@@ -138,11 +173,15 @@ and results table, with every job and measurement in them, will be deleted and c
 - **THEN** every AWS API call made by both commands succeeds, including teardown's active-job check
 
 ### Requirement: Deployer policy covers the full setup path
-`BaasCliDeployerPolicy` SHALL include `ssm:PutParameter` on the runner AMI pointer path, the S3 actions needed to empty and delete the working bucket (`s3:ListBucket`, `s3:ListBucketVersions`, `s3:DeleteObject`, `s3:DeleteObjectVersion`, `s3:DeleteBucket`), and the IAM read-back actions CloudFormation invokes after role creation (`iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies`).
+`BaasCliDeployerPolicy` SHALL include `ssm:PutParameter` on the runner AMI pointer path, the S3 actions needed to empty and delete the working bucket (`s3:ListBucket`, `s3:ListBucketVersions`, `s3:DeleteObject`, `s3:DeleteObjectVersion`, `s3:DeleteBucket`), the IAM read-back actions CloudFormation invokes after role creation (`iam:GetRolePolicy`, `iam:ListRolePolicies`, `iam:ListAttachedRolePolicies`), and the SSM document actions CloudFormation invokes to create, update and delete the runner session document, scoped to `document/<prefix>-*`.
 
 #### Scenario: Setup succeeds end to end
 - **WHEN** an identity holding only `BaasCliDeployerPolicy` runs `baas admin deployment setup`
-- **THEN** the stack deploys, including the results table, and the command exits 0
+- **THEN** the stack deploys, including the results table and the runner session document, and the command exits 0
+
+#### Scenario: The deployer cannot touch another document
+- **WHEN** the deployer policy is evaluated for `ssm:UpdateDocument` on `document/SSM-SessionManagerRunShell`
+- **THEN** the request is not permitted
 
 ### Requirement: Deployer policy is resource-scoped
 `BaasCliDeployerPolicy`'s CloudFormation statement SHALL be scoped to `stack/<prefix>/*` and its IAM statement to the deployment's own role and instance-profile ARNs — `role/<prefix>-role-*` and `instance-profile/<prefix>-profile-*` — rather than `Resource: "*"`. Because the prefix is account-derived, the rendered policy SHALL reach only deployments in the caller's own account.
@@ -171,10 +210,10 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
 - **THEN** the account-root principal remains, and the federated statement is present alongside it
 
 ### Requirement: Operator role permissions
-`BaasCliOperatorRole` SHALL cover: `ec2:RunInstances`/`Describe*` to launch and observe benchmark runner instances, tag-scoped `ec2:TerminateInstances` (condition `aws:ResourceTag/baas-role=benchmark-runner`), `ec2:CreateTags` scoped to the `RunInstances` create action, `ssm:GetParameter` on the runner AMI pointer path (`/<prefix>/runner/ami-id`) and no SSM write of any kind, `dynamodb:Query`/`Scan`/`GetItem` on the results table and its index, `dynamodb:UpdateItem` on the results table restricted to the `JOB` partition and no other write action, `ec2:DescribeImages` to validate the resolved AMI, S3 object read and write and bucket listing scoped to the core stack's bucket and no S3 deletion of any kind, and `iam:PassRole` scoped to `RunnerRole` only. It SHALL NOT cover the public AL2023 AMI lookup path (`/aws/service/ami-amazon-linux-latest/*`), which is no longer used now that the runner boots from a purpose-built image. `baas jobs`/`baas results query`/`baas config` (and the aliases `baas run`, `baas query`) SHALL succeed when invoked by an identity that has assumed `BaasCliOperatorRole`.
+`BaasCliOperatorRole` SHALL cover: `ec2:RunInstances`/`Describe*` to launch and observe benchmark runner instances, tag-scoped `ec2:TerminateInstances` (condition `aws:ResourceTag/baas-role=benchmark-runner`), `ec2:CreateTags` scoped to the `RunInstances` create action, `ssm:GetParameter` on the runner AMI pointer path (`/<prefix>/runner/ami-id`) and no SSM write of any kind, `dynamodb:Query`/`Scan`/`GetItem` on the results table and its index, `dynamodb:UpdateItem` on the results table restricted to the `JOB` partition and no other write action, `ec2:DescribeImages` to validate the resolved AMI, S3 object read and write and bucket listing scoped to the core stack's bucket and no S3 deletion of any kind, and `iam:PassRole` scoped to `RunnerRole` only. For `baas jobs connect` it SHALL additionally cover: `ssm:StartSession` on instances tagged `baas-deployment=<prefix>` and on the document `<prefix>-session-runner` only, with the session document access check required so that no other document can be used; `ssm:TerminateSession` and `ssm:ResumeSession` only on sessions the calling session started; and `ssm:DescribeInstanceInformation`. It SHALL hold no `ssmmessages` action: the session's data channel is authorised by the token `StartSession` returns. It SHALL NOT cover the public AL2023 AMI lookup path (`/aws/service/ami-amazon-linux-latest/*`), which is no longer used now that the runner boots from a purpose-built image. `baas jobs`/`baas results query`/`baas config` (and the aliases `baas run`, `baas query`) SHALL succeed when invoked by an identity that has assumed `BaasCliOperatorRole`.
 
 #### Scenario: Operator role suffices for daily use
-- **WHEN** an identity that has assumed `BaasCliOperatorRole` runs `baas run jmh -- ...`, `baas jobs list`, `baas jobs terminate`, `baas results query`, or `baas jobs diff`
+- **WHEN** an identity that has assumed `BaasCliOperatorRole` runs `baas run jmh -- ...`, `baas jobs list`, `baas jobs terminate`, `baas jobs connect`, `baas results query`, or `baas jobs diff`
 - **THEN** every AWS API call made succeeds under that role's permissions, including the SSM read of `/<prefix>/runner/ami-id` needed to resolve the runner's AMI ID and the run-item writes
 
 #### Scenario: Public AMI lookup path is no longer granted
@@ -186,6 +225,15 @@ The core stack SHALL create `BaasCliOperatorRole` as an `AWS::IAM::Role` resourc
   delete any object in the working bucket
 - **THEN** the request is denied, and emptying the bucket remains possible only under the deployer's
   rights during teardown
+
+#### Scenario: Sessions are limited to the deployment's runners and document
+- **WHEN** an identity that has assumed one deployment's operator role starts a session on an instance
+  not tagged with that deployment, or with any document other than `<prefix>-session-runner`
+- **THEN** the request is denied
+
+#### Scenario: Sessions cannot be used for Run Command
+- **WHEN** an identity that has assumed `BaasCliOperatorRole` calls `ssm:SendCommand` on a runner
+- **THEN** the request is denied
 
 ### Requirement: Operator policy reference copy stays in sync
 `infra/operator-policy.json` SHALL grant exactly the same set of actions as the `OperatorRole` inline policies in `infra/cf-template-core.yaml`.
@@ -990,3 +1038,92 @@ Setup's hand-over and the documentation SHALL describe only that attachment.
 #### Scenario: Policy fits the budget
 - **WHEN** the deployer policy is rendered
 - **THEN** its non-whitespace length is below 5632
+
+### Requirement: The stack owns the runner session document
+The core stack SHALL declare a Session Manager session document named `<prefix>-session-runner` that
+starts an interactive bash shell, in `/app` when that directory exists, as the agent's default
+non-root user, with an idle timeout, and with no transcript logging and no encryption setting that
+would require the runner to reach another resource. Changing the document's content SHALL update it in
+place under the same name. The CLI SHALL NOT read, create or modify the account's default session
+preferences document (`SSM-SessionManagerRunShell`).
+
+#### Scenario: The document is part of the deployment
+- **WHEN** `baas admin deployment setup` deploys the core stack
+- **THEN** a session document named `<prefix>-session-runner` exists, and teardown removes it with the
+  stack
+
+#### Scenario: The account default is never touched
+- **WHEN** setup, a job, `baas jobs connect` or teardown runs
+- **THEN** no call reads or writes `SSM-SessionManagerRunShell`
+
+#### Scenario: A content change updates the document in place
+- **WHEN** the document's content changes between two setups of the same deployment
+- **THEN** the stack update succeeds and the document keeps its name
+
+### Requirement: Every runner registers with Session Manager
+`RunnerRole` SHALL grant `ssm:UpdateInstanceInformation` and the Session Manager channel actions
+`ssmmessages:CreateControlChannel`, `ssmmessages:CreateDataChannel`, `ssmmessages:OpenControlChannel`
+and `ssmmessages:OpenDataChannel`, and nothing else of `ssm` or `ssmmessages`: no Run Command, no
+parameter or document access. `RunnerSecurityGroup` SHALL gain no inbound rule, and its egress and
+`GroupDescription` SHALL be unchanged.
+
+#### Scenario: A runner is connectable without any per-job choice
+- **WHEN** any job's instance has booted
+- **THEN** its agent is registered and online in Session Manager
+
+#### Scenario: The runner gains no inbound path
+- **WHEN** the template's `RunnerSecurityGroup` is inspected
+- **THEN** it declares no ingress rule, and its egress and description are as before
+
+### Requirement: Deployer policy covers export and import
+The rendered deployer policy SHALL grant `dynamodb:Scan` and `dynamodb:PutItem` on the deployment's
+results table, and `s3:PutObject` on the deployment's bucket's objects, by name and without wildcard
+verbs, so that `baas admin deployment export` and `baas admin deployment import` run under it. It
+SHALL NOT grant `dynamodb:BatchWriteItem`, `dynamodb:DeleteItem` or `s3:Put*`. The operator policy
+SHALL gain none of these. The rendered policy SHALL still fit the budget *The deployer policy is sized
+as a customer-managed policy* states.
+
+#### Scenario: Export and import run under the deployer policy alone
+- **WHEN** an identity holding only the rendered deployer policy exports a deployment and imports the bundle into another set up under the same policy's name
+- **THEN** both commands complete
+
+#### Scenario: The grants are named, not wildcarded
+- **WHEN** the rendered deployer policy is inspected
+- **THEN** it names `dynamodb:Scan`, `dynamodb:PutItem` and `s3:PutObject`, and names neither `s3:Put*` nor `dynamodb:BatchWriteItem`
+
+#### Scenario: The operator still cannot write measurements
+- **WHEN** the operator policy is evaluated for `dynamodb:PutItem` on a `RESULT#` key
+- **THEN** the request is not permitted
+
+#### Scenario: The setup preflight probes the new actions
+- **WHEN** setup's permission check runs for a caller whose attached deployer policy predates this change
+- **THEN** it reports `dynamodb:Scan`, `dynamodb:PutItem` and `s3:PutObject` as missing
+
+### Requirement: The core stack records the CLI version that last set it up
+`cf-template-core.yaml` SHALL declare a String parameter `BaasCliVersion`, defaulting to empty and
+accepting only empty or a numeric `<major>.<minor>.<patch>` version. It SHALL create no resource and
+grant nothing. The template SHALL reference it from a stack output present only while the value is
+non-empty, so that a change of the value alone is a stack update rather than "no updates". Only `baas admin deployment setup` SHALL submit a value for it, and only when the
+running CLI is a released build with a numeric version; every other stack update — `baas admin image
+build`'s included — SHALL carry the deployed value forward unchanged. Empty means no version is
+recorded.
+
+#### Scenario: Setup from a released CLI records its version
+- **WHEN** `baas admin deployment setup` from release `8.2.0` creates or updates a stack
+- **THEN** the stack's `BaasCliVersion` is `8.2.0`
+
+#### Scenario: A version change alone is recorded
+- **WHEN** setup from `8.2.0` updates a stack recording `8.1.0` and nothing else differs
+- **THEN** the update runs and the stack records `8.2.0`
+
+#### Scenario: An image build leaves the recorded version alone
+- **WHEN** `baas admin image build` updates a stack whose `BaasCliVersion` is `8.1.0`
+- **THEN** the stack's `BaasCliVersion` is still `8.1.0`
+
+#### Scenario: A stack from before the parameter gets one on its next update
+- **WHEN** a stack created before `BaasCliVersion` existed is updated by `baas admin image build`
+- **THEN** the update succeeds and the stack's `BaasCliVersion` is empty
+
+#### Scenario: A malformed version is rejected by the stack
+- **WHEN** a stack submission names `BaasCliVersion` as anything other than empty or `x.y.z`
+- **THEN** CloudFormation rejects the submission

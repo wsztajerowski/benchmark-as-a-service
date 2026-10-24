@@ -5,14 +5,18 @@ The infrastructure is split into two stacks. Run commands from this directory.
 ## Stack 1: `baas-core` — shared infrastructure
 
 Deploys networking (VPC, subnet, IGW, S3 and DynamoDB gateway endpoints, security group), the S3
-working bucket, the DynamoDB results table, the EC2 runner IAM role, and the EC2 Image Builder
+working bucket, the DynamoDB results table, the EC2 runner IAM role, the Session Manager document
+`<prefix>-session-runner` that `baas jobs connect` opens shells with, and the EC2 Image Builder
 resources that bake the runner AMI. This is the same stack that `baas admin deployment setup` deploys on a
 user's account.
 
 **The results table** (`baas-<prefix>-results`, output as `ResultsTableName`) is on-demand billed,
 keyed `pk`/`sk`, with one GSI `jobId-index` over `gsi1pk`/`gsi1sk` and no TTL. Like the bucket,
 it is `DeletionPolicy: Delete` / `UpdateReplacePolicy: Delete`: **nothing survives a teardown**, which
-empties the bucket and then deletes the stack. Export a deployment's data before tearing it down.
+empties the bucket and then deletes the stack. On a terminal, teardown offers to export first
+(`--yes` offers nothing and exports nothing); `baas admin deployment export` writes the results, every job's recordings and the runner-image
+extension to a local bundle, and `baas admin deployment import <bundle>` loads it into a set-up
+deployment without overwriting anything.
 
 Runners reach it through a **gateway** endpoint, associated with the runner subnet's route table.
 Gateway, not interface: gateway endpoints are free, interface endpoints carry an hourly charge, and
@@ -34,8 +38,9 @@ reads results, launches instances, or touches IAM.
 The recipe runs three components in order: the **base**, rendered from the bundled
 `infra/runner-image.yaml`; the deployment's optional **extension** (below); and the BaaS
 **contract**, which writes the image label and, in its `test` phase on an instance booted from the
-new image, fails the build when Java ≥ the runner's version, the AWS CLI, async-profiler, a `perf`
-matching the kernel, `perf_event_paranoid ≤ 1` or `kptr_restrict = 0` is missing. Image tests are
+new image, fails the build when Java ≥ the runner's version, the AWS CLI, an enabled
+`amazon-ssm-agent`, async-profiler, a `perf` matching the kernel, `perf_event_paranoid ≤ 1` or
+`kptr_restrict = 0` is missing. Image tests are
 enabled on the pipeline for that reason; a failed contract leaves the pointer on the previous image.
 
 Eight stack parameters describe the image (`RunnerImageParameters.ALL`). `baas admin image build`
@@ -43,6 +48,22 @@ plans and submits all of them. `baas admin deployment setup` submits all of them
 template's placeholder defaults stand would register a no-op component at a version, and Image
 Builder would then reject the real one at that same version — and on update only those the stack
 lacks, carrying the rest forward, so a plain setup never reverts an image or drops an extension.
+
+One more parameter, `BaasCliVersion`, records the release of the CLI that last ran
+`baas admin deployment setup` on the stack — empty, or `x.y.z` (`AllowedPattern`). Every command
+that reaches AWS reads it and refuses a CLI older than it, so an older setup can never submit its
+older template over a newer one. Only setup writes it, and only from a released build; an image
+build carries it forward. It creates no resource, but a conditional output, also `BaasCliVersion`,
+references it: CloudFormation answers "No updates are to be performed" to a change of a parameter
+nothing references, and stores nothing. The output is not read — delete it and every later raise
+silently fails to record.
+
+Upgrading a deployment is therefore two steps, in this order: update the CLI
+(`curl -fsSL …/releases/latest/download/install.sh | sh`), then run `baas admin deployment setup`,
+which applies the new template and announces that CLIs older than the new release now refuse the
+deployment. Lowering the recorded release is deliberately not a command — setup from an older CLI
+is itself refused. If it is ever needed, change the parameter in the CloudFormation console
+(Update stack → use current template).
 
 Deploying this template **by hand** with `aws cloudformation deploy` leaves those parameters at
 their defaults, which registers the placeholder components. Use `baas admin deployment setup` unless you are
@@ -380,7 +401,8 @@ alias baas-dev="java -jar $PWD/baas-cli/target/baas-cli.jar --deployment $DEV"
 baas-dev run --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar --project dev \
   --runner-jar benchmark-runner/target/benchmark-runner.jar jmh -- -f 1 -wi 1 -i 1
 
-# 4. Tear it down. Its file goes with it, and with one deployment left the flag is optional again.
+# 4. Tear it down: on a terminal it offers to export first, then asks for the name. Its file goes
+#    with it, and with one deployment left the flag is optional again.
 baas-dev admin deployment teardown
 ```
 
@@ -392,7 +414,7 @@ Three things worth knowing:
 - **Runners carry `baas-deployment=<name>`**, so two deployments in one region never count each
   other's runners — neither in `jobs list` nor in teardown's in-flight gate.
 - **Teardown deletes everything**, bucket, results table and runner image included — nothing survives
-  it, for a dev deployment as for the account's own. While it exists it costs one AMI snapshot
+  it but an export, for a dev deployment as for the account's own. While it exists it costs one AMI snapshot
   (~$0.20/month for 30 GB).
 
 ## The runner source repository is the build's, not configuration
@@ -423,8 +445,7 @@ private-networking profile (private subnet + NAT gateway + PrivateLink, needing 
 roughly $32/month). With DynamoDB reached over a gateway endpoint, a private subnet no longer needs
 egress for the store at all — which is what the `private-runner-network` change builds on.
 
-`benchmark-runner` still carries a MongoDB adapter for standalone use against a user's own cluster,
-selected by `--mongo-connection-string` on that JAR. No BaaS infrastructure supports it.
+`benchmark-runner` no longer carries a MongoDB adapter either: `retire-mongodb` removed it.
 
 ## Debugging a failed job
 
@@ -436,3 +457,9 @@ s3://<bucket>/jobs/<project>/<jobId>/cloud-init-output.log
 ```
 
 `baas run` prints that path when a job fails, and when the instance dies before reporting.
+
+A job still running — hung, or slower than it should be — can be looked at live with
+`baas jobs connect <jobId>` (needs the local `session-manager-plugin`). A deployment set up before
+`connect` existed lacks the document and the grants; `connect` says so, and re-running
+`baas admin deployment setup` adds them. If a session ever hangs on a dead prompt, end it from another
+terminal with `pkill -f session-manager-plugin`.

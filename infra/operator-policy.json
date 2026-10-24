@@ -125,6 +125,51 @@
           "dynamodb:LeadingKeys": ["JOB"]
         }
       }
+    },
+    {
+      "Sid": "SsmStartSessionOnOwnRunners",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ec2:REGION:ACCOUNT_ID:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "aws:ResourceTag/baas-deployment": "RESOURCE_PREFIX"
+        },
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Sid": "SsmStartSessionWithOwnDocument",
+      "Effect": "Allow",
+      "Action": "ssm:StartSession",
+      "Resource": "arn:aws:ssm:REGION:ACCOUNT_ID:document/RESOURCE_PREFIX-session-runner",
+      "Condition": {
+        "BoolIfExists": {
+          "ssm:SessionDocumentAccessCheck": "true"
+        }
+      }
+    },
+    {
+      "Sid": "SsmOwnSessions",
+      "Effect": "Allow",
+      "Action": [
+        "ssm:TerminateSession",
+        "ssm:ResumeSession"
+      ],
+      "Resource": "arn:aws:ssm:*:ACCOUNT_ID:session/*",
+      "Condition": {
+        "StringLike": {
+          "ssm:resourceTag/aws:ssmmessages:session-id": "${aws:userid}*"
+        }
+      }
+    },
+    {
+      "Sid": "SsmDescribeInstanceInformation",
+      "Effect": "Allow",
+      "Action": "ssm:DescribeInstanceInformation",
+      "Resource": "*"
     }
   ]
 }

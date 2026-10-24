@@ -1,0 +1,51 @@
+sequenceDiagram
+    actor User as Operator
+    participant RC as JobsConnectSubcommand
+    participant DDB as DynamoDB<br/><prefix>-results
+    participant EC2 as AWS EC2
+    participant SSM as Session Manager<br/>(ssm, ssmmessages)
+    participant PL as session-manager-plugin<br/>(local process)
+    participant R as Runner instance<br/>amazon-ssm-agent
+
+    Note over R,SSM: every runner registers its agent at boot (RunnerRole: UpdateInstanceInformation + ssmmessages channels)<br/>no inbound rule, the agent dials out over 443
+
+    rect rgb(240, 248, 255)
+        Note over User,R: baas jobs connect <jobId>
+        User->>RC: baas jobs connect 20261022T130353548Z-c4baa457
+        alt session-manager-plugin not on PATH
+            RC-->>User: names the plugin and its install command, exit 1 -- no AWS call at all
+        end
+        RC->>DDB: Query jobId-index, then GetItem
+        alt no job item in this deployment
+            RC-->>User: "No job found", exit 1
+        end
+        RC->>EC2: describeInstances(baas-job-id tag AND baas-deployment, state pending|running)
+        alt no live instance (finished, or still reserving)
+            RC-->>User: "no pending or running instance (stored status: s)", exit 1
+        end
+        Note over RC: the instance decides, not the stored status -- a job stuck in launched can be reached
+        RC->>SSM: DescribeInstanceInformation(instanceId)
+        alt agent not Online yet
+            RC-->>User: "not reachable yet ... retry shortly", exit 1
+        end
+        RC-->>User: "terminates by about HH:MM UTC" -- LaunchTime + watchdogSeconds from the reservation
+        RC->>SSM: StartSession(target, DocumentName = prefix-session-runner)
+        Note over SSM: operator role: only baas-deployment-tagged instances, only that document<br/>(SessionDocumentAccessCheck), so the account default and port forwarding are denied
+        SSM-->>RC: SessionId, StreamUrl, TokenValue
+        RC->>PL: exec with the AWS CLI's six arguments -- no credential reaches it
+        PL->>SSM: OpenDataChannel(StreamUrl, token) -- authorised by the token, not the operator role
+        SSM->>R: session as ssm-user, cd /app, exec bash
+        loop while the plugin runs, every 15 s
+            RC->>EC2: describeInstances(instanceId) -- a failed call counts as live
+        end
+        alt the operator types exit
+            PL-->>RC: exit 0 -- RC returns it
+        else plugin exits non-zero
+            RC->>SSM: TerminateSession -- best effort, the session may still be open
+        else instance shutting-down or terminated (job finished, watchdog, terminate)
+            RC-->>User: "Instance i-... has terminated, ending the session."
+            RC->>SSM: TerminateSession -- the plugin then leaves on its own, or is stopped after 10 s
+            RC-->>User: exit 0
+        end
+        Note over RC,R: a session never delays or extends termination, and nothing about it is recorded
+    end

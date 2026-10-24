@@ -1,5 +1,6 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -7,14 +8,15 @@ import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.results.JmhRunResults;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JmhOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
+import static java.util.Objects.requireNonNull;
 import static java.text.MessageFormat.format;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
 
@@ -25,7 +27,9 @@ public class JmhSubcommandService {
     private final StorageService storageService;
     private final ResultsStore resultsStore;
 
-    JmhSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
+    public JmhSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JmhOptions jmhOptions) {
+        requireNonNull(storageService, "Please provide a storage service");
+        requireNonNull(resultsStore, "Please provide a results store");
         this.storageService = storageService;
         this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;
@@ -43,7 +47,7 @@ public class JmhSubcommandService {
 
             logger.info("Saving benchmark process output");
             storageService
-                .saveFile(outputPath.resolve("jmh-output.txt"), jmhOptions.outputOptions().processOutput());
+                .saveFile(outputPath.resolve(BenchmarkType.JMH.processOutputName()), jmhOptions.outputOptions().processOutput());
 
             JobLogs.upload(storageService, outputPath);
 
@@ -57,9 +61,12 @@ public class JmhSubcommandService {
         }
 
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
-        List<StoredMeasurement> measurements = JmhRunResults.uploadJsonAndMap(
-            storageService, commonOptions, jmhOptions.outputOptions().machineReadableOutput(),
-            JmhRunResults.NO_PROFILER_OUTPUT);
+        Path resultJson = jmhOptions.outputOptions().machineReadableOutput();
+        // Uploaded before the store write, so a job that fails at the store keeps its result.
+        Path resultJsonKey = JmhRunResults.resultJsonKey(commonOptions);
+        logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
+        storageService.saveFile(resultJsonKey, resultJson);
+        List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson, JmhRunResults.NO_PROFILER_OUTPUT);
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);

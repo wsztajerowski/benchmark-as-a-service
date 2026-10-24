@@ -1,9 +1,8 @@
 package pl.wsztajerowski.baas.results;
 
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.TagKeys;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.jobs.DynamoDbJobRecorder;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.QueryRequest;
@@ -43,9 +42,9 @@ public class ResultsQueryService implements AutoCloseable {
      */
     private static final String MEASUREMENTS_ONLY = "begins_with(#pk, :resultPrefix)";
 
-    private static final String TAGS_ATTRIBUTE = "tags";
-    private static final String PROJECT_ATTRIBUTE = "project";
-    static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
+    private static final String TAGS_ATTRIBUTE = MeasurementItemMapper.TAGS;
+    private static final String PROJECT_ATTRIBUTE = MeasurementItemMapper.PROJECT;
+    static final String EXCLUDE_FROM_RESULTS = TagKeys.EXCLUDE_FROM_RESULTS;
     static final String EXCLUDED_VALUE = "true";
 
     private final DynamoDbClient client;
@@ -157,7 +156,7 @@ public class ResultsQueryService implements AutoCloseable {
      * naming one job by its id is a request for <em>that job</em>, not a query over the project's
      * history. Without this a job tagged {@code exclude_from_results=true} is invisible to every
      * assertion surface except {@code baas jobs download} — and {@link
-     * pl.wsztajerowski.baas.commands.RunCommand}'s own post-job summary, which calls this method,
+     * pl.wsztajerowski.baas.jobs.JobLaunch}'s own post-job summary, which calls this method,
      * prints empty after a <em>successful</em> excluded job.
      *
      * <p>The filter's {@code #tags}, {@code #excluded} and {@code :excluded} entries go with it,
@@ -181,39 +180,6 @@ public class ResultsQueryService implements AutoCloseable {
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
             .build());
-    }
-
-    /**
-     * The S3 prefix a job's artifacts were written to, or {@code null} when the index holds no such
-     * job. Read from the stored attribute rather than reconstructed, which is what keeps every
-     * historical path resolving after the layout changed — and why nothing needs a compatibility
-     * shim. {@code jobId-index} projects ALL, so each lookup is one query and no GetItem.
-     *
-     * <p>The job item is asked first, addressed exactly by {@code gsi1sk = JOB}: it exists for every
-     * job since job items did, including one that failed or never launched and so stored no
-     * measurement. A job from before that has only measurements, which the second query reads.
-     */
-    public String resultPathForJob(String jobId) {
-        var fromJobItem = new DynamoDbJobRecorder(client, tableName).find(jobId)
-            .map(JobItem::resultPath);
-        if (fromJobItem.isPresent()) {
-            return fromJobItem.get();
-        }
-        // No job item: a job recorded before job items existed. Its measurements are the only
-        // index entries under its id, so the first one names the path.
-        var response = client.query(QueryRequest.builder()
-            .tableName(tableName)
-            .indexName(ResultKeys.JOB_ID_INDEX_NAME)
-            .keyConditionExpression("#pk = :pk")
-            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
-            .expressionAttributeValues(Map.of(
-                ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
-            .limit(1)
-            .build());
-        return response.items().stream()
-            .findFirst()
-            .map(item -> MeasurementItemMapper.fromItem(item).resultPath())
-            .orElse(null);
     }
 
     /**

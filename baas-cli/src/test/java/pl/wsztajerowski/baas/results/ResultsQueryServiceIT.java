@@ -6,11 +6,11 @@ import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
-import pl.wsztajerowski.baas.model.MeasurementItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.MeasurementKind;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.JobItemMapper;
+import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -27,7 +27,6 @@ import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
@@ -154,7 +153,7 @@ class ResultsQueryServiceIT {
     }
 
     /**
-     * What 2.5 is really about. {@code RunCommand.showResults} fetches by job id and prints the
+     * What 2.5 is really about. {@code JobLaunch.showResults} fetches by job id and prints the
      * table; before this change it printed "No results found." after a <em>successful</em> excluded
      * run, because the fetch itself dropped the rows. Asserting on the rendered summary rather than
      * only on the row count is what pins the user-visible half of that.
@@ -312,19 +311,25 @@ class ResultsQueryServiceIT {
     void aJobThatStoredNothingResolvesItsPathFromTheJobItem() {
         putJob("lynx-journal", "req-failed");
 
-        assertThat(service.resultPathForJob("req-failed")).isEqualTo("jobs/lynx-journal/req-failed");
+        assertThat(paths().resultPathForJob("req-failed")).isEqualTo("jobs/lynx-journal/req-failed");
     }
 
+    /** Z9: measurements alone no longer name a job; every live job has a job item. */
     @Test
-    void aJobFromBeforeJobItemsStillResolvesFromItsMeasurements() {
+    void measurementsWithoutAJobItemDoNotResolveAPath() {
         put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
 
-        assertThat(service.resultPathForJob("req-old")).isEqualTo("main/jmh/ts");
+        assertThat(paths().resultPathForJob("req-old")).isNull();
     }
 
     @Test
     void anUnknownJobIdResolvesToNoPath() {
-        assertThat(service.resultPathForJob("no-such-run")).isNull();
+        assertThat(paths().resultPathForJob("no-such-run")).isNull();
+    }
+
+    /** The job-side lookup diff and download use: the job item. */
+    private pl.wsztajerowski.baas.jobs.JobPaths paths() {
+        return new pl.wsztajerowski.baas.jobs.JobPaths(client, tableName);
     }
 
     private void putJob(String project, String jobId) {

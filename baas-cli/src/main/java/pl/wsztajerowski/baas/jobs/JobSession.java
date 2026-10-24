@@ -21,12 +21,19 @@ import java.util.function.LongSupplier;
  */
 public final class JobSession {
 
+    /**
+     * Bounds the status write that precedes a termination (see AwsClientFactory#dynamoDb(Duration)):
+     * a status write never holds a termination back. Used by every stop — Ctrl+C, the poll cap and
+     * {@code baas jobs terminate}.
+     */
+    public static final java.time.Duration STOP_WRITE_TIMEOUT = java.time.Duration.ofSeconds(5);
+
     private static final Logger logger = LoggerFactory.getLogger(JobSession.class);
 
     /** The EC2 operations a job needs, nothing more. */
     public interface Instances {
-        /** The instance's state name, or {@code "unknown"} when it cannot be described. */
-        String state(String instanceId);
+        /** The instance's state, {@link InstanceState#UNKNOWN} when it cannot be described. */
+        InstanceState state(String instanceId);
 
         /** The pending or running instance tagged with this job id, if there is one. */
         Optional<String> findLive(String jobId);
@@ -51,6 +58,9 @@ public final class JobSession {
     public enum Confirmation { CONFIRMED, UNCONFIRMED, CANCELLED_WHILE_LAUNCHING }
 
     private final JobItem job;
+
+    /** Whether a failed state read has been warned about; once per poll is enough. */
+    private boolean unknownStateReported;
     private final JobRecorder recorder;
     private final JobRecorder stopRecorder;
     private final Instances instances;
@@ -229,8 +239,15 @@ public final class JobSession {
                 return finish(current.get());
             }
 
-            String state = instanceId == null ? "unknown" : instances.state(instanceId);
-            if ("terminated".equals(state) || "shutting-down".equals(state)) {
+            InstanceState state = instanceId == null ? InstanceState.UNKNOWN : instances.state(instanceId);
+            if (state == InstanceState.UNKNOWN && instanceId != null && !unknownStateReported) {
+                // A persistent failure here (denied permission, expired session) silently disables
+                // the fail-fast below, so the first one is reported rather than swallowed.
+                unknownStateReported = true;
+                logger.warn("Cannot read the state of {} — this job will poll until the wall-clock cap "
+                    + "instead of failing fast if the runner dies. Run with -v for the cause.", instanceId);
+            }
+            if (state.hasEnded()) {
                 // The final status is written moments before the instance terminates; a poll
                 // landing in between sees a dead instance and no status yet.
                 Optional<JobItem> late = readQuietly();
@@ -245,7 +262,7 @@ public final class JobSession {
                     return new Outcome(endStatus, JobStatus.COMPLETED.equals(endStatus) ? 0 : 1);
                 }
             }
-            progress.accept(state, elapsedSeconds);
+            progress.accept(state.label(), elapsedSeconds);
             sleeper.sleep(pollMillis);
         }
     }
@@ -265,8 +282,7 @@ public final class JobSession {
         String status = item.status();
         end(status);
         if (JobStatus.CANCELLED.equals(status) && instanceId != null) {
-            String state = instances.state(instanceId);
-            if ("pending".equals(state) || "running".equals(state)) {
+            if (instances.state(instanceId).isLive()) {
                 logger.info("Job {} was {} elsewhere; terminating {}.", job.jobId(), status, instanceId);
                 terminateQuietly(instanceId);
             }

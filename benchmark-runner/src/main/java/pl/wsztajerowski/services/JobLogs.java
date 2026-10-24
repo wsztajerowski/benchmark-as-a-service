@@ -1,5 +1,6 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.JobLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.infra.StorageService;
@@ -24,8 +25,7 @@ import java.util.List;
  * <p>The walk no longer relies on user-data's {@code cd /app} to be safe. An entry that vanishes or
  * cannot be read is skipped rather than aborting the walk (the {@code /proc} failure), the depth is
  * capped, and the key keeps the path relative to the root, so {@code a/run.log} and
- * {@code b/run.log} no longer overwrite each other. Files are collected before any is uploaded,
- * because {@code LocalStorageService} writes below the same working directory the walk reads.
+ * {@code b/run.log} no longer overwrite each other.
  */
 final class JobLogs {
     private static final Logger logger = LoggerFactory.getLogger(JobLogs.class);
@@ -43,7 +43,7 @@ final class JobLogs {
         for (Path file : find(start)) {
             Path relative = start.relativize(file);
             logger.info("Saving log file: {}", relative);
-            storageService.saveFile(outputPath.resolve("logs").resolve(relative), file);
+            storageService.saveFile(outputPath.resolve(JobLayout.LOGS_SEGMENT).resolve(relative), file);
         }
     }
 

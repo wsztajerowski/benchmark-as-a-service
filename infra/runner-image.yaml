@@ -24,7 +24,7 @@
 # edit below needs this bumped too. `baas admin build-image` preflights that and refuses to start
 # a ~15-minute build it knows will be rejected. The recipe's and the extension's versions are
 # derived by the CLI and never written here.
-imageVersion: "1.3.0"
+imageVersion: "1.4.0"
 
 # Exact parent release, never a "latest" selector. A selector would silently re-base the whole
 # measurement environment on whatever AWS published that morning — the precise drift this
@@ -56,8 +56,12 @@ tools:
   # Downloaded from GitHub Releases at BAKE time (not run time). installPath must stay in step
   # with the --async-path default in JmhWithAsyncProfilerSubcommand, which resolves
   # <installPath>/lib/libasyncProfiler.so.
+  # sha256 is the linux-x64 tarball's, checked before it is unpacked: a release asset can be
+  # replaced under its tag, and this is the one input to the image no package signature covers.
+  # A new version needs its digest: `curl -fsSL <url> | sha256sum`.
   asyncProfiler:
-    version: "4.0"
+    version: "4.6"
+    sha256: 1e79ed54d8952889a2e74f993d22ee925e3322460d4f37a2ed95bfb88585da36
     installPath: /app/async-profiler
 
 # Kernel tunables that move benchmark numbers, declared instead of inherited.

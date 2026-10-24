@@ -1,0 +1,47 @@
+%% Today (7d9660a): baas-cli packages, real import edges (counts), cycles in red, layers each package occupies
+flowchart TB
+  classDef mixed fill:#fde7e9,stroke:#d33,color:#111
+  classDef ok fill:#e6f4ea,stroke:#188038,color:#111
+  classDef part fill:#fff4e5,stroke:#e8710a,color:#111
+
+  root["baas root<br/>BaasApp · LoggingMixin<br/>composition root + static service locator"]:::part
+  cmd["commands<br/>RunCommand 938 lines · Jobs* · ResultsQuery · Config*<br/>GitProject · JobReference<br/>P + A + D + I"]:::mixed
+  adm["commands.admin<br/>SetupCommand 142 (options only) · Teardown 280<br/>ImageBuild/Show · RunnerImageBuild<br/>P + A + I, D in olderBaseRefusal"]:::part
+  stp["commands.admin.setup (new)<br/>SetupWalkthrough · 11 SetupSteps · SetupContext<br/>SetupAws port ⟂ AwsSetupAws · Prompter<br/>A + D in steps, I in the adapter only"]:::part
+  inf["infra (catch-all)<br/>AWS adapters · AwsClientFactory · OperatorSession<br/>renderers · RunnerImage domain rules<br/>I + D + A"]:::mixed
+  job["jobs<br/>JobSession · JobStop · JobTermination · JobListing<br/>JobRecorder port + DynamoDbJobRecorder<br/>D + A + I"]:::part
+  res["results<br/>ResultsQueryService · Filters · Grouping · Row<br/>ResultsTable · EnvironmentManifest<br/>I + D + P"]:::part
+  cfg["config<br/>BaasConfig DTO used as context · ConfigService<br/>DeploymentNames"]:::part
+  con["console<br/>Console · Table · StatusLine · Watch · Hints<br/>P"]:::ok
+  mdl["baas-model<br/>contract"]:::ok
+
+  root -->|5| cmd
+  root -->|1| adm
+  cmd -->|26| root
+  adm -->|11| root
+  adm -->|4| stp
+  stp -->|"1 (RunnerImageBuild)"| adm
+  job -->|1| res
+  res -->|1| job
+
+  root -->|2| cfg
+  cmd -->|30| inf
+  cmd -->|19| cfg
+  cmd -->|22| con
+  cmd -->|13| res
+  cmd -->|8| job
+  cmd -->|7| mdl
+  adm -->|27| inf
+  adm -->|9| cfg
+  adm -->|5| con
+  stp -->|18| inf
+  stp -->|10| cfg
+  stp -->|3| con
+  inf -->|4| cfg
+  inf -->|"2 (NOT_TERMINAL, Instances)"| job
+  inf -->|3| mdl
+  res -->|4| con
+  job -->|14| mdl
+  res -->|7| mdl
+
+  linkStyle 0,1,2,3,4,5,6,7 stroke:#d33,stroke-width:3px

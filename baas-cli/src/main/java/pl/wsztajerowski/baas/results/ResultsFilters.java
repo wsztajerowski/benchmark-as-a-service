@@ -39,20 +39,12 @@ public final class ResultsFilters {
         if (pairs == null || pairs.isEmpty()) {
             return rows;
         }
-        List<String[]> parsed = pairs.stream().map(ResultsFilters::pair).toList();
+        List<String[]> parsed = pairs.stream().map(TagKeys::parsePair).toList();
         return rows.stream()
             .filter(row -> parsed.stream().noneMatch(kv -> kv[1].equals(tagOf.apply(row, kv[0]))))
             .toList();
     }
 
-    /** A {@code key=value} pair, both sides non-empty; anything else is a usage error. */
-    public static String[] pair(String text) {
-        int eq = text == null ? -1 : text.indexOf('=');
-        if (eq <= 0 || eq == text.length() - 1) {
-            throw new IllegalArgumentException("Expected key=value, got '" + text + "'.");
-        }
-        return new String[]{text.substring(0, eq), text.substring(eq + 1)};
-    }
 
     /**
      * A regular expression, found anywhere in the name — {@code --benchmark-name Queue} is expected

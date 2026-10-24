@@ -1,11 +1,9 @@
 package pl.wsztajerowski.entities.jcstress;
 
-import dev.morphia.annotations.Entity;
 
 import java.util.HashMap;
 import java.util.Map;
 
-@Entity
 public record JCStressResult (
     int totalTests,
     int passedTests,

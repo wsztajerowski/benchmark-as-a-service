@@ -1,0 +1,47 @@
+%% Target: baas-cli as vertical slices by noun over a small shared kernel. Arrows are the only allowed imports.
+flowchart TB
+  classDef root fill:#fff4e5,stroke:#e8710a,color:#111
+  classDef slice fill:#e8f0fe,stroke:#3367d6,color:#111
+  classDef kernel fill:#e6f4ea,stroke:#188038,color:#111
+  classDef ext fill:#f1f3f4,stroke:#5f6368,color:#111
+
+  APP["baas<br/>BaasApp: composition root only<br/>registers commands, builds Invocation"]:::root
+
+  subgraph SLICES["Slices = nouns of the command tree, imported only along the bold arrows"]
+    JOBS["jobs<br/>run · list · show · diff · download · terminate<br/>JobLaunch · JobSession · JobStop · JobListing<br/>EnvironmentManifest · UserDataScriptBuilder"]:::slice
+    RES["results<br/>query<br/>ResultsQueryService · Filters · Grouping · Row"]:::slice
+    DEP["deployment<br/>setup · teardown<br/>SetupWalkthrough + steps over the SetupAws port<br/>stack create/update · DeployerPreflight<br/>DeployerPolicyRenderer"]:::slice
+    IMG["image<br/>build · show<br/>RunnerImageBuild · ImageBuilderService · RunnerImage* · Ssm"]:::slice
+    CFG["config<br/>set · show · list · sync"]:::slice
+  end
+
+  subgraph KERNEL["Shared kernel"]
+    CLIK["cli<br/>LoggingMixin · Invocation context<br/>refusal exception (K2) · Json/Csv writers (B10)"]:::kernel
+    SES["session<br/>Deployment (immutable, B7) · OperatorSession<br/>DeployerSession (new) · AwsClientFactory<br/>ConfigService · DeploymentFile · DeploymentNames · BucketProbe"]:::kernel
+    AWSK["aws (shared readers, from the spike)<br/>CloudFormation stack reads · S3 store<br/>AccessDenied classification · sha256"]:::kernel
+    CON["console<br/>Console · Table · StatusLine · Watch · Hints"]:::kernel
+  end
+
+  MODEL["baas-model"]:::ext
+  SDK["AWS SDK v2"]:::ext
+  PICO["picocli"]:::ext
+
+  APP --> SLICES
+  APP --> KERNEL
+  SLICES --> KERNEL
+  SLICES --> MODEL
+  CLIK --> CON
+  CLIK --> SES
+  SES --> AWSK
+  AWSK --> SDK
+  SES --> MODEL
+  SES --> SDK
+  SLICES -->|"adapters only"| SDK
+  SLICES -->|"command classes only"| PICO
+  DEP ==>|"setup builds, teardown retires the image"| IMG
+  DEP ==>|"teardown names in-flight runners"| JOBS
+  JOBS ==>|"run looks up the image"| IMG
+  JOBS ==>|"run prints its measurements"| RES
+
+  RULES["Boundary test (JUnit or ArchUnit)<br/>picocli only in *Command classes<br/>no software.amazon in decider classes or in model<br/>slice imports only along deployment → jobs → image, results<br/>config imports no slice"]:::ext
+  RULES -.- SLICES

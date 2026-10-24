@@ -1,7 +1,9 @@
 # runner-jar-distribution Specification
 
 ## Purpose
-TBD - created by archiving change unified-run-prefix. Update Purpose after archive.
+Makes every job run the runner JAR of the CLI version that launched it, fetched from the working
+bucket only and seeded once per version from a checksum-verified release asset. A build with no
+release version refuses to launch without an explicit override.
 
 ## Requirements
 

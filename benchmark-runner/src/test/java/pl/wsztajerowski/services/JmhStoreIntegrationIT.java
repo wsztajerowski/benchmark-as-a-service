@@ -6,8 +6,8 @@ import pl.wsztajerowski.infra.DynamoDbResultsStore;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.ResultsStoreException;
 import pl.wsztajerowski.infra.S3StorageService;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JmhOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JmhOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -17,15 +17,14 @@ import java.util.Collections;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.PK;
-import static pl.wsztajerowski.baas.model.MeasurementItemMapper.fromItem;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK;
+import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.fromItem;
 import static pl.wsztajerowski.baas.model.ResultKeys.PK_PREFIX;
-import static pl.wsztajerowski.services.JmhSubcommandServiceBuilder.serviceBuilder;
-import static pl.wsztajerowski.services.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhIterationOptions.jmhIterationOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhJvmOptions.jmhJvmOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhOutputOptions.jmhOutputOptionsBuilder;
-import static pl.wsztajerowski.services.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
+import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
+import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
+import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
+import static pl.wsztajerowski.options.JmhOutputOptions.jmhOutputOptionsBuilder;
+import static pl.wsztajerowski.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
 
 /**
  * The run-level guarantees the DynamoDB write path exists to provide: one item per measurement and
@@ -93,10 +92,11 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
         Path output = Files.createTempFile("outputs", "jmh.txt");
         Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
 
-        serviceBuilder()
-            .withResultsStore(resultsStore)
-            .withCommonOptions(new CommonSharedOptions(Path.of("test-1"), "req-1", createdAt, "test-project", Collections.emptyMap()))
-            .withJmhOptions(new JmhOptions(
+        new JmhSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            resultsStore,
+            new CommonSharedOptions(Path.of("test-1"), "req-1", createdAt, "test-project", Collections.emptyMap()),
+            new JmhOptions(
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
@@ -112,8 +112,6 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
                     .withIterations(1)
                     .build(),
                 jmhJvmOptionsBuilder().build()))
-            .withStorageService(new S3StorageService(awsS3Client, TEST_BUCKET_NAME))
-            .build()
             .executeCommand();
     }
 }

@@ -1,0 +1,163 @@
+# Verify — cli-version-floor
+
+## 1. Blocking assumptions (2026-10-23)
+
+### 1.1 A value-only change of the parameter — disproved, then fixed
+
+On `baas-development` (us-east-1, deployer `baas-admin`), with the branch's template, every other
+parameter `UsePreviousValue=true`:
+
+| Step | Template | Submitted `BaasCliVersion` | Answer |
+|---|---|---|---|
+| a | parameter only, referenced by nothing | `0.0.1` (parameter new to the stack) | `No updates are to be performed.` — not stored |
+| b | same | `0.0.2` | `No updates are to be performed.` |
+| d | same | `8.0.0-rc.1` | `Parameter 'BaasCliVersion' must match pattern ^$|^[0-9]+\.[0-9]+\.[0-9]+$` |
+| e | same | `UsePreviousValue` | `Cannot specify usePreviousValue as true for a parameter key not in the previous template` |
+
+So an unreferenced parameter can never be recorded: the design's first assumption was wrong. With a
+conditional output referencing it (`Condition: RecordsCliVersion`, `Value: !Ref BaasCliVersion`):
+
+| Step | Submitted | Answer | Parameter / output after |
+|---|---|---|---|
+| a | `0.0.1` (template adds parameter and output) | `UPDATE_COMPLETE` | `0.0.1` / `0.0.1` |
+| b | `0.0.2`, nothing else different | `UPDATE_COMPLETE` | `0.0.2` / `0.0.2` |
+| c | `0.0.2` again | `No updates are to be performed.` | unchanged |
+| d | parameter carried with `UsePreviousValue` (an image build's shape) | `No updates are to be performed.` | `0.0.2` / `0.0.2` |
+| e | empty | `UPDATE_COMPLETE` | empty / output absent |
+
+`baas-development` was left with the branch's template and an empty `BaasCliVersion`. design.md and
+the core-stack-provisioning delta were updated to carry the output (decision 1 and its rejected
+alternatives; a risk entry replaced).
+
+### 1.2 The template validates
+
+`aws cloudformation validate-template --template-body file://infra/cf-template-core.yaml` returns the
+parameter (`DefaultValue: ""`) and no error, before and after the output was added. Template size
+39 KB, under the 51,200-byte `TemplateBody` cap.
+
+### 1.3 Broad catches before a command's first client
+
+| Command | First client | Inside a broad catch? |
+|---|---|---|
+| `run` (`JobLaunch`) | `aws.currentImage` | No — the catches (reserve, launch, launch-error upload, results) all come after it |
+| `jobs list` | `factory.ec2()` in `fetch` | No |
+| `jobs show` | `factory.dynamoDb()` | No |
+| `jobs diff` | `jobLookup` | No (`try`-with-resources, no catch) |
+| `jobs download` | `factory.dynamoDb()` | No (narrow `IllegalStateException`/`IllegalArgumentException` catches only) |
+| `jobs connect` | `AwsConnectSources` | `catch (RuntimeException)` rethrows anything not an access denial — a `CommandRefusal` passes |
+| `results query` | `openResults` | No |
+| `config sync` | `factory.cloudFormation()` in `stackOutputs` | `factory.region()` is wrapped in `catch (RuntimeException) → refused(e.getMessage())`, which would keep the message and exit 1; the check fires at the credentials, not the region |
+| admin commands | `DeployerSession.factory(config)`, eager | No — every call site is at the command's start, outside a `try`; teardown's export builds a second factory, so the check's outcome is remembered per deployment for the process |
+
+No catch swallows or rewords the refusal, so task 4.5 needs no code change beyond the memo.
+
+## 7.5 Release-notes paragraph (for the PR description)
+
+> **Update every `baas` once, then have an admin run setup.** A deployment now records the release
+> that last ran `baas admin deployment setup` on it, and every command that reaches AWS refuses a
+> CLI older than that release — patch level included — printing the one command that updates it:
+> `curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh`.
+> `baas jobs terminate` is never refused. CLIs released before this one ignore the record, so it
+> protects nobody until every machine has updated once. `install.sh --update` and the installer copy
+> stored beside the CLI are gone: updating is that same `curl` line, and `--uninstall` removes an
+> old stored copy.
+
+No commit on the branch carries `BREAKING` in its subject or body (`git log origin/next-release..HEAD`
+scanned); the installer change ships as `feat`, per the proposal.
+
+## 8.1 Full reactor build (2026-10-23)
+
+`mvn -B verify` at 40ac662: `BUILD SUCCESS`; `baas-cli` 1097 unit tests and 51 integration tests,
+no failures, no skips (LocalStack ITs included).
+
+## 8.2 Live, on `baas-development`
+
+JARs stamped as releases by copying `baas-cli/target/baas-cli.jar` and rewriting its manifest
+(`jar --update --manifest`, `Implementation-Version: 9.0.0 / 9.0.1 / 9.0.2`) — scratch only, never
+committed; `--version` reported each. Every command non-interactive, `--deployment baas-development`.
+
+| As | Command | Exit | Standard error (version lines) | Standard output |
+|---|---|---|---|---|
+| 9.0.1 | `admin deployment setup` | 0 | `Deployment baas-development now records baas 9.0.1: CLIs older than 9.0.1 refuse it (none was recorded).` after `Stack baas-development updated successfully.` | — |
+| 9.0.0 | `jobs list` | 1 | `…was set up with baas 9.0.1; this is baas 9.0.0, which is older. Nothing was done.` + the `curl … \| sh` line (`wsztajerowski/benchmark-as-a-service`) | empty |
+| 9.0.0 | `admin deployment setup` | 1 | the same refusal, from the names step, after credentials and permissions; no stack call | empty |
+| 9.0.0 | `admin image show` | 1 | the same refusal | empty |
+| 9.0.0 | `jobs terminate 20000101T000000000Z-00000000 --yes` | 1 | `No job found with id …` — the command ran; no version line (exempt) | empty |
+| 9.0.1 | `jobs list --limit 2` | 0 | none | the table |
+| 9.0.2 | `jobs list --limit 2 --format json` | 0 | `…set up with baas 9.0.1; this is baas 9.0.2. Ask its admin to record the newer release: baas --deployment baas-development admin deployment setup` | valid JSON only |
+| 9.0.2 | `admin image show` | 0 | `…Record it, so older CLIs are refused: baas --deployment baas-development admin deployment setup` | the image report |
+| reactor | `jobs list --limit 2` | 0 | `Unreleased build (baas 0.0.0-semantically-released): not checked against the release deployment baas-development was set up with.` | the table |
+| reactor | `admin deployment setup` | 0 | the unreleased line; `Stack baas-development is already up to date.` | — |
+
+After the reactor setup the stack still recorded `9.0.1`.
+
+## 8.3 Live, on `baas-development` (partial)
+
+- `baas run jmh` from the reactor build (`--runner-jar`, `fake-jmh-benchmarks`,
+  `Incrementing_Synchronized -f 1 -wi 1 -i 1`, project `version-floor-check`,
+  `exclude_from_results=true`): job `20261023T170136685Z-709cd6a3`, c5.2xlarge, `completed`, one
+  `thrpt` row. The unreleased line is the first line of the run, before `Job … results will land
+  under`, which reads as intended.
+- `BaasCliVersion` reset to empty afterwards (direct `update-stack`, every other parameter
+  `UsePreviousValue`), so `baas-development` keeps no fake `9.x` floor.
+- `admin image build` from the reactor build, after setup as `9.0.1` recorded `9.0.1`: published
+  `ami-0297bfbcd7b91bc34` (`1.4.0+ext.de4980bc`), retired `ami-0b3bf428d5e535b2a`; the stack still
+  recorded `9.0.1`. Its own stack submission changed nothing (the stack's last update stayed setup's,
+  17:13:43 UTC), so this is again the "No updates", `UsePreviousValue` shape of 1.1 (d); a build that
+  does change an image parameter carries the value the same way (unit-tested,
+  `anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot`).
+- `BaasCliVersion` reset to empty again afterwards.
+- **Teardown not run** — decided with the user (2026-10-23): it would delete `baas-development` for a
+  path this change touches only through the deployer session's check, which `admin image show`
+  exercised live (8.2) and `DeployerSessionTest` covers.
+
+## 8.4 /opsx:verify (2026-10-23)
+
+| Dimension | Status |
+|---|---|
+| Completeness | 26/26 tasks (8.4 is this); 8 delta requirements (6 added, 2 modified) + 2 removed |
+| Correctness | 8/8 requirements implemented and tested; 2 scenarios covered only indirectly (W1, W2) |
+| Coherence | Design followed after the recorded deviations below |
+
+### Requirement → code → test
+
+| Requirement | Code | Test | Gap |
+|---|---|---|---|
+| core-stack-provisioning: *The core stack records the CLI version that last set it up* | `infra/cf-template-core.yaml` (`BaasCliVersion`, `RecordsCliVersion`, output); `CoreStack.PARAM_BAAS_CLI_VERSION` | `CoreStackTemplateTest` (declared, output references it, pattern), `CloudFormationServiceTest.anUnnamedCliVersionIsCarriedForwardWhenDeployedAndOmittedWhenNot`; live 1.1, 8.3 | — |
+| cli-command-structure: *A CLI older than the deployment's recorded version is refused* | `session/CliVersionCheck`, `OperatorSession.factory`, `DeployerSession.factory(config)`, `BaasApp.reportFailure` | `CliVersionCheckTest`, `OperatorSessionTest` (refused at first client, unchecked factory), `DeployerSessionTest`, `VersionCheckCoverageTest`; live 8.2 | W1 |
+| cli-command-structure: *A CLI newer than the recorded version says what to run* | `CliVersionCheck.check` (OPERATOR / ADMIN wording) | `CliVersionCheckTest`, `OperatorSessionTest.aNewerCliRunsAndSaysWhomToAsk`, `DeployerSessionTest`; live 8.2 (JSON stdout clean) | — |
+| cli-command-structure: *An unreleased build is not checked, and says so* | `CliVersionCheck.check` via `BaasVersion.comparable` | `CliVersionCheckTest.anUnreleasedBuildNeverAsks`, `aPreReleaseCountsAsUnreleased`, `OperatorSessionTest.anUnreleasedBuildIsNotCheckedAndSaysSo`; live 8.2, 8.3 (`baas run`) | — |
+| guided-setup: *Setup refuses a CLI older than the version recorded on the stack* | `NamesStep.olderThanRecorded` | `SetupStepsTest` (refused unattended and interactive without a wait, rolled-back stack unchecked, create unchecked); live 8.2 | — |
+| guided-setup: *Setup records its version and announces a raise* | `StackStep`, `CliVersionCheck.recordable`, `announceRecorded` | `SetupStepsTest` (raise from a version, from none, same version, create, reactor carry-forward and create); live 8.2 | — |
+| cli-distribution: *The installer never reads or writes the CLI's configuration* (MODIFIED) | `scripts/install.sh` | `install-test.sh` (configuration byte-for-byte, no configuration created) | — |
+| cli-distribution: *Uninstallation removes exactly what was installed* (MODIFIED) | `install.sh` uninstall arm | `install-test.sh` "uninstall removes an installer copy an earlier release stored" and the scoping cases | — |
+| cli-distribution: *Updating is re-running the published installer* (ADDED) | `install.sh` (no update mode, no stored copy, curl line printed) | `install-test.sh` "--update is refused…", "stores nothing but the jar…", "says how to update…" | W2 |
+| REMOVED: *Updating resolves…*, *The update path remains available…* | code removed | `version-compare-probe.sh` and the update cases deleted | names copied verbatim from the main spec |
+
+### Warnings
+
+- **W1** — *An admin command is refused too* names `admin deployment teardown`. The refusal is proven for the
+  deployer session (`DeployerSessionTest`) and live through `admin image show` and setup, but no test or
+  live run drives teardown itself; teardown builds its factory at the start of `removeDeployment`,
+  after only the local no-terminal refusal (`TeardownCommand.java:88-93`). Teardown live was declined
+  with the user (8.3).
+- **W2** — *The newest installer updates an existing installation*: the fixture has one version, so the
+  harness installs the same release over itself (atomic replacement) rather than a newer one over an
+  older. The replacement path is the same code; a two-version fixture would pin the scenario literally.
+
+### Deviations from design and tasks
+
+- **D1** — The parameter alone could not record anything (1.1); a conditional output referencing it was
+  added, and design, spec and template comment say why.
+- **D2** — `session` may import only `aws`: `BaasVersion` moved from `cli` to `session`, the refusal is
+  `CliVersionCheck.Refused` (mapped to exit 1 in `BaasApp.reportFailure`) rather than `CommandRefusal`,
+  and the hint spells the setup command itself. Design updated (1c494c5).
+- **D3** — Task 1.1 ran direct `update-stack` calls rather than a change set; the answer is the same.
+- **D4** — Task 4.5 needed no catch changes (1.3); the work became the per-deployment memo in
+  `DeployerSession`.
+- **D5** — The output's pin lives in `CoreStackTemplateTest` (the CLI↔template contract test), not
+  `CoreTemplateTest` as task 3.1 said.
+- **D6** — The stale `cp scripts/install.sh` into the fixture release was dropped from
+  `install-test.yml`; nothing reads it now.
+
+No critical issues. Two warnings to consider. Ready for archive (with noted improvements).

@@ -1,5 +1,7 @@
 package pl.wsztajerowski.services;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
+import pl.wsztajerowski.baas.model.JobLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
@@ -9,15 +11,16 @@ import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.process.BenchmarkProcessBuilder;
 import pl.wsztajerowski.results.JCStressMeasurementMapper;
-import pl.wsztajerowski.services.options.CommonSharedOptions;
-import pl.wsztajerowski.services.options.JCStressOptions;
+import pl.wsztajerowski.options.CommonSharedOptions;
+import pl.wsztajerowski.options.JCStressOptions;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static pl.wsztajerowski.commands.JCStressHtmlResultParser.getJCStressHtmlResultParser;
+import static java.util.Objects.requireNonNull;
+import static pl.wsztajerowski.infra.JCStressHtmlResultParser.getJCStressHtmlResultParser;
 import static pl.wsztajerowski.process.BenchmarkProcessBuilder.benchmarkProcessBuilder;
 
 public class JCStressSubcommandService {
@@ -29,7 +32,9 @@ public class JCStressSubcommandService {
 
     private final JCStressOptions jcStressOptions;
 
-    JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+    public JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+        requireNonNull(storageService, "Please provide a storage service");
+        requireNonNull(resultsStore, "Please provide a results store");
         this.storageService = storageService;
         this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;
@@ -72,7 +77,7 @@ public class JCStressSubcommandService {
 
         logger.info("Saving test outputs on S3");
         storageService
-            .saveFile(outputPath.resolve("jcstress-output.txt"), jcStressOptions.processOutput());
+            .saveFile(outputPath.resolve(BenchmarkType.JCSTRESS.processOutputName()), jcStressOptions.processOutput());
         JobLogs.upload(storageService, outputPath);
 
         // Not fatal on its own: whether JCStress exits non-zero for failed tests is not something
@@ -109,7 +114,7 @@ public class JCStressSubcommandService {
             commonOptions.createdAt(),
             commonOptions.tags(),
             outputPath.toString(),
-            outputPath.resolve("environment.json").toString()));
+            outputPath.resolve(JobLayout.ENVIRONMENT_NAME).toString()));
 
         logger.info("Storing JCStress summary for request {}", commonOptions.jobId());
         resultsStore.write(measurements);

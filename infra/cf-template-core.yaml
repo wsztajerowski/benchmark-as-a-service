@@ -104,6 +104,17 @@ Parameters:
       without a template migration.
     Type: CommaDelimitedList
     Default: ""
+  # The release of the CLI that last ran `baas admin deployment setup` here: every command refuses
+  # a CLI older than it. Only setup submits it — every other update carries it forward, and a stack
+  # that predates it gets the empty default, which records nothing. It creates no resource. The
+  # pattern keeps the value comparable, so no reader has a malformed one to decide about.
+  BaasCliVersion:
+    Description: >-
+      Version of the baas CLI that last ran `baas admin deployment setup` on this stack; empty when
+      none is recorded. Written only by setup.
+    Type: String
+    Default: ""
+    AllowedPattern: '^$|^[0-9]+\.[0-9]+\.[0-9]+$'
 
 Conditions:
   # Both are required together: an org with no repository would have nothing to scope the
@@ -112,6 +123,7 @@ Conditions:
     - !Not [!Equals [!Ref GitHubOrg, ""]]
     - !Not [!Equals [!Join ["", !Ref GitHubRepo], ""]]
   HasRunnerImageExtension: !Not [!Equals [!Ref RunnerImageExtensionData, ""]]
+  RecordsCliVersion: !Not [!Equals [!Ref BaasCliVersion, ""]]
 
 Resources:
 
@@ -398,6 +410,21 @@ Resources:
                   ForAllValues:StringEquals:
                     dynamodb:LeadingKeys:
                       - JOB
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-runner-session
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # Lets the agent the AMI already ships register, so `baas jobs connect` can open a
+              # shell on any live runner. Session channels only: no Run Command (ec2messages), no
+              # parameter or document read. These actions take no narrower resource.
+              - Effect: Allow
+                Action:
+                  - ssm:UpdateInstanceInformation
+                  - ssmmessages:CreateControlChannel
+                  - ssmmessages:CreateDataChannel
+                  - ssmmessages:OpenControlChannel
+                  - ssmmessages:OpenDataChannel
+                Resource: "*"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -409,6 +436,29 @@ Resources:
       Path: /
       Roles:
         - !Ref RunnerRole
+
+  # The shell `baas jobs connect` opens. The stack's own document, never the account-global
+  # SSM-SessionManagerRunShell: preferences someone sets there (S3/CloudWatch logging, KMS) would
+  # need grants the runner does not hold, and sessions would fail for a reason BaaS cannot see.
+  # No logging and no KMS here for the same reason, and no transcript by decision.
+  RunnerSessionDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      Name: !Sub ${ResourceNamePrefix}-session-runner
+      DocumentType: Session
+      # A custom-named document is otherwise replaced on a content change, which fails on the
+      # name it already holds.
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "1.0"
+        description: Interactive bash on a BaaS runner, in /app.
+        sessionType: Standard_Stream
+        inputs:
+          idleSessionTimeout: "20"
+          runAsEnabled: false
+          shellProfile:
+            # /app does not exist yet while the instance is still booting.
+            linux: cd /app 2>/dev/null; exec bash
 
   # ─── Runner image build (EC2 Image Builder) ──────────────────────────────────
   #
@@ -759,6 +809,41 @@ Resources:
                   ForAllValues:StringEquals:
                     dynamodb:LeadingKeys:
                       - JOB
+        - PolicyName: !Sub ${ResourceNamePrefix}-policy-operator-session
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              # `baas jobs connect`: a shell on this deployment's runners, with this deployment's
+              # document only. SessionDocumentAccessCheck makes the document name mandatory, so a
+              # StartSession naming none cannot fall back to the account default.
+              - Effect: Allow
+                Action: ssm:StartSession
+                Resource: !Sub "arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals:
+                    aws:ResourceTag/baas-deployment: !Sub ${ResourceNamePrefix}
+                  BoolIfExists:
+                    ssm:SessionDocumentAccessCheck: "true"
+              - Effect: Allow
+                Action: ssm:StartSession
+                Resource: !Sub "arn:${AWS::Partition}:ssm:${AWS::Region}:${AWS::AccountId}:document/${ResourceNamePrefix}-session-runner"
+                Condition:
+                  BoolIfExists:
+                    ssm:SessionDocumentAccessCheck: "true"
+              # Only sessions this role session started. Every operator session is named baas-cli
+              # (finding X6), so in practice that is every operator of this deployment.
+              - Effect: Allow
+                Action:
+                  - ssm:TerminateSession
+                  - ssm:ResumeSession
+                Resource: !Sub "arn:${AWS::Partition}:ssm:*:${AWS::AccountId}:session/*"
+                Condition:
+                  StringLike:
+                    ssm:resourceTag/aws:ssmmessages:session-id: "${aws:userid}*"
+              # Whether a live runner's agent has registered yet; takes no narrower resource.
+              - Effect: Allow
+                Action: ssm:DescribeInstanceInformation
+                Resource: "*"
       Tags:
         - Key: project
           Value: !Sub ${ResourceNamePrefix}
@@ -796,3 +881,10 @@ Outputs:
     Value: !Ref RunnerSecurityGroup
   VpcId:
     Value: !Ref BaasVpc
+
+  # Not read by the CLI, which reads the parameter. It is here because CloudFormation answers "No
+  # updates are to be performed" to a change of a parameter nothing references, and stores
+  # nothing — so without this, setup could never record a new version on an unchanged template.
+  BaasCliVersion:
+    Condition: RecordsCliVersion
+    Value: !Ref BaasCliVersion

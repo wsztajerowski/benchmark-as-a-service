@@ -1,7 +1,9 @@
 # benchmark-results-query Specification
 
 ## Purpose
-TBD - created by archiving change dynamodb-results-store. Update Purpose after archive.
+Lets an operator read stored measurements back: one job by its ID, one project or every project,
+filtered and excluded by tags, optionally reduced to the best score per group, as a table for people
+or JSON/CSV for scripts.
 
 ## Requirements
 

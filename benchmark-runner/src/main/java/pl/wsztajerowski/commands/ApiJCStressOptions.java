@@ -1,10 +1,11 @@
 package pl.wsztajerowski.commands;
 
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import pl.wsztajerowski.FileUtils;
-import pl.wsztajerowski.services.options.JCStressOptions;
+import pl.wsztajerowski.options.JCStressOptions;
 
 import java.nio.file.Path;
 
@@ -35,11 +36,11 @@ public class ApiJCStressOptions {
     Integer strideCount;
     @Option(names = "-strideSize", description = "Internal stride size. Larger value decreases the synchronization overhead, but also reduces the number of collisions.")
     Integer strideSize;
-    // Long form only: -m is --mongo-connection-string on every runner subcommand.
+    // Long form only: -m is deliberately no runner option (retire-mongodb left it unassigned).
     @Option(names = "--mode", description = "JCStress job mode, passed to JCStress as -m (e.g. sanity, quick, default, tough, stress). Omitted: JCStress's own default.")
     String mode;
     @Option(names = {"--process-output"}, description = "Write tests process output to a given file. (default: ${DEFAULT-VALUE})")
-    Path processOutput = FileUtils.getWorkingDirectory().resolve("jcstress-output.txt");
+    Path processOutput = FileUtils.getWorkingDirectory().resolve(BenchmarkType.JCSTRESS.workingOutputName());
     @CommandLine.Parameters(index = "0", description = "Test name regex", arity = "0..1")
     String testNameRegex;
 

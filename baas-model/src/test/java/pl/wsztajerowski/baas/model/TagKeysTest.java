@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.model;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class TagKeysTest {
 
@@ -47,5 +48,19 @@ class TagKeysTest {
     @Test
     void machineObservedIsASubsetOfKnown() {
         assertThat(TagKeys.KNOWN).containsAll(TagKeys.MACHINE_OBSERVED);
+    }
+
+    @Test
+    void aTagPairSplitsAtTheFirstEquals() {
+        assertThat(TagKeys.parsePair("options=-f 1 -i=3")).containsExactly("options", "-f 1 -i=3");
+    }
+
+    @Test
+    void aTagPairNeedsBothSides() {
+        for (String bad : new String[]{"branch", "=main", "branch=", null}) {
+            assertThatThrownBy(() -> TagKeys.parsePair(bad))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Expected key=value");
+        }
     }
 }

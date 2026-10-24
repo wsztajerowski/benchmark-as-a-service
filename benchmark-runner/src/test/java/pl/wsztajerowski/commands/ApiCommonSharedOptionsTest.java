@@ -5,6 +5,8 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.model.JobId;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -27,10 +29,27 @@ class ApiCommonSharedOptionsTest {
     }
 
     @Test
-    void theMongoConnectionStringOptionSurvivesForStandaloneUse() {
-        var options = parse("--mongo-connection-string", "mongodb://h:27017/db", "--project", "p");
+    void aJobWithoutAResultsTableIsRefusedBeforeItRuns() {
+        assertThatThrownBy(() -> parseAsGiven("--project", "p", "--s3-bucket", "b"))
+            .isInstanceOf(CommandLine.MissingParameterException.class)
+            .hasMessageContaining("--results-table");
+    }
 
-        assertThat(options.getMongoConnectionString().toString()).contains("27017");
+    /** No local-disk mode: a job's artifacts go to its bucket or the job does not start. */
+    @Test
+    void aJobWithoutABucketIsRefusedBeforeItRuns() {
+        assertThatThrownBy(() -> parseAsGiven("--project", "p", "--results-table", "t"))
+            .isInstanceOf(CommandLine.MissingParameterException.class)
+            .hasMessageContaining("--s3-bucket");
+    }
+
+    /** The MongoDB store is gone, and its options with it: -m is deliberately left unassigned. */
+    @Test
+    void theMongoOptionsAreUnknown() {
+        assertThatThrownBy(() -> parse("--mongo-connection-string", "mongodb://h:27017/db", "--project", "p"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
+        assertThatThrownBy(() -> parse("-m", "mongodb://h:27017/db", "--project", "p"))
+            .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 
     @Test
@@ -105,7 +124,19 @@ class ApiCommonSharedOptionsTest {
         assertThat(options.getProject()).isEqualTo("explicit");
     }
 
+    /** Parses with the options every job must name, unless the arguments name them already. */
     private static ApiCommonSharedOptions parse(String... args) {
+        var argv = new ArrayList<>(List.of(args));
+        if (!argv.contains("--results-table")) {
+            argv.addAll(List.of("--results-table", "t"));
+        }
+        if (!argv.contains("--s3-bucket")) {
+            argv.addAll(List.of("--s3-bucket", "b"));
+        }
+        return parseAsGiven(argv.toArray(String[]::new));
+    }
+
+    private static ApiCommonSharedOptions parseAsGiven(String... args) {
         var options = new ApiCommonSharedOptions();
         new CommandLine(options).parseArgs(args);
         return options;

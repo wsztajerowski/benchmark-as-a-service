@@ -1,12 +1,14 @@
 package pl.wsztajerowski.baas;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-
+import pl.wsztajerowski.baas.cli.LoggingMixin;
+import pl.wsztajerowski.baas.session.BaasVersion;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import picocli.CommandLine;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -15,7 +17,7 @@ class BaasAppTest {
 
     @Test
     void adminSetupHelpResolvesThroughCommandTree() {
-        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+        CommandLine.ParseResult result = BaasApp.commandLine(new BaasApp())
             .parseArgs("admin", "deployment", "setup", "--help");
 
         CommandLine.ParseResult adminResult = result.subcommand();
@@ -29,7 +31,7 @@ class BaasAppTest {
 
     @Test
     void adminTeardownHelpResolvesThroughCommandTree() {
-        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+        CommandLine.ParseResult result = BaasApp.commandLine(new BaasApp())
             .parseArgs("admin", "deployment", "teardown", "--help");
 
         CommandLine.ParseResult adminResult = result.subcommand();
@@ -43,7 +45,7 @@ class BaasAppTest {
 
     @Test
     void resolvesConfigSyncSubcommand() {
-        CommandLine cmd = new CommandLine(new BaasApp());
+        CommandLine cmd = BaasApp.commandLine(new BaasApp());
 
         assertThat(cmd.getSubcommands().get("config").getSubcommands())
             .containsKey("sync");
@@ -58,7 +60,7 @@ class BaasAppTest {
     @ParameterizedTest
     @ValueSource(strings = {"admin,setup", "config,set"})
     void mongoUriIsGoneFromEveryCommandThatOfferedIt(String command) {
-        CommandLine root = new CommandLine(new BaasApp());
+        CommandLine root = BaasApp.commandLine(new BaasApp());
         String[] path = command.split(",");
 
         assertThatThrownBy(() -> root.parseArgs(
@@ -73,7 +75,7 @@ class BaasAppTest {
      */
     @Test
     void runHelpExplainsTheDoubleDashSeparator() {
-        String usage = new CommandLine(new BaasApp())
+        String usage = BaasApp.commandLine(new BaasApp())
             .getSubcommands().get("run")
             .getUsageMessage(CommandLine.Help.Ansi.OFF);
 
@@ -87,7 +89,7 @@ class BaasAppTest {
     /** The -- separator has to survive into the forwarded parameter list, not be consumed. */
     @Test
     void parametersAfterTheSeparatorAreForwardedVerbatim() {
-        CommandLine.ParseResult result = new CommandLine(new BaasApp())
+        CommandLine.ParseResult result = BaasApp.commandLine(new BaasApp())
             .parseArgs("run", "--benchmark-jar", "target/b.jar", "jmh", "--",
                 "MyBenchmark", "-f", "1", "-wi", "1");
 
@@ -124,7 +126,7 @@ class BaasAppTest {
     @Test
     void theVersionOptionPrintsTheVersionRatherThanNothing() {
         StringWriter out = new StringWriter();
-        CommandLine cmd = new CommandLine(new BaasApp());
+        CommandLine cmd = BaasApp.commandLine(new BaasApp());
         cmd.setOut(new PrintWriter(out));
 
         int exitCode = cmd.execute("--version");
@@ -137,7 +139,7 @@ class BaasAppTest {
 
     @Test
     void topLevelSetupIsNotResolvable() {
-        CommandLine root = new CommandLine(new BaasApp());
+        CommandLine root = BaasApp.commandLine(new BaasApp());
 
         assertThatThrownBy(() -> root.parseArgs("setup"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
@@ -145,7 +147,7 @@ class BaasAppTest {
 
     @Test
     void topLevelTeardownIsNotResolvable() {
-        CommandLine root = new CommandLine(new BaasApp());
+        CommandLine root = BaasApp.commandLine(new BaasApp());
 
         assertThatThrownBy(() -> root.parseArgs("teardown"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);

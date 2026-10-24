@@ -24,6 +24,8 @@ baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 
   JAR — `baas run` builds nothing, so this is not a prerequisite of `baas` itself. Building `baas`
   from source (see *Developing BaaS itself* below) does need Maven.
 - Docker, for integration tests and local development of `baas` itself.
+- AWS's **`session-manager-plugin`**, only for `baas jobs connect` (`brew install --cask
+  session-manager-plugin` on macOS; the RPM or DEB package on Linux). Nothing else needs it.
 
 ## Getting started
 
@@ -33,29 +35,42 @@ baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 -wi 1 -i 
 curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh
 ```
 
-Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/`, a launcher shim to
-`~/.local/bin/baas`, and a copy of the installer itself alongside the jar — that stored copy is
-what makes `--update` reachable later, since a piped install leaves nothing else on disk to
-re-invoke. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never touches
-`~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config sync`.
+Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/` and a launcher shim to
+`~/.local/bin/baas`. Add `~/.local/bin` to your `PATH` if the installer tells you to; it never
+touches `~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config
+sync`.
 
 Installer options: `--version <v>` (install a specific release instead of the latest),
-`--update`, `--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides:
-`BAAS_VERSION`, `BAAS_REPO`, `BAAS_SHARE`, `BAAS_BIN`, `BAAS_JAVA` (the JVM the shim execs).
+`--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides: `BAAS_VERSION`,
+`BAAS_REPO`, `BAAS_SHARE`, `BAAS_BIN`, `BAAS_JAVA` (the JVM the shim execs).
 
-`--update` resolves the newest release, compares it field-wise against what's installed, and hands
-off to *that release's own installer* rather than installing anything itself — it never downgrades,
-and if your installed version is already newer it reports both and changes nothing. Re-run it as:
+**Updating is the same command.** The newest release's installer replaces whatever is installed,
+atomically, so a `baas run` already in flight keeps the jar it started with:
 
 ```bash
-~/.local/share/baas/install.sh --update
+curl -fsSL https://github.com/wsztajerowski/benchmark-as-a-service/releases/latest/download/install.sh | sh
 ```
 
-A *saved* `install.sh` — the one under `~/.local/share/baas/`, or a copy you kept yourself —
-reinstalls its own baked-in version when run plain; it does not upgrade on its own. That's the
-whole reason `--update` exists. Note also that `--update` ignores `--version`: pairing them
-(`install.sh --update --version X`) silently drops the requested version, since `--version` only
-makes sense for a separate install-mode invocation.
+You rarely have to remember to. A deployment records the release that last ran
+`baas admin deployment setup` on it, and every command that reaches AWS compares itself with that
+release first:
+
+| Your `baas` is | What happens |
+|---|---|
+| older — patch level included | Refused, exit 1, before it does anything, printing the command above |
+| the same | Runs |
+| newer | Runs, with one line on standard error: an admin is told to run setup, anyone else to ask the admin |
+| a build from a checkout (`0.0.0-semantically-released`) | Runs unchecked, saying so on standard error |
+
+`baas jobs terminate` is never refused — stopping a paid instance does not wait on an install — and
+`config list`, `config show` and `config set` make no AWS call. CLIs released before the check
+ignore what the deployment records, so the first time, update every `baas` that points at the
+deployment, then have an admin run setup. After that the order is always the same: the admin
+updates and runs setup, which says that older CLIs now refuse the deployment, and everyone else
+updates when their next command tells them to.
+
+An installer copy left in `~/.local/share/baas/` by an earlier release still works — its
+`--update` hands off to the newest installer — and `--uninstall` removes it.
 
 ### Developing BaaS itself
 
@@ -222,6 +237,7 @@ must come before the `--` separator, or it is passed to the benchmark instead.
 baas jobs list                 # the 20 most recent jobs, every project and status
 baas jobs list --in-flight     # only jobs whose instance is still pending or running
 baas jobs terminate <jobId>    # record it as cancelled and terminate its instance
+baas jobs connect <jobId>      # a shell on its instance while it is pending or running
 ```
 
 A job whose CLI died — killed, a laptop gone to sleep, a dropped network — is still listed, and can
@@ -230,9 +246,15 @@ STARTED | ELAPSED`, takes `--limit`, `--project`, `--tag key=value` and `--forma
 hides nothing by default, CI jobs included. A job whose instance is gone without an outcome shows as
 `vanished`. `terminate` asks first on a terminal; pass `--yes` in scripts.
 
-> **Upgrade every `baas` that points at the deployment.** A CLI from before job tracking reads
-> job items as measurements: its `baas results query --all-projects`, project picker and lookups by job id
-> fail once one exists. `baas results query --project <name>` keeps working.
+`connect` opens bash as `ssm-user` in `/app` through Session Manager — no inbound port, no key — on
+any job of the deployment whose instance is still alive, including one CI launched or one stuck before
+`running`. It says first when the watchdog will terminate the instance; the session never keeps it
+alive and ends when the instance does. Nothing about a session is recorded: the job's results look
+exactly as they would without it.
+
+> **A CLI older than the deployment is refused** (see [Install](#1-install)), so the older-CLI
+> failures this section once warned about — job items read as measurements — cannot happen to a
+> CLI that checks. One from before the check still can: update it.
 
 ### 6. Read results
 
@@ -406,9 +428,7 @@ mvn -pl benchmark-runner test -Dtest=MyTest    # single test
 mvn -pl benchmark-runner verify -Dit.test=MyIT # single integration test
 ```
 
-Integration tests (`*IT.java`) spin up LocalStack (S3 + DynamoDB) and MongoDB via Testcontainers —
-MongoDB because the runner keeps that adapter for standalone use, and one store contract suite runs
-against both. `mvn clean
+Integration tests (`*IT.java`) spin up LocalStack (S3 + DynamoDB) via Testcontainers. `mvn clean
 verify` copies `fake-jmh-benchmarks.jar` and `fake-stress-tests.jar` into
 `benchmark-runner/target/` during `pre-integration-test`.
 
@@ -424,12 +444,11 @@ used to.
 docker-compose up
 ```
 
-Starts LocalStack (`SERVICES=s3,ssm,dynamodb`) and MongoDB on 27017. Mongo is there for the
-runner's retained standalone adapter, not for BaaS. Credentials for LocalStack come from `.env` —
+Starts LocalStack (`SERVICES=s3,ssm,dynamodb`). Credentials for LocalStack come from `.env` —
 test values only, never real credentials.
 
-There is **no** init container, so create what you need yourself — the bucket, and the results
-table if you want the scripts below to store anything. `docker-compose.yaml` carries the exact
+There is **no** init container, so create what you need yourself — the bucket and the results
+table. The runner requires both `--s3-bucket` and `--results-table`; it has no local-disk mode. `docker-compose.yaml` carries the exact
 `create-table` command in a comment, with the key schema that must match `ResultsTable` in
 `infra/cf-template-core.yaml`:
 

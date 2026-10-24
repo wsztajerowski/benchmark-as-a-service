@@ -2,7 +2,7 @@ package pl.wsztajerowski.baas.model;
 
 /**
  * The only place a job's S3 prefix is constructed — the object-store counterpart of
- * {@link ResultKeys}. A hand-built prefix does not fail to compile; it points at nothing, and that
+ * {@link pl.wsztajerowski.baas.model.ResultKeys}. A hand-built prefix does not fail to compile; it points at nothing, and that
  * presents as an empty download rather than as an error.
  *
  * <p>{@code project} stays in the path even though the id alone is unique: the bucket is genuinely
@@ -21,6 +21,20 @@ public final class JobLayout {
     public static final String BENCHMARK_JAR_NAME = "benchmark.jar";
     public static final String RUNNER_JAR_OVERRIDE_NAME = "runner.jar";
     public static final String LAUNCH_ERROR_NAME = "launch-error.txt";
+
+    // The artifacts a job writes inside its prefix. Three writers (user-data, the runner and the
+    // CLI's launch path) and three readers (jobs show, diff and download) name them, so they are
+    // spelled here once; user-data receives them as exported variables.
+    /** What the job measured on, written by user-data before the benchmark starts. */
+    public static final String ENVIRONMENT_NAME = "environment.json";
+    /** {@code rpm -qa}, split out of the manifest. */
+    public static final String PACKAGES_NAME = "packages.txt";
+    /** The instance's boot log, uploaded before it terminates itself. */
+    public static final String BOOT_LOG_NAME = "cloud-init-output.log";
+    /** JMH's own machine-readable output, verbatim. */
+    public static final String RESULT_JSON_NAME = "jmh-result.json";
+    /** Where every {@code .log} below the runner's working directory goes, by relative path. */
+    public static final String LOGS_SEGMENT = "logs";
 
     private JobLayout() {
     }
@@ -53,6 +67,16 @@ public final class JobLayout {
      */
     public static String launchErrorKey(String project, String jobId) {
         return jobPrefix(project, jobId) + "/" + LAUNCH_ERROR_NAME;
+    }
+
+    /**
+     * One artifact inside a job's result path, as the job item stores that path. Tolerates the
+     * trailing slash older items carry, so every reader joins the same way.
+     */
+    public static String artifactKey(String resultPath, String name) {
+        require(resultPath, "result path");
+        String base = resultPath.endsWith("/") ? resultPath.substring(0, resultPath.length() - 1) : resultPath;
+        return base + "/" + name;
     }
 
     public static String runnerJarKey(String version) {

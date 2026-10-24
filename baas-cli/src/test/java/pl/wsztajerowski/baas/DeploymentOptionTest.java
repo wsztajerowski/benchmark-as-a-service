@@ -34,7 +34,7 @@ class DeploymentOptionTest {
         PrintStream original = System.err;
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-            int code = new CommandLine(new BaasApp(dir))
+            int code = BaasApp.commandLine(new BaasApp(dir))
                 .setOut(new PrintWriter(new StringWriter()))
                 .setErr(new PrintWriter(picocliErr, true))
                 .setExecutionExceptionHandler(BaasApp::reportFailure)
@@ -70,7 +70,7 @@ class DeploymentOptionTest {
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
             BaasApp.reportFailure(new RuntimeException("Stack wiktor-dev is in UPDATE_ROLLBACK_FAILED"),
-                new CommandLine(new BaasApp(dir)), null);
+                BaasApp.commandLine(new BaasApp(dir)), null);
         } finally {
             System.setErr(original);
         }
@@ -83,7 +83,7 @@ class DeploymentOptionTest {
         TestDeployments.write(dir, TestDeployments.DEFAULT);
         TestDeployments.write(dir, "wiktor-dev");
 
-        var run = baas("admin", "deployment", "teardown", "--yes");
+        var run = baas("admin", "deployment", "teardown");
 
         assertThat(run.exitCode()).isNotZero();
         assertThat(run.err()).contains("2 deployments are configured");
@@ -124,7 +124,7 @@ class DeploymentOptionTest {
     @Test
     void noEnvironmentVariableIsConsulted() throws Exception {
         String sources = java.nio.file.Files.readString(Path.of(
-            "src/main/java/pl/wsztajerowski/baas/config/ConfigService.java"))
+            "src/main/java/pl/wsztajerowski/baas/session/ConfigService.java"))
             + java.nio.file.Files.readString(Path.of("src/main/java/pl/wsztajerowski/baas/BaasApp.java"));
 
         assertThat(sources).doesNotContain("getenv").doesNotContain("BAAS_DEPLOYMENT");
