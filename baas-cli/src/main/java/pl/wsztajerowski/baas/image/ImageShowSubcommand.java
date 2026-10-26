@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas.image;
 
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.session.BaasVersion;
+import pl.wsztajerowski.baas.session.CliVersionCheck;
 import pl.wsztajerowski.baas.session.DeployerSession;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -140,7 +142,8 @@ public class ImageShowSubcommand implements Callable<Integer> {
                 + deployedBase + " — run `" + Hints.command(deployment, "admin image build") + "` to publish it.";
         }
         return "This CLI bundles runner-image base " + bundledBase + ", older than the published image's "
-            + deployedBase + " — upgrade the CLI (~/.local/share/baas/install.sh --update); build-image refuses an older base.";
+            + deployedBase + " — upgrade the CLI (" + CliVersionCheck.installCommand(BaasVersion.sourceRepo())
+            + "); build-image refuses an older base.";
     }
 
     static String baseOf(String label) {

@@ -84,7 +84,10 @@ class ImageCommandsTest {
     @Test
     void buildImageRefusesABaseOlderThanTheDeployments() {
         assertThat(RunnerImageBuild.olderBaseRefusal("1.3.0", "1.4.0", "baas-123456789012"))
-            .contains("1.3.0", "1.4.0", "baas-123456789012", "Upgrade the CLI", "Nothing was changed");
+            .contains("1.3.0", "1.4.0", "baas-123456789012", "Upgrade the CLI", "Nothing was changed")
+            .as("the installer copy and its --update are gone since 8.0.0: the newest release's installer is the update")
+            .contains("/releases/latest/download/install.sh | sh")
+            .doesNotContain("--update");
     }
 
     @Test
@@ -99,8 +102,8 @@ class ImageCommandsTest {
     @Test
     void anOlderCliIsToldToUpgradeNeverToBuild() {
         assertThat(ImageShowSubcommand.driftWarning("dev", "1.3.0", "1.4.0"))
-            .contains("upgrade the CLI")
-            .doesNotContain("admin image build`");
+            .contains("upgrade the CLI", "/releases/latest/download/install.sh | sh")
+            .doesNotContain("admin image build`", "--update");
     }
 
     @Test

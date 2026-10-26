@@ -3,6 +3,8 @@ package pl.wsztajerowski.baas.image;
 import pl.wsztajerowski.baas.session.CoreStack;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import pl.wsztajerowski.baas.session.BaasVersion;
+import pl.wsztajerowski.baas.session.CliVersionCheck;
 import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 
@@ -103,7 +105,8 @@ public final class RunnerImageBuild {
         return """
             This CLI bundles runner-image base %s, but deployment %s is built on %s.
               Building would move every later result onto the older environment.
-              Upgrade the CLI first:  ~/.local/share/baas/install.sh --update
-            Nothing was changed.""".formatted(bundledBase, deployment, deployedBase);
+              Upgrade the CLI first:  %s
+            Nothing was changed.""".formatted(bundledBase, deployment, deployedBase,
+            CliVersionCheck.installCommand(BaasVersion.sourceRepo()));
     }
 }
