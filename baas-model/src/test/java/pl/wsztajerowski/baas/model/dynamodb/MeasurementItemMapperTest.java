@@ -113,8 +113,7 @@ class MeasurementItemMapperTest {
             Map.of(),
             original.score(), Double.NaN, original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         var item = MeasurementItemMapper.toItem(withNaNScoreError);
 
@@ -135,8 +134,7 @@ class MeasurementItemMapperTest {
             Map.of(),
             Double.POSITIVE_INFINITY, original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         var item = MeasurementItemMapper.toItem(withInfiniteScore);
 
@@ -163,8 +161,7 @@ class MeasurementItemMapperTest {
                 "gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec"),
                 "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")),
             original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         var item = MeasurementItemMapper.toItem(withBadSecondaryMetric);
 
@@ -193,8 +190,7 @@ class MeasurementItemMapperTest {
                 "gc.alloc.rate", new SecondaryMetric(1234.5, null),
                 "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")),
             original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         var item = MeasurementItemMapper.toItem(withNullUnit);
 
@@ -218,8 +214,7 @@ class MeasurementItemMapperTest {
             original.score(), original.scoreError(), original.scoreUnit(),
             Map.of("gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec")),
             original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         var item = MeasurementItemMapper.toItem(allBad);
 
@@ -243,8 +238,7 @@ class MeasurementItemMapperTest {
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(withNanosecondPrecisionClock)))
             .isEqualTo(withNanosecondPrecisionClock);

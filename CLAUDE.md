@@ -780,7 +780,12 @@ in the same millisecond cannot collide. Nothing parses it; the format is a reada
 not a contract. Built only by `JobLayout`/`JobId` in `baas-model`, never by hand.
 
 Per-type stdout lands in `jmh-output.txt`, `jmh-profiler-output.txt`, `jmh-with-async-output.txt`,
-or `jcstress-output.txt`; profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The
+or `jcstress-output.txt`; profiling artifacts go under the directory JMH names each benchmark's
+profile, `<fully.qualified.BenchmarkName>-<Mode>` plus `-<param>-<value>` per `@Param`
+(`BenchmarkParams.id()`). **The runner never predicts that name:** it uploads the profiler's whole
+output tree as written, because the JMH that chooses it is the one inside the benchmark JAR, and
+predicting `<benchmark>-<Mode>` silently uploaded nothing for every `@Param` benchmark (#115). For
+the same reason no measurement carries a profiler path — a job's artifacts are reached by its id. The
 non-obvious entries:
 
 | Key | Meaning |

@@ -42,6 +42,7 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithDynamoDbBaseI
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
+                    .withTestNameRegex("Incrementing_Synchronized")
                     .build(),
                 jmhOutputOptionsBuilder()
                     .withMachineReadableOutput(result)
@@ -103,6 +104,7 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithDynamoDbBaseI
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
+                    .withTestNameRegex("Incrementing_Synchronized")
                     .build(),
                 jmhOutputOptionsBuilder()
                     .withMachineReadableOutput(result)
@@ -126,5 +128,56 @@ class JmhWithProfilerSubcommandServiceIT extends TestcontainersWithDynamoDbBaseI
             .singleElement()
             .extracting(StoredMeasurement::secondaryMetrics, as(MAP))
             .containsKeys("gc.count");
+    }
+
+    /**
+     * JMH names a {@code @Param} benchmark's directory after its parameters as well, so a runner
+     * predicting {@code <benchmark>-<Mode>} found none of a sweep's profiles and uploaded nothing for
+     * it (issue #115). JFR shares the naming with async-profiler and needs no {@code ASYNC_PATH}.
+     */
+    @Test
+    void every_variant_of_a_param_sweep_has_its_profile_uploaded() throws IOException {
+        // given
+        Path jmhTestBenchmark = Path.of("..", "fake-jmh-benchmarks", "target", "fake-jmh-benchmarks.jar").toAbsolutePath();
+        Path result = Files.createTempFile("results", "jmh.json");
+        Path output = Files.createTempFile("outputs", "jmh.txt");
+        Path profileResults = Files.createTempDirectory("prof-results");
+        JmhWithProfilerSubcommandService sut = new JmhWithProfilerSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            resultsStore(),
+            new CommonSharedOptions(profileResults, "req-params", Instant.now(), "test-project", Map.of()),
+            new JmhOptions(
+                jmhBenchmarkOptionsBuilder()
+                    .withBenchmarkPath(jmhTestBenchmark)
+                    .withForks(1)
+                    .withTestNameRegex("Summing_Array")
+                    .build(),
+                jmhOutputOptionsBuilder()
+                    .withMachineReadableOutput(result)
+                    .withProcessOutput(output)
+                    .build(),
+                jmhWarmupOptionsBuilder()
+                    .withWarmupIterations(0)
+                    .build(),
+                jmhIterationOptionsBuilder()
+                    .withIterations(1)
+                    .build(),
+                jmhJvmOptionsBuilder().build()),
+            Map.of("jfr", ""));
+
+        // when
+        sut.executeCommand();
+
+        // then
+        String sweep = "/pl.wsztajerowski.fake.Summing_Array.sum-Throughput";
+        assertThatJson(listObjectsInTestBucket())
+            .inPath("$[*].Key")
+            .isArray()
+            .anySatisfy(o -> assertThat(o)
+                .asString()
+                .endsWith(sweep + "-size-1/profile.jfr"))
+            .anySatisfy(o -> assertThat(o)
+                .asString()
+                .endsWith(sweep + "-size-2/profile.jfr"));
     }
 }

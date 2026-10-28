@@ -51,7 +51,7 @@ class ItemJsonTest {
             "com.example.Bench", "m", "thrpt", Map.of("size", "10"), 1234.5, null, "ops/s",
             Map.of(), null, Map.of("imageVersion", "1.4.0"),
             "jobs/p/20261023T090642860Z-5165200d", "jobs/p/20261023T090642860Z-5165200d/jmh-result.json",
-            "jobs/p/20261023T090642860Z-5165200d/environment.json", null);
+            "jobs/p/20261023T090642860Z-5165200d/environment.json");
         var item = MeasurementItemMapper.toItem(measurement);
 
         assertThat(ItemJson.decode(ItemJson.encode(item))).isEqualTo(item);
