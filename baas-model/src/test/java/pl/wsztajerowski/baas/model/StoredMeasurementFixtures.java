@@ -30,8 +30,7 @@ public final class StoredMeasurementFixtures {
             Map.of("project", "lynx-journal", "type", "jmh", "jdk", "25.0.4"),
             "main/jmh/20260817_220706",
             "main/jmh/20260817_220706/jmh-result.json",
-            "main/jmh/20260817_220706/environment.json",
-            "main/jmh/20260817_220706/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput");
+            "main/jmh/20260817_220706/environment.json");
     }
 
     public static StoredMeasurement jcstress() {
@@ -49,7 +48,6 @@ public final class StoredMeasurementFixtures {
             Map.of("project", "lynx-journal", "type", "jcstress"),
             "main/jcstress/20260817_221500",
             null,
-            "main/jcstress/20260817_221500/environment.json",
-            null);
+            "main/jcstress/20260817_221500/environment.json");
     }
 }

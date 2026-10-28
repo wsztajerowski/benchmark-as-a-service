@@ -51,7 +51,6 @@ public final class MeasurementItemMapper {
     public static final String RESULT_PATH = "resultPath";
     public static final String RESULT_JSON_KEY = "resultJsonKey";
     public static final String ENVIRONMENT_JSON_KEY = "environmentJsonKey";
-    public static final String PROFILER_OUTPUT_PATH = "profilerOutputPath";
 
     private static final String TOTAL_TESTS = "totalTests";
     private static final String PASSED_TESTS = "passedTests";
@@ -93,7 +92,6 @@ public final class MeasurementItemMapper {
         putIfPresent(item, RESULT_PATH, m.resultPath());
         putIfPresent(item, RESULT_JSON_KEY, m.resultJsonKey());
         putIfPresent(item, ENVIRONMENT_JSON_KEY, m.environmentJsonKey());
-        putIfPresent(item, PROFILER_OUTPUT_PATH, m.profilerOutputPath());
 
         if (m.score() != null && Double.isFinite(m.score())) {
             item.put(SCORE, n(m.score()));
@@ -166,8 +164,7 @@ public final class MeasurementItemMapper {
             tagsFrom(item),
             str(item, RESULT_PATH),
             str(item, RESULT_JSON_KEY),
-            str(item, ENVIRONMENT_JSON_KEY),
-            str(item, PROFILER_OUTPUT_PATH));
+            str(item, ENVIRONMENT_JSON_KEY));
     }
 
     /**

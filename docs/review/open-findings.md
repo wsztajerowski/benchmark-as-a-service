@@ -75,7 +75,7 @@ decides what to pick up next.
 | G12 | `config show`, `admin image show`/`build`, unattended setup, `jobs terminate` and `jobs download` have no machine-readable output ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS each | — | open, when nearby |
 | G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| G17 | `results query` JSON lacks `project`, `kind` and artifact keys (its escaping is fixed) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G17 | `results query` JSON lacks `project`, `kind` and `resultJsonKey` (its escaping is fixed; `profilerOutputPath` was removed from the item instead, since a job's artifacts are reached by its id through `jobs download`) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G18 | No non-interactive project listing ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), CLAUDE.md "CI mints its id", `admin image show` "for this account", a user-data comment on the manifest's identity ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G20 | Image-build logs under `image-builds/` are pointed to by neither `admin image build` nor setup's image step ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |

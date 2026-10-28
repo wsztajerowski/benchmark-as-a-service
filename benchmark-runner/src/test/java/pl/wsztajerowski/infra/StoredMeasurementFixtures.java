@@ -33,7 +33,6 @@ final class StoredMeasurementFixtures {
             Map.of("project", "lynx-journal", "type", "jmh"),
             "main/jmh/20260819_090000",
             "main/jmh/20260819_090000/jmh-result.json",
-            "main/jmh/20260819_090000/environment.json",
-            null);
+            "main/jmh/20260819_090000/environment.json");
     }
 }

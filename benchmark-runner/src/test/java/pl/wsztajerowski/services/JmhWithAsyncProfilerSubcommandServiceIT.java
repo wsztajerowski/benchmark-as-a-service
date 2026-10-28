@@ -4,6 +4,7 @@ import org.json.JSONArray;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import pl.wsztajerowski.TestcontainersWithDynamoDbBaseIT;
+import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.options.AsyncProfilerOptions;
 import pl.wsztajerowski.options.CommonSharedOptions;
@@ -42,6 +43,7 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithDynamoD
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
+                    .withTestNameRegex("Incrementing_Synchronized")
                     .build(),
                 jmhOutputOptionsBuilder()
                     .withMachineReadableOutput(result)
@@ -66,25 +68,22 @@ class JmhWithAsyncProfilerSubcommandServiceIT  extends TestcontainersWithDynamoD
         sut.executeCommand();
 
         // then
-        // The item points at the prefix rather than listing each artifact; the bucket assertion
-        // below confirms the files actually landed under it.
-        assertThat(storedMeasurements()).singleElement().satisfies(measurement -> {
-            assertThat(measurement.benchmarkMethod()).isEqualTo("incrementUsingSynchronized");
-            assertThat(measurement.profilerOutputPath()).isEqualTo(
-                "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput");
-        });
+        assertThat(storedMeasurements()).singleElement()
+            .extracting(StoredMeasurement::benchmarkMethod)
+            .isEqualTo("incrementUsingSynchronized");
 
-        // and
+        // and: a benchmark without @Param keeps the key it had before the output tree was walked
+        String benchmarkDir = "test-1/pl.wsztajerowski.fake.Incrementing_Synchronized.incrementUsingSynchronized-Throughput";
         JSONArray objectsInTestBucket = listObjectsInTestBucket();
         assertThatJson(objectsInTestBucket)
             .inPath("$[*].Key")
             .isArray()
             .anySatisfy(o -> assertThat(o)
                 .asString()
-                .endsWith("flame-cpu-forward.html"))
+                .isEqualTo(benchmarkDir + "/flame-cpu-forward.html"))
             .anySatisfy(o -> assertThat(o)
                 .asString()
-                .endsWith("flame-cpu-reverse.html"))
+                .isEqualTo(benchmarkDir + "/flame-cpu-reverse.html"))
             .anySatisfy(o -> assertThat(o)
                 .asString()
                 .isEqualTo("test-1/jmh-with-async-output.txt"));

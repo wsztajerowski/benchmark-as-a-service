@@ -38,6 +38,7 @@ class JmhSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
                 jmhBenchmarkOptionsBuilder()
                     .withBenchmarkPath(jmhTestBenchmark)
                     .withForks(1)
+                    .withTestNameRegex("Incrementing_Synchronized")
                     .build(),
                 jmhOutputOptionsBuilder()
                     .withMachineReadableOutput(result)

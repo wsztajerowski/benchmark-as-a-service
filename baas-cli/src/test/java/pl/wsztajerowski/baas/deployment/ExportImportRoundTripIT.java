@@ -111,7 +111,7 @@ class ExportImportRoundTripIT {
             "p", JOB_ID, Instant.parse("2026-10-23T09:06:42.860Z"), MeasurementKind.JMH,
             "com.example.Bench", "m", "thrpt", Map.of("size", "10"), 8234574.731914, 12.5, "ops/s",
             Map.of(), null, Map.of("imageVersion", "1.4.0", "source", "local"),
-            JOB.substring(0, JOB.length() - 1), JOB + "jmh-result.json", JOB + "environment.json", null));
+            JOB.substring(0, JOB.length() - 1), JOB + "jmh-result.json", JOB + "environment.json"));
         var job = new JobItem(JOB_ID, "p", Instant.parse("2026-10-23T09:06:42.860Z"), JOB.substring(0, JOB.length() - 1),
             "c5.large", "completed", "i-0abc", null, Map.of("source", "local"), null, 7500);
         Map<String, AttributeValue> jobItem = new LinkedHashMap<>(JobItemMapper.key(job));
