@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeSet;
 
 /**
@@ -180,6 +181,36 @@ public class ResultsQueryService implements AutoCloseable {
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
             .build());
+    }
+
+    /**
+     * One job's measurements, or empty when the id names no job — which {@link #queryByJobId}
+     * cannot tell from a job that measured nothing. The same index partition, read without the
+     * {@code kind} filter: the item lacking {@code kind} is the job's own job item and says the job
+     * exists, and every other item is a measurement. Still one {@code Query}. Like
+     * {@link #queryByJobId}, an explicit lookup and so not subject to the exclusion filter.
+     */
+    public Optional<List<ResultRow>> queryJob(String jobId) {
+        var request = QueryRequest.builder()
+            .tableName(tableName)
+            .indexName(ResultKeys.JOB_ID_INDEX_NAME)
+            .keyConditionExpression("#pk = :pk")
+            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
+            .expressionAttributeValues(Map.of(
+                ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
+            .build();
+        boolean jobItemSeen = false;
+        List<ResultRow> rows = new ArrayList<>();
+        for (var page : client.queryPaginator(request)) {
+            for (Map<String, AttributeValue> item : page.items()) {
+                if (item.containsKey(MeasurementItemMapper.KIND)) {
+                    rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+                } else {
+                    jobItemSeen = true;
+                }
+            }
+        }
+        return jobItemSeen ? Optional.of(rows) : Optional.empty();
     }
 
     /**

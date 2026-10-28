@@ -49,21 +49,26 @@ different libraries are not comparable. Measurements of the JMH benchmark types 
 - **THEN** their measurements are paired and compared
 
 ### Requirement: Two JCStress jobs are refused
-When both jobs' measurements are JCStress, the command SHALL be refused (exit 1) with a message saying
-that comparing JCStress jobs is not supported, distinct from the different-libraries message, and
-naming `baas results query --job-id <id>` as the way to read each job's verdict.
+When both jobs' measurements are JCStress — or one job's are and the other job has none — the command
+SHALL be refused (exit 1) with a message saying that comparing JCStress jobs is not supported, distinct
+from the different-libraries message, and naming `baas results query --job-id <id>` as the way to read
+each job's verdict.
 
 #### Scenario: A JCStress pair is refused
 - **WHEN** both jobs ran `jcstress`
 - **THEN** it exits 1 saying JCStress diffs are not supported, and names `baas results query --job-id`
 
+#### Scenario: A JCStress job against one without measurements is refused
+- **WHEN** job A ran `jcstress` and job B has no measurements
+- **THEN** it exits 1 with the same not-supported message
+
 ### Requirement: Measurements are paired by benchmark, mode and params
 A measurement of job A and a measurement of job B SHALL form a pair when they share the benchmark's
 fully qualified name, the JMH mode and the params. A measurement with no partner SHALL be reported as
 `only in A` or `only in B`, after every pair. Pairs SHALL be ordered by benchmark, then mode, then
-params. When neither job has a measurement, the command SHALL print `Neither job has measurements.`
-as its payload and exit 0; when only one job has measurements, each of them SHALL be reported as
-one-sided.
+params. When neither job has a measurement, the table SHALL say `Neither job has measurements.` and
+the JSON SHALL carry no rows, and the command SHALL exit 0; when only one job has measurements, each of
+them SHALL be reported as one-sided.
 
 #### Scenario: A sweep's variants pair separately
 - **WHEN** both jobs measured `Foo.bar` in `thrpt` with `size=10` and `size=100`
@@ -79,7 +84,8 @@ one-sided.
 
 #### Scenario: Neither job has measurements
 - **WHEN** neither job has a measurement
-- **THEN** `Neither job has measurements.` is printed and the command exits 0
+- **THEN** the table says `Neither job has measurements.`, the JSON has an empty `rows` array, and the
+  command exits 0
 
 ### Requirement: Every pair shows its delta, and a verdict only beyond the error
 For each pair in the same unit, the command SHALL report both scores with their errors and the delta
@@ -142,8 +148,9 @@ NOT read either job's `environment.json`, and the warning SHALL NOT change any r
   standard output is unchanged by it
 
 ### Requirement: Secondary metrics are shown raw under `-v`
-With `-v`, each pair SHALL be followed by its measurements' JMH secondary metrics, each with its value,
-error and unit for A and for B, and SHALL show no delta and no verdict for them. A metric present on
+With `-v`, each row SHALL be followed by its measurements' JMH secondary metrics, each with its value
+and unit for A and for B (the store keeps no error for a secondary metric), and SHALL show no delta and
+no verdict for them. A metric present on
 one side only SHALL be shown with the other side unknown. Without `-v` the table SHALL NOT show them.
 
 #### Scenario: A GC profiler metric is listed without judgement

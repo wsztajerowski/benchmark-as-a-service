@@ -1,6 +1,7 @@
 sequenceDiagram
     actor User as Operator or CI job
     participant RC as ResultsQuerySubcommand
+    participant RD as ResultsDiffSubcommand
     participant CFG as config file
     participant Git as git (working directory)
     participant DDB as DynamoDB<br/><prefix>-results
@@ -50,4 +51,32 @@ sequenceDiagram
         RC->>Out: reprint last frame on the normal screen
     else once
         RC->>Out: table (params and tags only with -v) | JSON array | CSV
+    end
+
+    rect rgb(240, 248, 255)
+        Note over User,Out: baas results diff <jobA> <jobB> [--format table|json] [-v] -- two jobs' measurements, no S3
+        User->>RD: baas results diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
+        alt not a job id, the same id twice, or an unknown --format
+            RD-->>User: usage error, exit 2 -- no AWS call
+        end
+        RD->>DDB: Query jobId-index (gsi1pk = A), no kind filter -- the job item proves the job exists
+        alt no job item
+            RD-->>User: "No job found" naming A, exit 1 -- B not looked up
+        end
+        RD->>DDB: Query jobId-index (gsi1pk = B), same
+        alt no job item
+            RD-->>User: "No job found" naming B, exit 1
+        end
+        Note over RD: Library guard on the stored kind, never the type tag
+        alt kinds differ (JMH and JCStress)
+            RD-->>User: "different libraries are not comparable", exit 1
+        else a side is JCStress
+            RD-->>User: "not supported yet", names results query --job-id, exit 1
+        end
+        Note over RD: Pair by benchmark, mode, params. Delta B against A always. Verdict: units differ, ? (error unknown),<br/>~ (intervals overlap), else regression or improvement by the mode. Then only in A, only in B.
+        opt imageVersion, jdk, jvmVendor, cpuModel or cpuArch differ
+            RD-->>User: warning on stderr naming baas jobs diff A B
+        end
+        RD->>Out: header (job, instance type, benchmark type) then the rows (-v adds raw secondary metrics) or one JSON object
+        Note over RD,Out: exit 0 whatever the verdicts
     end

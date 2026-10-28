@@ -337,6 +337,33 @@ class ResultsQueryServiceIT {
         assertThat(paths().resultPathForJob("no-such-run")).isNull();
     }
 
+    @Test
+    void aJobReadForADiffIsAbsentWhenNoJobItemNamesIt() {
+        put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
+
+        assertThat(service.queryJob("no-such-run")).isEmpty();
+        assertThat(service.queryJob("req-old")).isEmpty();
+    }
+
+    @Test
+    void aJobThatMeasuredNothingIsPresentAndEmptyForADiff() {
+        putJob("lynx-journal", "req-failed");
+
+        assertThat(service.queryJob("req-failed")).hasValueSatisfying(rows -> assertThat(rows).isEmpty());
+    }
+
+    @Test
+    void aJobReadForADiffCarriesItsMeasurementsWithoutTheJobItem() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        put(measurement("lynx-journal", "req-1", "methodTwo", Map.of()));
+        put(measurement("lynx-journal", "req-2", "methodOther", Map.of()));
+        putJob("lynx-journal", "req-1");
+
+        assertThat(service.queryJob("req-1")).hasValueSatisfying(rows -> assertThat(rows)
+            .extracting(ResultRow::benchmarkName)
+            .containsExactlyInAnyOrder("com.example.Bench.methodOne", "com.example.Bench.methodTwo"));
+    }
+
     /** The job-side lookup diff and download use: the job item. */
     private pl.wsztajerowski.baas.jobs.JobPaths paths() {
         return new pl.wsztajerowski.baas.jobs.JobPaths(client, tableName);

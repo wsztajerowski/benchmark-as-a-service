@@ -7,14 +7,15 @@ import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 
 /**
- * The measurements domain. One verb, {@code query}: a second verb over the same rows with
- * overlapping filters would leave the user guessing where one ends and the other begins.
+ * The measurements domain: {@code query} reads them, {@code diff} compares two jobs' worth. No second
+ * verb over the same rows with overlapping filters — that would leave the user guessing where one
+ * ends and the other begins — which is why {@code diff} takes two job ids and no filter at all.
  */
 @Command(
     name = "results",
     mixinStandardHelpOptions = true,
-    description = "The measurements: query benchmark results.",
-    subcommands = ResultsQuerySubcommand.class
+    description = "The measurements: query benchmark results, or compare two jobs'.",
+    subcommands = {ResultsQuerySubcommand.class, ResultsDiffSubcommand.class}
 )
 public class ResultsCommand implements Runnable {
 

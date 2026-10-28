@@ -43,11 +43,13 @@ represents a side. Real, but a second feature.
 ### The guard reads `kind`, never the `type` tag
 
 `kind` is required by the model; `type` is a tag the runner writes and nothing enforces. A future
-library gets its own `MeasurementKind` and is refused against the others with no new rule. Because a
-job has one kind, the guard takes each side's kind from its first measurement; a job with no
-measurements has no kind and can neither trip nor pass the guard — its partner's rows are all
-one-sided. Should a job ever hold mixed kinds (no runner writes one), the command refuses it as
-corrupt rather than picking one.
+library gets its own `MeasurementKind` and is refused against the others with no new rule. A job has one kind, so a
+job with no measurements has none and cannot trip the different-libraries refusal — its partner's
+JMH rows are listed one-sided. A JCStress job against an empty one is refused like a JCStress pair:
+listing a JCStress summary as a one-sided row would render a verdict, not a score, in a score table.
+Should a job ever hold mixed kinds (no runner writes one), the command refuses it as corrupt rather
+than picking one. `ResultRow` gains the stored `kind` as a component so the guard can read it; a row
+built by hand (tests) infers it from whether it carries a JCStress summary.
 
 ### Existence comes from the job item, read in the same `Query`
 
@@ -111,7 +113,8 @@ from a wrong id. CI gates with `--format json | jq -e '.rows[] | select(.verdict
 
 ### Secondary metrics under `-v`, raw
 
-Shown as indented lines under their pair, both sides' value ± error and unit, nothing computed. A
+Shown as indented lines under their row, both sides' value and unit (`SecondaryMetric` stores no
+error), nothing computed. A
 direction per metric (`gc.alloc.rate.norm` lower-better, `gc.count` neither) has no vocabulary yet;
 raw values give the reader the numbers without the command claiming a judgement. JSON carries them
 always, as each side's `secondaryMetrics` object, since JSON has no `-v`.
@@ -138,3 +141,12 @@ takes no filters, so the worry it records does not apply.
 
 None. A new read-only verb; no stored shape, permission or resource changes. Rollback is reverting
 the commit.
+
+## Deviations found while implementing
+
+- The table header shows the jobs' values side by side and **bolds** a differing value — the "visible
+  at first glance" the user asked for — without a verdict.
+- "Neither job has measurements." is table text only. JSON says the same with an empty `rows` array,
+  since prose there would break `jq`.
+- The table formats numbers for the reader's locale, as `results query`'s table does; JSON uses
+  `Locale.ROOT`.

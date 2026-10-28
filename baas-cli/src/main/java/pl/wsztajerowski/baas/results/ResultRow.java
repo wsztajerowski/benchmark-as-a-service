@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.results;
 
 import pl.wsztajerowski.baas.model.JcstressSummary;
+import pl.wsztajerowski.baas.model.MeasurementKind;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
@@ -32,13 +33,31 @@ public record ResultRow(
      */
     JcstressSummary jcstress,
     /** JMH's secondary metrics ({@code -prof gc}'s {@code gc.alloc.rate.norm}, …); empty otherwise. */
-    Map<String, SecondaryMetric> secondaryMetrics
+    Map<String, SecondaryMetric> secondaryMetrics,
+    /**
+     * The library that produced the measurement, as stored — required on every item, unlike the
+     * free-form {@code type} tag. {@code results diff} refuses to compare across it.
+     */
+    MeasurementKind kind
 ) {
 
     public ResultRow {
         tags = tags == null ? Map.of() : Map.copyOf(tags);
         params = params == null ? Map.of() : Map.copyOf(params);
         secondaryMetrics = secondaryMetrics == null ? Map.of() : Map.copyOf(secondaryMetrics);
+        if (kind == null) {
+            throw new IllegalArgumentException("kind is required");
+        }
+    }
+
+    /** Without a stored kind: a row built by hand, mostly in tests, whose verdict says which library. */
+    public ResultRow(String jobId, String benchmarkName, String benchmarkType, String mode,
+                     double score, double scoreError, String scoreUnit, String createdAt,
+                     Map<String, String> tags, String project, Map<String, String> params,
+                     JcstressSummary jcstress, Map<String, SecondaryMetric> secondaryMetrics) {
+        this(jobId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
+            tags, project, params, jcstress, secondaryMetrics,
+            jcstress != null ? MeasurementKind.JCSTRESS : MeasurementKind.JMH);
     }
 
     /** Without a verdict or secondary metrics: a JMH row built by hand, mostly in tests. */
@@ -84,7 +103,8 @@ public record ResultRow(
             measurement.project(),
             measurement.params(),
             measurement.jcstress(),
-            measurement.secondaryMetrics());
+            measurement.secondaryMetrics(),
+            measurement.kind());
     }
 
     /** Some of a JCStress job's tests failed or errored. */

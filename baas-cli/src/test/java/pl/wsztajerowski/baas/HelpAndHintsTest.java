@@ -26,6 +26,7 @@ class HelpAndHintsTest {
         assertThat(operator).isLessThan(deployer);
         assertThat(help.substring(deployer)).contains("admin deployment", "setup, teardown, export, import", "admin image", "build, show");
         assertThat(help.substring(operator, deployer)).contains("run, list, show, diff, download, terminate, connect");
+        assertThat(help.substring(operator, deployer)).containsPattern("results +query, diff");
     }
 
     @Test
