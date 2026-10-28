@@ -1,27 +1,29 @@
-package pl.wsztajerowski.baas.jobs;
+package pl.wsztajerowski.baas.cli;
 
 import java.util.function.UnaryOperator;
 import java.util.regex.Pattern;
 
 /**
  * A job named on the command line: its job id, and nothing else. Shared by {@code jobs show},
- * {@code jobs diff} and {@code jobs download}, so they accept the same argument and resolve it the
- * same way. A literal result path used to be accepted too, for jobs stored before job items or the
- * unified layout; none exist since the deployment was rebuilt, so the second shape went.
+ * {@code jobs diff}, {@code jobs download}, {@code jobs connect} and {@code results diff}, so they
+ * accept the same argument and resolve it the same way — in the kernel because two nouns take it,
+ * and slices may not import each other's. A literal result path used to be accepted too, for jobs
+ * stored before job items or the unified layout; none exist since the deployment was rebuilt, so the
+ * second shape went.
  */
-final class JobReference {
+public final class JobReference {
 
     private static final Pattern JOB_ID = Pattern.compile("\\d{8}T\\d{9}Z-[0-9a-f]{8}");
 
     private JobReference() {
     }
 
-    static boolean looksLikeJobId(String argument) {
+    public static boolean looksLikeJobId(String argument) {
         return argument != null && JOB_ID.matcher(argument).matches();
     }
 
     /** Why the argument is not a job id, or {@code null} when it is one. Checked before any AWS call. */
-    static String notAJobId(String argument) {
+    public static String notAJobId(String argument) {
         if (looksLikeJobId(argument)) {
             return null;
         }
@@ -34,7 +36,7 @@ final class JobReference {
      * job. Looked up with {@code byJobId} — the stored {@code resultPath}, through
      * {@code jobId-index} — never reconstructed.
      */
-    static String resolve(String jobId, UnaryOperator<String> byJobId) {
+    public static String resolve(String jobId, UnaryOperator<String> byJobId) {
         String path = byJobId.apply(jobId);
         if (path == null) {
             return null;
@@ -43,7 +45,7 @@ final class JobReference {
     }
 
     /** What to say when a job id resolves to nothing. */
-    static String noSuchJob(String jobId) {
+    public static String noSuchJob(String jobId) {
         return "No job found with id '" + jobId + "'. Check the id with `baas jobs list`.";
     }
 }
