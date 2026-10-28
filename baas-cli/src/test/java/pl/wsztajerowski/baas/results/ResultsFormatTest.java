@@ -209,6 +209,35 @@ class ResultsFormatTest {
         assertThat(captured.toString()).contains(jobId);
     }
 
+    /**
+     * Issue #114: the cell showed the method alone, so two classes' {@code closedWorld} methods read
+     * identically. The package is what goes; JSON and CSV keep the fully qualified name.
+     */
+    @Test
+    void theBenchmarkCellNamesTheSimpleClassAndTheMethod() {
+        var row = new ResultRow("20260820T174432812Z-a3f9c21b", "io.roadrunner.bench.ClosedWorldBenchmark.closedWorld",
+            "jmh", "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        ResultsTable.print(console, List.of(row));
+
+        assertThat(captured.toString()).contains("ClosedWorldBenchmark.closedWorld").doesNotContain("io.roadrunner");
+    }
+
+    @Test
+    void aBenchmarkNameLongerThanItsColumnIsCutWithoutMovingTheNextColumn() {
+        var longName = new ResultRow("20260820T174432812Z-a3f9c21b",
+            "io.roadrunner.bench.ClosedWorldBenchmark.closedWorldBenchmarkWithMetrics",
+            "jmh", "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var shortName = new ResultRow("20260820T174432812Z-b7e4d0f2", "io.roadrunner.bench.B.run",
+            "jmh", "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        ResultsTable.print(console, List.of(longName, shortName));
+
+        var lines = captured.toString().lines().toList();
+        assertThat(lines.get(2)).startsWith("ClosedWorldBenchmark.closedWorldBenchmarkWi…");
+        assertThat(lines.get(2).indexOf("a3f9c21b")).isEqualTo(lines.get(3).indexOf("b7e4d0f2"));
+    }
+
     @Test
     void twoJobsOfOneTypeOnOneDayRenderDistinctly() {
         var first = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.B.run", "jmh",
