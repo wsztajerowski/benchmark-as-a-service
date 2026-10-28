@@ -284,6 +284,44 @@ time, and drops rows tagged `hidden=true`. `baas query` is the same command. Fil
 | `--sort-by created\|benchmark\|score\|project`, `--asc` | Order; newest first by default |
 | `--limit <n>` (20; 0 = all), `--offset <n>`, `--format json\|csv`, `--watch` | Page, reshape or follow the output |
 
+**Compare two jobs' measurements** with `baas results diff`, the first job being the baseline:
+
+```bash
+baas results diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
+```
+
+```
+          A                              B
+JOB       20260724T120000000Z-a3f9c21b   20260811T093000000Z-b7e4d0f2
+INSTANCE  c5.large                       c5.2xlarge
+TYPE      jmh                            jmh-with-async
+
+BENCHMARK                                    MODE                        A                      B UNIT                        Δ VERDICT
+--------------------------------------------------------------------------------------------------------------------------------------------
+Foo.bar                                      thrpt       1234.500 ± 40.100      1210.000 ± 38.700 ops/s                  -2.0 % ~
+Foo.baz                                      avgt          812.300 ± 5.200        905.900 ± 6.000 ms/op                 +11.5 % regression
+Foo.gone                                     thrpt           9.000 ± 1.000                      — ops/s                         only in A
+```
+
+Measurements pair by benchmark, mode and params. The delta is always shown. The verdict is
+`regression` or `improvement` only when the two `score ± error` intervals do not overlap, with
+the mode deciding which way is better. It is `~` when they overlap and `?` when an error is unknown
+(a single-iteration run). A pair in different units shows both values and `units differ`, and is
+never converted. The header always names each job's instance type and benchmark type, since those
+most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
+on stderr points at `baas jobs diff`. `-v` lists each pair's secondary metrics (`-prof gc`'s
+`gc.alloc.rate.norm`, …), with raw values only.
+
+Only measurements from the same library are compared. `jmh`, `jmh-with-prof` and `jmh-with-async`
+compare with each other, while a JCStress job is refused against a JMH one and, for now, against
+another JCStress job as well. Use `baas results query --job-id` to read each job's verdict. The
+command exits 0 whenever it compared the jobs, whatever it found. To fail a build on a regression:
+
+```bash
+baas results diff "$BASE" "$HEAD" --format json \
+  | jq -e '[.rows[] | select(.verdict == "regression")] | length == 0'
+```
+
 ### 7. Fetch everything a job produced
 
 ```bash

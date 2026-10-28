@@ -897,6 +897,16 @@ A JCStress row's SCORE is `passed/total`, marked `✗` when a test failed or err
 exits 0 whatever its tests found — the status says JCStress ran, not what it measured (decided 2026-10-20).
 `--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
 
+**`baas results diff <jobA> <jobB>` never compares across libraries, and decides that on the stored
+`kind`, never the `type` tag.** `kind` is required on every item; `type` is a tag nothing enforces.
+The three JMH types share a kind and compare; JCStress against JMH is refused, and JCStress against
+JCStress too until verdict diffs exist (`results-diff`). Pairs are `--best-per`'s identity less the
+project, and its direction (`ResultsGrouping.lowerIsBetter`) is reused, never copied. A verdict is
+called only when the `score ± error` intervals do not overlap; a pair in different units is shown,
+never converted. Exit 0 whatever the verdicts, like a JCStress job's `completed`: gate CI with `jq`.
+Existence comes from the job item in the same index `Query`, so it tells an unknown id from a job that
+measured nothing.
+
 ### Job items
 
 Every job since `run-status-in-dynamodb` also has one **job item**: `pk = JOB` (one partition for
