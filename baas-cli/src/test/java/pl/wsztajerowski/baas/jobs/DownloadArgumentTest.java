@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.JobReference;
 import pl.wsztajerowski.baas.config.ConfigSetSubcommand;
 import pl.wsztajerowski.baas.results.ResultsQuerySubcommand;
 import org.junit.jupiter.api.Test;

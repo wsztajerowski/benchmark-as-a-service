@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.JobReference;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.model.JobLayout;
