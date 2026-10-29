@@ -302,11 +302,86 @@ class ResultsDiffCommandTest {
         String verbose = run("results", "diff", "-v", A, B).out();
 
         assertThat(plain).doesNotContain("TAGS").doesNotContain("feature-x");
-        assertThat(verbose.lines()).contains("TAGS")
-            .contains("  branch  main    feature-x", "  commit  n/a     abc", "  jdk     25.0.4  n/a");
+        assertThat(verbose.lines()).contains("TAGS");
+        assertThat(verbose.lines().filter(l -> l.startsWith("  branch"))).singleElement().asString()
+            .matches("  branch +main +feature-x");
+        assertThat(verbose.lines().filter(l -> l.startsWith("  commit"))).singleElement().asString()
+            .matches("  commit +n/a +abc");
         // The header's two are not repeated, and the block comes before the table.
         assertThat(verbose.lines().filter(l -> l.startsWith("  instanceType") || l.startsWith("  type"))).isEmpty();
         assertThat(verbose.indexOf("TAGS")).isLessThan(verbose.indexOf("BENCHMARK"));
+    }
+
+    @Test
+    void theTagsShareTheHeadersColumns() throws Exception {
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.large", "exclude_from_results", "true",
+                "cpuModel", "Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.large", "exclude_from_results", "true",
+                "cpuModel", "Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz"))));
+
+        List<String> lines = run("results", "diff", "-v", A, B).out().lines().toList();
+
+        String job = lines.stream().filter(l -> l.startsWith("JOB")).findFirst().orElseThrow();
+        String cpu = lines.stream().filter(l -> l.startsWith("  cpuModel")).findFirst().orElseThrow();
+        String flag = lines.stream().filter(l -> l.startsWith("  exclude_from_results")).findFirst().orElseThrow();
+        assertThat(cpu.indexOf("Intel")).isEqualTo(job.indexOf(A)).isEqualTo(flag.indexOf("true"));
+        assertThat(cpu.lastIndexOf("Intel")).isEqualTo(job.indexOf(B)).isEqualTo(flag.lastIndexOf("true"));
+    }
+
+    @Test
+    void aLongTagValueWrapsInsideItsColumn() throws Exception {
+        String longA = "Incrementing_Synchronized -f 1 -wi 1 -i 3 --async-event=cpu -jvmArgs '-Xmx1g -Xms1g -XX:+UseParallelGC'";
+        String longB = "Incrementing_Synchronized -f 1 -wi 1 -i 5 --async-event=wall -jvmArgs '-Xmx1g -Xms1g -XX:+UseG1GC -XX:MaxGCPauseMillis=50'";
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "cliParameters", longA, "jdk", "25.0.4"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "cliParameters", longB, "jdk", "25.0.4"))));
+
+        List<String> lines = run("results", "diff", "-v", A, B).out().lines().toList();
+
+        int first = lines.indexOf(lines.stream().filter(l -> l.startsWith("  cliParameters")).findFirst().orElseThrow());
+        String jdk = lines.stream().filter(l -> l.startsWith("  jdk")).findFirst().orElseThrow();
+        int aColumn = jdk.indexOf("25.0.4");
+        int bColumn = jdk.lastIndexOf("25.0.4");
+        List<String> block = lines.subList(first, lines.indexOf(jdk));
+        assertThat(block).hasSizeGreaterThan(1);
+        // Every line stays within the table, and every continuation starts in A's or B's column.
+        assertThat(lines).allSatisfy(l -> assertThat(l.length()).isLessThanOrEqualTo(152));
+        for (String line : block.subList(1, block.size())) {
+            assertThat(line.substring(0, aColumn)).isBlank();
+        }
+        String rejoinedA = String.join(" ", block.stream()
+            .map(l -> l.substring(aColumn, Math.min(l.length(), bColumn)).strip()).filter(t -> !t.isEmpty()).toList());
+        String rejoinedB = String.join(" ", block.stream()
+            .filter(l -> l.length() > bColumn).map(l -> l.substring(bColumn).strip()).toList());
+        assertThat(rejoinedA).isEqualTo(longA);
+        assertThat(rejoinedB).isEqualTo(longB);
+    }
+
+    @Test
+    void differentCliParametersWarnOnStderr() throws Exception {
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "cliParameters", "Foo -f 1 -i 3"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "cliParameters", "Foo -f 1 -i 5"))));
+
+        Captured result = run("results", "diff", A, B);
+
+        assertThat(result.exitCode()).isZero();
+        assertThat(result.err()).contains("different parameters", "Foo -f 1 -i 3 → Foo -f 1 -i 5");
+        assertThat(result.out()).doesNotContain("different parameters");
+    }
+
+    @Test
+    void equalCliParametersWarnNothing() throws Exception {
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "cliParameters", "Foo -f 1"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "cliParameters", "Foo -f 1"))));
+
+        assertThat(run("results", "diff", A, B).err()).doesNotContain("different parameters");
     }
 
     @Test

@@ -181,6 +181,21 @@ final class ResultsDiff {
         return differences;
     }
 
+    /**
+     * The two jobs' {@code cliParameters} as {@code a → b} when they differ, else null. Not an
+     * environment difference, so warned on its own line: forks and iterations change the error
+     * interval, and with it the verdict. A side without the tag (nothing after {@code --}, or a job
+     * from before the tag) counts as different, as an absent observed tag does.
+     */
+    static String parameterDifference(List<ResultRow> a, List<ResultRow> b) {
+        if (a.isEmpty() || b.isEmpty()) {
+            return null;
+        }
+        String left = tag(a, TagKeys.CLI_PARAMETERS);
+        String right = tag(b, TagKeys.CLI_PARAMETERS);
+        return Objects.equals(left, right) ? null : orAbsent(left) + " → " + orAbsent(right);
+    }
+
     private static String orAbsent(String value) {
         return value == null ? "(absent)" : value;
     }

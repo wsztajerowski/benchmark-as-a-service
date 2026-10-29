@@ -129,6 +129,9 @@ was set). After it, two command tests were added (below): `ResultsDiffCommandTes
   `completed`. `results diff -v` shows both values in the tags block, the quoted argument intact, and JSON
   carries them under `tags.cliParameters`. The same pair gave the first live verdict other than `?`:
   `+2.5 %` `~` (`10518341.270 ± 12757093.473` against `10785029.592 ± 984867.728`), see W2.
+- 2026-10-29, after the live `-v` above: the header and tags now share one set of columns, a long value
+  wraps inside its column, and differing `cliParameters` are warned on stderr (task 4.8). Re-run live on
+  the same pair: the warning names both values, B's `-jvmArgs '-Xmx1g -Xms1g'` continues under B.
 - The A and B columns were widened from 22 to 28 (rule 140 → 152) after that live pair: a score with a
   real error, `10518341,270 ± 12757093,473`, is 27 characters and pushed the row out of line.
 - 2026-10-29, after review of the live output: `-v` also compares tags (a block after the header) and

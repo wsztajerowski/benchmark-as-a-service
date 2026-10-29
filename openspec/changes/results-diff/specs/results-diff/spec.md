@@ -147,6 +147,15 @@ NOT read either job's `environment.json`, and the warning SHALL NOT change any r
 - **THEN** standard error names `imageVersion: 1.3.0 → 1.4.0` and `baas jobs diff <jobA> <jobB>`, and
   standard output is unchanged by it
 
+### Requirement: Different run parameters are warned about
+When the two jobs' measurements disagree on `cliParameters`, a side without the tag included, the
+command SHALL write one warning to standard error naming both values and saying that they change the
+error interval and so the verdict. The warning SHALL NOT change any row or the exit status.
+
+#### Scenario: Different iteration counts are warned about
+- **WHEN** job A carries `cliParameters=Foo -f 1 -i 3` and job B `cliParameters=Foo -f 1 -i 5`
+- **THEN** standard error names `Foo -f 1 -i 3 → Foo -f 1 -i 5`, and standard output is unchanged by it
+
 ### Requirement: Tags, params and secondary metrics are shown raw under `-v`
 With `-v`, the header SHALL be followed by a tags block listing every tag key either job carries,
 except the instance type and benchmark type the header already shows, with A's value and B's value, an
@@ -156,7 +165,14 @@ row SHALL then be followed by its measurements' JMH secondary metrics, each with
 and unit for A and for B (the store keeps no error for a secondary metric), and SHALL show no delta and
 no verdict for them. A metric or params present on
 one side only SHALL be shown with the other side unknown. Without `-v` the table SHALL NOT show any of
-them. None of these lines SHALL be judged or change the exit status.
+them. None of these lines SHALL be judged or change the exit status. The header and the tags block SHALL
+share one label column and one pair of A and B columns, and a value too long for its column SHALL wrap
+inside that column, so that no header or tag line is wider than the table.
+
+#### Scenario: A long tag value wraps inside its column
+- **WHEN** `-v` is given and job B's `cliParameters` is longer than the B column
+- **THEN** its continuation lines start at the B column, every A value starts at the column where the
+  header's A values start, and no line is wider than the table
 
 #### Scenario: A GC profiler metric is listed without judgement
 - **WHEN** both jobs ran with `-prof gc` and `baas results diff -v A B` is run
