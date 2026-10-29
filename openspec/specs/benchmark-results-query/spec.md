@@ -208,10 +208,10 @@ never as a number: JSON `null`, an empty CSV cell, and a de-emphasised table cel
 - **THEN** JSON carries `"score":null`, the CSV score cell is empty, and the table cell is de-emphasised rather than `0.000`
 
 ### Requirement: `baas results query` lists every measurement by default
-`baas results` SHALL be a noun whose only verb is `query`; `baas query` SHALL be its top-level alias, and
-`baas results` alone SHALL print its usage. Without `--best-per`, `baas results query` SHALL report every
-measurement that its filters select — one row per stored measurement — subject to the exclusion rule
-and the shared ordering and paging pipeline.
+`baas results` SHALL be a noun whose verbs are `query` and `diff`; `baas query` SHALL be the top-level
+alias of `baas results query`, and `baas results` alone SHALL print its usage. Without `--best-per`,
+`baas results query` SHALL report every measurement that its filters select — one row per stored
+measurement — subject to the exclusion rule and the shared ordering and paging pipeline.
 
 #### Scenario: Every measurement is a row
 - **WHEN** a benchmark on one branch has three results and `baas results query --project p` is run
@@ -223,7 +223,7 @@ and the shared ordering and paging pipeline.
 
 #### Scenario: The bare noun prints usage
 - **WHEN** `baas results` is run with no verb
-- **THEN** its usage, naming `query`, is printed and nothing is queried
+- **THEN** its usage, naming `query` and `diff`, is printed and nothing is queried
 
 ### Requirement: The best score per group is reported only on request
 `--best-per <tag>` SHALL group the selected rows by project, benchmark, params, JMH mode and the value
