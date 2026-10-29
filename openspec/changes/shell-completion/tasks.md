@@ -22,13 +22,13 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 `README.md` install section: one paragraph naming `~/.local/share/baas/baas_completion` and the bash/zsh lines; verify it reads correctly in the rendered README
-- [ ] 4.2 CLAUDE.md: in the `scripts/install.sh` bullet, add that the installer generates the completion script from the installed jar (`picocli.AutoComplete` against `BaasApp`'s no-arg constructor), so removing that constructor silently drops completion on every install, and that the script is regenerated on every install and never published
-- [ ] 4.3 Check `docs/diagrams/c4-4-deployment.mmd`. If it lists what the installer places in `~/.local/share/baas`, add the script, render it with `mmdc` to the scratchpad, and look at the PNG before committing
+- [x] 4.1 `README.md` install section: one paragraph naming `~/.local/share/baas/baas_completion` and the bash/zsh lines; verify it reads correctly in the rendered README
+- [x] 4.2 CLAUDE.md: in the `scripts/install.sh` bullet, add that the installer generates the completion script from the installed jar (`picocli.AutoComplete` against `BaasApp`'s no-arg constructor), so removing that constructor silently drops completion on every install, and that the script is regenerated on every install and never published
+- [x] 4.3 Check `docs/diagrams/c4-4-deployment.mmd`. If it lists what the installer places in `~/.local/share/baas`, add the script, render it with `mmdc` to the scratchpad, and look at the PNG before committing
 
 ## 5. Manual end-to-end check
 
-- [ ] 5.1 Manual: build a fixture release from this branch (as `install-test.yml` does), install it with `BAAS_BASE_URL=file://…` into a scratch `BAAS_SHARE`/`BAAS_BIN`, load the script in your own zsh, and press Tab on `baas `, `baas admin image `, `baas run --` and `baas run `. Record what was offered in verify.md
+- [x] 5.1 Manual: build a fixture release from this branch (as `install-test.yml` does), install it with `BAAS_BASE_URL=file://…` into a scratch `BAAS_SHARE`/`BAAS_BIN`, load the script in your own zsh, and press Tab on `baas `, `baas admin image `, `baas run --` and `baas run `. Record what was offered in verify.md
 
 ## 6. Verify
 

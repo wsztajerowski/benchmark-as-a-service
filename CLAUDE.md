@@ -641,7 +641,13 @@ The watchdog is the only one that survives a deadlocked JVM.
   that asset: it builds a fixture release in the CI job (`BAAS_BASE_URL: file://…/fixture`) and runs
   the working-tree installer against it, on `ubuntu-latest` and `macos-latest`. No CI job exercises
   a published installer or the release-time `sed` bake — those job only during a real release. The
-  other utilities under `scripts/` still have no CI coverage.
+  other utilities under `scripts/` still have no CI coverage. **It also generates the bash/zsh
+  completion script** (`~/.local/share/baas/baas_completion`) by running `picocli.AutoComplete`
+  against the jar it just installed. That goes through `BaasApp`'s public no-arg constructor, and
+  through a default-constructible class for every subcommand: lose either and every install only
+  warns and ships no completion. `install-test.yml` is what turns that into a red PR. The script is
+  regenerated on every install and never published — there is no `baas` command for it, since
+  `source <(baas …)` would start a JVM in every new shell.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
   S3-object-create trigger path. Any reference you find is stale.
 - **The zsh orchestration helpers are gone** (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,

@@ -40,6 +40,23 @@ Installs a checksum-verified `baas-cli.jar` to `~/.local/share/baas/` and a laun
 touches `~/.baas/`, whose deployment files belong to `baas admin deployment setup` and `baas config
 sync`.
 
+**Tab completion.** The installer also generates `~/.local/share/baas/baas_completion` from the
+jar it installed, so it always matches your version, and prints the lines that load it. Like the
+`PATH` hint, it never edits your shell configuration:
+
+```bash
+# ~/.bashrc
+source ~/.local/share/baas/baas_completion
+
+# ~/.zshrc
+autoload -U +X compinit && compinit
+autoload -U +X bashcompinit && bashcompinit
+source ~/.local/share/baas/baas_completion
+```
+
+It completes commands, options and fixed values such as the benchmark types, but not job ids,
+deployment names or anything after `--`.
+
 Installer options: `--version <v>` (install a specific release instead of the latest),
 `--uninstall` (leaves `~/.baas` untouched), `-h`/`--help`. Environment overrides: `BAAS_VERSION`,
 `BAAS_REPO`, `BAAS_SHARE`, `BAAS_BIN`, `BAAS_JAVA` (the JVM the shim execs).
