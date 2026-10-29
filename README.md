@@ -292,10 +292,10 @@ baas results diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
 ```
 
 ```
-          A                              B
-JOB       20260724T120000000Z-a3f9c21b   20260811T093000000Z-b7e4d0f2
-INSTANCE  c5.large                       c5.2xlarge
-TYPE      jmh                            jmh-with-async
+          A                             B
+JOB       20260724T120000000Z-a3f9c21b  20260811T093000000Z-b7e4d0f2
+INSTANCE  c5.large                      c5.2xlarge
+TYPE      jmh                           jmh-with-async
 
 BENCHMARK                                    MODE                              A                            B UNIT                        Δ VERDICT
 --------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -310,7 +310,8 @@ the mode deciding which way is better. It is `~` when they overlap and `?` when 
 (a single-iteration run). A pair in different units shows both values and `units differ`, and is
 never converted. The header always names each job's instance type and benchmark type, since those
 most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
-on stderr points at `baas jobs diff`. `-v` adds a `TAGS` block comparing every tag of the two jobs
+on stderr points at `baas jobs diff`. A difference in `cliParameters` (forks, iterations, the profiler event) gets its own warning, since it
+changes the error interval and so the verdict. `-v` adds a `TAGS` block comparing every tag of the two jobs
 (`branch`, `commit`, `jdk`, `cliParameters`, …), and under each row its params in full and its secondary metrics
 (`-prof gc`'s `gc.alloc.rate.norm`, …), with raw values only.
 

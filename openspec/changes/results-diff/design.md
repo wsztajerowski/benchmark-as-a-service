@@ -125,6 +125,13 @@ and the tags block shows `n/a` for them.
 
 ### Tags, params and secondary metrics under `-v`, raw
 
+The header and the tags block are one layout (`SideBySide`): the label column fits the longest label
+(at most 24), the A and B columns share the longest value's width, capped so a line fits the table's
+152, and a longer value word-wraps inside its column. The first version sized the tags to their own
+columns and let a long `cliParameters` run past the terminal's edge, where it wrapped to column 0 (found
+on the first live `-v` with the tag). A difference in `cliParameters` is warned on its own stderr line,
+beside the environment one, since forks and iterations change the error interval and so the verdict.
+
 Added after the first live run, at the user's request. Tags belong to a job — every measurement of one
 job carries the same set (task 1.2) — so they are one block after the header, every key of either job
 A against B, the header's two left out, a differing value bold as INSTANCE/TYPE are. Its columns size to

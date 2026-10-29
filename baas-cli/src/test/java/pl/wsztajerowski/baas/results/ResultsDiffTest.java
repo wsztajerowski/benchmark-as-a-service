@@ -243,6 +243,25 @@ class ResultsDiffTest {
     }
 
     @Test
+    void differentCliParametersAreReportedAndAnAbsentOneCounts() {
+        var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("cliParameters", "x -f 1"));
+        var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("cliParameters", "x -f 3"));
+        var old = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of());
+
+        assertThat(ResultsDiff.parameterDifference(List.of(a), List.of(b))).isEqualTo("x -f 1 → x -f 3");
+        assertThat(ResultsDiff.parameterDifference(List.of(a), List.of(old))).isEqualTo("x -f 1 → (absent)");
+        assertThat(ResultsDiff.parameterDifference(List.of(a), List.of(a))).isNull();
+        assertThat(ResultsDiff.parameterDifference(List.of(a), List.of())).isNull();
+    }
+
+    @Test
+    void wrapBreaksAtSpacesAndSplitsAWordLongerThanTheColumn() {
+        assertThat(ResultsDiffSubcommand.wrap("short", 10)).containsExactly("short");
+        assertThat(ResultsDiffSubcommand.wrap("one two three four", 9)).containsExactly("one two", "three", "four");
+        assertThat(ResultsDiffSubcommand.wrap("-XX:+UseParallelGC x", 8)).containsExactly("-XX:+Use", "Parallel", "GC x");
+    }
+
+    @Test
     void equalEnvironmentsAndAnEmptySideReportNothing() {
         var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("imageVersion", "1.3.0"));
         var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("imageVersion", "1.3.0"));

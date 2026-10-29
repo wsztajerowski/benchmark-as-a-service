@@ -24,6 +24,7 @@ import pl.wsztajerowski.baas.results.ResultsDiff.Verdict;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.OperatorSession;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
@@ -133,6 +134,11 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
             logger.warn("The jobs measured on different environments ({}) — compare them with "
                 + "`baas jobs diff {} {}`", String.join(", ", drift), jobA, jobB);
         }
+        String parameters = ResultsDiff.parameterDifference(a, b);
+        if (parameters != null) {
+            logger.warn("The jobs ran with different parameters after -- ({}), which change the "
+                + "error interval and so the verdict", parameters);
+        }
 
         List<Row> rows = ResultsDiff.compare(a, b);
         if ("json".equalsIgnoreCase(format)) {
@@ -142,8 +148,6 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
         }
         return 0;
     }
-
-    private static final int HEADER_WIDTH = 30;
 
     private static final List<Column> COLUMNS = List.of(
         Column.left("BENCHMARK", 44),
@@ -164,13 +168,25 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
      */
     void printTable(Console out, List<ResultRow> a, List<ResultRow> b, List<Row> rows, boolean verbose) {
         // Two ids always differ, so only the context lines are emphasised when they do.
-        headerLine(out, "", "A", "B", false);
-        headerLine(out, "JOB", jobA, jobB, false);
-        headerLine(out, "INSTANCE", ResultsDiff.tag(a, TagKeys.INSTANCE_TYPE), ResultsDiff.tag(b, TagKeys.INSTANCE_TYPE), true);
-        headerLine(out, "TYPE", ResultsDiff.tag(a, TagKeys.TYPE), ResultsDiff.tag(b, TagKeys.TYPE), true);
-        out.println("");
+        List<SideBySide> header = List.of(
+            new SideBySide("", "A", "B", false),
+            new SideBySide("JOB", jobA, jobB, false),
+            new SideBySide("INSTANCE", ResultsDiff.tag(a, TagKeys.INSTANCE_TYPE), ResultsDiff.tag(b, TagKeys.INSTANCE_TYPE), true),
+            new SideBySide("TYPE", ResultsDiff.tag(a, TagKeys.TYPE), ResultsDiff.tag(b, TagKeys.TYPE), true));
+        List<SideBySide> tags = new ArrayList<>();
         if (verbose) {
-            printTags(out, a, b);
+            for (String key : ResultsDiff.tagKeys(a, b)) {
+                tags.add(new SideBySide("  " + key, ResultsDiff.tag(a, key), ResultsDiff.tag(b, key), true));
+            }
+        }
+        // One layout for both blocks, so the tags' A and B line up under the header's.
+        var layout = SideBySide.layout(header, tags);
+        header.forEach(line -> line.print(out, layout));
+        out.println("");
+        if (!tags.isEmpty()) {
+            out.println("TAGS");
+            tags.forEach(line -> line.print(out, layout));
+            out.println("");
         }
         if (rows.isEmpty()) {
             out.println("Neither job has measurements.");
@@ -203,35 +219,95 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
         }
     }
 
-    /** A differing value is emphasised, so the difference is seen before any row is read. */
-    private static void headerLine(Console out, String label, String left, String right, boolean emphasiseDifference) {
-        String l = orUnknown(left);
-        String r = orUnknown(right);
-        UnaryOperator<String> style = emphasiseDifference && !l.equals(r) ? out::bold : UnaryOperator.identity();
-        String padding = " ".repeat(Math.max(0, HEADER_WIDTH - l.length()));
-        out.println(String.format("%-10s", label) + style.apply(l) + padding + " " + style.apply(r));
+    /**
+     * One line of the header or the tags block: a label, then A's value and B's in two columns that
+     * every such line shares. A differing value is emphasised, so the difference is seen before any
+     * row is read.
+     */
+    private record SideBySide(String label, String a, String b, boolean emphasiseDifference) {
+
+        private static final int LABEL_MAX = 24;
+        private static final String GAP = "  ";
+
+        private record Layout(int label, int value) {}
+
+        /**
+         * The label column fits the longest label (up to {@link #LABEL_MAX}); the two value columns
+         * share one width, the longest value's, but never more than lets the line fit the table's
+         * rule. A longer value wraps inside its column instead of the terminal wrapping the line.
+         */
+        @SafeVarargs
+        static Layout layout(List<SideBySide>... blocks) {
+            int label = 0;
+            int value = 0;
+            for (List<SideBySide> block : blocks) {
+                for (SideBySide line : block) {
+                    label = Math.max(label, line.label.length());
+                    value = Math.max(value, Math.max(orUnknown(line.a).length(), orUnknown(line.b).length()));
+                }
+            }
+            label = Math.min(label, LABEL_MAX) + GAP.length();
+            int fit = (RULE_WIDTH - label - GAP.length()) / 2;
+            return new Layout(label, Math.min(value, fit));
+        }
+
+        void print(Console out, Layout layout) {
+            String l = orUnknown(a);
+            String r = orUnknown(b);
+            UnaryOperator<String> style = emphasiseDifference && !l.equals(r) ? out::bold : UnaryOperator.identity();
+            List<String> labels = wrap(label, layout.label - GAP.length());
+            List<String> lefts = wrap(l, layout.value);
+            List<String> rights = wrap(r, layout.value);
+            int lines = Math.max(labels.size(), Math.max(lefts.size(), rights.size()));
+            for (int i = 0; i < lines; i++) {
+                String labelPart = i < labels.size() ? labels.get(i) : "";
+                String left = i < lefts.size() ? lefts.get(i) : "";
+                String right = i < rights.size() ? rights.get(i) : "";
+                // Padded, then styled: an escape sequence must not count towards the width.
+                String line = pad(labelPart, layout.label) + style.apply(left)
+                    + (right.isEmpty() ? "" : " ".repeat(layout.value - left.length()) + GAP + style.apply(right));
+                out.println(line.stripTrailing());
+            }
+        }
+
+        private static String pad(String text, int width) {
+            return text + " ".repeat(Math.max(0, width - text.length()));
+        }
     }
 
     /**
-     * Every tag of either job, A against B, a differing value emphasised as in the header. The
-     * columns size to the longest key and A value: a CPU model alone outgrows the header's width.
+     * Breaks a value into lines of at most {@code width}, at spaces where it can and mid-word where
+     * a word alone is longer.
      */
-    private static void printTags(Console out, List<ResultRow> a, List<ResultRow> b) {
-        List<String> keys = ResultsDiff.tagKeys(a, b);
-        if (keys.isEmpty()) {
-            return;
+    static List<String> wrap(String text, int width) {
+        if (text.length() <= width || width <= 0) {
+            return List.of(text);
         }
-        int keyWidth = keys.stream().mapToInt(String::length).max().orElse(0);
-        int valueWidth = keys.stream().mapToInt(k -> orUnknown(ResultsDiff.tag(a, k)).length()).max().orElse(0);
-        out.println("TAGS");
-        for (String key : keys) {
-            String l = orUnknown(ResultsDiff.tag(a, key));
-            String r = orUnknown(ResultsDiff.tag(b, key));
-            UnaryOperator<String> style = l.equals(r) ? UnaryOperator.identity() : out::bold;
-            out.println("  " + String.format("%-" + keyWidth + "s", key) + "  " + style.apply(l)
-                + " ".repeat(valueWidth - l.length()) + "  " + style.apply(r));
+        List<String> lines = new ArrayList<>();
+        StringBuilder line = new StringBuilder();
+        for (String word : text.split(" ", -1)) {
+            while (word.length() > width) {
+                if (!line.isEmpty()) {
+                    lines.add(line.toString());
+                    line.setLength(0);
+                }
+                lines.add(word.substring(0, width));
+                word = word.substring(width);
+            }
+            if (line.isEmpty()) {
+                line.append(word);
+            } else if (line.length() + 1 + word.length() <= width) {
+                line.append(' ').append(word);
+            } else {
+                lines.add(line.toString());
+                line.setLength(0);
+                line.append(word);
+            }
         }
-        out.println("");
+        if (!line.isEmpty()) {
+            lines.add(line.toString());
+        }
+        return lines;
     }
 
     private static String orUnknown(String value) {
