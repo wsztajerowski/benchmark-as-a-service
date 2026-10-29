@@ -142,6 +142,11 @@ elif [ ! -f "$BAAS_SHARE/baas_completion" ]; then fail "no completion script wri
 elif ! printf '%s' "$out" | grep -q "bashcompinit"; then fail "zsh loading lines missing: $out"
 else assert_contains "$out" "source \"$BAAS_SHARE/baas_completion\""; fi
 
+run_case "an update replaces an existing completion script"
+printf 'from an earlier release\n' > "$BAAS_SHARE/baas_completion"
+BAAS_JAVA="$FAKEJAVA" sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+assert_eq "$(cat "$BAAS_SHARE/baas_completion")" "complete -F _complete_baas baas"
+
 run_case "completion generation leaves no staging file behind"
 leftover=$(ls -A "$BAAS_SHARE" | LC_ALL=C sort | tr '\n' ' ')
 assert_eq "$leftover" "$JAR_NAME baas_completion "
