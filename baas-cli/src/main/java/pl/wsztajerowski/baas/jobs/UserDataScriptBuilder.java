@@ -22,7 +22,7 @@ import java.util.stream.Stream;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas jobs diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 6;
+    public static final int MANIFEST_SCHEMA_VERSION = 7;
 
     /**
      * EC2 refuses user-data over 16 KB raw, and the launch then fails outright. The comments below
@@ -198,18 +198,29 @@ public class UserDataScriptBuilder {
         # uname -m cannot emit a double quote or backslash, so — unlike every other value
         # captured here — this one needs no escaping before it reaches the manifest.
         CPU_ARCH=$(uname -m)
-        CPU_CORES=$(nproc)
+        # Logical CPUs. Recorded as `vcpus`, never `cores`: schema 6 called this count `cores`, which
+        # beside threadsPerCore read as twice the hardware threads the box has.
+        CPU_VCPUS=$(nproc)
         CPU_THREADS_PER_CORE=$(lscpu_field "Thread")
+        # Physical cores, empty unless lscpu reports both factors as numbers: $(( )) on an empty
+        # operand prints a bash error and assigns nothing, and nothing here stops on an error.
+        CPU_SOCKETS=$(lscpu_field "Socket(s)")
+        CPU_CORES_PER_SOCKET=$(lscpu_field "Core(s) per socket")
+        CPU_PHYSICAL_CORES=
+        [[ $CPU_SOCKETS =~ ^[0-9]+$ && $CPU_CORES_PER_SOCKET =~ ^[0-9]+$ ]] && CPU_PHYSICAL_CORES=$((CPU_SOCKETS * CPU_CORES_PER_SOCKET))
         CPU_MAX_MHZ=$(lscpu_field "CPU max MHz")
-        MEMORY_TOTAL_KB=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
-        SWAP_TOTAL_KB=$(awk '/SwapTotal/ {print $2}' /proc/meminfo)
+        # Whole MiB, rounded down: two instances of one type report MemTotal a few KiB apart, which
+        # is no difference for a measurement, and `baas jobs diff` compares what is stored.
+        MEMORY_TOTAL_MIB=$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)
+        SWAP_TOTAL_MIB=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)
         OS_VERSION=$(json_escape "$(. /etc/os-release && echo "$PRETTY_NAME")")
         KERNEL_RELEASE=$(uname -r)
         JVM_VERSION_RAW=$(java -version 2>&1 | head -1)
         JVM_VERSION=$(json_escape "$JVM_VERSION_RAW")
-        # jdk tag: same observation as JVM_VERSION_RAW above, projected to the bare version
-        # number (e.g. "25") instead of the full escaped line — not a second `java -version`.
+        # jdk tag and jvm.release: same observation as JVM_VERSION_RAW above, projected to the
+        # version number the banner quotes (e.g. "25.0.4") — not a second `java -version`.
         JDK_VERSION=$(printf '%s' "$JVM_VERSION_RAW" | sed -n 's/.*"\\(.*\\)".*/\\1/p')
+        JVM_RELEASE=$(json_escape "$JDK_VERSION")
         # Who built the JVM. The banner above names only the version, so Corretto 25.0.4 and
         # another vendor's 25.0.4 read the same there — and an image extension may install either.
         # One JVM call yields every property; each is then picked out by its exact key.
@@ -233,9 +244,7 @@ public class UserDataScriptBuilder {
         PERF_EVENT_PARANOID=$(sysctl -n kernel.perf_event_paranoid 2>/dev/null)
         KPTR_RESTRICT=$(sysctl -n kernel.kptr_restrict 2>/dev/null)
         TRANSPARENT_HUGEPAGES=$(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null)
-        # The job's own identity. The job id is opaque by design, so what it stopped carrying the
-        # manifest has to carry — and the manifest is written before the benchmark, so this is what
-        # a job that dies early leaves behind. A project or branch name can contain " or \\.
+        # The environment only. The job's identity is on its job item and tags, never here.
 
         cat > /app/environment.json <<MANIFEST
         {
@@ -248,13 +257,14 @@ public class UserDataScriptBuilder {
           "cpu": {
             "model": "${CPU_MODEL}",
             "arch": "${CPU_ARCH}",
-            "cores": "${CPU_CORES}",
+            "vcpus": "${CPU_VCPUS}",
+            "physicalCores": "${CPU_PHYSICAL_CORES}",
             "threadsPerCore": "${CPU_THREADS_PER_CORE}",
             "maxMhz": "${CPU_MAX_MHZ}"
           },
           "memory": {
-            "totalKb": "${MEMORY_TOTAL_KB}",
-            "swapTotalKb": "${SWAP_TOTAL_KB}"
+            "totalMib": "${MEMORY_TOTAL_MIB}",
+            "swapTotalMib": "${SWAP_TOTAL_MIB}"
           },
           "os": {
             "version": "${OS_VERSION}",
@@ -262,6 +272,7 @@ public class UserDataScriptBuilder {
           },
           "jvm": {
             "version": "${JVM_VERSION}",
+            "release": "${JVM_RELEASE}",
             "vendor": "${JVM_VENDOR}",
             "vendorVersion": "${JVM_VENDOR_VERSION}",
             "name": "${JVM_NAME}"

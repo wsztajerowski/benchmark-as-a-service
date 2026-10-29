@@ -269,7 +269,7 @@ tags, and the score error the table leaves out.
 Without `--project`, a terminal offers a numbered list of the projects that hold results (with
 `git.resolveProject` enabled, the current directory's repository is used instead); a pipe or
 `--format json|csv` gets an error listing them. It lists every measurement, newest first, 20 at a
-time, and drops rows tagged `exclude_from_results=true`. `baas query` is the same command. Filters:
+time, and drops rows tagged `hidden=true`. `baas query` is the same command. Filters:
 
 | | |
 |---|---|
@@ -280,7 +280,7 @@ time, and drops rows tagged `exclude_from_results=true`. `baas query` is the sam
 | `--exclude-tag key=value` | Repeatable; a row matching **any** is dropped |
 | `--job-id <id>` | One job's measurements. Combines with every filter except `--project` and `--all-projects` |
 | `--best-per <tag>` | Only the best score per benchmark, mode and value of `<tag>` (e.g. `branch`): the highest for throughput, the lowest for time per operation |
-| `--show-excluded` | Also show jobs tagged `exclude_from_results=true`, drawn faint |
+| `--show-hidden` | Also show jobs tagged `hidden=true`, drawn faint |
 | `--sort-by created\|benchmark\|score\|project`, `--asc` | Order; newest first by default |
 | `--limit <n>` (20; 0 = all), `--offset <n>`, `--format json\|csv`, `--watch` | Page, reshape or follow the output |
 
@@ -504,7 +504,7 @@ the operator role and the region from its bucket.
 
 `e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its
 `pull_request` trigger is path-filtered and there is no schedule. It tags its own measurements
-`exclude_from_results=true` — it benchmarks fixture code — so they never reach a comparison, while
+`hidden=true` — it benchmarks fixture code — so they never reach a comparison, while
 `baas results query --job-id <jobId>` still returns them.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the

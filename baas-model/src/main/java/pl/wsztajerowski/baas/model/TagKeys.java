@@ -28,10 +28,10 @@ public final class TagKeys {
 
     /**
      * The convention a CI job uses to keep its measurements out of everyone's results: a row tagged
-     * {@code exclude_from_results=true} is filtered out server-side unless a query asks for it. Not in
+     * {@code hidden=true} is filtered out server-side unless a query asks for it. Not in
      * {@link #KNOWN} — it is a convention a caller sets, not a dimension anyone slices by.
      */
-    public static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
+    public static final String HIDDEN = "hidden";
 
     /** {@link #SOURCE} values baas run derives; a caller may supply any other. */
     public static final String SOURCE_CI = "ci";

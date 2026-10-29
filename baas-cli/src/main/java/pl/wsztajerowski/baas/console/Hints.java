@@ -1,11 +1,14 @@
 package pl.wsztajerowski.baas.console;
 
-import org.slf4j.Logger;
+import java.io.PrintWriter;
+import java.util.function.Consumer;
 
 /**
- * Next-step hints: {@code → <purpose>: <exact command>}, at most two, written to standard error
- * through the logger and only when the console is interactive — by the same definition that gates
- * colour. A script or a CI log never sees one, so there is no option to turn them off.
+ * Next-step hints: a {@code Next} line, then at most two {@code   <purpose>  <exact command>} lines
+ * with the commands aligned, written to standard error and only when the console is interactive —
+ * by the same definition that gates colour. A script or a CI log never sees one, so there is no
+ * option to turn them off. Not through the logger: its timestamp, level and class name on every
+ * line buried the command a person is meant to copy.
  */
 public final class Hints {
 
@@ -20,24 +23,32 @@ public final class Hints {
         return "baas --deployment " + deployment + " " + rest;
     }
 
-    public static void show(Console console, Logger logger, String purpose, String command) {
-        show(console, logger, purpose, command, null, null);
+    /** To a command's standard-error writer, picocli's {@code getErr()}. */
+    public static void show(Console console, PrintWriter err, String purpose, String command) {
+        show(console, err, purpose, command, null, null);
     }
 
-    public static void show(Console console, Logger logger, String purpose, String command,
+    public static void show(Console console, PrintWriter err, String purpose, String command,
                             String secondPurpose, String secondCommand) {
-        show(console, logger::info, purpose, command, secondPurpose, secondCommand);
+        show(console, (Consumer<String>) err::println, purpose, command, secondPurpose, secondCommand);
+        err.flush();
     }
 
-    /** The same, to any line sink — the logger in production, a list in tests. */
-    public static void show(Console console, java.util.function.Consumer<String> sink, String purpose,
+    /** The same, to any line sink — the error writer in production, a list in tests. */
+    public static void show(Console console, Consumer<String> sink, String purpose,
                             String command, String secondPurpose, String secondCommand) {
         if (!console.interactive()) {
             return;
         }
-        sink.accept("→ " + purpose + ": " + command);
+        int width = Math.max(purpose.length(), secondPurpose == null ? 0 : secondPurpose.length());
+        sink.accept("Next");
+        sink.accept("  " + pad(purpose, width) + "  " + command);
         if (secondPurpose != null) {
-            sink.accept("→ " + secondPurpose + ": " + secondCommand);
+            sink.accept("  " + pad(secondPurpose, width) + "  " + secondCommand);
         }
+    }
+
+    private static String pad(String text, int width) {
+        return text + " ".repeat(width - text.length());
     }
 }

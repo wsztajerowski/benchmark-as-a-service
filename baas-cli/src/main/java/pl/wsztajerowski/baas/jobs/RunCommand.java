@@ -207,7 +207,13 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
                 recordEndStatus();
                 printJobSummary(exitCode);
             }
-            hints(exitCode, logger::info);
+            // To picocli's error writer, never the logger; a command built outside picocli has none.
+            hints(exitCode, line -> {
+                if (spec != null) {
+                    spec.commandLine().getErr().println(line);
+                    spec.commandLine().getErr().flush();
+                }
+            });
         }
     }
 

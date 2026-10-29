@@ -69,6 +69,16 @@ class S3DownloadIT {
         assertThat(keys).allSatisfy(key -> assertThat(key).startsWith(RESULT_PATH + "/"));
     }
 
+    /** `jobs show` prints sizes from the listing it already makes, so the sizes must be the objects'. */
+    @Test
+    void listsEachObjectWithItsSize() {
+        var objects = storage.listObjects(bucket, RESULT_PATH + "/");
+
+        assertThat(objects).hasSize(6)
+            .contains(new S3UploadService.StoredObject(RESULT_PATH + "/jmh-output.txt", "benchmark output".length()),
+                new S3UploadService.StoredObject(RESULT_PATH + "/logs/gc.log", "gc log".length()));
+    }
+
     @Test
     void downloadsTheWholeJobPreservingItsLayout(@TempDir Path destination) {
         String prefix = RESULT_PATH + "/";

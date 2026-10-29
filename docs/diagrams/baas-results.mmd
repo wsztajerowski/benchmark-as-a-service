@@ -6,7 +6,7 @@ sequenceDiagram
     participant DDB as DynamoDB<br/><prefix>-results
     participant Out as stdout (Console)
 
-    User->>RC: baas results query [--project p | --all-projects | --job-id id]<br/>[--benchmark-name re] [--tag k=v]… [--best-per tag] [--show-excluded]<br/>[--limit n] [--format table|json|csv] [--watch]
+    User->>RC: baas results query [--project p | --all-projects | --job-id id]<br/>[--benchmark-name re] [--tag k=v]… [--best-per tag] [--show-hidden]<br/>[--limit n] [--format table|json|csv] [--watch]
 
     rect rgb(255, 235, 235)
         Note over RC: Usage checks, before config or AWS -- exit 2
@@ -19,9 +19,9 @@ sequenceDiagram
     RC->>CFG: OperatorSession.config() -- table = <prefix>-results, or exit 1 "No deployment"
 
     alt --job-id id
-        RC->>DDB: Query jobId-index (gsi1pk = id) -- no exclusion filter, filter attribute_exists(kind) drops the job item
+        RC->>DDB: Query jobId-index (gsi1pk = id) -- no hidden filter, filter attribute_exists(kind) drops the job item
     else --all-projects
-        RC->>DDB: Scan, begins_with(pk, RESULT#35;) (exclude_from_results filtered unless --show-excluded)
+        RC->>DDB: Scan, begins_with(pk, RESULT#35;) (hidden filtered unless --show-hidden)
     else project-scoped
         alt --project p
             Note over RC: p

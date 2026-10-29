@@ -62,8 +62,8 @@ public final class ResultsTable {
         var table = new Table(console, RULE_WIDTH + (withProject ? PROJECT.width() + 1 : 0), columns);
         table.printHeader();
         for (ResultRow r : rows) {
-            // An excluded row is shown only under --show-excluded, and faint so it reads as set aside.
-            UnaryOperator<String> rowStyle = r.excluded() ? console::faint : UnaryOperator.identity();
+            // A hidden row is shown only under --show-hidden, and faint so it reads as set aside.
+            UnaryOperator<String> rowStyle = r.hidden() ? console::faint : UnaryOperator.identity();
             var cells = new ArrayList<Cell>();
             if (withProject) {
                 cells.add(new Cell(truncate(r.project(), 23), rowStyle));

@@ -16,7 +16,7 @@ sequenceDiagram
             DDB-->>RL: job items, kept when JobListing.filter matches (project, tags, --exclude-tag, --in-flight)
         end
         Note over RL: page(): JobListing.sorted by --sort-by (created, status, project), skip --offset,<br/>cut to --limit (0 = all) -- notes "Showing n of m jobs" when rows were cut
-        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its job id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written),<br/>but only once the job is 5 min old: a younger one keeps its stored status (R12).<br/>Nothing is hidden: exclude_from_results runs are listed, with their source.
+        Note over RL: stored terminal status -> shown as is.<br/>Non-terminal + live instance with its job id -> in flight.<br/>Non-terminal + no live instance -> vanished (computed, never written),<br/>but only once the job is 5 min old: a younger one keeps its stored status (R12).<br/>Nothing is filtered: runs tagged hidden=true are listed, with their source.
         RL-->>User: JOB_ID | PROJECT | STATUS | SOURCE | INSTANCE | INSTANCE_TYPE | STARTED | ELAPSED<br/>or "No jobs in flight." -- exit 0
     end
 
