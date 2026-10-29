@@ -72,7 +72,7 @@ validation SHALL hard-code a single type as the only permitted value.
 This project's own continuous-integration benchmark self-test SHALL exercise the benchmark type
 whose failure modes depend on the baked runner image — kernel tunables, the pinned profiler and
 `perf` versions, and profiling-artifact upload. Its measurements SHALL be tagged
-`exclude_from_results=true`, because they measure fixture code and carry no analytical meaning. It
+`hidden=true`, because they measure fixture code and carry no analytical meaning. It
 SHALL launch its job detached and follow it to its end by the job identifier, with a wait bounded by
 the job's watchdog bound, so that a regression in the detached path fails CI.
 
@@ -106,7 +106,7 @@ for exclusion and including when the job failed.
 
 #### Scenario: An excluded job is still assertable
 - **WHEN** the self-test asserts on the job it just launched by that job's identifier
-- **THEN** the job's measurements are returned, despite carrying `exclude_from_results=true`
+- **THEN** the job's measurements are returned, despite carrying `hidden=true`
 
 #### Scenario: A failed job is diagnosable
 - **WHEN** a CI-launched job fails
@@ -157,7 +157,7 @@ SHALL NOT enable `git.resolveProject`.
 ### Requirement: The self-test also covers JCStress, in sanity mode
 Besides the image-dependent type, this project's continuous-integration self-test SHALL run a
 JCStress fixture through the CLI, in JCStress sanity mode, with the CLI attached until the job ends.
-Its job SHALL be tagged `exclude_from_results=true`. Its assertions SHALL concern the shape of what
+Its job SHALL be tagged `hidden=true`. Its assertions SHALL concern the shape of what
 the job stored and uploaded, never the fixture's pass or fail counts, because the fixture contains a
 test whose outcome depends on whether a data race fires.
 
