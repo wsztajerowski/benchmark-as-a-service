@@ -309,8 +309,9 @@ the mode deciding which way is better. It is `~` when they overlap and `?` when 
 (a single-iteration run). A pair in different units shows both values and `units differ`, and is
 never converted. The header always names each job's instance type and benchmark type, since those
 most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
-on stderr points at `baas jobs diff`. `-v` lists each pair's secondary metrics (`-prof gc`'s
-`gc.alloc.rate.norm`, …), with raw values only.
+on stderr points at `baas jobs diff`. `-v` adds a `TAGS` block comparing every tag of the two jobs
+(`branch`, `commit`, `jdk`, …), and under each row its params in full and its secondary metrics
+(`-prof gc`'s `gc.alloc.rate.norm`, …), with raw values only.
 
 Only measurements from the same library are compared. `jmh`, `jmh-with-prof` and `jmh-with-async`
 compare with each other, while a JCStress job is refused against a JMH one and, for now, against

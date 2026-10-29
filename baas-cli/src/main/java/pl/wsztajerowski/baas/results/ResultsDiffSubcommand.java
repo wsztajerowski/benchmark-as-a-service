@@ -169,6 +169,9 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
         headerLine(out, "INSTANCE", ResultsDiff.tag(a, TagKeys.INSTANCE_TYPE), ResultsDiff.tag(b, TagKeys.INSTANCE_TYPE), true);
         headerLine(out, "TYPE", ResultsDiff.tag(a, TagKeys.TYPE), ResultsDiff.tag(b, TagKeys.TYPE), true);
         out.println("");
+        if (verbose) {
+            printTags(out, a, b);
+        }
         if (rows.isEmpty()) {
             out.println("Neither job has measurements.");
             return;
@@ -188,6 +191,10 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
                 delta(out, row),
                 verdict(out, row.verdict())));
             if (verbose) {
+                if (!any.params().isEmpty()) {
+                    out.println("    " + out.faint(String.format("%-28s A %-24s B %s",
+                        "params", params(row.a()), params(row.b()))));
+                }
                 for (String metric : ResultsDiff.metricNames(row)) {
                     out.println("    " + out.faint(String.format("%-28s A %-24s B %s",
                         metric, metric(row.a(), metric), metric(row.b(), metric))));
@@ -198,11 +205,41 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
 
     /** A differing value is emphasised, so the difference is seen before any row is read. */
     private static void headerLine(Console out, String label, String left, String right, boolean emphasiseDifference) {
-        String l = left == null ? "n/a" : left;
-        String r = right == null ? "n/a" : right;
+        String l = orUnknown(left);
+        String r = orUnknown(right);
         UnaryOperator<String> style = emphasiseDifference && !l.equals(r) ? out::bold : UnaryOperator.identity();
         String padding = " ".repeat(Math.max(0, HEADER_WIDTH - l.length()));
         out.println(String.format("%-10s", label) + style.apply(l) + padding + " " + style.apply(r));
+    }
+
+    /**
+     * Every tag of either job, A against B, a differing value emphasised as in the header. The
+     * columns size to the longest key and A value: a CPU model alone outgrows the header's width.
+     */
+    private static void printTags(Console out, List<ResultRow> a, List<ResultRow> b) {
+        List<String> keys = ResultsDiff.tagKeys(a, b);
+        if (keys.isEmpty()) {
+            return;
+        }
+        int keyWidth = keys.stream().mapToInt(String::length).max().orElse(0);
+        int valueWidth = keys.stream().mapToInt(k -> orUnknown(ResultsDiff.tag(a, k)).length()).max().orElse(0);
+        out.println("TAGS");
+        for (String key : keys) {
+            String l = orUnknown(ResultsDiff.tag(a, key));
+            String r = orUnknown(ResultsDiff.tag(b, key));
+            UnaryOperator<String> style = l.equals(r) ? UnaryOperator.identity() : out::bold;
+            out.println("  " + String.format("%-" + keyWidth + "s", key) + "  " + style.apply(l)
+                + " ".repeat(valueWidth - l.length()) + "  " + style.apply(r));
+        }
+        out.println("");
+    }
+
+    private static String orUnknown(String value) {
+        return value == null ? "n/a" : value;
+    }
+
+    private static String params(ResultRow row) {
+        return row == null ? "n/a" : row.paramsKey();
     }
 
     private static Cell score(Console out, ResultRow row) {

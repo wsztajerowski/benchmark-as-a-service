@@ -292,6 +292,62 @@ class ResultsDiffCommandTest {
     }
 
     @Test
+    void tagsAreComparedOnlyUnderVerbose() throws Exception {
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "main", "jdk", "25.0.4"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "feature-x", "commit", "abc"))));
+
+        String plain = run("results", "diff", A, B).out();
+        String verbose = run("results", "diff", "-v", A, B).out();
+
+        assertThat(plain).doesNotContain("TAGS").doesNotContain("feature-x");
+        assertThat(verbose.lines()).contains("TAGS")
+            .contains("  branch  main    feature-x", "  commit  n/a     abc", "  jdk     25.0.4  n/a");
+        // The header's two are not repeated, and the block comes before the table.
+        assertThat(verbose.lines().filter(l -> l.startsWith("  instanceType") || l.startsWith("  type"))).isEmpty();
+        assertThat(verbose.indexOf("TAGS")).isLessThan(verbose.indexOf("BENCHMARK"));
+    }
+
+    @Test
+    void aDifferingTagIsEmphasisedAndAnEqualOneIsNot() throws Exception {
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "branch", "main", "jdk", "25.0.4"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "branch", "feature-x", "jdk", "25.0.4"))));
+        String plain = run("results", "diff", "-v", A, B).out();
+        interactive = true;
+
+        String coloured = run("results", "diff", "-v", A, B).out();
+
+        assertThat(coloured.replaceAll(ESC + "\\[[0-9;]*m", "")).isEqualTo(plain);
+        assertThat(coloured.lines().filter(l -> l.startsWith("  branch")).findFirst().orElseThrow()).contains(ESC + "[1m");
+        assertThat(coloured.lines().filter(l -> l.startsWith("  jdk")).findFirst().orElseThrow()).doesNotContain(ESC);
+    }
+
+    @Test
+    void paramsAppearInFullUnderEachRowOnlyUnderVerbose() throws Exception {
+        var sweep = Map.of("payload", "a-rather-long-payload-name", "size", "1024");
+        jobs.put(A, List.of(
+            jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", sweep, Map.of("type", "jmh")),
+            jmh(A, "com.example.Foo.plain", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("type", "jmh"))));
+        jobs.put(B, List.of(
+            jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", sweep, Map.of("type", "jmh")),
+            jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of("size", "2048"), Map.of("type", "jmh"))));
+
+        String plain = run("results", "diff", A, B).out();
+        List<String> paramLines = run("results", "diff", "-v", A, B).out().lines()
+            .filter(l -> l.trim().startsWith("params")).toList();
+
+        assertThat(plain).doesNotContain("params");
+        // One line per row that has params; a benchmark without any gets none.
+        assertThat(paramLines).hasSize(2);
+        assertThat(paramLines.get(0)).contains("A payload=a-rather-long-payload-name,size=1024",
+            "B payload=a-rather-long-payload-name,size=1024");
+        assertThat(paramLines.get(1)).contains("A n/a", "B size=2048");
+    }
+
+    @Test
     void aJobWithoutMeasurementsHeadsItsColumnWithUnknowns() throws Exception {
         jobs.put(A, List.of());
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(), tags("jmh", "c5.large", "1.3.0"))));

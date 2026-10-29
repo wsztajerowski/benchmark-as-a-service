@@ -147,15 +147,30 @@ NOT read either job's `environment.json`, and the warning SHALL NOT change any r
 - **THEN** standard error names `imageVersion: 1.3.0 → 1.4.0` and `baas jobs diff <jobA> <jobB>`, and
   standard output is unchanged by it
 
-### Requirement: Secondary metrics are shown raw under `-v`
-With `-v`, each row SHALL be followed by its measurements' JMH secondary metrics, each with its value
+### Requirement: Tags, params and secondary metrics are shown raw under `-v`
+With `-v`, the header SHALL be followed by a tags block listing every tag key either job carries,
+except the instance type and benchmark type the header already shows, with A's value and B's value, an
+absent value shown as unknown, and a differing value emphasised on a terminal as the header's are. Each
+row whose benchmark has params SHALL be followed by a params line giving each side's params in full. Each
+row SHALL then be followed by its measurements' JMH secondary metrics, each with its value
 and unit for A and for B (the store keeps no error for a secondary metric), and SHALL show no delta and
-no verdict for them. A metric present on
-one side only SHALL be shown with the other side unknown. Without `-v` the table SHALL NOT show them.
+no verdict for them. A metric or params present on
+one side only SHALL be shown with the other side unknown. Without `-v` the table SHALL NOT show any of
+them. None of these lines SHALL be judged or change the exit status.
 
 #### Scenario: A GC profiler metric is listed without judgement
 - **WHEN** both jobs ran with `-prof gc` and `baas results diff -v A B` is run
 - **THEN** `gc.alloc.rate.norm` appears under its pair with both values and units, and no delta or verdict
+
+#### Scenario: Tags are compared side by side
+- **WHEN** job A carries `branch=main` and job B `branch=feature-x` and `commit=abc`, and
+  `baas results diff -v A B` is run
+- **THEN** the tags block shows `branch` as `main` against `feature-x` and `commit` as unknown against
+  `abc`, and shows no `instanceType` or `type` line
+
+#### Scenario: A sweep's params are shown in full
+- **WHEN** a pair's params are too long for the benchmark column and `-v` is given
+- **THEN** a params line under the row shows both sides' params untruncated
 
 ### Requirement: Output is a table or JSON, and the exit status says the diff ran
 The command SHALL accept `--format table|json`, defaulting to `table`, and SHALL write its payload to

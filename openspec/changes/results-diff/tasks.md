@@ -26,6 +26,7 @@
 - [x] 4.3 Render JSON: both jobs' id, instance type, type and tags; one entry per row with benchmark, mode, params, each side's score/error/unit/secondaryMetrics (absent side `null`), `deltaPercent`, and a verdict from `regression`, `improvement`, `indistinguishable`, `unknown`, `units-differ`, `only-in-a`, `only-in-b`; `Locale.ROOT`, non-finite as `null`, no escape sequence; a test under `pl-PL` parses the output as JSON
 - [x] 4.4 Print `Neither job has measurements.` through the `Console` when both sides are empty (JSON: an empty `rows` array), exit 0; a test covers it in table and JSON form
 - [x] 4.5 Check `baas results` alone lists `query` and `diff`, `baas diff` is an unknown command, and `baas --help`'s operator line for `results` names both verbs; extend the existing command-tree and help tests
+- [x] 4.6 Under `-v`, print a tags block after the header — every key of either job except `instanceType`/`type`, A against B, unknown as `n/a`, a differing value bold — and a `params` line in full above each row's metrics; tests cover the block, its emphasis keeping alignment, and params on a pair and a one-sided row, none of it without `-v`
 
 ## 5. Docs
 

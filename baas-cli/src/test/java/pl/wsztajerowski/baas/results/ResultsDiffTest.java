@@ -231,6 +231,18 @@ class ResultsDiffTest {
     }
 
     @Test
+    void tagKeysAreBothJobsKeysWithoutTheHeadersTwo() {
+        var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "main", "jdk", "25.0.4"));
+        var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.large", "commit", "abc", "jdk", "25.0.4"));
+
+        assertThat(ResultsDiff.tagKeys(List.of(a), List.of(b))).containsExactly("branch", "commit", "jdk");
+        assertThat(ResultsDiff.tagKeys(List.of(), List.of(b))).containsExactly("commit", "jdk");
+        assertThat(ResultsDiff.tagKeys(List.of(), List.of())).isEmpty();
+    }
+
+    @Test
     void equalEnvironmentsAndAnEmptySideReportNothing() {
         var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("imageVersion", "1.3.0"));
         var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("imageVersion", "1.3.0"));

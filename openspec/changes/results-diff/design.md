@@ -111,7 +111,16 @@ Same reasoning as a JCStress job ending `completed` whatever its tests found: th
 command ran, not what it measured. Exit 1 stays "refused" only, so a script can tell a regression
 from a wrong id. CI gates with `--format json | jq -e '.rows[] | select(.verdict == "regression")'`.
 
-### Secondary metrics under `-v`, raw
+### Tags, params and secondary metrics under `-v`, raw
+
+Added after the first live run, at the user's request. Tags belong to a job — every measurement of one
+job carries the same set (task 1.2) — so they are one block after the header, every key of either job
+A against B, the header's two left out, a differing value bold as INSTANCE/TYPE are. Its columns size to
+the longest key and A value, since a CPU model alone outgrows the header's 30. Params belong to a row:
+a `params` line above its metrics, in full, because the BENCHMARK column truncates at 44. On a pair the
+two sides are equal by construction (pairing keys on them); the line earns its place on a sweep's long
+names and on one-sided rows. Nothing about either is judged, and JSON already carries both.
+
 
 Shown as indented lines under their row, both sides' value and unit (`SecondaryMetric` stores no
 error), nothing computed. A
