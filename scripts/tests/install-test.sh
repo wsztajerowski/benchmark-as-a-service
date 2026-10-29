@@ -110,6 +110,42 @@ run_case "says how to update, by the newest release's installer"
 out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1)
 assert_contains "$out" "releases/latest/download/install.sh | sh"
 
+# --- shell completion ---------------------------------------------------------
+# The fixture jar is not a jar, so generating completion from it fails — which is the failure path
+# itself. The success path needs a runnable generator; a fake java stands in for it, answering the
+# installer's version probe and writing a script wherever -o points. The real generation, against a
+# real jar, is install-test.yml's.
+
+run_case "a jar that cannot generate completion still installs, warning, and drops a stale script"
+mkdir -p "$BAAS_SHARE"; printf 'stale\n' > "$BAAS_SHARE/baas_completion"
+out=$(sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+if [ "$rc" -ne 0 ]; then fail "install failed over completion: $out"
+elif [ -e "$BAAS_SHARE/baas_completion" ]; then fail "a stale completion script survived"
+else assert_contains "$out" "warning: could not generate shell completion"; fi
+
+FAKEJAVA="$FIXTURE/fakejava"
+cat > "$FAKEJAVA" <<'FAKE'
+#!/bin/sh
+[ "$1" = -version ] && { echo 'openjdk version "25.0.1" 2025-10-21' >&2; exit 0; }
+while [ $# -gt 0 ]; do
+    [ "$1" = -o ] && { printf 'complete -F _complete_baas baas\n' > "$2"; exit 0; }
+    shift
+done
+exit 1
+FAKE
+chmod +x "$FAKEJAVA"
+
+run_case "a generated completion script lands beside the jar, with the lines that load it"
+out=$(BAAS_JAVA="$FAKEJAVA" sh "$INSTALLER" --version 9.9.9-test 2>&1); rc=$?
+if [ "$rc" -ne 0 ]; then fail "install failed: $out"
+elif [ ! -f "$BAAS_SHARE/baas_completion" ]; then fail "no completion script written"
+elif ! printf '%s' "$out" | grep -q "bashcompinit"; then fail "zsh loading lines missing: $out"
+else assert_contains "$out" "source \"$BAAS_SHARE/baas_completion\""; fi
+
+run_case "completion generation leaves no staging file behind"
+leftover=$(ls -A "$BAAS_SHARE" | LC_ALL=C sort | tr '\n' ' ')
+assert_eq "$leftover" "$JAR_NAME baas_completion "
+
 run_case "creates only its own directories, never a configuration directory"
 created=$(ls "$SANDBOX" | sort | tr '\n' ' ')
 assert_eq "$created" "bin share "
@@ -273,6 +309,17 @@ if [ -d "$BAAS_SHARE" ]; then fail "share directory not removed: $BAAS_SHARE"
 else
     remaining=$(ls "$SANDBOX" | sort | tr '\n' ' ')
     assert_eq "$remaining" "bin dot-baas share "
+fi
+
+run_case "uninstall removes the completion script"
+rm -rf "$SANDBOX"; mkdir -p "$SANDBOX"
+BAAS_JAVA="$FAKEJAVA" sh "$INSTALLER" --version 9.9.9-test >/dev/null 2>&1
+if [ ! -f "$BAAS_SHARE/baas_completion" ]; then fail "setup: no completion script to remove"
+else
+    sh "$INSTALLER" --uninstall >/dev/null 2>&1
+    if [ -e "$BAAS_SHARE/baas_completion" ]; then fail "completion script survived"
+    elif [ -d "$BAAS_SHARE" ]; then fail "share directory not removed: $BAAS_SHARE"
+    else pass; fi
 fi
 
 # Earlier releases stored their installer beside the jar for --update. Uninstalling an
