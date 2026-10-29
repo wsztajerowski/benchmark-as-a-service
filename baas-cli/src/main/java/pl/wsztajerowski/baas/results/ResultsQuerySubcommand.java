@@ -100,9 +100,9 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             + "the highest for throughput, the lowest for time per operation.")
     String bestPer;
 
-    @Option(names = "--show-excluded",
-        description = "Also show measurements tagged exclude_from_results=true (drawn faint on a terminal).")
-    boolean showExcluded;
+    @Option(names = "--show-hidden",
+        description = "Also show measurements tagged hidden=true (drawn faint on a terminal).")
+    boolean showHidden;
 
     @Option(names = "--sort-by", paramLabel = "<field>",
         description = "Order by created (default, newest first), benchmark, score or project.")
@@ -208,7 +208,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
                 default -> printTable(console(), rows);
             }
             if (rows.isEmpty() && !allProjects) {
-                Hints.show(console(), logger, "which projects have results",
+                Hints.show(console(), spec.commandLine().getErr(), "which projects have results",
                     Hints.command(config.getPrefix(), "query --all-projects"));
             }
         }
@@ -231,9 +231,9 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         if (jobId != null) {
             rows = results.queryByJobId(jobId);
         } else if (allProjects) {
-            rows = results.scanAllProjects(showExcluded);
+            rows = results.scanAllProjects(showHidden);
         } else {
-            rows = results.queryProject(project, showExcluded);
+            rows = results.queryProject(project, showHidden);
         }
 
         // The shared pipeline: filter, [--best-per], sort, --offset, --limit.
@@ -344,8 +344,8 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         }
         List<String> projects = results.listVisibleProjects();
         if (projects.isEmpty()) {
-            logger.error("No project holds results outside exclude_from_results. "
-                + "To see everything: {}", Hints.command(config.getPrefix(), "results query --all-projects --show-excluded"));
+            logger.error("Every project holds hidden results only. "
+                + "To see everything: {}", Hints.command(config.getPrefix(), "results query --all-projects --show-hidden"));
             return Optional.empty();
         }
         if (!console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {

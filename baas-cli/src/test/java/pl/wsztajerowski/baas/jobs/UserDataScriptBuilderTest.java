@@ -429,7 +429,7 @@ class UserDataScriptBuilderTest {
         tags.put("branch", "feature/some-fairly-long-branch-name-for-a-change");
         tags.put("commit", "0123456789abcdef0123456789abcdef01234567");
         tags.put("source", "ci");
-        tags.put("exclude_from_results", "true");
+        tags.put("hidden", "true");
         tags.put("options", "-prof async:event=cpu;output=flamegraph;dir=/app/async-output -jvmArgs -Xmx4g");
         List<String> params = List.of("pl.wsztajerowski.SomeBenchmark.measure", "-f", "3", "-wi", "5", "-i", "10",
             "-p", "size=1,10,100,1000,10000,100000", "-p", "implementation=synchronized,reentrant,stamped,atomic",
@@ -780,10 +780,10 @@ class UserDataScriptBuilderTest {
             assertThat(parsed).as("the environment only, in seven groups, and no job identity")
                 .containsOnlyKeys("schemaVersion", "machine", "cpu", "memory", "os", "jvm", "tools", "tunables");
             assertThat((Map<String, Object>) parsed.get("machine")).containsOnlyKeys("imageVersion", "amiId", "instanceType");
-            assertThat((Map<String, Object>) parsed.get("cpu")).containsOnlyKeys("model", "arch", "cores", "threadsPerCore", "maxMhz");
-            assertThat((Map<String, Object>) parsed.get("memory")).containsOnlyKeys("totalKb", "swapTotalKb");
+            assertThat((Map<String, Object>) parsed.get("cpu")).containsOnlyKeys("model", "arch", "vcpus", "physicalCores", "threadsPerCore", "maxMhz");
+            assertThat((Map<String, Object>) parsed.get("memory")).containsOnlyKeys("totalMib", "swapTotalMib");
             assertThat((Map<String, Object>) parsed.get("os")).containsOnlyKeys("version", "kernelRelease");
-            assertThat((Map<String, Object>) parsed.get("jvm")).containsOnlyKeys("version", "vendor", "vendorVersion", "name");
+            assertThat((Map<String, Object>) parsed.get("jvm")).containsOnlyKeys("version", "release", "vendor", "vendorVersion", "name");
             assertThat((Map<String, Object>) parsed.get("tools")).containsOnlyKeys("perf", "asyncProfiler");
             assertThat((Map<String, Object>) parsed.get("tunables"))
                 .containsOnlyKeys("perfEventParanoid", "kptrRestrict", "transparentHugepages");
@@ -876,8 +876,91 @@ class UserDataScriptBuilderTest {
     void manifestSchemaVersionIsBumpedForTheNewField() {
         assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION)
             .as("4 added jvmVendor, jvmVendorVersion and jvmName; 5 renamed requestId to jobId; "
-                + "6 grouped the environment and dropped the job's identity, region and AWS CLI version")
-            .isEqualTo(6);
+                + "6 grouped the environment and dropped the job's identity, region and AWS CLI version; "
+                + "7 renamed cpu.cores to vcpus, added physicalCores and jvm.release, and recorded memory in MiB")
+            .isEqualTo(7);
+    }
+
+    // ─── Schema 7: CPU counts, memory unit, JVM release ─────────────────────────
+
+    @Test
+    void theManifestRecordsLogicalCpusAsVcpusNeverAsCores() {
+        assertThat(script())
+            .contains("CPU_VCPUS=$(nproc)")
+            .contains("\"vcpus\": \"${CPU_VCPUS}\"")
+            .contains("\"physicalCores\": \"${CPU_PHYSICAL_CORES}\"")
+            .doesNotContain("\"cores\":");
+    }
+
+    @Test
+    void physicalCoresAreSocketsTimesCoresPerSocket() throws Exception {
+        assertThat(physicalCores("1", "4")).isEqualTo(new BashResult("[4]", ""));
+        assertThat(physicalCores("2", "8")).isEqualTo(new BashResult("[16]", ""));
+    }
+
+    /** No set -e: a bad operand to $(( )) would print an error and leave the value undefined. */
+    @Test
+    void physicalCoresStayEmptyWhenLscpuLacksAFactor() throws Exception {
+        assertThat(physicalCores("", "4")).isEqualTo(new BashResult("[]", ""));
+        assertThat(physicalCores("1", "")).isEqualTo(new BashResult("[]", ""));
+        assertThat(physicalCores("-", "4")).isEqualTo(new BashResult("[]", ""));
+    }
+
+    @Test
+    void memoryIsRecordedInWholeMibRoundedDown() throws Exception {
+        Path meminfo = tempDir.resolve("meminfo");
+        Files.writeString(meminfo, "MemTotal:       15882372 kB\nMemFree:        1000 kB\nSwapTotal:             0 kB\n");
+        String capture = scriptLines("MEMORY_TOTAL_MIB=", "SWAP_TOTAL_MIB=").replace("/proc/meminfo", meminfo.toString());
+
+        assertThat(runBash(capture + "echo \"[$MEMORY_TOTAL_MIB][$SWAP_TOTAL_MIB]\"\n"))
+            .isEqualTo(new BashResult("[15510][0]", ""));
+        assertThat(script())
+            .contains("\"totalMib\": \"${MEMORY_TOTAL_MIB}\"")
+            .contains("\"swapTotalMib\": \"${SWAP_TOTAL_MIB}\"")
+            .doesNotContain("totalKb");
+    }
+
+    /** The jdk tag must be checkable against the job's own manifest, so both read one variable. */
+    @Test
+    void jvmReleaseIsTheJdkTagsValue() {
+        assertThat(script())
+            .contains("JVM_RELEASE=$(json_escape \"$JDK_VERSION\")")
+            .contains("\"release\": \"${JVM_RELEASE}\"")
+            .contains("--tag \"jdk=${JDK_VERSION}\"");
+    }
+
+    private record BashResult(String stdout, String stderr) {
+    }
+
+    private BashResult physicalCores(String sockets, String coresPerSocket) throws Exception {
+        String stub = "lscpu() { printf 'Socket(s):            %s\\nCore(s) per socket:   %s\\n' '"
+            + sockets + "' '" + coresPerSocket + "'; }\n";
+        String capture = scriptLines("lscpu_field() {", "lscpu_field() {")
+            + scriptLines("CPU_SOCKETS=", "[[ $CPU_SOCKETS");
+        return runBash(stub + capture + "echo \"[$CPU_PHYSICAL_CORES]\"\n");
+    }
+
+    /** The rendered script's lines from the first starting with {@code from} to the first after it starting with {@code to}. */
+    private String scriptLines(String from, String to) {
+        List<String> lines = script().lines().map(String::strip).toList();
+        int start = -1;
+        for (int i = 0; i < lines.size(); i++) {
+            if (start < 0 && lines.get(i).startsWith(from)) {
+                start = i;
+            }
+            if (start >= 0 && lines.get(i).startsWith(to)) {
+                return String.join("\n", lines.subList(start, i + 1)) + "\n";
+            }
+        }
+        throw new AssertionError("no lines from " + from + " to " + to);
+    }
+
+    private BashResult runBash(String program) throws Exception {
+        Process process = new ProcessBuilder("bash", "-c", program).start();
+        String out = new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        String err = new String(process.getErrorStream().readAllBytes(), StandardCharsets.UTF_8).strip();
+        assertThat(process.waitFor(10, TimeUnit.SECONDS)).isTrue();
+        return new BashResult(out, err);
     }
 
     // ─── JVM vendor ──────────────────────────────────────────────────────────────

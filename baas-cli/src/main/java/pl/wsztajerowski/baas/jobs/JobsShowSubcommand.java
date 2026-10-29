@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.JobReference;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Json;
@@ -16,14 +17,17 @@ import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
+import pl.wsztajerowski.baas.console.Printable;
+import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
+import pl.wsztajerowski.baas.aws.S3UploadService.StoredObject;
 import pl.wsztajerowski.baas.model.JobItem;
 
+import java.io.UncheckedIOException;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.time.Instant;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -80,7 +84,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
 
         Optional<String> manifest(String resultPath);
 
-        List<String> keys(String resultPath);
+        List<StoredObject> objects(String resultPath);
 
         @Override
         void close();
@@ -99,7 +103,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
             public Optional<JobItem> job(String id) { return recorder.find(id); }
             public Optional<Ec2ProvisioningService.LiveInstance> liveInstance(String id) { return instances.findLiveInstance(id); }
             public Optional<String> manifest(String path) { return storage.getObjectIfExists(bucket, JobLayout.artifactKey(path, JobLayout.ENVIRONMENT_NAME)); }
-            public List<String> keys(String path) { return storage.listKeys(bucket, path + "/"); }
+            public List<StoredObject> objects(String path) { return storage.listObjects(bucket, path + "/"); }
             public void close() {
                 dynamoDb.close();
                 ec2.close();
@@ -138,50 +142,59 @@ public class JobsShowSubcommand implements Callable<Integer> {
             JobListing.Row row = JobListing.resolve(job, live, now);
             String path = trimmed(job.resultPath());
             Optional<String> manifestJson = sources.manifest(path);
-            Optional<EnvironmentManifest> manifest = manifestJson.map(json -> EnvironmentManifest.parse(jobId, json));
-            List<String> artifacts = relative(sources.keys(path), path);
+            Optional<EnvironmentManifest> manifest = Optional.empty();
+            if (manifestJson.isPresent()) {
+                try {
+                    manifest = Optional.of(EnvironmentManifest.parse(jobId, manifestJson.get()));
+                } catch (UncheckedIOException e) {
+                    // Stated, not fatal: the job item and its artifacts are still worth showing.
+                    logger.warn("{}", e.getCause().getMessage());
+                }
+            }
+            boolean unreadable = manifestJson.isPresent() && manifest.isEmpty();
+            List<StoredObject> artifacts = relative(sources.objects(path), path);
 
             if (format.equals("json")) {
-                printJson(row, manifestJson.orElse("null"), artifacts);
+                printJson(row, manifest.map(EnvironmentManifest::toJson).orElse("null"),
+                    artifacts.stream().map(StoredObject::key).toList());
             } else {
-                printView(console(), row, deadline.map(d -> WatchdogDeadline.describe(d, now)), manifest, artifacts);
+                printView(console(), row, deadline.map(d -> WatchdogDeadline.describe(d, now)), manifest,
+                    unreadable, artifacts);
             }
         }
-        Hints.show(console(), logger, "measurements", Hints.command(config.getPrefix(), "query --job-id " + jobId),
+        Hints.show(console(), spec.commandLine().getErr(), "measurements", Hints.command(config.getPrefix(), "query --job-id " + jobId),
             "files", Hints.command(config.getPrefix(), "jobs download " + jobId));
         return 0;
     }
 
     void printView(Console out, JobListing.Row row, Optional<String> terminates,
-                   Optional<EnvironmentManifest> manifest, List<String> artifacts) {
+                   Optional<EnvironmentManifest> manifest, boolean unreadable, List<StoredObject> artifacts) {
         JobItem job = row.job();
-        String status = row.status().equals(job.status()) ? row.status()
-            : row.status() + " (stored: " + job.status() + ")";
-        out.println("Job " + job.jobId() + "   " + status);
+        // The instance writes the status and its id (X3), so both are filtered like any runner text.
+        String status = Printable.of(row.status().equals(job.status()) ? row.status()
+            : row.status() + " (stored: " + job.status() + ")");
+        boolean hidden = "true".equals(job.tags().get(TagKeys.HIDDEN));
+        out.println("Job " + job.jobId() + "   " + status + (hidden ? " · hidden" : ""));
         line(out, "Project", job.project());
-        line(out, "Type", job.tags().get("type"));
+        line(out, "Type", job.tags().get(TagKeys.TYPE));
         line(out, "Created", CREATED.format(job.createdAt()) + " UTC");
         String instance = row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId();
-        line(out, "Instance", (instance == null ? "—" : instance) + " · " + orDash(job.instanceType()));
+        line(out, "Instance", (instance == null ? "—" : Printable.of(instance)) + " · " + orDash(job.instanceType()));
         terminates.ifPresent(when -> line(out, "Terminates", when + ", or earlier when the job finishes"));
         line(out, "Result path", trimmed(job.resultPath()) + "/");
         if (job.errorCode() != null) {
-            line(out, "Error", job.errorCode());
+            line(out, "Error", Printable.of(job.errorCode()));
         }
-        line(out, "Tags", tags(job.tags()));
+        lines(out, "Tags", tags(job.tags()));
 
         out.println("");
-        if (manifest.isEmpty()) {
-            out.println("Environment   none — the instance never booted, or wrote no manifest");
+        if (manifest.isPresent()) {
+            out.println("Environment (schema " + manifest.get().schemaVersion().map(Printable::of).orElse("?") + ")");
+            EnvironmentView.of(manifest.get()).forEach((group, items) -> line(out, group, String.join(" · ", items)));
+        } else if (unreadable) {
+            out.println("Environment   unreadable — environment.json is not one JSON object");
         } else {
-            out.println("Environment (schema " + manifest.get().schemaVersion().orElse("?") + ")");
-            for (String group : EnvironmentManifest.GROUPS) {
-                Map<String, String> fields = manifest.get().group(group);
-                if (!fields.isEmpty()) {
-                    line(out, group, String.join(" · ", fields.entrySet().stream()
-                        .map(e -> e.getKey() + " " + orDash(e.getValue())).toList()));
-                }
-            }
+            out.println("Environment   none — the instance never booted, or wrote no manifest");
         }
 
         out.println("");
@@ -189,7 +202,13 @@ public class JobsShowSubcommand implements Callable<Integer> {
             out.println("Artifacts   none");
         } else {
             out.println("Artifacts (" + artifacts.size() + ")");
-            out.println("  " + String.join(" · ", byFolder(artifacts)));
+            var groups = ArtifactView.of(artifacts);
+            int width = groups.values().stream().flatMap(List::stream)
+                .mapToInt(entry -> Printable.of(entry.name()).length()).max().orElse(0);
+            groups.forEach((group, entries) -> lines(out, group, entries.stream()
+                .map(entry -> String.format("%-" + width + "s  %10s", Printable.of(entry.name()),
+                    ArtifactView.size(entry.size())))
+                .toList()));
         }
     }
 
@@ -209,36 +228,38 @@ public class JobsShowSubcommand implements Callable<Integer> {
             + ",\"artifacts\":" + artifactsJson + "}");
     }
 
-    /** Top-level files by name, folders as {@code name/ (n)}: what is there, without every key. */
-    static List<String> byFolder(List<String> relativeKeys) {
-        Map<String, Integer> folders = new TreeMap<>();
-        List<String> files = new ArrayList<>();
-        for (String key : relativeKeys) {
-            int slash = key.indexOf('/');
-            if (slash < 0) {
-                files.add(key);
-            } else {
-                folders.merge(key.substring(0, slash + 1), 1, Integer::sum);
-            }
-        }
-        List<String> summary = new ArrayList<>(files.stream().sorted().toList());
-        folders.forEach((folder, count) -> summary.add(folder + " (" + count + ")"));
-        return summary;
-    }
-
-    private static List<String> relative(List<String> keys, String path) {
+    private static List<StoredObject> relative(List<StoredObject> objects, String path) {
         String prefix = path + "/";
-        return keys.stream().map(key -> key.startsWith(prefix) ? key.substring(prefix.length()) : key)
-            .filter(key -> !key.isEmpty()).toList();
+        return objects.stream()
+            .map(object -> object.key().startsWith(prefix)
+                ? new StoredObject(object.key().substring(prefix.length()), object.size()) : object)
+            .filter(object -> !object.key().isEmpty()).toList();
     }
 
     private static void line(Console out, String label, String value) {
         out.println("  " + String.format("%-12s", label) + " " + orDash(value));
     }
 
-    private static String tags(Map<String, String> tags) {
-        return tags.isEmpty() ? "—" : String.join("  ", new TreeMap<>(tags).entrySet().stream()
-            .map(e -> e.getKey() + "=" + e.getValue()).toList());
+    /** A label, then one value per line under the first, aligned; {@code —} for none. */
+    private static void lines(Console out, String label, List<String> values) {
+        if (values.isEmpty()) {
+            line(out, label, null);
+            return;
+        }
+        line(out, label, values.get(0));
+        values.stream().skip(1).forEach(value -> out.println("  " + " ".repeat(12) + " " + value));
+    }
+
+    /**
+     * One {@code key=value} per tag, by key, without what the Job section already shows: the
+     * project and type have their own lines, and the exclusion is a marker beside the status.
+     */
+    private static List<String> tags(Map<String, String> tags) {
+        return new TreeMap<>(tags).entrySet().stream()
+            .filter(e -> !e.getKey().equals(TagKeys.PROJECT) && !e.getKey().equals(TagKeys.TYPE))
+            .filter(e -> !(e.getKey().equals(TagKeys.HIDDEN) && "true".equals(e.getValue())))
+            .map(e -> Printable.of(e.getKey() + "=" + e.getValue()))
+            .toList();
     }
 
     private static String trimmed(String path) {

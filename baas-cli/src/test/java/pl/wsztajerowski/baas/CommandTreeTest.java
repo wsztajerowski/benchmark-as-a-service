@@ -37,7 +37,7 @@ class CommandTreeTest {
         assertThat(root.getSubcommands().get("jobs").getSubcommands().keySet())
             .contains("run", "list", "show", "diff", "download", "terminate", "connect");
         assertThat(root.getSubcommands().get("results").getSubcommands().keySet())
-            .containsExactlyInAnyOrder("query");
+            .containsExactlyInAnyOrder("query", "diff");
         var admin = root.getSubcommands().get("admin").getSubcommands();
         assertThat(admin.keySet()).containsExactlyInAnyOrder("deployment", "image");
         assertThat(admin.get("deployment").getSubcommands().keySet())
@@ -92,8 +92,19 @@ class CommandTreeTest {
         assertThat(out.toString()).contains("Usage:");
     }
 
+    @org.junit.jupiter.api.Test
+    void theBareResultsNounNamesBothVerbs() {
+        var out = new StringWriter();
+        var commandLine = root();
+        commandLine.setOut(new PrintWriter(out, true));
+
+        commandLine.execute("results");
+
+        assertThat(out.toString()).contains("query", "diff");
+    }
+
     @ParameterizedTest
-    @ValueSource(strings = {"download x", "env diff a b", "list", "show x", "admin setup",
+    @ValueSource(strings = {"download x", "env diff a b", "list", "show x", "diff a b", "admin setup",
         "admin teardown", "admin build-image", "admin deployer-policy"})
     void removedAndNeverAliasedSpellingsAreUnknown(String line) {
         var err = new StringWriter();

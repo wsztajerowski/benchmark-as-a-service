@@ -26,6 +26,7 @@ class HelpAndHintsTest {
         assertThat(operator).isLessThan(deployer);
         assertThat(help.substring(deployer)).contains("admin deployment", "setup, teardown, export, import", "admin image", "build, show");
         assertThat(help.substring(operator, deployer)).contains("run, list, show, diff, download, terminate, connect");
+        assertThat(help.substring(operator, deployer)).containsPattern("results +query, diff");
     }
 
     @Test
@@ -50,7 +51,27 @@ class HelpAndHintsTest {
             "measurements", "baas query --job-id x", "files", "baas jobs download x");
 
         assertThat(lines).containsExactly(
-            "→ measurements: baas query --job-id x", "→ files: baas jobs download x");
+            "Next", "  measurements  baas query --job-id x", "  files         baas jobs download x");
+    }
+
+    @Test
+    void oneHintIsABlockOfTwoLines() {
+        List<String> lines = new ArrayList<>();
+        Hints.show(Console.withFlags(new PrintWriter(new StringWriter()), true, false), lines::add,
+            "stop one", "baas jobs terminate x", null, null);
+
+        assertThat(lines).containsExactly("Next", "  stop one  baas jobs terminate x");
+    }
+
+    /** No timestamp, level or logger name: the block is written as is, and flushed. */
+    @Test
+    void theBlockGoesToTheErrorWriterAsIs() {
+        var err = new StringWriter();
+        Hints.show(Console.withFlags(new PrintWriter(new StringWriter()), true, false), new PrintWriter(err),
+            "measurements", "baas query --job-id x", "files", "baas jobs download x");
+
+        assertThat(err.toString().lines()).containsExactly(
+            "Next", "  measurements  baas query --job-id x", "  files         baas jobs download x");
     }
 
     @Test

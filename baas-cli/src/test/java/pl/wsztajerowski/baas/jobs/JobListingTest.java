@@ -94,12 +94,12 @@ class JobListingTest {
         assertThat(filter.test(run("c", "q", JobStatus.COMPLETED, null, Map.of("source", "local", "branch", "main")))).isFalse();
     }
 
-    /** exclude_from_results keeps fixture measurements out of comparisons; a job is an operation. */
+    /** hidden keeps fixture measurements out of comparisons; a job is an operation. */
     @Test
     void anExcludedJobIsListedLikeAnyOther() {
         var filter = JobListing.filter(null, Map.of(), List.of(), false, Map.of(), LATER);
 
-        assertThat(filter.test(run("ci", "p", JobStatus.RUNNING, "i-1", Map.of("exclude_from_results", "true", "source", "ci"))))
+        assertThat(filter.test(run("ci", "p", JobStatus.RUNNING, "i-1", Map.of("hidden", "true", "source", "ci"))))
             .isTrue();
     }
 

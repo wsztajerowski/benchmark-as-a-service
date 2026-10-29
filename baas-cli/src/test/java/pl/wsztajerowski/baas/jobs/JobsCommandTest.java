@@ -21,7 +21,7 @@ class JobsCommandTest {
     private static JobListing.Row row(String id, String status, String errorCode) {
         var job = new JobItem(id, "lynx-journal", Instant.parse("2026-10-03T00:00:00Z"),
             "jobs/lynx-journal/" + id, "c6i.4xlarge", status, "i-0def", errorCode,
-            Map.of("source", "ci", "exclude_from_results", "true"), null);
+            Map.of("source", "ci", "hidden", "true"), null);
         return new JobListing.Row(job, status, JobStatus.isInFlight(status) ? "i-0def" : null);
     }
 
@@ -88,7 +88,7 @@ class JobsCommandTest {
         String json = render(list("--format", "json"), List.of(row("r1", JobStatus.RUNNING, null)));
 
         assertThat(json).startsWith("[").contains("\"jobId\":\"r1\"", "\"status\":\"running\"",
-            "\"storedStatus\":\"running\"", "\"errorCode\":null", "\"exclude_from_results\":\"true\"");
+            "\"storedStatus\":\"running\"", "\"errorCode\":null", "\"hidden\":\"true\"");
     }
 
     @Test

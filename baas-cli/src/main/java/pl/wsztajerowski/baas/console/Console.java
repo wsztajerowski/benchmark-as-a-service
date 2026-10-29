@@ -69,6 +69,11 @@ public final class Console {
         return interactive;
     }
 
+    /** Whether this console may colour: interactive and {@code NO_COLOR} unset. */
+    boolean colour() {
+        return colour;
+    }
+
     public void print(String text) {
         write(text);
     }

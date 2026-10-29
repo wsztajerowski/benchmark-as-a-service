@@ -44,9 +44,9 @@ class TableTest {
         String expected = String.format(OLD_RESULTS_FORMAT,
                 "BENCHMARK", "JOB_ID", "TYPE", "MODE", "SCORE", "UNIT")
             + "-".repeat(128) + System.lineSeparator()
-            + String.format(OLD_RESULTS_FORMAT, "measure", "20260820T174432812Z-a3f9c21b", "jmh",
+            + String.format(OLD_RESULTS_FORMAT, "MyBenchmark.measure", "20260820T174432812Z-a3f9c21b", "jmh",
                 "thrpt", String.format("%.3f", 8234.123456), "ops/s")
-            + String.format(OLD_RESULTS_FORMAT, "aMethodNameThatWillNotFitTheColumn",
+            + String.format(OLD_RESULTS_FORMAT, "AVeryLongBenchmarkClassName.aMethodNameThat…",
                 "20260820T174432812Z-b7e4d0f2", "jmh-with-asy…", "",
                 String.format("%.3f", Double.NaN), "");
 
@@ -96,16 +96,16 @@ class TableTest {
         ResultsTable.print(Console.plain(new PrintWriter(plain)), List.of(variant), false, false);
 
         var lines = verbose.toString().lines().toList();
-        assertThat(lines.get(2)).startsWith("get ");
+        assertThat(lines.get(2)).startsWith("MapLookup.get ");
         assertThat(lines.get(3)).isEqualTo("    params  impl=hash  size=10");
         assertThat(lines.get(4)).isEqualTo("    tags    branch=main");
         assertThat(plain.toString()).doesNotContain("impl=hash");
     }
 
-    /** Shown only under --show-excluded; faint, so it reads as set aside — and still aligned. */
+    /** Shown only under --show-hidden; faint, so it reads as set aside — and still aligned. */
     @Test
     void anExcludedRowIsFaintAndStillAligned() {
-        var rows = List.of(row("p", Map.of("exclude_from_results", "true")), row("p", Map.of()));
+        var rows = List.of(row("p", Map.of("hidden", "true")), row("p", Map.of()));
         var coloured = new StringWriter();
         var plain = new StringWriter();
         ResultsTable.print(Console.withFlags(new PrintWriter(coloured), true, true), rows, true, false);

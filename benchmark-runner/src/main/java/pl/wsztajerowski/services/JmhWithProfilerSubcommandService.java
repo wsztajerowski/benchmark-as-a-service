@@ -5,7 +5,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.JavaWonderlandException;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
-import pl.wsztajerowski.entities.jmh.JmhResult;
 import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.process.BenchmarkProcessBuilder;
@@ -24,9 +23,7 @@ import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
 import static java.text.MessageFormat.format;
-import static pl.wsztajerowski.infra.ResultLoaderService.getResultLoaderService;
 import static pl.wsztajerowski.process.JmhBenchmarkProcessBuilderFactory.prepopulatedJmhBenchmarkProcessBuilder;
-import static pl.wsztajerowski.services.JmhUtils.getProfilerOutputDirSuffix;
 
 public class JmhWithProfilerSubcommandService {
     private static final Logger logger = LoggerFactory.getLogger(JmhWithProfilerSubcommandService.class);
@@ -75,35 +72,18 @@ public class JmhWithProfilerSubcommandService {
         }
 
         logger.info("Processing JMH results: {}", jmhOptions.outputOptions().machineReadableOutput());
-        uploadProfilerArtifacts();
+        // -prof writes into the result tree itself, so the local and storage paths are one.
+        ProfilerArtifacts.upload(storageService, outputPath, outputPath);
 
         Path resultJson = jmhOptions.outputOptions().machineReadableOutput();
         // Uploaded before the store write, so a job that fails at the store keeps its result.
         Path resultJsonKey = JmhRunResults.resultJsonKey(commonOptions);
         logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
         storageService.saveFile(resultJsonKey, resultJson);
-        List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson, this::profilerOutputPathFor);
+        List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson);
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);
-    }
-
-    /**
-     * The S3 prefix holding one result's profiling artifacts. Recorded on the measurement so a
-     * reader can list it, rather than re-deriving JMH's mode-dependent directory suffix elsewhere.
-     */
-    private String profilerOutputPathFor(JmhResult jmhResult) {
-        return outputPath
-            .resolve(jmhResult.benchmark() + getProfilerOutputDirSuffix(jmhResult.mode()))
-            .toString();
-    }
-
-    private void uploadProfilerArtifacts() {
-        for (JmhResult jmhResult : getResultLoaderService().loadJmhResults(jmhOptions.outputOptions().machineReadableOutput())) {
-            Path storageDir = Path.of(profilerOutputPathFor(jmhResult));
-            // -prof writes into the result tree itself, so the local and storage paths are one.
-            ProfilerArtifacts.upload(storageService, storageDir, storageDir);
-        }
     }
 
     private String createProfilerCommand(String profilerName, String profilerOptions) {

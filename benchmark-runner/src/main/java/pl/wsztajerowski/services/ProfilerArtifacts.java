@@ -6,16 +6,29 @@ import pl.wsztajerowski.JavaWonderlandException;
 import pl.wsztajerowski.infra.StorageService;
 
 import java.io.IOException;
+import java.nio.file.FileVisitOption;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.stream.Stream;
+import java.nio.file.SimpleFileVisitor;
+import java.nio.file.attribute.BasicFileAttributes;
+import java.util.ArrayList;
+import java.util.EnumSet;
+import java.util.List;
 
 /**
- * Uploads one benchmark's profiler directory, shared by the {@code -prof} and async-profiler
- * services. A profiler may write no directory for a benchmark — {@code gc}, {@code comp} and
- * {@code cl} report secondary metrics only, and async-profiler skips a benchmark it produced no
- * samples for — and listing a missing one failed the job after the benchmark had finished, before
- * its measurements were stored.
+ * Uploads everything a profiler wrote below its output root, each file at its path relative to that
+ * root, shared by the {@code -prof} and async-profiler services.
+ *
+ * <p>It walks rather than naming one directory per result. The runner used to predict each
+ * benchmark's directory as {@code <benchmark>-<Mode>}, but the name is chosen by the JMH inside the
+ * benchmark JAR — {@code BenchmarkParams.id()}, which appends every {@code @Param}, URL-encoded, and
+ * which async-profiler and JFR each post-process differently — so a {@code @Param} benchmark's
+ * profiles were silently never uploaded (issue #115).
+ *
+ * <p>A profiler may write nothing at all — {@code gc}, {@code comp} and {@code cl} report secondary
+ * metrics only — so a missing root uploads nothing rather than failing a job whose benchmark has
+ * already finished, before its measurements are stored.
  */
 final class ProfilerArtifacts {
 
@@ -24,19 +37,33 @@ final class ProfilerArtifacts {
     private ProfilerArtifacts() {
     }
 
-    static void upload(StorageService storage, Path localDir, Path storageDir) {
-        if (!Files.isDirectory(localDir)) {
-            logger.debug("No profiler artifacts in {}", localDir);
+    static void upload(StorageService storage, Path localRoot, Path storageRoot) {
+        if (!Files.isDirectory(localRoot)) {
+            logger.debug("No profiler artifacts in {}", localRoot);
             return;
         }
-        try (Stream<Path> paths = Files.list(localDir)) {
-            paths.forEach(path -> {
-                Path storagePath = storageDir.resolve(path.getFileName());
-                logger.info("Saving profiler output: {}", storagePath);
-                storage.saveFile(storagePath, path);
+        for (Path file : find(localRoot)) {
+            Path storagePath = storageRoot.resolve(localRoot.relativize(file).toString());
+            logger.info("Saving profiler output: {}", storagePath);
+            storage.saveFile(storagePath, file);
+        }
+    }
+
+    private static List<Path> find(Path root) {
+        List<Path> found = new ArrayList<>();
+        try {
+            Files.walkFileTree(root, EnumSet.noneOf(FileVisitOption.class), JobLogs.MAX_DEPTH, new SimpleFileVisitor<>() {
+                @Override
+                public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) {
+                    if (attrs.isRegularFile()) {
+                        found.add(file);
+                    }
+                    return FileVisitResult.CONTINUE;
+                }
             });
         } catch (IOException e) {
             throw new JavaWonderlandException(e);
         }
+        return found;
     }
 }

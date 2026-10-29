@@ -66,7 +66,7 @@ public class JmhSubcommandService {
         Path resultJsonKey = JmhRunResults.resultJsonKey(commonOptions);
         logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
         storageService.saveFile(resultJsonKey, resultJson);
-        List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson, JmhRunResults.NO_PROFILER_OUTPUT);
+        List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson);
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);

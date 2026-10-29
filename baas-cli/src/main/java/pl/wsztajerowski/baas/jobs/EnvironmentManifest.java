@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -15,11 +16,17 @@ import java.util.Set;
  * A job's {@code environment.json}: since schemaVersion 6 the measurement environment in seven
  * groups, and nothing about the job's identity. Fields are held as {@code group.field}; a flat
  * manifest from an older schema parses too, its fields under no group, so a comparison across a
- * schema change still shows what it can.
+ * schema change still shows what it can. {@code tree} is the parsed document itself, which is what
+ * {@code jobs show --format json} prints: the stored text never reaches the output.
  */
-public record EnvironmentManifest(String jobId, Map<String, String> fields) {
+public record EnvironmentManifest(String jobId, Map<String, String> fields, Map<String, Object> tree) {
 
-    private static final ObjectMapper JSON = new ObjectMapper();
+    /**
+     * Trailing tokens fail the parse: by default Jackson stops after the first value, so a manifest
+     * of {@code {…}, "job": {…}} parsed clean while its raw text forged a key elsewhere (X7).
+     */
+    private static final ObjectMapper JSON = new ObjectMapper()
+        .enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
     private static final String SCHEMA_VERSION = "schemaVersion";
 
     /** The groups, in the order the manifest writes and every view prints them. */
@@ -35,6 +42,10 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
             throw new UncheckedIOException(
                 new IOException("environment.json of job " + jobId + " is not valid JSON", e));
         }
+        if (raw == null) {
+            throw new UncheckedIOException(
+                new IOException("environment.json of job " + jobId + " is not a JSON object"));
+        }
 
         Map<String, String> fields = new LinkedHashMap<>();
         raw.forEach((key, value) -> {
@@ -45,7 +56,16 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
                 fields.put(key, value == null ? "" : String.valueOf(value));
             }
         });
-        return new EnvironmentManifest(jobId, fields);
+        return new EnvironmentManifest(jobId, fields, raw);
+    }
+
+    /** The parsed document as JSON: every member as stored, nothing the stored text held beside it. */
+    public String toJson() {
+        try {
+            return JSON.writeValueAsString(tree);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     /**
@@ -76,6 +96,8 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
      * and any field outside a group (an older schema's) last, under {@code ""}. {@code schemaVersion}
      * is never a difference — the caller warns about it. A field present in only one manifest is
      * reported with an empty string for the side that lacks it: hiding it would defeat the point.
+     * Values are compared exactly as recorded, and no field of one schema version is read as
+     * another's: a renamed field shows as present on one side, under the schema warning.
      */
     public static Map<String, Map<String, Difference>> diff(EnvironmentManifest a, EnvironmentManifest b) {
         Set<String> keys = new LinkedHashSet<>(a.fields().keySet());
@@ -88,8 +110,8 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
         }
         byGroup.put("", new LinkedHashMap<>());
         for (String key : keys) {
-            String left = compared(key, a.fields().getOrDefault(key, ""));
-            String right = compared(key, b.fields().getOrDefault(key, ""));
+            String left = a.fields().getOrDefault(key, "");
+            String right = b.fields().getOrDefault(key, "");
             if (left.equals(right)) {
                 continue;
             }
@@ -100,26 +122,6 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields) {
         }
         byGroup.values().removeIf(Map::isEmpty);
         return byGroup;
-    }
-
-    /** Memory fields the manifest records in KiB, compared and shown in whole MiB. */
-    private static final Set<String> KIB_FIELDS = Set.of("memory.totalKb", "memory.swapTotalKb");
-
-    /**
-     * The value a field is compared as. Two instances of one type report {@code MemTotal} a few KiB
-     * apart (15882372 vs 15882380 on {@code c5.2xlarge}), which is no difference for a measurement,
-     * so memory is compared in whole MiB, rounded down. A value that is not a number is compared as
-     * it is, so a malformed manifest still shows what it holds. The manifest itself keeps KiB.
-     */
-    private static String compared(String key, String value) {
-        if (!KIB_FIELDS.contains(key) || value.isBlank()) {
-            return value;
-        }
-        try {
-            return Long.parseLong(value.strip()) / 1024 + " MiB";
-        } catch (NumberFormatException e) {
-            return value;
-        }
     }
 
     public record Difference(String left, String right) {

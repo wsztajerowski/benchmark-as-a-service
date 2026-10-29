@@ -153,7 +153,7 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
   was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
   machine-observed key (`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`,
-  `type`) is
+  `type`), or for `cliParameters`, is
   rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
 
@@ -585,7 +585,10 @@ The watchdog is the only one that survives a deadlocked JVM.
   `--format json | jq` and `--format csv > file`, which is why none of it is logged. The test for
   which side a line belongs on is whether a redirect of stdout should keep it: an empty answer
   ("No results found.", "No differences.") is payload; the unknown-`--tag` warning, both
-  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged.
+  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged. The one stderr text
+  that bypasses the logger is the `Next` hint block (`console.Hints`), written to picocli's
+  `getErr()`: it is a command to copy, and a timestamp, level and class name in front of it are
+  what buried it.
 - **Terminal effects happen only when `Console` says interactive: `System.console()` +
   `isTerminal()` + `TERM != dumb`, decided once.** Every misdetection is a *no*, so the worst case
   is today's plain output and never an escape sequence in a file. `NO_COLOR` drops colour.
@@ -597,6 +600,16 @@ The watchdog is the only one that survives a deadlocked JVM.
   every wrong guess falls back to the log line instead. While shown, it swaps `System.err` for a
   clear-write-redraw stream — SimpleLogger resolves `System.err` per write, which is what makes
   that reach it — and the shutdown hook closes it *before* logging the termination.
+- **Log lines are short and level-coloured only when stdout is a terminal *and* `/dev/fd/2` is the
+  same file as `/dev/fd/1`** (`console.LogStyle`, applied in `BaasApp.main` before any logger
+  exists, like `-v`): `WARN <message>`, the level in Maven's colours (`ERROR` red, `WARN` yellow,
+  `INFO` blue, `DEBUG` cyan), no timestamp or logger name. The `/dev/fd` test is what the status line
+  above lacked — cheap, and made only once stdout is known to be a terminal; anything it cannot answer
+  counts as *no*. Everywhere else — `2> run.log`, a pipe, CI — lines keep
+  `simplelogger.properties`' full format with no escape sequence. Colour is a filter installed as
+  `System.err` that touches only a line whose first word is a level, so the `Next` block and stack
+  traces pass through; `run`'s status line wraps on top of it. There is no log file: SimpleLogger has
+  one target and one format, and a file appender would mean another backend.
 - **`printJson`/`printCsv` must format with `Locale.ROOT`.** Under a comma-decimal locale (pl-PL
   among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
@@ -610,7 +623,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   stored item's shape only, never pass/fail counts — the fixture's `TestWithForbiddenResults` races
   nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
   provisions a paid instance per CI job per triggering event, and it tags
-  itself `exclude_from_results=true` — which is why `queryByJobId` carries no exclusion
+  itself `hidden=true` — which is why `queryByJobId` carries no hidden
   filter. **The path filter bounds it per PR, not per push:** GitHub evaluates a `pull_request`
   path filter against the PR's cumulative diff, so once a PR touches `baas-cli/**` *every*
   subsequent push to it launches another instance, including one that only edits an unrelated
@@ -780,14 +793,19 @@ in the same millisecond cannot collide. Nothing parses it; the format is a reada
 not a contract. Built only by `JobLayout`/`JobId` in `baas-model`, never by hand.
 
 Per-type stdout lands in `jmh-output.txt`, `jmh-profiler-output.txt`, `jmh-with-async-output.txt`,
-or `jcstress-output.txt`; profiling artifacts go under `<fully.qualified.BenchmarkName-Mode>/`. The
+or `jcstress-output.txt`; profiling artifacts go under the directory JMH names each benchmark's
+profile, `<fully.qualified.BenchmarkName>-<Mode>` plus `-<param>-<value>` per `@Param`
+(`BenchmarkParams.id()`). **The runner never predicts that name:** it uploads the profiler's whole
+output tree as written, because the JMH that chooses it is the one inside the benchmark JAR, and
+predicting `<benchmark>-<Mode>` silently uploaded nothing for every `@Param` benchmark (#115). For
+the same reason no measurement carries a profiler path — a job's artifacts are reached by its id. The
 non-obvious entries:
 
 | Key | Meaning |
 |---|---|
 | `launch-error.txt` | Only for a job whose `RunInstances` failed: the AWS error code, message and job id, and what was requested. There is no instance and so no boot log; this is what `baas jobs download <jobId>` then has to show |
 | `cloud-init-output.log` | Runner boot log, uploaded before every termination, a cancelled or timed-out job's included (with the process output and `logs/` so far) — start here when a job fails before producing output |
-| `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (6) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Read by `baas jobs show` and compared group by group by `baas jobs diff`, which also compares `packages.txt` when the AMIs differ. |
+| `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (7) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Values stay raw (version banners, sysfs syntax); `baas jobs show` shortens them for reading and `baas jobs diff` compares them as stored, group by group, also comparing `packages.txt` when the AMIs differ. Schema 7 renamed `cpu.cores` to `vcpus` (it was always `nproc`) beside a new `physicalCores`, records memory as `totalMib`/`swapTotalMib`, and adds `jvm.release`, the value of the `jdk` tag. A renamed field never keeps its old name with a new meaning, and nothing maps a schema-6 name onto a schema-7 one: across the change `diff` shows both, under its schema warning. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/async-output/` |
@@ -849,9 +867,9 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
+| Derived | `type`, `project`, `source`, `cliParameters` | `baas run`. `cliParameters` is everything after `--`, verbatim — the only record of forks, iterations and the async-profiler event a job ran with, since `jmh-result.json` keeps no profiler options and the item keeps none of either. Absent when nothing follows `--`. `type` and `cliParameters` are reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
-| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--show-excluded` (shown faint) and `--job-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
+| Convention | `options`, `hidden` | Free-form. `hidden=true` is filtered out server-side — except under `--show-hidden` (shown faint) and `--job-id`; the picker also omits a project holding only hidden rows; `jobs list` hides nothing and `jobs show` marks it beside the status. It is a convention, not a field. Named `exclude_from_results` until `readable-jobs-show`, renamed without a migration: a stored row carrying the old key is not hidden |
 
 `imageVersion` is the image's *label*: the base version (`1.3.0`), or `1.3.0+ext.<sha256[0:8]>` when
 the deployment has an extension. A filter on `1.3.0` therefore never returns an extended image's
@@ -878,6 +896,16 @@ A JCStress row's SCORE is `passed/total`, marked `✗` when a test failed or err
 `jcstress {total, passed, failed, errors, failedTests}`: the job itself ends `completed` and `baas run`
 exits 0 whatever its tests found — the status says JCStress ran, not what it measured (decided 2026-10-20).
 `--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
+
+**`baas results diff <jobA> <jobB>` never compares across libraries, and decides that on the stored
+`kind`, never the `type` tag.** `kind` is required on every item; `type` is a tag nothing enforces.
+The three JMH types share a kind and compare; JCStress against JMH is refused, and JCStress against
+JCStress too until verdict diffs exist (`results-diff`). Pairs are `--best-per`'s identity less the
+project, and its direction (`ResultsGrouping.lowerIsBetter`) is reused, never copied. A verdict is
+called only when the `score ± error` intervals do not overlap; a pair in different units is shown,
+never converted. Exit 0 whatever the verdicts, like a JCStress job's `completed`: gate CI with `jq`.
+Existence comes from the job item in the same index `Query`, so it tells an unknown id from a job that
+measured nothing.
 
 ### Job items
 

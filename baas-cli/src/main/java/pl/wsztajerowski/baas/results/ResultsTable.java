@@ -62,16 +62,13 @@ public final class ResultsTable {
         var table = new Table(console, RULE_WIDTH + (withProject ? PROJECT.width() + 1 : 0), columns);
         table.printHeader();
         for (ResultRow r : rows) {
-            String shortName = r.benchmarkName().contains(".")
-                ? r.benchmarkName().substring(r.benchmarkName().lastIndexOf('.') + 1)
-                : r.benchmarkName();
-            // An excluded row is shown only under --show-excluded, and faint so it reads as set aside.
-            UnaryOperator<String> rowStyle = r.excluded() ? console::faint : UnaryOperator.identity();
+            // A hidden row is shown only under --show-hidden, and faint so it reads as set aside.
+            UnaryOperator<String> rowStyle = r.hidden() ? console::faint : UnaryOperator.identity();
             var cells = new ArrayList<Cell>();
             if (withProject) {
                 cells.add(new Cell(truncate(r.project(), 23), rowStyle));
             }
-            cells.add(new Cell(truncate(shortName, 44), rowStyle));
+            cells.add(new Cell(truncate(withoutPackage(r.benchmarkName()), 44), rowStyle));
             cells.add(new Cell(r.jobId(), rowStyle));
             cells.add(new Cell(truncate(r.benchmarkType(), 13), rowStyle));
             cells.add(new Cell(r.mode() != null ? r.mode() : "", rowStyle));
@@ -128,6 +125,16 @@ public final class ResultsTable {
     private static Cell number(Console console, double value, UnaryOperator<String> rowStyle) {
         String text = String.format("%.3f", value);
         return Double.isFinite(value) ? new Cell(text, rowStyle) : new Cell(text, console::faint);
+    }
+
+    /**
+     * {@code SimpleClass.method}: the method alone made two classes' same-named benchmarks read
+     * identically (issue #114). JSON, CSV and {@code --benchmark-name} keep the fully qualified name.
+     */
+    static String withoutPackage(String benchmarkName) {
+        int methodDot = benchmarkName.lastIndexOf('.');
+        int classDot = methodDot > 0 ? benchmarkName.lastIndexOf('.', methodDot - 1) : -1;
+        return benchmarkName.substring(classDot + 1);
     }
 
     private static String truncate(String s, int max) {

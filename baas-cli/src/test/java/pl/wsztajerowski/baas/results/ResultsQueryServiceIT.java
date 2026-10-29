@@ -117,7 +117,7 @@ class ResultsQueryServiceIT {
     void excludedRowsAreDroppedServerSide() {
         put(measurement("lynx-journal", "req-1", "kept", Map.of()));
         put(measurement("lynx-journal", "req-2", "dropped",
-            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of(ResultsQueryService.HIDDEN, "true")));
 
         var rows = service.queryProject("lynx-journal");
 
@@ -126,12 +126,22 @@ class ResultsQueryServiceIT {
             .isEqualTo("com.example.Bench.kept");
     }
 
+    /** The tag was renamed without a migration: only {@code hidden} is read, never the former key. */
+    @Test
+    void theFormerKeyHidesNothing() {
+        put(measurement("lynx-journal", "req-1", "formerlyExcluded", Map.of("exclude_from_results", "true")));
+
+        assertThat(service.queryProject("lynx-journal")).singleElement()
+            .extracting(ResultRow::benchmarkName)
+            .isEqualTo("com.example.Bench.formerlyExcluded");
+    }
+
     @Test
     void aRowCarryingNoTagsAtAllSurvivesTheExcludeFilter() {
         put(measurement("lynx-journal", "req-1", "untagged", Map.of()));
 
         assertThat(service.queryProject("lynx-journal"))
-            .as("an absent tags map must not be read as exclude_from_results=true")
+            .as("an absent tags map must not be read as hidden=true")
             .hasSize(1);
     }
 
@@ -144,7 +154,7 @@ class ResultsQueryServiceIT {
     @Test
     void anExplicitJobLookupReturnsAnExcludedJob() {
         put(measurement("lynx-journal", "req-excluded", "selfTest",
-            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of(ResultsQueryService.HIDDEN, "true")));
 
         assertThat(service.queryByJobId("req-excluded"))
             .singleElement()
@@ -161,7 +171,7 @@ class ResultsQueryServiceIT {
     @Test
     void thePostJobSummaryOfAnExcludedJobIsNotEmpty() {
         put(measurement("lynx-journal", "req-excluded", "selfTest",
-            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of(ResultsQueryService.HIDDEN, "true")));
 
         var out = new java.io.StringWriter();
         ResultsTable.print(pl.wsztajerowski.baas.console.Console.plain(new java.io.PrintWriter(out)),
@@ -175,7 +185,7 @@ class ResultsQueryServiceIT {
 
     /**
      * The landmine this change was warned about: deleting the filter expression alone would leave
-     * {@code #tags}, {@code #excluded} and {@code :excluded} declared but unused, and DynamoDB
+     * {@code #tags}, {@code #hidden} and {@code :hidden} declared but unused, and DynamoDB
      * rejects that outright — so EVERY {@code --job-id} query would fail at runtime with a
      * {@code ValidationException} while every builder-level unit test stayed green. Only a
      * round-trip against a real endpoint sees it, which is why this case is an IT.
@@ -196,7 +206,7 @@ class ResultsQueryServiceIT {
     void aTagFilterOverTheSweepStillOmitsAnExcludedJob() {
         put(measurement("lynx-journal", "req-1", "kept", Map.of("branch", "main")));
         put(measurement("lynx-journal", "req-2", "excluded",
-            Map.of("branch", "main", ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of("branch", "main", ResultsQueryService.HIDDEN, "true")));
 
         var rows = ResultsFilters.byTags(service.queryProject("lynx-journal"),
             Map.of("branch", "main"));
@@ -206,12 +216,12 @@ class ResultsQueryServiceIT {
             .isEqualTo("com.example.Bench.kept");
     }
 
-    /** {@code --show-excluded}: the sweep keeps excluded rows, and the request still validates. */
+    /** {@code --show-hidden}: the sweep keeps excluded rows, and the request still validates. */
     @Test
     void aSweepIncludingExcludedRowsReturnsThem() {
         put(measurement("lynx-journal", "req-1", "kept", Map.of()));
         put(measurement("lynx-journal", "req-2", "excluded",
-            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of(ResultsQueryService.HIDDEN, "true")));
 
         assertThat(service.queryProject("lynx-journal", true))
             .extracting(ResultRow::benchmarkName)
@@ -223,7 +233,7 @@ class ResultsQueryServiceIT {
         put(measurement("lynx-journal", "req-1", "one", Map.of()));
         put(measurement("other-project", "req-2", "two", Map.of()));
         put(measurement("other-project", "req-3", "excluded",
-            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of(ResultsQueryService.HIDDEN, "true")));
 
         assertThat(service.scanAllProjects(false))
             .extracting(ResultRow::project)
@@ -238,7 +248,7 @@ class ResultsQueryServiceIT {
     @Test
     void thePickerListsOnlyProjectsWithAVisibleRow() {
         put(measurement("b-fixture", "req-1", "selfTest",
-            Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true")));
+            Map.of(ResultsQueryService.HIDDEN, "true")));
         put(measurement("c-real", "req-2", "one", Map.of()));
         put(measurement("a-real", "req-3", "one", Map.of()));
         put(measurement("a-real", "req-4", "two", Map.of()));
@@ -257,7 +267,7 @@ class ResultsQueryServiceIT {
         var batch = new java.util.ArrayList<software.amazon.awssdk.services.dynamodb.model.WriteRequest>();
         for (int i = 0; i < 1500; i++) {
             var item = MeasurementItemMapper.toItem(measurement("noise", "req-" + i, "m" + i,
-                Map.of(ResultsQueryService.EXCLUDE_FROM_RESULTS, "true", "padding", padding)));
+                Map.of(ResultsQueryService.HIDDEN, "true", "padding", padding)));
             batch.add(software.amazon.awssdk.services.dynamodb.model.WriteRequest.builder()
                 .putRequest(r -> r.item(item)).build());
             if (batch.size() == 25) {
@@ -286,7 +296,7 @@ class ResultsQueryServiceIT {
 
         assertThat(service.scanAllProjects(false)).hasSize(1);
         assertThat(service.scanAllProjects(true))
-            .as("--show-excluded widens exclusion, never the item kind")
+            .as("--show-hidden widens exclusion, never the item kind")
             .hasSize(1);
     }
 
@@ -327,6 +337,33 @@ class ResultsQueryServiceIT {
         assertThat(paths().resultPathForJob("no-such-run")).isNull();
     }
 
+    @Test
+    void aJobReadForADiffIsAbsentWhenNoJobItemNamesIt() {
+        put(measurement("lynx-journal", "req-old", "methodOne", Map.of()));
+
+        assertThat(service.queryJob("no-such-run")).isEmpty();
+        assertThat(service.queryJob("req-old")).isEmpty();
+    }
+
+    @Test
+    void aJobThatMeasuredNothingIsPresentAndEmptyForADiff() {
+        putJob("lynx-journal", "req-failed");
+
+        assertThat(service.queryJob("req-failed")).hasValueSatisfying(rows -> assertThat(rows).isEmpty());
+    }
+
+    @Test
+    void aJobReadForADiffCarriesItsMeasurementsWithoutTheJobItem() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        put(measurement("lynx-journal", "req-1", "methodTwo", Map.of()));
+        put(measurement("lynx-journal", "req-2", "methodOther", Map.of()));
+        putJob("lynx-journal", "req-1");
+
+        assertThat(service.queryJob("req-1")).hasValueSatisfying(rows -> assertThat(rows)
+            .extracting(ResultRow::benchmarkName)
+            .containsExactlyInAnyOrder("com.example.Bench.methodOne", "com.example.Bench.methodTwo"));
+    }
+
     /** The job-side lookup diff and download use: the job item. */
     private pl.wsztajerowski.baas.jobs.JobPaths paths() {
         return new pl.wsztajerowski.baas.jobs.JobPaths(client, tableName);
@@ -355,7 +392,7 @@ class ResultsQueryServiceIT {
             project, jobId, Instant.parse("2026-08-19T09:00:00.000Z"), MeasurementKind.JMH,
             "com.example.Bench", method, "thrpt", Map.of(), 1234.5, 1.0, "ops/s",
             Map.of(), null, tags,
-            "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json", null);
+            "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json");
     }
 
     private static AttributeDefinition stringAttribute(String name) {

@@ -151,7 +151,7 @@ EC2's tag limits.
 ### Requirement: Results filters cover the supported query patterns
 `baas results query` SHALL accept `--job-id`, `--benchmark-name`, `--tag <key>=<value>` (repeatable),
 `--exclude-tag <key>=<value>` (repeatable), `--project`, `--all-projects`, `--best-per <tag>`,
-`--show-excluded`, `--sort-by`, `--asc`, `--limit`, `--offset`, `--format` and `--watch`. `--job-id`
+`--show-hidden`, `--sort-by`, `--asc`, `--limit`, `--offset`, `--format` and `--watch`. `--job-id`
 SHALL NOT combine with `--project` or `--all-projects`, which select a different access path, and
 `--project` and `--all-projects` SHALL be mutually exclusive with each other. An invalid combination
 SHALL fail with a message naming the conflicting option.
@@ -400,11 +400,11 @@ instance is launched. `baas run` SHALL NOT offer an option that discards measure
 
 ### Requirement: Commands are nouns with verbs, and only a one-noun verb has a top-level alias
 Every canonical command SHALL have the form `baas [admin] <noun> <verb>`. The operator nouns SHALL be
-`jobs` (`run`, `list`, `show`, `diff`, `download`, `terminate`, `connect`), `results` (`query`) and
-`config` (`show`, `set`, `sync`). A top-level alias SHALL exist only for a verb that belongs to exactly
-one noun, and the aliases SHALL be `baas run` for `baas jobs run` and `baas query` for `baas results
-query`. A noun given without a verb SHALL print its usage and do nothing else. No alias SHALL exist
-for a verb shared by several nouns.
+`jobs` (`run`, `list`, `show`, `diff`, `download`, `terminate`, `connect`), `results` (`query`, `diff`)
+and `config` (`show`, `set`, `sync`). A top-level alias SHALL exist only for a verb that belongs to
+exactly one noun, and the aliases SHALL be `baas run` for `baas jobs run` and `baas query` for `baas
+results query`. A noun given without a verb SHALL print its usage and do nothing else. No alias SHALL
+exist for a verb shared by several nouns.
 
 #### Scenario: An alias runs its canonical command
 - **WHEN** `baas run jmh -- MyBenchmark -f 1` is invoked
@@ -415,7 +415,7 @@ for a verb shared by several nouns.
 - **THEN** its verbs are listed and nothing is executed
 
 #### Scenario: A shared verb has no alias
-- **WHEN** `baas list` or `baas show` is invoked
+- **WHEN** `baas list`, `baas show` or `baas diff` is invoked
 - **THEN** picocli reports an unknown command error
 
 #### Scenario: Connect has no top-level alias
@@ -439,17 +439,21 @@ keys. The first-run guidance SHALL name `admin deployment setup` then `admin ima
 - **THEN** the shortcut lines read `run = jobs run` and `query = results query`
 
 ### Requirement: Next-step hints are shown to people, never to scripts
-A command MAY end by suggesting at most two follow-up commands, each written to standard error through
-the logger as `→ <purpose>: <exact command>` with real identifiers filled in. A suggested command that
-acts on a deployment SHALL always carry `--deployment <name>`, however many deployments are configured,
-so that it stays valid when another is added. Hints SHALL appear only when the console is interactive,
-by the same definition that gates colour, and SHALL never appear on standard output. There SHALL be no
-option to disable them. Setup's closing report of next steps is its result, not a hint: it is printed
-in both modes, and every command in it carries `--deployment <name>` too.
+A command MAY end by suggesting at most two follow-up commands, written to standard error as one block:
+a line `Next`, then one line per hint, `  <purpose>  <exact command>`, with the commands aligned and real
+identifiers filled in. The block SHALL carry no timestamp, log level or logger name. A suggested command
+that acts on a deployment SHALL always carry `--deployment <name>`, however many deployments are
+configured, so that it stays valid when another is added. Hints SHALL appear only when the console is
+interactive, by the same definition that gates colour, and SHALL never appear on standard output. There
+SHALL be no option to disable them. Setup's closing report of next steps is its result, not a hint: it
+is printed in both modes, and every command in it carries `--deployment <name>` too.
 
 #### Scenario: A finished job points to its measurements
 - **WHEN** `baas jobs show <id>` completes on an interactive terminal for deployment `baas-123456789012`
-- **THEN** standard error ends with `→ measurements: baas --deployment baas-123456789012 query --job-id <id>`
+- **THEN** standard error ends with a `Next` line followed by
+  `  measurements  baas --deployment baas-123456789012 query --job-id <id>` and
+  `  files         baas --deployment baas-123456789012 jobs download <id>`, with no timestamp, level or
+  logger name on any of them
 
 #### Scenario: Scripts see no hints
 - **WHEN** the same command runs with standard output redirected or without a console

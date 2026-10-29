@@ -21,17 +21,23 @@ public final class TagKeys {
     public static final String INSTANCE_TYPE = "instanceType";
     public static final String IMAGE_VERSION = "imageVersion";
     public static final String SOURCE = "source";
+    /**
+     * Everything after {@code --} on {@code baas run}, as typed: the benchmark selection, JMH's own
+     * options ({@code -f}, {@code -wi}, …) and the runner's (the async-profiler event among them).
+     * Absent when nothing followed {@code --}. Derived like {@link #TYPE}, so reserved like it.
+     */
+    public static final String CLI_PARAMETERS = "cliParameters";
 
     public static final Set<String> KNOWN = Set.of(
-        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, INSTANCE_TYPE,
-        IMAGE_VERSION);
+        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH,
+        INSTANCE_TYPE, IMAGE_VERSION);
 
     /**
      * The convention a CI job uses to keep its measurements out of everyone's results: a row tagged
-     * {@code exclude_from_results=true} is filtered out server-side unless a query asks for it. Not in
+     * {@code hidden=true} is filtered out server-side unless a query asks for it. Not in
      * {@link #KNOWN} — it is a convention a caller sets, not a dimension anyone slices by.
      */
-    public static final String EXCLUDE_FROM_RESULTS = "exclude_from_results";
+    public static final String HIDDEN = "hidden";
 
     /** {@link #SOURCE} values baas run derives; a caller may supply any other. */
     public static final String SOURCE_CI = "ci";
@@ -47,6 +53,13 @@ public final class TagKeys {
      */
     public static final List<String> MACHINE_OBSERVED =
         List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
+
+    /**
+     * Every key a caller may not set: the observed ones, and {@link #CLI_PARAMETERS}, which records
+     * what the job was asked to run — a caller value could claim settings it never ran with.
+     */
+    public static final List<String> RESERVED =
+        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS);
 
     private TagKeys() {}
 

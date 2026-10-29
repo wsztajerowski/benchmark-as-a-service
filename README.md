@@ -212,10 +212,11 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > its own timeout.
 
 > **Tags are how you find a result later.** `--tag key=value` is repeatable and reaches the stored
-> measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and the
-> instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
-> `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
-> values the job's own `environment.json` records, so the two can never disagree.
+> measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and so is
+> `cliParameters`: everything after `--`, as typed (`--async-event wall MyBenchmark -f 1`), absent when
+> nothing follows it. The instance adds what it observes: `imageVersion`, `instanceType`, `jdk`,
+> `cpuModel`, `cpuArch`. Passing `--tag` for one of those observed keys, `type` or `cliParameters` is
+> rejected — they come from what the job ran on and was asked to run, so they can never disagree with it.
 
 > **A job with nowhere to record itself fails before it costs anything.** If no deployment is
 > configured and its credentials are not a deployment's operator role, `baas run` stops before any
@@ -269,7 +270,7 @@ tags, and the score error the table leaves out.
 Without `--project`, a terminal offers a numbered list of the projects that hold results (with
 `git.resolveProject` enabled, the current directory's repository is used instead); a pipe or
 `--format json|csv` gets an error listing them. It lists every measurement, newest first, 20 at a
-time, and drops rows tagged `exclude_from_results=true`. `baas query` is the same command. Filters:
+time, and drops rows tagged `hidden=true`. `baas query` is the same command. Filters:
 
 | | |
 |---|---|
@@ -280,9 +281,49 @@ time, and drops rows tagged `exclude_from_results=true`. `baas query` is the sam
 | `--exclude-tag key=value` | Repeatable; a row matching **any** is dropped |
 | `--job-id <id>` | One job's measurements. Combines with every filter except `--project` and `--all-projects` |
 | `--best-per <tag>` | Only the best score per benchmark, mode and value of `<tag>` (e.g. `branch`): the highest for throughput, the lowest for time per operation |
-| `--show-excluded` | Also show jobs tagged `exclude_from_results=true`, drawn faint |
+| `--show-hidden` | Also show jobs tagged `hidden=true`, drawn faint |
 | `--sort-by created\|benchmark\|score\|project`, `--asc` | Order; newest first by default |
 | `--limit <n>` (20; 0 = all), `--offset <n>`, `--format json\|csv`, `--watch` | Page, reshape or follow the output |
+
+**Compare two jobs' measurements** with `baas results diff`, the first job being the baseline:
+
+```bash
+baas results diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
+```
+
+```
+          A                             B
+JOB       20260724T120000000Z-a3f9c21b  20260811T093000000Z-b7e4d0f2
+INSTANCE  c5.large                      c5.2xlarge
+TYPE      jmh                           jmh-with-async
+
+BENCHMARK                                    MODE                              A                            B UNIT                        Δ VERDICT
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+Foo.bar                                      thrpt             1234.500 ± 40.100            1210.000 ± 38.700 ops/s                  -2.0 % ~
+Foo.baz                                      avgt                812.300 ± 5.200              905.900 ± 6.000 ms/op                 +11.5 % regression
+Foo.gone                                     thrpt                 9.000 ± 1.000                            — ops/s                         only in A
+```
+
+Measurements pair by benchmark, mode and params. The delta is always shown. The verdict is
+`regression` or `improvement` only when the two `score ± error` intervals do not overlap, with
+the mode deciding which way is better. It is `~` when they overlap and `?` when an error is unknown
+(a single-iteration run). A pair in different units shows both values and `units differ`, and is
+never converted. The header always names each job's instance type and benchmark type, since those
+most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
+on stderr points at `baas jobs diff`. A difference in `cliParameters` (forks, iterations, the profiler event) gets its own warning, since it
+changes the error interval and so the verdict. `-v` adds a `TAGS` block comparing every tag of the two jobs
+(`branch`, `commit`, `jdk`, `cliParameters`, …), and under each row its params in full and its secondary metrics
+(`-prof gc`'s `gc.alloc.rate.norm`, …), with raw values only.
+
+Only measurements from the same library are compared. `jmh`, `jmh-with-prof` and `jmh-with-async`
+compare with each other, while a JCStress job is refused against a JMH one and, for now, against
+another JCStress job as well. Use `baas results query --job-id` to read each job's verdict. The
+command exits 0 whenever it compared the jobs, whatever it found. To fail a build on a regression:
+
+```bash
+baas results diff "$BASE" "$HEAD" --format json \
+  | jq -e '[.rows[] | select(.verdict == "regression")] | length == 0'
+```
 
 ### 7. Fetch everything a job produced
 
@@ -504,7 +545,7 @@ the operator role and the region from its bucket.
 
 `e2e-cloud-test.yml` provisions a paid instance per triggering event, which is why its
 `pull_request` trigger is path-filtered and there is no schedule. It tags its own measurements
-`exclude_from_results=true` — it benchmarks fixture code — so they never reach a comparison, while
+`hidden=true` — it benchmarks fixture code — so they never reach a comparison, while
 `baas results query --job-id <jobId>` still returns them.
 
 Versioning is handled by semantic-release; `pom.xml` stays at `0.0.0-semantically-released` and the

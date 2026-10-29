@@ -90,7 +90,7 @@ sequenceDiagram
     end
     alt completed
         JL->>Port: jobRows(table, jobId)
-        Port->>DDB: ResultsQueryService.queryByJobId -- jobId-index, attribute_exists(kind), no exclusion filter
+        Port->>DDB: ResultsQueryService.queryByJobId -- jobId-index, attribute_exists(kind), no hidden filter
         JL->>RC: Listener.printResults(rows, jobId)
         RC-->>User: ResultsTable on stdout (with --format json only a log line)
     else failed:N, timed-out, cancelled, vanished, status-lost

@@ -69,8 +69,7 @@ class ResultKeysTest {
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         assertThat(ResultKeys.sortKey(withoutMode)).isEqualTo(
             "pl.wsztajerowski.fake.Incrementing_Synchronized"
@@ -105,8 +104,7 @@ class ResultKeysTest {
             Map.of(),
             original.score(), original.scoreError(), original.scoreUnit(),
             original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey(),
-            original.profilerOutputPath());
+            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
 
         assertThat(ResultKeys.requestIndexSortKey(withoutMode))
             .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#");

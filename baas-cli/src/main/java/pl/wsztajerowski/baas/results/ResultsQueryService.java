@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeSet;
 
 /**
@@ -26,14 +27,14 @@ import java.util.TreeSet;
 public class ResultsQueryService implements AutoCloseable {
 
     /**
-     * Excluded rows are dropped server-side so they never enter the result set or count against the
+     * Hidden rows are dropped server-side so they never enter the result set or count against the
      * page budget. A row whose {@code tags} map is absent entirely — every measurement carrying no
      * tags at all — must still come back, hence the {@code attribute_not_exists} arm.
      *
      * <p>Applied to the project sweep only; see {@link #queryByJobId}.
      */
-    private static final String EXCLUDE_FILTER =
-        "attribute_not_exists(#tags) OR attribute_not_exists(#tags.#excluded) OR #tags.#excluded <> :excluded";
+    private static final String HIDDEN_FILTER =
+        "attribute_not_exists(#tags) OR attribute_not_exists(#tags.#hidden) OR #tags.#hidden <> :hidden";
 
     /**
      * The table holds job items too, at {@code pk = JOB}. A {@code Scan} sees every partition, so
@@ -44,8 +45,8 @@ public class ResultsQueryService implements AutoCloseable {
 
     private static final String TAGS_ATTRIBUTE = MeasurementItemMapper.TAGS;
     private static final String PROJECT_ATTRIBUTE = MeasurementItemMapper.PROJECT;
-    static final String EXCLUDE_FROM_RESULTS = TagKeys.EXCLUDE_FROM_RESULTS;
-    static final String EXCLUDED_VALUE = "true";
+    static final String HIDDEN = TagKeys.HIDDEN;
+    static final String HIDDEN_VALUE = "true";
 
     private final DynamoDbClient client;
     private final String tableName;
@@ -55,39 +56,39 @@ public class ResultsQueryService implements AutoCloseable {
         this.tableName = tableName;
     }
 
-    /** One project's sweep, without its excluded rows. */
+    /** One project's sweep, without its hidden rows. */
     public List<ResultRow> queryProject(String project) {
         return queryProject(project, false);
     }
 
     /**
-     * One project's sweep. {@code includeExcluded} is {@code --show-excluded}. When it drops the filter
+     * One project's sweep. {@code includeHidden} is {@code --show-hidden}. When it drops the filter
      * it drops the filter's names and values too: DynamoDB rejects a request carrying an expression
      * name or value no expression uses (see {@link #queryByJobId}).
      */
-    public List<ResultRow> queryProject(String project, boolean includeExcluded) {
+    public List<ResultRow> queryProject(String project, boolean includeHidden) {
         var names = new HashMap<String, String>(Map.of("#pk", MeasurementItemMapper.PK));
         var values = new HashMap<String, AttributeValue>(
             Map.of(":pk", AttributeValue.fromS(ResultKeys.partitionKey(project))));
         var request = QueryRequest.builder()
             .tableName(tableName)
             .keyConditionExpression("#pk = :pk");
-        if (!includeExcluded) {
-            addExcludeFilter(names, values);
-            request.filterExpression(EXCLUDE_FILTER);
+        if (!includeHidden) {
+            addHiddenFilter(names, values);
+            request.filterExpression(HIDDEN_FILTER);
         }
         return runQuery(request.expressionAttributeNames(names).expressionAttributeValues(values).build());
     }
 
     /** Every project's measurements: {@code --all-projects}. One paginated {@code Scan}. */
-    public List<ResultRow> scanAllProjects(boolean includeExcluded) {
+    public List<ResultRow> scanAllProjects(boolean includeHidden) {
         var names = new HashMap<String, String>();
         var values = new HashMap<String, AttributeValue>();
         addMeasurementsOnlyFilter(names, values);
         String filter = MEASUREMENTS_ONLY;
-        if (!includeExcluded) {
-            addExcludeFilter(names, values);
-            filter = MEASUREMENTS_ONLY + " AND (" + EXCLUDE_FILTER + ")";
+        if (!includeHidden) {
+            addHiddenFilter(names, values);
+            filter = MEASUREMENTS_ONLY + " AND (" + HIDDEN_FILTER + ")";
         }
         var request = ScanRequest.builder()
             .tableName(tableName)
@@ -104,9 +105,9 @@ public class ResultsQueryService implements AutoCloseable {
     }
 
     /**
-     * Projects holding at least one measurement not tagged for exclusion, sorted — what the project
-     * picker offers. A project whose every row is excluded (a fixture project CI writes to) would
-     * open onto an empty table, so it is left out; {@code --project <name> --show-excluded} still reaches it.
+     * Projects holding at least one measurement not tagged hidden, sorted — what the project
+     * picker offers. A project whose every row is hidden (a fixture project CI writes to) would
+     * open onto an empty table, so it is left out; {@code --project <name> --show-hidden} still reaches it.
      *
      * <p>Projects only the two attributes the decision needs. That trims the response, not the bill:
      * a {@code Scan} is charged for the items it reads, whatever it returns.
@@ -115,13 +116,13 @@ public class ResultsQueryService implements AutoCloseable {
         var names = new HashMap<String, String>(Map.of("#project", PROJECT_ATTRIBUTE));
         var values = new HashMap<String, AttributeValue>();
         addMeasurementsOnlyFilter(names, values);
-        addExcludeFilter(names, values);
+        addHiddenFilter(names, values);
         var request = ScanRequest.builder()
             .tableName(tableName)
             .projectionExpression("#project")
             // Without the pk test, a job item's project attribute would offer a project whose
             // only jobs stored nothing — and open onto an empty table.
-            .filterExpression(MEASUREMENTS_ONLY + " AND (" + EXCLUDE_FILTER + ")")
+            .filterExpression(MEASUREMENTS_ONLY + " AND (" + HIDDEN_FILTER + ")")
             .expressionAttributeNames(names)
             .expressionAttributeValues(values)
             .build();
@@ -142,24 +143,24 @@ public class ResultsQueryService implements AutoCloseable {
         values.put(":resultPrefix", AttributeValue.fromS(ResultKeys.PK_PREFIX));
     }
 
-    private static void addExcludeFilter(Map<String, String> names, Map<String, AttributeValue> values) {
+    private static void addHiddenFilter(Map<String, String> names, Map<String, AttributeValue> values) {
         names.put("#tags", TAGS_ATTRIBUTE);
-        names.put("#excluded", EXCLUDE_FROM_RESULTS);
-        values.put(":excluded", AttributeValue.fromS(EXCLUDED_VALUE));
+        names.put("#hidden", HIDDEN);
+        values.put(":hidden", AttributeValue.fromS(HIDDEN_VALUE));
     }
 
     /**
      * {@code jobId} sits at the tail of the base sort key, so it is the one pattern the table's
      * own key cannot reach — hence the index.
      *
-     * <p>Deliberately carries no exclusion filter. Exclusion is a property of a project sweep;
+     * <p>Deliberately carries no hidden filter. Hiding is a property of a project sweep;
      * naming one job by its id is a request for <em>that job</em>, not a query over the project's
-     * history. Without this a job tagged {@code exclude_from_results=true} is invisible to every
+     * history. Without this a job tagged {@code hidden=true} is invisible to every
      * assertion surface except {@code baas jobs download} — and {@link
      * pl.wsztajerowski.baas.jobs.JobLaunch}'s own post-job summary, which calls this method,
-     * prints empty after a <em>successful</em> excluded job.
+     * prints empty after a <em>successful</em> hidden job.
      *
-     * <p>The filter's {@code #tags}, {@code #excluded} and {@code :excluded} entries go with it,
+     * <p>The filter's {@code #tags}, {@code #hidden} and {@code :hidden} entries go with it,
      * and must: DynamoDB rejects a request whose expression names or values are unused by any
      * expression, so leaving them behind fails <em>every</em> {@code --job-id} query at runtime
      * with a {@code ValidationException}. A builder-level unit test would not see it; the coverage
@@ -180,6 +181,36 @@ public class ResultsQueryService implements AutoCloseable {
             .expressionAttributeValues(Map.of(
                 ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
             .build());
+    }
+
+    /**
+     * One job's measurements, or empty when the id names no job — which {@link #queryByJobId}
+     * cannot tell from a job that measured nothing. The same index partition, read without the
+     * {@code kind} filter: the item lacking {@code kind} is the job's own job item and says the job
+     * exists, and every other item is a measurement. Still one {@code Query}. Like
+     * {@link #queryByJobId}, an explicit lookup and so not subject to the exclusion filter.
+     */
+    public Optional<List<ResultRow>> queryJob(String jobId) {
+        var request = QueryRequest.builder()
+            .tableName(tableName)
+            .indexName(ResultKeys.JOB_ID_INDEX_NAME)
+            .keyConditionExpression("#pk = :pk")
+            .expressionAttributeNames(Map.of("#pk", MeasurementItemMapper.GSI1PK))
+            .expressionAttributeValues(Map.of(
+                ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId))))
+            .build();
+        boolean jobItemSeen = false;
+        List<ResultRow> rows = new ArrayList<>();
+        for (var page : client.queryPaginator(request)) {
+            for (Map<String, AttributeValue> item : page.items()) {
+                if (item.containsKey(MeasurementItemMapper.KIND)) {
+                    rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+                } else {
+                    jobItemSeen = true;
+                }
+            }
+        }
+        return jobItemSeen ? Optional.of(rows) : Optional.empty();
     }
 
     /**

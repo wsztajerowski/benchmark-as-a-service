@@ -110,8 +110,12 @@ caller-supplied, like `project` and `commit`, rather than machine-observed. `com
 supplied only as caller tags; `baas run` SHALL NOT derive them. `source` SHALL identify
 how the job was triggered; `baas run` SHALL derive it as `ci` when it detects a continuous-integration
 environment and `local` otherwise, and an explicitly supplied value SHALL win over the derived one.
-`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` and `type` SHALL NOT be
-settable by the caller: `baas run` SHALL reject a `--tag` naming any of them before launching anything.
+`baas run` SHALL record everything following its `--` separator as the tag `cliParameters`, the
+arguments joined by a single space with any argument holding whitespace or a quote single-quoted, and
+SHALL omit the tag when nothing follows `--`.
+`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`, `type` and `cliParameters`
+SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them before
+launching anything.
 Tag keys outside the vocabulary SHALL be permitted, and a query naming an unknown key SHALL produce a
 warning rather than silently returning nothing.
 
@@ -128,6 +132,14 @@ warning rather than silently returning nothing.
 #### Scenario: A caller cannot set the JVM vendor
 - **WHEN** `baas run --tag jvmVendor=Acme jmh -- MyBenchmark` is invoked
 - **THEN** the command exits non-zero naming `jvmVendor` as reserved, and no instance is launched
+
+#### Scenario: The run's parameters are recorded as a tag
+- **WHEN** `baas run jmh-with-async -- --async-event wall MyBenchmark -f 1` completes
+- **THEN** its stored measurement carries `cliParameters=--async-event wall MyBenchmark -f 1`
+
+#### Scenario: A caller cannot set the recorded parameters
+- **WHEN** `baas run --tag cliParameters=-f5 jmh -- MyBenchmark` is invoked
+- **THEN** the command exits non-zero naming `cliParameters` as reserved, and no instance is launched
 
 #### Scenario: Branch is recorded as a tag
 - **WHEN** a job is launched with `--tag branch=main`
