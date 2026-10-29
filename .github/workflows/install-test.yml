@@ -63,7 +63,11 @@ jobs:
       - name: Install from the fixture
         env:
           BAAS_BASE_URL: file://${{ github.workspace }}/fixture
-        run: sh scripts/install.sh --version 9.9.9-ci
+        run: |
+          set -o pipefail
+          sh scripts/install.sh --version 9.9.9-ci | tee install-output.txt
+          grep -q "$HOME/.local/share/baas/baas_completion" install-output.txt \
+            || { echo "the install output does not name the completion script"; exit 1; }
 
       # The single assertion covering the failure class this change exists to prevent: the shim
       # runs the jar that was installed, and the jar reports the version it was built as — the
@@ -75,6 +79,37 @@ jobs:
           echo "baas --version -> $actual"
           [ "$actual" = "baas 9.9.9-ci" ] || { echo "expected 'baas 9.9.9-ci'"; exit 1; }
 
+      # Generated from the real jar by the installer, so this is the one place the generation
+      # itself — picocli.AutoComplete through BaasApp's no-arg constructor — is exercised. The
+      # completion function is called the way bash calls it on Tab; zsh (macOS only, it is absent
+      # from ubuntu-latest) calls it through bashcompinit, which runs it under `emulate -L sh`, so
+      # the zsh check does the same — without it zsh's 1-based arrays make the script misparse.
+      - name: The installed completion script completes subcommands
+        run: |
+          script="$HOME/.local/share/baas/baas_completion"
+          [ -f "$script" ] || { echo "no completion script at $script"; exit 1; }
+          probe='t() { COMP_WORDS=("$@"); COMP_CWORD=$((${#COMP_WORDS[@]} - 1)); COMP_LINE="$*"
+            COMP_POINT=${#COMP_LINE}; COMPREPLY=(); _complete_baas baas; echo "${COMPREPLY[*]}"; }'
+          actual=$(bash -c "source '$script'; $probe; t baas jobs ''")
+          echo "bash: baas jobs <TAB> -> $actual"
+          case " $actual " in *" list "*" terminate "*) ;; *) echo "expected the jobs verbs"; exit 1 ;; esac
+          if command -v zsh >/dev/null 2>&1; then
+            actual=$(zsh -c "autoload -U +X compinit && compinit -u; autoload -U +X bashcompinit && bashcompinit
+              source '$script'; $probe
+              z() { emulate -L sh; setopt kshglob noshglob braceexpand; t \"\$@\"; }; z baas jobs ''")
+            echo "zsh: baas jobs <TAB> -> $actual"
+            case " $actual " in *" list "*" terminate "*) ;; *) echo "expected the jobs verbs"; exit 1 ;; esac
+          fi
+
+      - name: Uninstall leaves the configuration intact
+        run: |
+          mkdir -p "$HOME/.baas/deployments" && echo 'prefix: sentinel' > "$HOME/.baas/deployments/sentinel.yaml"
+          sh scripts/install.sh --uninstall
+          [ ! -e "$HOME/.local/bin/baas" ] || { echo "shim survived"; exit 1; }
+          [ ! -e "$HOME/.local/share/baas/baas_completion" ] || { echo "completion survived"; exit 1; }
+          [ "$(cat "$HOME/.baas/deployments/sentinel.yaml")" = "prefix: sentinel" ] \
+            || { echo "configuration touched"; exit 1; }
+
       - name: A corrupted checksum fails the install
         env:
           BAAS_BASE_URL: file://${{ github.workspace }}/fixture
@@ -85,11 +120,3 @@ jobs:
             echo "expected a checksum failure"; exit 1
           fi
           [ ! -f "$HOME/.local/share/baas/baas-cli.jar" ] || { echo "jar written"; exit 1; }
-
-      - name: Uninstall leaves the configuration intact
-        run: |
-          mkdir -p "$HOME/.baas/deployments" && echo 'prefix: sentinel' > "$HOME/.baas/deployments/sentinel.yaml"
-          sh scripts/install.sh --uninstall
-          [ ! -e "$HOME/.local/bin/baas" ] || { echo "shim survived"; exit 1; }
-          [ "$(cat "$HOME/.baas/deployments/sentinel.yaml")" = "prefix: sentinel" ] \
-            || { echo "configuration touched"; exit 1; }
