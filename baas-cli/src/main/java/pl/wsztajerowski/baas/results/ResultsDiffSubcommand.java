@@ -148,13 +148,13 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
     private static final List<Column> COLUMNS = List.of(
         Column.left("BENCHMARK", 44),
         Column.left("MODE", 6),
-        Column.right("A", 22),
-        Column.right("B", 22),
+        Column.right("A", 28),
+        Column.right("B", 28),
         Column.left("UNIT", 16),
         Column.right("Δ", 12),
         Column.left("VERDICT", 12));
 
-    private static final int RULE_WIDTH = 140;
+    private static final int RULE_WIDTH = 152;
 
     /**
      * Command payload, so the {@link Console} — see {@code ResultsQuerySubcommand#printJson}. The
