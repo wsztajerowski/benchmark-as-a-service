@@ -212,10 +212,11 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > its own timeout.
 
 > **Tags are how you find a result later.** `--tag key=value` is repeatable and reaches the stored
-> measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and the
-> instance adds what it observes: `imageVersion`, `instanceType`, `jdk`, `cpuModel`,
-> `cpuArch`. Passing `--tag` for one of those observed keys is rejected — they come from the same
-> values the job's own `environment.json` records, so the two can never disagree.
+> measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and so is
+> `cliParameters`: everything after `--`, as typed (`--async-event wall MyBenchmark -f 1`), absent when
+> nothing follows it. The instance adds what it observes: `imageVersion`, `instanceType`, `jdk`,
+> `cpuModel`, `cpuArch`. Passing `--tag` for one of those observed keys, `type` or `cliParameters` is
+> rejected — they come from what the job ran on and was asked to run, so they can never disagree with it.
 
 > **A job with nowhere to record itself fails before it costs anything.** If no deployment is
 > configured and its credentials are not a deployment's operator role, `baas run` stops before any
@@ -310,7 +311,7 @@ the mode deciding which way is better. It is `~` when they overlap and `?` when 
 never converted. The header always names each job's instance type and benchmark type, since those
 most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
 on stderr points at `baas jobs diff`. `-v` adds a `TAGS` block comparing every tag of the two jobs
-(`branch`, `commit`, `jdk`, …), and under each row its params in full and its secondary metrics
+(`branch`, `commit`, `jdk`, `cliParameters`, …), and under each row its params in full and its secondary metrics
 (`-prof gc`'s `gc.alloc.rate.norm`, …), with raw values only.
 
 Only measurements from the same library are compared. `jmh`, `jmh-with-prof` and `jmh-with-async`

@@ -449,7 +449,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
      *
      * <p>Defined once in baas-model so the CLI and the runner cannot drift apart.
      */
-    static final List<String> RESERVED_TAG_KEYS = TagKeys.MACHINE_OBSERVED;
+    static final List<String> RESERVED_TAG_KEYS = TagKeys.RESERVED;
 
     /**
      * JCStress's own mode flag, which the runner deliberately does not accept: it was the MongoDB
@@ -507,9 +507,9 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             throw new IllegalArgumentException(
                 "--tag " + String.join(", ", collided) + " cannot be set from the command line: "
                     + (collided.size() == 1 ? "it is" : "they are")
-                    + " observed on the instance (or derived from the benchmark type), and a "
+                    + " observed on the instance or derived from what was run, and a "
                     + "caller override would let a result's tags disagree with its own "
-                    + "environment.json. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
+                    + "environment.json or command line. Reserved keys: " + String.join(", ", RESERVED_TAG_KEYS)
                     + ". commit, branch and source remain caller-settable.");
         }
         if (extraTags.containsKey(TagKeys.PROJECT)) {
@@ -525,8 +525,28 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         // is how RESULT#unknown grew.
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.put(TagKeys.SOURCE, deriveSource(environment));
+        // Absent when nothing followed --, like commit and branch: no placeholder value.
+        if (!benchmarkParams.isEmpty()) {
+            tags.put(TagKeys.CLI_PARAMETERS, cliParameters(benchmarkParams));
+        }
         tags.putAll(extraTags);
         return tags;
+    }
+
+    /**
+     * The text after {@code --} as one line that could be typed again: arguments joined by a space,
+     * and one holding whitespace or a quote single-quoted, so {@code -jvmArgs '-Xmx1g -Xms1g'} stays
+     * one argument when read back rather than becoming three.
+     */
+    static String cliParameters(List<String> params) {
+        return String.join(" ", params.stream().map(RunCommand::quoteIfNeeded).toList());
+    }
+
+    private static String quoteIfNeeded(String arg) {
+        if (!arg.isEmpty() && arg.chars().noneMatch(c -> Character.isWhitespace(c) || c == '\'' || c == '"')) {
+            return arg;
+        }
+        return "'" + arg.replace("'", "'\\''") + "'";
     }
 
     /**

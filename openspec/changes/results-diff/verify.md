@@ -119,6 +119,11 @@ was set). After it, two command tests were added (below): `ResultsDiffCommandTes
 - Secondary metrics show value and unit, because `SecondaryMetric` stores no error (spec updated).
 - Task 6.1 ran on `baas-381492019823`, not `baas-development`, which no longer exists (W1).
 - The Δ column was widened from 9 to 12 after a live delta of `+4497991,8 %` overflowed it.
+- 2026-10-29: `baas run` records the text after `--` as the reserved tag `cliParameters` (task 4.7,
+  `results-store-schema` delta). Tests: `RunCommandTest.recordsEverythingAfterTheSeparatorAsCliParameters`,
+  `anArgumentHoldingSpacesStaysOneArgumentInCliParameters`, `nothingAfterTheSeparatorLeavesCliParametersAbsent`,
+  `aCallerCannotSetCliParameters`; `TagKeysTest.reservedKeysAreTheObservedOnesAndTheRecordedCliParameters`.
+  Not checked live: it needs a paid `baas run`, and no existing job carries the tag.
 - 2026-10-29, after review of the live output: `-v` also compares tags (a block after the header) and
   shows params in full under each row (task 4.6, spec and design updated). No live job has params.
 
