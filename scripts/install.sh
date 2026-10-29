@@ -14,6 +14,7 @@ BAAS_REPO="${BAAS_REPO:-wsztajerowski/benchmark-as-a-service}"
 BAAS_SHARE="${BAAS_SHARE:-$HOME/.local/share/baas}"
 BAAS_BIN="${BAAS_BIN:-$HOME/.local/bin}"
 JAR_NAME=baas-cli.jar
+COMPLETION_NAME=baas_completion
 
 die() { printf '%s\n' "$*" >&2; exit 1; }
 
@@ -163,6 +164,30 @@ SHIM
     trap - EXIT INT TERM
 }
 
+write_completion() {
+    # Generated from the jar just installed rather than published beside it: the script then
+    # describes exactly the command tree this installation runs, and there is no second asset to
+    # verify. picocli's generator builds the tree through BaasApp's no-arg constructor.
+    stage="$BAAS_SHARE/.$COMPLETION_NAME.$$"
+    # shellcheck disable=SC2064
+    trap "rm -f '$stage'" EXIT
+    # shellcheck disable=SC2064
+    trap "rm -f '$stage'; exit 1" INT TERM
+    if "${BAAS_JAVA:-java}" -cp "$BAAS_SHARE/$JAR_NAME" picocli.AutoComplete -f -n baas \
+            -o "$stage" pl.wsztajerowski.baas.BaasApp >/dev/null 2>&1 \
+        && mv -f "$stage" "$BAAS_SHARE/$COMPLETION_NAME"; then
+        rc=0
+    else
+        # Completion is a convenience, so this never fails the install — but a script left from an
+        # earlier installation would complete commands this version may not have.
+        rm -f "$stage" "$BAAS_SHARE/$COMPLETION_NAME"
+        printf 'warning: could not generate shell completion; baas is installed without it.\n' >&2
+        rc=1
+    fi
+    trap - EXIT INT TERM
+    return "$rc"
+}
+
 java_major() {
     # java -version writes to stderr, and reports "1.8.0_402" for 8 but "25.0.4" for modern
     # releases — both shapes have to parse.
@@ -197,6 +222,15 @@ case "$MODE" in
         install_jar "$VERSION"
         write_shim
         printf 'Installed baas %s to %s\n' "$VERSION" "$BAAS_BIN/baas"
+        # Printed, never written into an rc file — the same stance as the PATH hint. Printed on
+        # every install because the installer cannot tell whether the rc already sources it.
+        if write_completion; then
+            printf '\nTab completion: %s. Load it from your shell rc:\n' "$BAAS_SHARE/$COMPLETION_NAME"
+            printf '  bash (~/.bashrc):\n    source "%s"\n' "$BAAS_SHARE/$COMPLETION_NAME"
+            printf '  zsh (~/.zshrc):\n    autoload -U +X compinit && compinit\n'
+            printf '    autoload -U +X bashcompinit && bashcompinit\n    source "%s"\n\n' \
+                "$BAAS_SHARE/$COMPLETION_NAME"
+        fi
         printf 'To update later: curl -fsSL https://github.com/%s/releases/latest/download/install.sh | sh\n' \
             "$BAAS_REPO"
         ;;
@@ -205,7 +239,8 @@ case "$MODE" in
         # $BAAS_SHARE/install.sh is no longer written: earlier releases stored a copy of their
         # installer there for an --update mode that is gone. Removing it is what leaves an
         # installation made by one of them clean.
-        for target in "$BAAS_BIN/baas" "$BAAS_SHARE/$JAR_NAME" "$BAAS_SHARE/install.sh"; do
+        for target in "$BAAS_BIN/baas" "$BAAS_SHARE/$JAR_NAME" "$BAAS_SHARE/$COMPLETION_NAME" \
+                "$BAAS_SHARE/install.sh"; do
             if [ -e "$target" ]; then rm -f "$target"; removed=$((removed + 1)); fi
         done
         # rmdir, never rm -rf: it removes the directory only when this installer's files were the
