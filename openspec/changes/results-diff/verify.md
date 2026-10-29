@@ -123,7 +123,14 @@ was set). After it, two command tests were added (below): `ResultsDiffCommandTes
   `results-store-schema` delta). Tests: `RunCommandTest.recordsEverythingAfterTheSeparatorAsCliParameters`,
   `anArgumentHoldingSpacesStaysOneArgumentInCliParameters`, `nothingAfterTheSeparatorLeavesCliParametersAbsent`,
   `aCallerCannotSetCliParameters`; `TagKeysTest.reservedKeysAreTheObservedOnesAndTheRecordedCliParameters`.
-  Not checked live: it needs a paid `baas run`, and no existing job carries the tag.
+  Checked live 2026-10-29 on the rebuilt `baas-development` with the reactor build: two `jmh-with-async`
+  jobs, `20261029T115415139Z-7418c53b` (`-- Incrementing_Synchronized -f 1 -wi 1 -i 3 --async-event=cpu`)
+  and `20261029T115415139Z-a28ee13a` (`… -i 5 --async-event=wall -jvmArgs '-Xmx1g -Xms1g'`), both
+  `completed`. `results diff -v` shows both values in the tags block, the quoted argument intact, and JSON
+  carries them under `tags.cliParameters`. The same pair gave the first live verdict other than `?`:
+  `+2.5 %` `~` (`10518341.270 ± 12757093.473` against `10785029.592 ± 984867.728`), see W2.
+- The A and B columns were widened from 22 to 28 (rule 140 → 152) after that live pair: a score with a
+  real error, `10518341,270 ± 12757093,473`, is 27 characters and pushed the row out of line.
 - 2026-10-29, after review of the live output: `-v` also compares tags (a block after the header) and
   shows params in full under each row (task 4.6, spec and design updated). No live job has params.
 
@@ -133,10 +140,14 @@ was set). After it, two command tests were added (below): `ResultsDiffCommandTes
   where the standing rule puts work in progress on `baas-development`. That deployment is gone, and
   restoring it needs an IAM administrator. Every call was a read (two `Query`s per run), so nothing on
   the default deployment changed. The user decides whether this is acceptable or a dev deployment
-  should be rebuilt first.
+  should be rebuilt first. **Closed 2026-10-29:** `baas-development` was rebuilt, and the `cliParameters`
+  and diff checks ran there with two new jobs.
 - **W2** — no live job has a `score ± error` interval: CI's runs are single-iteration, so every live
   pair read `?`. `regression`, `improvement` and `~` are covered by unit and command tests only. A real
-  multi-iteration pair would show them on AWS data.
+  multi-iteration pair would show them on AWS data. **Partly closed 2026-10-29:** a multi-iteration pair on
+  `baas-development` read `~` live. `regression` and `improvement` are still checked by tests only: a
+  this pair's error (±12.8M on A's 10.5M ops/s) is far wider than its delta, and the fixture
+  is multimodal on its own.
 
 ### Assessment
 

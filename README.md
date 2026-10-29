@@ -297,11 +297,11 @@ JOB       20260724T120000000Z-a3f9c21b   20260811T093000000Z-b7e4d0f2
 INSTANCE  c5.large                       c5.2xlarge
 TYPE      jmh                            jmh-with-async
 
-BENCHMARK                                    MODE                        A                      B UNIT                        Δ VERDICT
---------------------------------------------------------------------------------------------------------------------------------------------
-Foo.bar                                      thrpt       1234.500 ± 40.100      1210.000 ± 38.700 ops/s                  -2.0 % ~
-Foo.baz                                      avgt          812.300 ± 5.200        905.900 ± 6.000 ms/op                 +11.5 % regression
-Foo.gone                                     thrpt           9.000 ± 1.000                      — ops/s                         only in A
+BENCHMARK                                    MODE                              A                            B UNIT                        Δ VERDICT
+--------------------------------------------------------------------------------------------------------------------------------------------------------
+Foo.bar                                      thrpt             1234.500 ± 40.100            1210.000 ± 38.700 ops/s                  -2.0 % ~
+Foo.baz                                      avgt                812.300 ± 5.200              905.900 ± 6.000 ms/op                 +11.5 % regression
+Foo.gone                                     thrpt                 9.000 ± 1.000                            — ops/s                         only in A
 ```
 
 Measurements pair by benchmark, mode and params. The delta is always shown. The verdict is
