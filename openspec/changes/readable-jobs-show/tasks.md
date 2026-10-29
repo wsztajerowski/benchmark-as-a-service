@@ -54,3 +54,10 @@
 - [x] 9.3 Pin that the former key hides nothing (no alias, no migration); verify with `ResultsQueryServiceIT.theFormerKeyHidesNothing`
 - [x] 9.4 Rename in `e2e-cloud-test.yml`, `README.md`, `CLAUDE.md` and the diagrams `baas-ci-e2e`, `baas-results`, `baas-run`, `baas-jobs`; verify each `.mmd` by rendering it with `mmdc` and looking at the PNG
 
+## 10. Short, coloured log lines on a terminal (added 2026-10-29)
+
+- [x] 10.1 Decide the format once in `BaasApp.main`: short only when `Console`'s interactive test passes and `/dev/fd/2` is the same file as `/dev/fd/1`; set SimpleLogger's `showDateTime`/`showShortLogName` before any logger exists; verify with a unit test of the decision over injected inputs
+- [x] 10.2 Add the level-colouring stderr filter (first word only, SimpleLogger levels only, `NO_COLOR` respected) and install it in `main`; verify with unit tests for each level, a non-log line, a partial write and a stack trace
+- [x] 10.3 Manual: run the reactor CLI under a pseudo-terminal, with stderr redirected, with stdout piped, and with `NO_COLOR`; record the raw bytes in verify.md
+- [x] 10.4 Update CLAUDE.md (*Diagnostics go to the logger*, *Terminal effects*) and rerun the `baas-cli` unit and integration suites
+

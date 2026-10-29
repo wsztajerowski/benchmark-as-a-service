@@ -126,6 +126,29 @@ server-side filter, the same exemptions (`--job-id`, `jobs list`), the same fain
   `ResultRow`, kept until someone remembers to delete it. BaaS holds no production data, so old rows
   becoming visible costs nothing; `--exclude-tag exclude_from_results=true` hides them by hand.
 
+### A terminal's log lines drop the timestamp and logger name, and colour the level, decided once in `main`
+
+`BaasApp.main` sets SimpleLogger's `showDateTime` and `showShortLogName` to `false` before any logger
+exists — the same point `-v` uses, and the reason `BaasApp` holds no static logger — when `Console`'s
+interactive test passes **and** `/dev/fd/2` is the same file as `/dev/fd/1`. Java can tell whether stdout
+is a terminal but not stderr; the second test answers that for the one case the first gets wrong
+(`2> run.log` on a terminal), and any failure to answer — no `/dev/fd`, an exception — keeps the full
+format. Every misdetection therefore yields today's lines, never a log file without timestamps. Measured
+on macOS: same terminal → same file; `2> file` → different; stdout redirected → not interactive.
+
+Colour comes from a line filter installed as `System.err` when colour is also allowed (`NO_COLOR`
+unset): it colours a line's first word only when that word is a SimpleLogger level, so the `Next` block,
+picocli's errors and stack traces pass untouched. SimpleLogger resolves `System.err` per write — what
+`run`'s status line already relies on — and the status line's own wrapper sits on top of this one.
+Maven's colours (bold red, yellow, blue, cyan) because its users already read them.
+
+- *Rejected: Logback with a short terminal appender and a full file appender.* The user wants no log
+  file for now; a new backend, rotation and a file under `~/.baas` are a change of their own.
+- *Rejected: a custom SLF4J provider to render the level coloured.* More machinery than a line filter
+  for the same output, and it would fork from the runner's SimpleLogger format.
+- *Rejected: decide on `Console`'s test alone.* It reads stdout only, so `baas run … 2> run.log` would
+  write a log without timestamps.
+
 ## Risks / Trade-offs
 
 - [A formatter misreads a value an extension changed, e.g. another vendor's version string] → every

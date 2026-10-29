@@ -39,6 +39,11 @@ manifest's schema can change now without carrying the old one along.
   sweeps, the `--all-projects` scan and the project picker, are returned by `--job-id`, and are drawn
   faint under `--show-hidden`. There is no data migration and no alias: a stored row tagged
   `exclude_from_results=true` is no longer hidden.
+- **Log lines on a terminal are short and coloured by level:** `WARN <message>` instead of
+  `2026-10-29 14:02:31:088 +0100 WARN CliVersionCheck - <message>`, with the level in Maven's colours
+  (`ERROR` red, `WARN` yellow, `INFO` blue, `DEBUG` cyan). Only when standard output and standard error
+  are the same terminal; anything redirected, piped or in CI keeps today's full, uncoloured lines. No
+  file appender: logs still go to standard error only.
 - **Next-step hints**, for every command that prints them: a plain `Next` block on standard error
   (`  <purpose>  <command>`, aligned), no longer a logger line with timestamp, level and class.
   Interactive-only gating, the two-hint limit and `--deployment` in every command are unchanged.
@@ -62,7 +67,7 @@ None.
 - `benchmark-results-query`: *Excluded results are filtered out* is replaced by *Hidden results are
   filtered out* (the tag and option names; the rule is the same); *A project is chosen when none is
   named* and *Tags can exclude rows* name the new tag.
-- `cli-console-output`: *Tables are coloured when interactive, without losing alignment* (rows tagged
+- `cli-console-output`: new *Log lines on a terminal show only their level, coloured*; *Tables are coloured when interactive, without losing alignment* (rows tagged
   `hidden=true` are de-emphasised under `--show-hidden`).
 - `ci-benchmark-execution`: the three self-test requirements tag their jobs `hidden=true` and assert
   with `--show-hidden`.
