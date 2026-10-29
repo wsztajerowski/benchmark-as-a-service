@@ -315,17 +315,17 @@ class ResultsDiffCommandTest {
     @Test
     void theTagsShareTheHeadersColumns() throws Exception {
         jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "instanceType", "c5.large", "exclude_from_results", "true",
+            Map.of("type", "jmh", "instanceType", "c5.large", "hidden", "true",
                 "cpuModel", "Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz"))));
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "instanceType", "c5.large", "exclude_from_results", "true",
+            Map.of("type", "jmh", "instanceType", "c5.large", "hidden", "true",
                 "cpuModel", "Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz"))));
 
         List<String> lines = run("results", "diff", "-v", A, B).out().lines().toList();
 
         String job = lines.stream().filter(l -> l.startsWith("JOB")).findFirst().orElseThrow();
         String cpu = lines.stream().filter(l -> l.startsWith("  cpuModel")).findFirst().orElseThrow();
-        String flag = lines.stream().filter(l -> l.startsWith("  exclude_from_results")).findFirst().orElseThrow();
+        String flag = lines.stream().filter(l -> l.startsWith("  hidden")).findFirst().orElseThrow();
         assertThat(cpu.indexOf("Intel")).isEqualTo(job.indexOf(A)).isEqualTo(flag.indexOf("true"));
         assertThat(cpu.lastIndexOf("Intel")).isEqualTo(job.indexOf(B)).isEqualTo(flag.lastIndexOf("true"));
     }
