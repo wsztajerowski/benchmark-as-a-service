@@ -157,6 +157,36 @@ class RunCommandTest {
             .containsEntry("experiment", "gc-tuning");
     }
 
+    @Test
+    void recordsEverythingAfterTheSeparatorAsCliParameters() {
+        var command = new RunCommand();
+        command.benchmarkParams.addAll(List.of("--async-event", "wall", "MyBenchmark", "-f", "1", "-wi", "2"));
+
+        assertThat(command.buildRunnerTags("jmh-with-async", "lynx-journal"))
+            .containsEntry("cliParameters", "--async-event wall MyBenchmark -f 1 -wi 2");
+    }
+
+    @Test
+    void anArgumentHoldingSpacesStaysOneArgumentInCliParameters() {
+        assertThat(RunCommand.cliParameters(List.of("MyBenchmark", "-jvmArgs", "-Xmx1g -Xms1g", "it's", "")))
+            .isEqualTo("MyBenchmark -jvmArgs '-Xmx1g -Xms1g' 'it'\\''s' ''");
+    }
+
+    @Test
+    void nothingAfterTheSeparatorLeavesCliParametersAbsent() {
+        assertThat(new RunCommand().buildRunnerTags("jmh", "lynx-journal")).doesNotContainKey("cliParameters");
+    }
+
+    @Test
+    void aCallerCannotSetCliParameters() {
+        var command = new RunCommand();
+        command.extraTags.put("cliParameters", "-f 5");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("cliParameters");
+    }
+
     /**
      * The runner reads the project from this tag, while the S3 prefix and the job item take
      * --project: a caller value stored the measurements under one project and the job under another.

@@ -28,6 +28,8 @@ being set against each other.
 - The payload opens with a header carrying each job's instance type and benchmark type, always —
   context, not a compared value. A difference in the other machine-observed tags (`imageVersion`,
   `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`) is a stderr warning pointing at `baas jobs diff`.
+- `baas run` records everything after `--` as a new reserved tag, `cliParameters`, so the run settings
+  (forks, iterations, the async-profiler event) reach the item and the diff's tags block.
 - `-v` adds both jobs' tags side by side after the header, and under each row its params in full and its
   JMH secondary metrics, raw values only, without delta or verdict.
 - `--format table|json`. The command exits 0 whenever the diff ran, whatever it found; exit 1 is a

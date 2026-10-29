@@ -153,7 +153,7 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
   was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
   machine-observed key (`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`,
-  `type`) is
+  `type`), or for `cliParameters`, is
   rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
 
@@ -867,7 +867,7 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
+| Derived | `type`, `project`, `source`, `cliParameters` | `baas run`. `cliParameters` is everything after `--`, verbatim — the only record of forks, iterations and the async-profiler event a job ran with, since `jmh-result.json` keeps no profiler options and the item keeps none of either. Absent when nothing follows `--`. `type` and `cliParameters` are reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
 | Convention | `options`, `hidden` | Free-form. `hidden=true` is filtered out server-side — except under `--show-hidden` (shown faint) and `--job-id`; the picker also omits a project holding only hidden rows; `jobs list` hides nothing and `jobs show` marks it beside the status. It is a convention, not a field. Named `exclude_from_results` until `readable-jobs-show`, renamed without a migration: a stored row carrying the old key is not hidden |
 

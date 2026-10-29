@@ -27,6 +27,7 @@
 - [x] 4.4 Print `Neither job has measurements.` through the `Console` when both sides are empty (JSON: an empty `rows` array), exit 0; a test covers it in table and JSON form
 - [x] 4.5 Check `baas results` alone lists `query` and `diff`, `baas diff` is an unknown command, and `baas --help`'s operator line for `results` names both verbs; extend the existing command-tree and help tests
 - [x] 4.6 Under `-v`, print a tags block after the header — every key of either job except `instanceType`/`type`, A against B, unknown as `n/a`, a differing value bold — and a `params` line in full above each row's metrics; tests cover the block, its emphasis keeping alignment, and params on a pair and a one-sided row, none of it without `-v`
+- [x] 4.7 Record everything after `--` on `baas run` as the reserved tag `cliParameters` (`TagKeys.CLI_PARAMETERS`, in `KNOWN` and the new `RESERVED`), absent when nothing follows `--`, an argument holding whitespace or a quote single-quoted; tests cover the value, the quoting, the absence and the refusal of a caller `--tag cliParameters`
 
 ## 5. Docs
 

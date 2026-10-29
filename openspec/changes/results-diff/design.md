@@ -111,6 +111,18 @@ Same reasoning as a JCStress job ending `completed` whatever its tests found: th
 command ran, not what it measured. Exit 1 stays "refused" only, so a script can tell a regression
 from a wrong id. CI gates with `--format json | jq -e '.rows[] | select(.verdict == "regression")'`.
 
+### `cliParameters`: the run settings as a reserved tag
+
+Added 2026-10-29 at the user's request. Forks, iterations and the async-profiler event were stored
+nowhere a diff could read: the item drops JMH's settings, and `jmh-result.json` never had the
+profiler's. `baas run` now records everything after `--` as the tag `cliParameters`, one line that could
+be typed again (an argument holding whitespace or a quote single-quoted). It is derived, like `type`,
+so it is reserved: a caller value could claim settings the job never ran with. Absent when nothing
+follows `--`, never a placeholder. A tag, not a parsed settings map: it costs no runner or item change,
+it is filterable like every other tag, and it shows what was typed, defaults left implicit — a
+difference in a JMH default between versions is the environment's to show. Jobs from before carry none,
+and the tags block shows `n/a` for them.
+
 ### Tags, params and secondary metrics under `-v`, raw
 
 Added after the first live run, at the user's request. Tags belong to a job — every measurement of one
