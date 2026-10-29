@@ -28,7 +28,8 @@ being set against each other.
 - The payload opens with a header carrying each job's instance type and benchmark type, always —
   context, not a compared value. A difference in the other machine-observed tags (`imageVersion`,
   `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`) is a stderr warning pointing at `baas jobs diff`.
-- `-v` prints each pair's JMH secondary metrics under it, raw values only, without delta or verdict.
+- `-v` adds both jobs' tags side by side after the header, and under each row its params in full and its
+  JMH secondary metrics, raw values only, without delta or verdict.
 - `--format table|json`. The command exits 0 whenever the diff ran, whatever it found; exit 1 is a
   refusal, exit 2 a usage error. Gating CI on a regression is a `jq` over the JSON.
 - `results` gains its second verb. `diff` belongs to two nouns, so it has no top-level alias.

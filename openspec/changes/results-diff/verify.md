@@ -105,7 +105,7 @@ was set). After it, two command tests were added (below): `ResultsDiffCommandTes
 | Unit mismatch shown, never computed | `ResultsDiff.pair`; `ResultsDiffSubcommand.unit` | `differentUnitsAreShownNotComputed`, command `differentUnitsReadAsSuch` |
 | Header: instance type and benchmark type | `ResultsDiffSubcommand.printTable`/`headerLine`, `jobJson` | command `theTableOpensWithTheHeaderThenPairsThenOneSidedRows`, `aJobWithoutMeasurementsHeadsItsColumnWithUnknowns`, `jsonOfTwoEmptyJobsHasNoRows`; live |
 | Other environment differences warned | `ResultsDiff.environmentDifferences`; logger in `call` | `aDifferentImageIsReportedAndTheHeaderTagsAreNot`, `equalEnvironmentsAndAnEmptySideReportNothing`, command `otherEnvironmentDifferencesGoToStderrNotStdout`, `equalEnvironmentsWarnNothing`; live |
-| Secondary metrics raw under `-v` | `printTable` (verbose), `metric` | command `secondaryMetricsAppearRawOnlyUnderVerbose`, `aMetricOnOneSideOnlyShowsTheOtherAsUnknown` |
+| Tags, params and secondary metrics raw under `-v` | `printTable` (verbose), `printTags`, `params`, `metric`; `ResultsDiff.tagKeys` | `tagKeysAreBothJobsKeysWithoutTheHeadersTwo`; command `tagsAreComparedOnlyUnderVerbose`, `aDifferingTagIsEmphasisedAndAnEqualOneIsNot`, `paramsAppearInFullUnderEachRowOnlyUnderVerbose`, `secondaryMetricsAppearRawOnlyUnderVerbose`, `aMetricOnOneSideOnlyShowsTheOtherAsUnknown`; live tags block (2026-10-29) |
 | Table or JSON, exit status | `printJson`, `call` | command `aRegressionStillExitsZero`, `jsonCarriesBothJobsAndEveryRowsVerdict`, `jsonUnderACommaDecimalLocaleIsStillJson`; live `jq -e` gate |
 | (MODIFIED) `results` noun lists `query` and `diff` | `ResultsCommand` | `CommandTreeTest.eachNounOffersItsVerbs`, `theBareResultsNounNamesBothVerbs` |
 | (MODIFIED) nouns/verbs, no alias for `diff` | `ResultsCommand` (no root alias) | `CommandTreeTest.removedAndNeverAliasedSpellingsAreUnknown` (`diff a b`), `HelpAndHintsTest.theRootHelpIsGroupedByWorkload`, command `diffIsAVerbOfResultsWithNoTopLevelAlias` |
@@ -119,6 +119,8 @@ was set). After it, two command tests were added (below): `ResultsDiffCommandTes
 - Secondary metrics show value and unit, because `SecondaryMetric` stores no error (spec updated).
 - Task 6.1 ran on `baas-381492019823`, not `baas-development`, which no longer exists (W1).
 - The Δ column was widened from 9 to 12 after a live delta of `+4497991,8 %` overflowed it.
+- 2026-10-29, after review of the live output: `-v` also compares tags (a block after the header) and
+  shows params in full under each row (task 4.6, spec and design updated). No live job has params.
 
 ### Warnings
 

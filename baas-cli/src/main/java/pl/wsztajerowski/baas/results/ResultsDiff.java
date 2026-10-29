@@ -207,6 +207,19 @@ final class ResultsDiff {
     }
 
     /** Sorted by name, so two sides' metric lines line up. */
+    /**
+     * Every tag key either job carries, sorted, without the two the header already shows. A job's
+     * measurements share one set of tags, so the first row speaks for the job.
+     */
+    static List<String> tagKeys(List<ResultRow> a, List<ResultRow> b) {
+        var keys = new TreeMap<String, Boolean>();
+        if (!a.isEmpty()) a.get(0).tags().keySet().forEach(k -> keys.put(k, true));
+        if (!b.isEmpty()) b.get(0).tags().keySet().forEach(k -> keys.put(k, true));
+        keys.remove(TagKeys.INSTANCE_TYPE);
+        keys.remove(TagKeys.TYPE);
+        return List.copyOf(keys.keySet());
+    }
+
     static List<String> metricNames(Row row) {
         var names = new TreeMap<String, Boolean>();
         if (row.a() != null) row.a().secondaryMetrics().keySet().forEach(n -> names.put(n, true));
