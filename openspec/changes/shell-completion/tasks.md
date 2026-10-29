@@ -32,4 +32,4 @@
 
 ## 6. Verify
 
-- [ ] 6.1 Run `/opsx:verify` and record the result in `openspec/changes/shell-completion/verify.md`: requirement → code → test → gap table, open warnings as W1, W2…, and any deviation from design or tasks
+- [x] 6.1 Run `/opsx:verify` and record the result in `openspec/changes/shell-completion/verify.md`: requirement → code → test → gap table, open warnings as W1, W2…, and any deviation from design or tasks
