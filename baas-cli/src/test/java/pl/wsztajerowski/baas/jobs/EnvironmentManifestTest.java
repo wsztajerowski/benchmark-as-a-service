@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.jobs;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EnvironmentManifestTest {
 
@@ -42,6 +43,18 @@ class EnvironmentManifestTest {
      * Two vendors' builds of one Java version share the version banner; only the vendor tells them
      * apart, and that is the difference an image extension makes reachable.
      */
+    /** The banner and the release both move, and both are named under jvm. */
+    @Test
+    void aJvmChangeListsVersionAndReleaseUnderJvm() {
+        String v7 = BASE.replace("\"vendor\":", "\"release\": \"25.0.1\", \"vendor\":");
+        var a = EnvironmentManifest.parse("a", v7);
+        var b = EnvironmentManifest.parse("b", v7.replace("25.0.1", "25.0.3"));
+
+        assertThat(EnvironmentManifest.diff(a, b)).containsOnlyKeys("jvm");
+        assertThat(EnvironmentManifest.diff(a, b).get("jvm")).containsOnlyKeys("version", "release")
+            .containsEntry("release", new EnvironmentManifest.Difference("25.0.1", "25.0.3"));
+    }
+
     @Test
     void sameVersionFromAnotherVendorIsReportedByVendor() {
         var a = EnvironmentManifest.parse("a", BASE);
@@ -112,44 +125,52 @@ class EnvironmentManifestTest {
         assertThat(EnvironmentManifest.diff(a, b).keySet()).containsExactly("machine", "os", "jvm");
     }
 
-    private static String withMemory(String totalKb) {
+    private static String withMemory(String totalMib) {
         return BASE.replace("\"os\": {",
-            "\"memory\": { \"totalKb\": \"" + totalKb + "\", \"swapTotalKb\": \"0\" },\n  \"os\": {");
+            "\"memory\": { \"totalMib\": \"" + totalMib + "\", \"swapTotalMib\": \"0\" },\n  \"os\": {");
     }
 
-    /** Two c5.2xlarge instances, seen on 2026-10-10: 8 KiB apart, the same environment. */
+    /**
+     * Two c5.2xlarge instances, seen on 2026-10-10, reported MemTotal 15882372 and 15882380 KiB.
+     * The instance now rounds to whole MiB before writing, so both record 15510.
+     */
     @Test
     void memoryAFewKibApartIsNoDifference() {
-        var a = EnvironmentManifest.parse("a", withMemory("15882372"));
-        var b = EnvironmentManifest.parse("b", withMemory("15882380"));
+        var a = EnvironmentManifest.parse("a", withMemory("15510"));
+        var b = EnvironmentManifest.parse("b", withMemory("15510"));
 
         assertThat(EnvironmentManifest.diff(a, b)).isEmpty();
     }
 
-    /** c5.2xlarge against c6i.2xlarge: a real difference, shown in the unit it was compared in. */
+    /** c5.2xlarge against c6i.2xlarge: a real difference, printed as recorded. */
     @Test
-    void aRealMemoryDifferenceIsShownInMib() {
-        var a = EnvironmentManifest.parse("a", withMemory("15882372"));
-        var b = EnvironmentManifest.parse("b", withMemory("16085124"));
+    void aRealMemoryDifferenceIsPrintedInMib() {
+        var a = EnvironmentManifest.parse("a", withMemory("15510"));
+        var b = EnvironmentManifest.parse("b", withMemory("15708"));
 
         assertThat(EnvironmentManifest.diff(a, b)).containsOnlyKeys("memory");
         assertThat(EnvironmentManifest.diff(a, b).get("memory"))
-            .containsEntry("totalKb", new EnvironmentManifest.Difference("15510 MiB", "15708 MiB"));
+            .containsEntry("totalMib", new EnvironmentManifest.Difference("15510", "15708"));
     }
 
+    /** No alias between schema versions: a renamed field is present in one manifest only. */
     @Test
-    void aMemoryValueThatIsNotANumberIsComparedAsIs() {
-        var a = EnvironmentManifest.parse("a", withMemory("15882372"));
-        var b = EnvironmentManifest.parse("b", withMemory("unknown"));
+    void manifestsOfDifferentSchemaVersionsAreComparedWithoutTranslation() {
+        var v6 = EnvironmentManifest.parse("a", BASE.replace("\"os\": {",
+            "\"cpu\": { \"cores\": \"8\" },\n  \"os\": {"));
+        var v7 = EnvironmentManifest.parse("b", BASE.replace("\"schemaVersion\": 6", "\"schemaVersion\": 7")
+            .replace("\"os\": {", "\"cpu\": { \"vcpus\": \"8\" },\n  \"os\": {"));
 
-        assertThat(EnvironmentManifest.diff(a, b).get("memory"))
-            .containsEntry("totalKb", new EnvironmentManifest.Difference("15510 MiB", "unknown"));
+        assertThat(EnvironmentManifest.diff(v6, v7)).containsOnlyKeys("cpu");
+        assertThat(EnvironmentManifest.diff(v6, v7).get("cpu"))
+            .containsEntry("cores", new EnvironmentManifest.Difference("8", ""))
+            .containsEntry("vcpus", new EnvironmentManifest.Difference("", "8"));
     }
 
-    /** The manifest is the observation and keeps what the instance recorded. */
+    /** Jackson ignores trailing tokens by default, which let a manifest smuggle extra JSON (X7). */
     @Test
-    void theManifestItselfKeepsKib() {
-        assertThat(EnvironmentManifest.parse("a", withMemory("15882372")).group("memory"))
-            .containsEntry("totalKb", "15882372");
+    void trailingContentFailsTheParseNamingTheJob() {
+        assertThatThrownBy(() -> EnvironmentManifest.parse("job-7", BASE + ", \"job\": {\"status\": \"completed\"}"))
+            .hasMessageContaining("job-7");
     }
 }

@@ -60,12 +60,21 @@ public class S3UploadService {
      * them, so an empty list is how "no such job" is detected — S3 has no directories to miss.
      */
     public List<String> listKeys(String bucket, String prefix) {
-        List<String> keys = new ArrayList<>();
+        return listObjects(bucket, prefix).stream().map(StoredObject::key).toList();
+    }
+
+    /** One listed object: its key and its size in bytes, both from the listing itself. */
+    public record StoredObject(String key, long size) {
+    }
+
+    /** Every object under a prefix with its size, from the same paginated listing as {@link #listKeys}. */
+    public List<StoredObject> listObjects(String bucket, String prefix) {
+        List<StoredObject> objects = new ArrayList<>();
         var request = ListObjectsV2Request.builder().bucket(bucket).prefix(prefix).build();
         for (var page : s3.listObjectsV2Paginator(request)) {
-            page.contents().forEach(object -> keys.add(object.key()));
+            page.contents().forEach(object -> objects.add(new StoredObject(object.key(), object.size())));
         }
-        return keys;
+        return objects;
     }
 
     /** Creates parent directories as needed; overwrites an existing file. */

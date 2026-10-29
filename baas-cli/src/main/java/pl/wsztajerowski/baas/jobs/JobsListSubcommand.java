@@ -166,7 +166,7 @@ public class JobsListSubcommand implements Callable<Integer> {
         List<JobListing.Row> rows = fetch(config, factory, logger::info);
         print(rows, Instant.now());
         rows.stream().filter(JobListing.Row::inFlight).findFirst().ifPresent(row ->
-            Hints.show(console(), logger, "stop one", Hints.command(config.getPrefix(), "jobs terminate " + row.job().jobId())));
+            Hints.show(console(), spec.commandLine().getErr(), "stop one", Hints.command(config.getPrefix(), "jobs terminate " + row.job().jobId())));
         return 0;
     }
 

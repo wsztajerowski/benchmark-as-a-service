@@ -585,7 +585,10 @@ The watchdog is the only one that survives a deadlocked JVM.
   `--format json | jq` and `--format csv > file`, which is why none of it is logged. The test for
   which side a line belongs on is whether a redirect of stdout should keep it: an empty answer
   ("No results found.", "No differences.") is payload; the unknown-`--tag` warning, both
-  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged.
+  `ImageCommand` warnings and `BaasApp.reportFailure` are not, and are logged. The one stderr text
+  that bypasses the logger is the `Next` hint block (`console.Hints`), written to picocli's
+  `getErr()`: it is a command to copy, and a timestamp, level and class name in front of it are
+  what buried it.
 - **Terminal effects happen only when `Console` says interactive: `System.console()` +
   `isTerminal()` + `TERM != dumb`, decided once.** Every misdetection is a *no*, so the worst case
   is today's plain output and never an escape sequence in a file. `NO_COLOR` drops colour.
@@ -610,7 +613,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   stored item's shape only, never pass/fail counts — the fixture's `TestWithForbiddenResults` races
   nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
   provisions a paid instance per CI job per triggering event, and it tags
-  itself `exclude_from_results=true` — which is why `queryByJobId` carries no exclusion
+  itself `hidden=true` — which is why `queryByJobId` carries no hidden
   filter. **The path filter bounds it per PR, not per push:** GitHub evaluates a `pull_request`
   path filter against the PR's cumulative diff, so once a PR touches `baas-cli/**` *every*
   subsequent push to it launches another instance, including one that only edits an unrelated
@@ -792,7 +795,7 @@ non-obvious entries:
 |---|---|
 | `launch-error.txt` | Only for a job whose `RunInstances` failed: the AWS error code, message and job id, and what was requested. There is no instance and so no boot log; this is what `baas jobs download <jobId>` then has to show |
 | `cloud-init-output.log` | Runner boot log, uploaded before every termination, a cancelled or timed-out job's included (with the process output and `logs/` so far) — start here when a job fails before producing output |
-| `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (6) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Read by `baas jobs show` and compared group by group by `baas jobs diff`, which also compares `packages.txt` when the AMIs differ. |
+| `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (7) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Values stay raw (version banners, sysfs syntax); `baas jobs show` shortens them for reading and `baas jobs diff` compares them as stored, group by group, also comparing `packages.txt` when the AMIs differ. Schema 7 renamed `cpu.cores` to `vcpus` (it was always `nproc`) beside a new `physicalCores`, records memory as `totalMib`/`swapTotalMib`, and adds `jvm.release`, the value of the `jdk` tag. A renamed field never keeps its old name with a new meaning, and nothing maps a schema-6 name onto a schema-7 one: across the change `diff` shows both, under its schema warning. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/async-output/` |
@@ -856,7 +859,7 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
 | Derived | `type`, `project`, `source` | `baas run`. `type` is reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
-| Convention | `options`, `exclude_from_results` | Free-form. `exclude_from_results=true` is filtered out server-side — except under `--show-excluded` (shown faint) and `--job-id`; the picker also omits a project holding only excluded rows. It is a convention, not a field |
+| Convention | `options`, `hidden` | Free-form. `hidden=true` is filtered out server-side — except under `--show-hidden` (shown faint) and `--job-id`; the picker also omits a project holding only hidden rows; `jobs list` hides nothing and `jobs show` marks it beside the status. It is a convention, not a field. Named `exclude_from_results` until `readable-jobs-show`, renamed without a migration: a stored row carrying the old key is not hidden |
 
 `imageVersion` is the image's *label*: the base version (`1.3.0`), or `1.3.0+ext.<sha256[0:8]>` when
 the deployment has an extension. A filter on `1.3.0` therefore never returns an extended image's

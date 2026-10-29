@@ -100,7 +100,7 @@ jobs:
       # pinned runner JAR and exits before launching anything. The upside is that CI tests the
       # runner it just built rather than the last released one.
       #
-      # --tag exclude_from_results=true because this measures fixture code and carries no
+      # --tag hidden=true because this measures fixture code and carries no
       # analytical meaning. It stays visible to `--job-id`, which is a request for one named
       # job rather than a query over the project's history.
       #
@@ -127,7 +127,7 @@ jobs:
             --tag commit="$RUN_COMMIT" \
             --runner-jar benchmark-runner/target/benchmark-runner.jar \
             --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
-            --tag exclude_from_results=true \
+            --tag hidden=true \
             -- "$BENCHMARK_CLASS" -f 1 -wi 1 -i 1 \
                --async-event=wall \
                --async-output-type=flamegraph,jfr \
@@ -208,19 +208,19 @@ jobs:
           test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
           test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
 
-      # Excluded from the project query, present under its own id and under --show-excluded: the
-      # halves of the exclusion contract, asserted against each other. The query lists every
+      # Hidden from the project query, present under its own id and under --show-hidden: the
+      # halves of the hiding contract, asserted against each other. The query lists every
       # measurement with no limit, so neither grouping nor paging can be what hides it: if
-      # exclusion broke, this job's rows would surface.
-      - name: The excluded job is absent from the project sweep
+      # hiding broke, this job's rows would surface.
+      - name: The hidden job is absent from the project sweep
         run: |
           $BAAS results query --project "$PROJECT" --limit 0 --format json > sweep.json
           test "$(jq --arg id "${{ steps.run.outputs.job_id }}" \
             '[.[] | select(.jobId == $id)] | length' sweep.json)" -eq 0
 
-      - name: The excluded job is present when every job is asked for
+      - name: The hidden job is present when every job is asked for
         run: |
-          $BAAS results query --project "$PROJECT" --show-excluded --limit 0 --format json > every-job.json
+          $BAAS results query --project "$PROJECT" --show-hidden --limit 0 --format json > every-job.json
           test "$(jq --arg id "${{ steps.run.outputs.job_id }}" \
             '[.[] | select(.jobId == $id)] | length' every-job.json)" -gt 0
 
@@ -310,7 +310,7 @@ jobs:
       # deployment from the operator role this job federated into (<name>-role-operator).
 
       # --mode is the runner's, forwarded to JCStress as -m; -m itself is no runner option and
-      # baas run refuses it. --runner-jar and exclude_from_results as in the job above.
+      # baas run refuses it. --runner-jar and hidden as in the job above.
       - name: Run the JCStress tests on EC2
         id: run
         run: |
@@ -323,7 +323,7 @@ jobs:
             --tag commit="$RUN_COMMIT" \
             --runner-jar benchmark-runner/target/benchmark-runner.jar \
             --benchmark-jar fake-stress-tests/target/fake-stress-tests.jar \
-            --tag exclude_from_results=true \
+            --tag hidden=true \
             -- --mode sanity \
             | tee summary.json || status=$?
           job_id=$(jq -r '.jobId // empty' summary.json)

@@ -215,9 +215,9 @@ class RunCommandDetachTest {
 
         command.hints(0, lines::add);
 
-        assertThat(lines).containsExactly(
-            "→ follow it: baas --deployment dev jobs show " + JOB.jobId(),
-            "→ stop it: baas --deployment dev jobs terminate " + JOB.jobId());
+        assertThat(lines).containsExactly("Next",
+            "  follow it  baas --deployment dev jobs show " + JOB.jobId(),
+            "  stop it    baas --deployment dev jobs terminate " + JOB.jobId());
     }
 
     @Test
@@ -230,8 +230,8 @@ class RunCommandDetachTest {
 
         command.hints(0, lines::add);
 
-        assertThat(lines).containsExactly(
-            "→ measurements: baas --deployment dev query --job-id " + JOB.jobId(),
-            "→ artifacts: baas --deployment dev jobs download " + JOB.jobId());
+        assertThat(lines).containsExactly("Next",
+            "  measurements  baas --deployment dev query --job-id " + JOB.jobId(),
+            "  artifacts     baas --deployment dev jobs download " + JOB.jobId());
     }
 }
