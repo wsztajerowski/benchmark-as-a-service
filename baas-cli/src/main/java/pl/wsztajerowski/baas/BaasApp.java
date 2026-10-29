@@ -17,6 +17,7 @@ import pl.wsztajerowski.baas.results.ResultsQuerySubcommand;
 import pl.wsztajerowski.baas.jobs.RunCommand;
 import pl.wsztajerowski.baas.jobs.JobsCommand;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
+import pl.wsztajerowski.baas.console.LogStyle;
 import pl.wsztajerowski.baas.cli.Root;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
@@ -175,6 +176,8 @@ public class BaasApp implements Runnable, Root {
     public static void main(String[] args) {
         // Must happen before the CommandLine is built — see LoggingMixin#applyEarlyVerbosity.
         LoggingMixin.applyEarlyVerbosity(args);
+        // Same constraint: SimpleLogger reads its format once, when the first logger is created.
+        LogStyle.apply();
         BaasApp app = new BaasApp();
         System.exit(commandLine(app)
             .setExecutionStrategy(app::executionStrategy)

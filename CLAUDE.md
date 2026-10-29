@@ -600,6 +600,16 @@ The watchdog is the only one that survives a deadlocked JVM.
   every wrong guess falls back to the log line instead. While shown, it swaps `System.err` for a
   clear-write-redraw stream — SimpleLogger resolves `System.err` per write, which is what makes
   that reach it — and the shutdown hook closes it *before* logging the termination.
+- **Log lines are short and level-coloured only when stdout is a terminal *and* `/dev/fd/2` is the
+  same file as `/dev/fd/1`** (`console.LogStyle`, applied in `BaasApp.main` before any logger
+  exists, like `-v`): `WARN <message>`, the level in Maven's colours (`ERROR` red, `WARN` yellow,
+  `INFO` blue, `DEBUG` cyan), no timestamp or logger name. The `/dev/fd` test is what the status line
+  above lacked — cheap, and made only once stdout is known to be a terminal; anything it cannot answer
+  counts as *no*. Everywhere else — `2> run.log`, a pipe, CI — lines keep
+  `simplelogger.properties`' full format with no escape sequence. Colour is a filter installed as
+  `System.err` that touches only a line whose first word is a level, so the `Next` block and stack
+  traces pass through; `run`'s status line wraps on top of it. There is no log file: SimpleLogger has
+  one target and one format, and a file appender would mean another backend.
 - **`printJson`/`printCsv` must format with `Locale.ROOT`.** Under a comma-decimal locale (pl-PL
   among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since

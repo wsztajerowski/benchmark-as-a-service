@@ -328,3 +328,27 @@ stored `hidden=true` tag, `--show-excluded` refused as an unknown option (exit 2
 - `jcstress`, attached, `--mode sanity`: `20261029T124643146Z-9aa35168`, `completed`. 11 checks, all PASS.
 
 34 of 34 PASS. Two more c5.2xlarge instances, a few minutes each.
+
+## Short, coloured log lines (section 10, added 2026-10-29)
+
+`console.LogStyle` decides once in `BaasApp.main`; `console.LevelColouring` colours a line's level word.
+`LogStyleTest` 8/8 (each decision, each level, a non-log line, a flush before the newline). `baas-cli`: 1135 unit
+and 53 integration tests, 0 failures, `SliceBoundaryTest` included. The stderr test was probed on macOS first
+(same terminal → `/dev/fd/1` and `/dev/fd/2` the same file; `2> file` → different; stdout redirected → not
+interactive).
+
+**10.3** Reactor CLI against `baas-development`, under `script` (a pseudo-terminal), raw bytes via `cat -v`
+(`^D^H^H` is `script`'s own noise):
+
+```
+a) terminal                 ^[[1;33mWARN^[[0m Unreleased build (baas 0.0.0-semantically-released): …
+b) terminal, NO_COLOR       WARN Unreleased build (baas 0.0.0-semantically-released): …
+c) terminal, 2> file        2026-10-29 14:19:06:682 +0100 WARN CliVersionCheck - Unreleased build … (in the file)
+d) terminal, stdout piped   2026-10-29 14:19:10:347 +0100 WARN CliVersionCheck - Unreleased build …
+   ERROR on a terminal      ^[[1;31mERROR^[[0m No deployment 'no-such' is configured on this machine …
+   INFO on a terminal (-v)  ^[[1;34mINFO^[[0m Showing 1 of 6 jobs (--limit 1).
+```
+
+- **W6** — `DEBUG`'s cyan is covered by `LogStyleTest` only: no command tried logs at debug on its success path.
+- **W7** — On Windows there is no `/dev/fd`, so the check fails and lines keep the full format. That is safe,
+  but nobody there gets the short format.
