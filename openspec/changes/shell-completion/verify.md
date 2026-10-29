@@ -66,8 +66,10 @@ branch.
 - **W1**: The candidate *lists* (ambiguous prefixes) were not seen rendered in a real terminal,
   only through the function's output and `zpty`'s unique and common-prefix completions. To close
   it, press Tab twice on `baas ` in your own zsh after loading the script.
-- **W2**: Only CI covers the `ubuntu-latest` leg (GNU userland, bash 5); nothing ran locally on
-  Linux. The PR's Installer check is the evidence.
+- ~~**W2**~~ **closed**: PR #120's Installer run
+  (https://github.com/wsztajerowski/benchmark-as-a-service/actions/runs/40919909148) passed on
+  both runners. `ubuntu-latest`: `bash: baas jobs <TAB> -> run list show diff download terminate
+  connect`. `macos-latest`: the same for bash and for zsh.
 
 ## Deviations from design / tasks
 
@@ -83,5 +85,4 @@ branch.
 
 ## Final assessment
 
-No critical issues. Two warnings. Ready for archive once the PR's Installer check is green on both
-runners (W2).
+No critical issues. One open warning (W1), which needs a human at a terminal. Ready for archive.
