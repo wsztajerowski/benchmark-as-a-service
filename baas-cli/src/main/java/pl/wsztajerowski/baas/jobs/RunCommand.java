@@ -3,6 +3,7 @@ package pl.wsztajerowski.baas.jobs;
 import pl.wsztajerowski.baas.session.GitProject;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.console.Json;
+import pl.wsztajerowski.baas.model.BenchmarkArgs;
 import pl.wsztajerowski.baas.model.BenchmarkType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -21,7 +22,6 @@ import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.session.OperatorSession;
-import pl.wsztajerowski.baas.model.RunnerArgs;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
@@ -48,14 +48,21 @@ import java.util.regex.Pattern;
     // re-wrapping mid-sentence makes the -- rule harder to read than no footer at all.
     footer = {
         "",
-        "Put -- before the benchmark parameters. Everything after it goes verbatim",
-        "to benchmark-runner.jar. Without it, JMH flags are parsed as baas options",
-        "and the command fails with: Unknown options: '-f', '-wi', '-i'",
+        "Put -- before the benchmark parameters. Everything after it reaches the",
+        "benchmark JAR verbatim, as JMH's or JCStress's own arguments (java -jar",
+        "<jar> -h lists them). Without --, JMH flags are parsed as baas options and",
+        "the command fails with: Unknown options: '-f', '-wi', '-i'",
         "",
         "  baas run --benchmark-jar target/b.jar --project my-bench \\",
         "    jmh -- MyBenchmark -f 1 -wi 1 -i 3",
         "  baas run --benchmark-jar target/b.jar --project my-bench \\",
-        "    --instance-type c6i.4xlarge jmh -- MyBenchmark -f 1",
+        "    jmh -- MyBenchmark -f 1 -prof gc -prof 'async:output=flamegraph'",
+        "  baas run --benchmark-jar target/stress.jar --project my-bench \\",
+        "    jcstress -- -m sanity",
+        "",
+        "BaaS sets -rf, -rff and -o (JCStress: -r) and the dir of an async or jfr",
+        "profiler; -h, -l, -lp, -lprof and -lrf (JCStress: -h, -l, -p) measure",
+        "nothing. Both are refused before anything is launched.",
         "",
         "--project can be derived from the JAR's git repository instead:",
         "  baas config set --git-resolve-project true",
@@ -121,7 +128,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     String benchmarkType;
 
     @Parameters(index = "1..*", paramLabel = "PARAMS",
-        description = "Parameters forwarded to benchmark-runner.jar. Must follow a -- separator.")
+        description = "JMH's or JCStress's own arguments, passed to the benchmark JAR verbatim. Must follow a -- separator.")
     List<String> benchmarkParams = new ArrayList<>();
 
     @Option(names = "--benchmark-jar", required = true,
@@ -234,7 +241,15 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     void hints(int exitCode, Consumer<String> sink) {
         // In the finally: a command built outside picocli (a unit test) has no spec to print through,
         // and a hint must never replace the outcome being reported.
-        if (summaryJobId == null || (console == null && spec == null)) {
+        if (console == null && spec == null) {
+            return;
+        }
+        if (localCommand != null) {
+            Hints.show(console(), sink, "run it here", localCommand,
+                localCommandCaveat == null ? null : "on the runner image", localCommandCaveat);
+            return;
+        }
+        if (summaryJobId == null) {
             return;
         }
         String d = summaryDeployment;
@@ -260,15 +275,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         if (!VALID_TYPES.contains(benchmarkType)) {
             throw CommandRefusal.usage("Unknown benchmark type '" + benchmarkType + "'. Valid: " + VALID_TYPES);
         }
-        if (benchmarkParams.contains(JCSTRESS_MODE_MISTYPED)) {
-            throw CommandRefusal.usage("-m after -- is not a runner option. A JCStress mode is --mode: "
-                + "baas run jcstress -- --mode sanity\nNothing was launched.");
-        }
-        Optional<String> setByTheCli = RunnerArgs.firstSetByTheCli(benchmarkParams);
-        if (setByTheCli.isPresent()) {
-            throw CommandRefusal.usage(setByTheCli.get() + " after -- names a runner option baas run sets itself. "
-                + insteadOf(setByTheCli.get()) + "\nNothing was launched.");
-        }
+        refuseManagedOrNoRun();
 
         // Checked first, before resolving the project, the results table, the runner image or
         // anything else: a job that cannot name the runner JAR it will execute is going to fail
@@ -452,24 +459,35 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     static final List<String> RESERVED_TAG_KEYS = TagKeys.RESERVED;
 
     /**
-     * JCStress's own mode flag, which the runner deliberately does not accept: it was the MongoDB
-     * connection string, and retire-mongodb left it unassigned rather than make it an alias. Passed
-     * through, it would fail the job on the instance, after a paid boot, so it is refused here.
+     * The benchmark's arguments reach its JAR verbatim, except the few BaaS manages and those that
+     * would make a paid job measure nothing — refused here, before any AWS call, through the same
+     * reading the runner applies again on the instance. A no-run argument is answered with the
+     * local command that does what was asked, for free.
      */
-    static final String JCSTRESS_MODE_MISTYPED = "-m";
-
-    /**
-     * What to type instead of a runner option the benchmark's arguments may not name. The arguments
-     * reach the runner after the CLI's own options, and picocli keeps the last value, so each of
-     * these would silently override what {@code baas run} set, or fail the job on the instance.
-     */
-    static String insteadOf(String option) {
-        return switch (option) {
-            case RunnerArgs.TAG -> "Pass tags to baas run, before --: baas run --tag key=value ...";
-            case RunnerArgs.PROJECT -> "Pass the project to baas run, before --: baas run --project <name> ...";
-            default -> "It names the job's own deployment resources, which no benchmark argument may change.";
-        };
+    void refuseManagedOrNoRun() {
+        BenchmarkArgs reading = BenchmarkArgs.of(BenchmarkType.fromCommandName(benchmarkType));
+        Optional<String> managed = reading.firstManaged(benchmarkParams);
+        if (managed.isPresent()) {
+            throw CommandRefusal.usage(managed.get() + " is managed by BaaS and cannot be set after --: the "
+                + "runner sets it to collect the job's results and artifacts.\nNothing was launched.");
+        }
+        Optional<String> noRun = reading.firstNoRun(benchmarkParams);
+        if (noRun.isPresent()) {
+            localCommand = "java -jar " + quoteIfNeeded(String.valueOf(benchmarkJar)) + " " + cliParameters(benchmarkParams);
+            localCommandCaveat = noRun.get().equals("-lprof")
+                ? "perf and async-profiler are also available there; this lists this machine's profilers"
+                : null;
+            throw CommandRefusal.usage(noRun.get() + " makes " + reading.tool() + " print and exit without "
+                + "measuring, so the job would measure nothing. Run it locally: " + localCommand
+                + "\nNothing was launched.");
+        }
     }
+
+    /** Set by a no-run refusal: the same arguments, run against the named JAR on this machine. */
+    String localCommand;
+
+    /** The {@code -lprof} caveat beside {@link #localCommand}: the runner image is not this machine. */
+    String localCommandCaveat;
 
     /**
      * The results table this job records its status in and stores its measurements to.
@@ -525,6 +543,10 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         // is how RESULT#unknown grew.
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.put(TagKeys.SOURCE, deriveSource(environment));
+        // Absent when nothing is profiled; read as JMH reads -prof, abbreviations included, so the
+        // tag names what the instance's injection and JMH itself act on.
+        BenchmarkArgs.of(BenchmarkType.fromCommandName(benchmarkType)).profilersTag(benchmarkParams)
+            .ifPresent(profilers -> tags.put(TagKeys.PROFILERS, profilers));
         // Absent when nothing followed --, like commit and branch: no placeholder value.
         if (!benchmarkParams.isEmpty()) {
             tags.put(TagKeys.CLI_PARAMETERS, cliParameters(benchmarkParams));
@@ -542,7 +564,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         return String.join(" ", params.stream().map(RunCommand::quoteIfNeeded).toList());
     }
 
-    private static String quoteIfNeeded(String arg) {
+    static String quoteIfNeeded(String arg) {
         if (!arg.isEmpty() && arg.chars().noneMatch(c -> Character.isWhitespace(c) || c == '\'' || c == '"')) {
             return arg;
         }

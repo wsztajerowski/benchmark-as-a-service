@@ -196,6 +196,21 @@ final class ResultsDiff {
         return Objects.equals(left, right) ? null : orAbsent(left) + " → " + orAbsent(right);
     }
 
+    /**
+     * The two jobs' {@code profilers} as {@code profilers: a → b} when they differ, else null, with
+     * an unprofiled side shown as {@code none}. Warned apart from {@link #parameterDifference}, which
+     * also fires then: that one is about the error interval, and a profiler moves the score itself.
+     */
+    static String profilerDifference(List<ResultRow> a, List<ResultRow> b) {
+        if (a.isEmpty() || b.isEmpty()) {
+            return null;
+        }
+        String left = tag(a, TagKeys.PROFILERS);
+        String right = tag(b, TagKeys.PROFILERS);
+        return Objects.equals(left, right) ? null
+            : "profilers: " + (left == null ? "none" : left) + " → " + (right == null ? "none" : right);
+    }
+
     private static String orAbsent(String value) {
         return value == null ? "(absent)" : value;
     }

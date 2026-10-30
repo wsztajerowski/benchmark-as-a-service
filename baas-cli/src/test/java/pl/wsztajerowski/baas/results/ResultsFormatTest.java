@@ -193,6 +193,40 @@ class ResultsFormatTest {
         assertThat(parsed.get(0).get("instanceType").isNull()).isTrue();
     }
 
+    /** A profiler perturbs the score it measures, so a profiled row is marked and the mark explained. */
+    @Test
+    void aProfiledScoreIsMarkedAndTheDigitsStayAligned() {
+        var profiled = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.Q.offer", "jmh", "thrpt",
+            41790355.108, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of("profilers", "async,gc"));
+        var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",
+            48213977.412, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        String out = table(List.of(clean, profiled), false);
+
+        var lines = out.lines().toList();
+        String cleanLine = lines.stream().filter(l -> l.contains("b7e4d0f2")).findFirst().orElseThrow();
+        String profiledLine = lines.stream().filter(l -> l.contains("a3f9c21b")).findFirst().orElseThrow();
+        // The table formats in the default locale, so the expected text is formatted the same way.
+        String profiledScore = String.format("%.3f", 41790355.108);
+        String cleanScore = String.format("%.3f", 48213977.412);
+        assertThat(profiledLine).contains(profiledScore + "* ops/s");
+        assertThat(cleanLine).contains(cleanScore + "  ops/s").doesNotContain("*");
+        assertThat(cleanLine.indexOf(cleanScore)).isEqualTo(profiledLine.indexOf(profiledScore));
+        assertThat(out).contains(ResultsTable.PROFILED_FOOTNOTE);
+    }
+
+    @Test
+    void aTableWithNoProfiledRowHasNoMarkAndNoFootnote() {
+        var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",
+            48213977.412, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        String out = table(List.of(clean), false);
+
+        assertThat(out).doesNotContain("*").doesNotContain(ResultsTable.PROFILED_FOOTNOTE);
+        assertThat(out.lines().filter(l -> l.contains("b7e4d0f2")).findFirst().orElseThrow())
+            .contains(String.format("%.3f", 48213977.412) + " ops/s");
+    }
+
     /**
      * Truncating the identifier at 17 landed inside the old {@code <type>-<date>} prefix, so two
      * runs of the same type on the same day rendered identically — and the identifier is the value

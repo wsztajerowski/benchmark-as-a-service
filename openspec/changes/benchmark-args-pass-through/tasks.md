@@ -24,13 +24,13 @@
 
 ## 4. `baas-cli`
 
-- [ ] 4.1 `RunCommand`: accept only `jmh`/`jcstress`; after the reserved-tag check, refuse managed then no-run arguments (`CommandRefusal.usage`, exit 2). The no-run `Next` hint is `java -jar <jar> <args>`, plus the `-lprof` caveat. Delete the `-m` and `SET_BY_THE_CLI` refusals. Verify: `RunCommandTest` covers every `benchmark-arguments` refusal scenario, with no AWS call made (`FakeRunAws` untouched).
-- [ ] 4.2 `buildRunnerTags`: add `profilers` from `BenchmarkArgs`; a caller `--tag profilers=` is refused. Verify: tests for `-prof gc -prof async:event=alloc -prof gc` → `async,gc`, for absence, and for the reservation scenario. `JobLaunchTest` shows the tag on the reservation.
-- [ ] 4.3 `UserDataScriptBuilder`: put the runner's `--` before `BENCHMARK_PARAMS_ARRAY`; process-output names come from the two remaining types. Verify: the rendered script passes `bash -n`, holds `-- "${BENCHMARK_PARAMS_ARRAY[@]}"`, and `aLargeJobStaysWellUnderTheUserDataLimit` still passes.
-- [ ] 4.4 `ArtifactView`: include `LEGACY_PROCESS_OUTPUT_NAMES` in the output group. Verify: a test lists an old job holding `jmh-with-async-output.txt` under "output".
-- [ ] 4.5 `ResultsTable`: `*` and a padding space on JMH scores, plus the footnote when a printed row is marked. Verify: a table test asserts aligned decimal points, the mark, the footnote, its absence with no profiled row, and unchanged JSON/CSV.
-- [ ] 4.6 `ResultsDiff`: a `profilers: A → B` warning (`none` for absent), plus `type`-independent JMH pairing including former types. Verify: tests for the `results-diff` delta scenarios.
-- [ ] 4.7 Fix completion and help: the type candidates are `jmh` and `jcstress`, and `run`'s help text names `-prof`. Verify: the completion test and a `baas run --help` snapshot.
+- [x] 4.1 `RunCommand`: accept only `jmh`/`jcstress`; after the reserved-tag check, refuse managed then no-run arguments (`CommandRefusal.usage`, exit 2). The no-run `Next` hint is `java -jar <jar> <args>`, plus the `-lprof` caveat. Delete the `-m` and `SET_BY_THE_CLI` refusals. Verify: `RunCommandTest` covers every `benchmark-arguments` refusal scenario, with no AWS call made (`FakeRunAws` untouched).
+- [x] 4.2 `buildRunnerTags`: add `profilers` from `BenchmarkArgs`; a caller `--tag profilers=` is refused. Verify: tests for `-prof gc -prof async:event=alloc -prof gc` → `async,gc`, for absence, and for the reservation scenario. `JobLaunchTest` shows the tag on the reservation.
+- [x] 4.3 `UserDataScriptBuilder`: put the runner's `--` before `BENCHMARK_PARAMS_ARRAY`; process-output names come from the two remaining types. Verify: the rendered script passes `bash -n`, holds `-- "${BENCHMARK_PARAMS_ARRAY[@]}"`, and `aLargeJobStaysWellUnderTheUserDataLimit` still passes.
+- [x] 4.4 `ArtifactView`: include `LEGACY_PROCESS_OUTPUT_NAMES` in the output group. Verify: a test lists an old job holding `jmh-with-async-output.txt` under "output".
+- [x] 4.5 `ResultsTable`: `*` and a padding space on JMH scores, plus the footnote when a printed row is marked. Verify: a table test asserts aligned decimal points, the mark, the footnote, its absence with no profiled row, and unchanged JSON/CSV.
+- [x] 4.6 `ResultsDiff`: a `profilers: A → B` warning (`none` for absent), plus `type`-independent JMH pairing including former types. Verify: tests for the `results-diff` delta scenarios.
+- [x] 4.7 Fix completion and help: the type candidates are `jmh` and `jcstress`, and `run`'s help text names `-prof`. Verify: the completion test and a `baas run --help` snapshot.
 
 ## 5. CI, docs and release
 

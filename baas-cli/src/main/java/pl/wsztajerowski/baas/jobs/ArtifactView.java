@@ -31,7 +31,9 @@ final class ArtifactView {
 
     private static final Set<String> OUTPUT = Stream.concat(
             Stream.of(JobLayout.BOOT_LOG_NAME, JobLayout.LAUNCH_ERROR_NAME, JobLayout.LOGS_SEGMENT + "/"),
-            Stream.of(BenchmarkType.values()).map(BenchmarkType::processOutputName))
+            // A stored job of a retired profiled type still holds its output under that type's name.
+            Stream.concat(Stream.of(BenchmarkType.values()).map(BenchmarkType::processOutputName),
+                BenchmarkType.LEGACY_PROCESS_OUTPUT_NAMES.stream()))
         .collect(Collectors.toUnmodifiableSet());
     private static final Set<String> ENVIRONMENT = Set.of(JobLayout.ENVIRONMENT_NAME, JobLayout.PACKAGES_NAME);
     private static final Set<String> RESULTS = Set.of(JobLayout.RESULT_JSON_NAME);

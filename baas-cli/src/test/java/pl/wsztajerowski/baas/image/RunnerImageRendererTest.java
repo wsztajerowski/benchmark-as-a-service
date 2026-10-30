@@ -91,7 +91,7 @@ class RunnerImageRendererTest {
     void asyncProfilerLandsWhereTheRunnerLooksForIt() {
         assertThat(definition.tools().asyncProfiler().libraryPath())
             .as("JmhWithAsyncProfilerSubcommand defaults --async-path to this exact path; a "
-                + "mismatch fails only on jmh-with-async jobs, long after the bake succeeded")
+                + "mismatch fails only on -prof async jobs, long after the bake succeeded")
             .isEqualTo("/app/async-profiler/lib/libasyncProfiler.so");
     }
 

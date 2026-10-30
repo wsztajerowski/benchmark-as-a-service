@@ -76,14 +76,42 @@ class OptionValidationTest {
         assertThat(captured.err()).contains("--tag project").doesNotContain("Benchmark JAR not found");
     }
 
-    /** -m was the runner's MongoDB option and is now no option at all; the refusal names --mode. */
+    /** JCStress's own -m passes: the benchmark's arguments reach its JAR verbatim. */
     @Test
-    void aShortModeFlagIsRefusedNamingTheLongOne() throws Exception {
+    void jcstressesOwnModeFlagPasses() throws Exception {
         var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
             "--benchmark-jar", "/nonexistent.jar", "--project", "p", "jcstress", "--", "-m", "sanity");
 
+        assertThat(captured.err()).doesNotContain("managed by BaaS").contains("Benchmark JAR not found");
+    }
+
+    /** A flag BaaS manages is refused as typed, before the JAR, the project or AWS are looked at. */
+    @Test
+    void aManagedFlagIsRefusedAsTyped() throws Exception {
+        var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
+            "--benchmark-jar", "/nonexistent.jar", "--project", "p", "jmh", "--", "MyBenchmark", "-rf", "csv");
+
         assertThat(captured.exitCode()).isEqualTo(2);
-        assertThat(captured.err()).contains("--mode").doesNotContain("Benchmark JAR not found");
+        assertThat(captured.err()).contains("-rf is managed by BaaS").doesNotContain("Benchmark JAR not found");
+    }
+
+    /** run's help lists the two types and says how profiling is asked for now. */
+    @Test
+    void runsHelpNamesTheTypesAndProfiling() throws Exception {
+        var captured = baas("run", "--help");
+
+        assertThat(captured.out()).contains("jmh, jcstress", "-prof gc", "jcstress -- -m sanity")
+            .doesNotContain("jmh-with");
+    }
+
+    /** A retired type is refused naming the two that remain. */
+    @Test
+    void aRetiredTypeIsRefused() throws Exception {
+        var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
+            "--benchmark-jar", "/nonexistent.jar", "--project", "p", "jmh-with-async", "--", "MyBenchmark");
+
+        assertThat(captured.exitCode()).isEqualTo(2);
+        assertThat(captured.err()).contains("[jmh, jcstress]");
     }
 
     /** The removed MongoDB option is no longer the CLI's to refuse: nothing types it. */
@@ -92,7 +120,7 @@ class OptionValidationTest {
         var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
             "--benchmark-jar", "/nonexistent.jar", "--project", "p", "jmh", "--", "--mongo-connection-string", "x");
 
-        assertThat(captured.err()).doesNotContain("after --").contains("Benchmark JAR not found");
+        assertThat(captured.err()).doesNotContain("managed by BaaS").contains("Benchmark JAR not found");
     }
 
     /** U26: `timeout 0` disables the process timeout on the instance. */
