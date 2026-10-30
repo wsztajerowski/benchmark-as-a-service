@@ -35,9 +35,7 @@ decides what to pick up next.
 
 ### Must
 
-| ID | Finding | Effort | Sev | Where it goes |
-|---|---|---|---|---|
-| E1 | `--async-output-type flamegraph,jfr`, which CI uses, writes empty flame graphs; CI checks only that an `.html` exists | S | Med | open |
+None open.
 
 ### Should
 
@@ -113,32 +111,6 @@ Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEU
 below is what the proposal starts from.
 
 ## Open, not scheduled
-
-### E1 — `flamegraph,jfr` writes empty flame graphs, and CI passes them · Must · S
-
-The runner passes `--async-output-type` straight into JMH's `-prof async:output=…`
-(`JmhWithAsyncProfilerSubcommandService.createAsyncCommand`). With `flamegraph,jfr`, JMH starts
-async-profiler with `file=…/jfr-wall.jfr`, so samples stream into the recording. The flame graphs
-dumped at the end then find nothing in memory: async-profiler logs `[INFO] All samples were
-filtered out` once per graph, and both HTML files hold the single frame `all` with 2 samples
-(about 8.7 KB each). The JFR is intact: 344,047 `profiler.WallClockSample` events in 4.9 MB.
-
-Seen live on 2026-10-10 in three jobs (`--async-event=wall --async-output-type=flamegraph,jfr
---async-additional-param threads=true`). The same job with `flamegraph` alone gave a full graph
-(399 frames, per-thread roots, `incrementUsingSynchronized` present), as did an earlier
-`cpu`/`flamegraph` job (3018 frames). So the cause is requesting `jfr` together with another
-format, not wall-clock mode. Whether `cpu` + `flamegraph,jfr` fails the same way was not tested.
-
-`e2e-cloud-test.yml` requests exactly that combination and asserts only that some `*.html` and
-`*.jfr` exist (lines 187-190), so CI has been green on empty graphs. The CLAUDE.md claim that a bad
-bake "fails CI rather than surviving it" holds for the profiler starting, not for it producing a
-usable graph.
-
-**Proposed:** (1) in CI, request `flamegraph` alone, or keep both formats and assert that the
-graph's `cpool` holds more than `'all'`, so the check is about content and not existence; (2) in
-the runner, when `jfr` is combined with another format, either refuse the combination before the
-benchmark starts or render the other formats from the JFR afterwards (async-profiler's
-`jfrconv`). Refusing is the smaller change and fails loudly; converting keeps both artifacts.
 
 ### pr83/W5 — a JCStress row's `mode` is the string `"null"` · Should · XS
 
