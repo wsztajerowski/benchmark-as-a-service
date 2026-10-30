@@ -217,6 +217,16 @@ class RunCommandTest {
         assertThat(command.localCommandCaveat).isNull();
     }
 
+    /** --mode is no JCStress option, but not BaaS's to refuse either: JCStress says so on the instance. */
+    @Test
+    void theFormerModeOptionIsNotRefused() {
+        var command = new RunCommand();
+        command.benchmarkType = "jcstress";
+        command.benchmarkParams.addAll(List.of("--mode", "sanity"));
+
+        command.refuseManagedOrNoRun();
+    }
+
     @Test
     void aManagedArgumentIsRefusedNamingIt() {
         var command = new RunCommand();

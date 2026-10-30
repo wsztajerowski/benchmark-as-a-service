@@ -46,16 +46,16 @@
 
   Verify: `grep -n 'jmh-with\|--mode\|SET_BY_THE_CLI' CLAUDE.md` finds nothing left that describes current behaviour.
 - [x] 5.4 Update `README.md`, `infra/README.md` and `docs/diagrams/baas-ci-e2e.mmd`. Render the diagram with `mmdc` into the scratchpad and look at the PNG. Verify: `grep -rn 'jmh-with' README.md infra/README.md docs/diagrams` is empty, and the render reads as intended.
-- [ ] 5.5 Release notes: the commit carrying the type removal has a `BREAKING CHANGE:` footer with the migration table from design.md, so the release is 9.0.0. Verify: the semantic-release dry run reports a major bump.
+- [x] 5.5 Release notes: the commit carrying the type removal has a `BREAKING CHANGE:` footer with the migration table from design.md, so the release is 9.0.0. Verify: the semantic-release dry run reports a major bump.
 
 ## 6. End-to-end verification (manual — `baas run` path)
 
-- [ ] 6.1 On `baas-development` with the reactor build (`baas-dev`), run `jmh -- Incrementing_Synchronized -f 1 -wi 1 -i 3 -prof gc -pro "async:output=flamegraph"`. Verify: completed; `profilers=async,gc` on the job and the measurements; `gc.*` secondary metrics stored; the flame graph under the job prefix; the table shows `*` and the footnote.
-- [ ] 6.2 Refusals: `-- -rf csv`, `-- -h`, `-- -lprof`, `--tag profilers=x`. Verify: each exits 2 with no instance launched (`baas jobs list` unchanged), and `-h` prints the `java -jar` hint on a terminal.
-- [ ] 6.3 Comparability: run an unprofiled `jmh -- Incrementing_Synchronized -f 3 -wi 3 -i 5` three times before (8.x CLI) and three times after (reactor build) on the same instance type. Record every score and the spread in verify.md, and investigate any difference outside the observed run-to-run spread rather than accepting it (the benchmark is multimodal on c5.large: check per-iteration plateaus first).
-- [ ] 6.4 `baas results diff` between a 6.1 job and an unprofiled 6.3 job. Verify: the `profilers: none → async,gc` warning appears beside the `cliParameters` one.
-- [ ] 6.5 `jcstress -- -m sanity` end to end. Verify: completed with one JCStress item, and `jcstress-output.txt` shows sanity mode.
+- [x] 6.1 On `baas-development` with the reactor build (`baas-dev`), run `jmh -- Incrementing_Synchronized -f 1 -wi 1 -i 3 -prof gc -pro "async:output=flamegraph"`. Verify: completed; `profilers=async,gc` on the job and the measurements; `gc.*` secondary metrics stored; the flame graph under the job prefix; the table shows `*` and the footnote.
+- [x] 6.2 Refusals: `-- -rf csv`, `-- -h`, `-- -lprof`, `--tag profilers=x`. Verify: each exits 2 with no instance launched (`baas jobs list` unchanged), and `-h` prints the `java -jar` hint on a terminal.
+- [x] 6.3 Comparability: run an unprofiled `jmh -- Incrementing_Synchronized -f 3 -wi 3 -i 5` three times before (8.x CLI) and three times after (reactor build) on the same instance type. Record every score and the spread in verify.md, and investigate any difference outside the observed run-to-run spread rather than accepting it (the benchmark is multimodal on c5.large: check per-iteration plateaus first).
+- [x] 6.4 `baas results diff` between a 6.1 job and an unprofiled 6.3 job. Verify: the `profilers: none → async,gc` warning appears beside the `cliParameters` one.
+- [x] 6.5 `jcstress -- -m sanity` end to end. Verify: completed with one JCStress item, and `jcstress-output.txt` shows sanity mode.
 
 ## 7. Verify
 
-- [ ] 7.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory: a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks.
+- [x] 7.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory: a requirement → code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or tasks.
