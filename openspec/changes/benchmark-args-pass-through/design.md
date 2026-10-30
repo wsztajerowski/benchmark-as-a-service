@@ -51,18 +51,28 @@ See proposal.md — Why. What shapes the approach:
 
 `BenchmarkArgs` (in `pl.wsztajerowski.baas.model`, no SDK, no JMH dependency) holds the following
 for JMH and for JCStress, per `BenchmarkType`:
-- every option name and whether it takes a required value;
+- every option name and whether its value is required, optional or absent;
 - the managed names;
 - the no-run names.
 
-It resolves a token the way jopt-simple does:
-1. Strip one or two leading dashes and split at the first `=`.
-2. An exact name wins.
-3. Otherwise, a prefix that begins exactly one name is that name.
-4. Anything else is not an option of the tool, and passes through.
+It resolves a token the way jopt-simple does (observed in `option-lists.md`):
+1. A bare `--` ends the options. Everything after it is positional, as it is for the tool.
+2. `--key[=value]` is an exact name or a prefix that begins exactly one name. Anything else passes
+   through.
+3. For `-key[=value]`, an exact name wins; otherwise a prefix that begins exactly one name is that
+   name.
+4. Otherwise the body is a cluster of single-letter options. A letter whose option takes a value takes
+   the rest of the token as that value (`-oout.txt` is `-o out.txt`); a flag letter is read and the
+   next letter follows; an unknown letter ends the walk of that token. The tool will reject it.
 
-The token after an option that takes a required value is that option's value, never an option, so
-`-jvmArgs -Xmx2g` is not inspected as a flag.
+The token after an option whose value is required, and not attached, is that value, never an option, so
+`-jvmArgs -rf` is not inspected as a flag. That matches JMH, which reads `-rf` there as `-jvmArgs`'
+value. After an optional-value option, the next token is its value only when it does not start with
+`-`.
+
+*Correction from task 1.2:* the first draft treated any unresolved token as "not an option". The probe
+showed that `-oout2.txt` wrote `out2.txt`, so clustering is needed, or `-o` would slip past the
+managed-flag refusal.
 
 From that walk it returns:
 - the first managed argument;

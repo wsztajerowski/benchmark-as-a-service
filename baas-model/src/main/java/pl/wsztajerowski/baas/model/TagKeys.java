@@ -22,15 +22,23 @@ public final class TagKeys {
     public static final String IMAGE_VERSION = "imageVersion";
     public static final String SOURCE = "source";
     /**
-     * Everything after {@code --} on {@code baas run}, as typed: the benchmark selection, JMH's own
-     * options ({@code -f}, {@code -wi}, …) and the runner's (the async-profiler event among them).
-     * Absent when nothing followed {@code --}. Derived like {@link #TYPE}, so reserved like it.
+     * Everything after {@code --} on {@code baas run}, as typed: the benchmark selection and JMH's or
+     * JCStress's own options ({@code -f}, {@code -wi}, {@code -prof …}), which reach the benchmark
+     * JAR verbatim. Absent when nothing followed {@code --}. Derived like {@link #TYPE}, so reserved
+     * like it.
      */
     public static final String CLI_PARAMETERS = "cliParameters";
+    /**
+     * The profilers a job's {@code -prof} arguments name: names only, sorted, without duplicates,
+     * joined by {@code ,} ({@code async,gc}). Absent when nothing is profiled, never a stand-in.
+     * Derived by {@code baas run} from {@link BenchmarkArgs#profilersTag}, so reserved: a caller value
+     * could claim or deny profiling a score was measured under.
+     */
+    public static final String PROFILERS = "profilers";
 
     public static final Set<String> KNOWN = Set.of(
-        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH,
-        INSTANCE_TYPE, IMAGE_VERSION);
+        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, PROFILERS, JDK, JVM_VENDOR, CPU_MODEL,
+        CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
 
     /**
      * The convention a CI job uses to keep its measurements out of everyone's results: a row tagged
@@ -55,11 +63,12 @@ public final class TagKeys {
         List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
 
     /**
-     * Every key a caller may not set: the observed ones, and {@link #CLI_PARAMETERS}, which records
-     * what the job was asked to run — a caller value could claim settings it never ran with.
+     * Every key a caller may not set: the observed ones, and {@link #CLI_PARAMETERS} and
+     * {@link #PROFILERS}, which record what the job was asked to run — a caller value could claim
+     * settings it never ran with.
      */
-    public static final List<String> RESERVED =
-        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS);
+    public static final List<String> RESERVED = List.of(
+        IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS, PROFILERS);
 
     private TagKeys() {}
 

@@ -2,16 +2,16 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Record each fixture JAR's full option list and value arity from its `-h` (`fake-jmh-benchmarks.jar`, `fake-stress-tests.jar`) into the change directory. Verify: the lists contain JMH's `prof`, `lprof`, `lrf`, `rf`, `rff`, `o`, `p`, `r` and JCStress's `r`, `l`, `p`, `m`, `t`.
-- [ ] 1.2 Confirm on the fixture JMH that jopt-simple resolves an ambiguous prefix as an error, not as a pick (find two options sharing a prefix, e.g. `-w`/`-wi`/`-wbs`/`-wf`/`-wm`/`-wmb`: run `-wb 1 -l` and `-wm INDI -l`, then a prefix shared by two names). Verify: the observed rule matches design.md's resolution steps, or design.md is corrected before 2.x.
-- [ ] 1.3 Confirm that a `-prof async:…;dir=<d>;libPath=<p>` value with the user's own keys first is accepted by JMH's async profiler (append order), using `-l`, plus one local run of `jmh-with-async.sh` rewritten to pass-through against LocalStack (needs `ASYNC_PATH`). Verify: the artifacts land under `<d>/<benchmark-id>/`.
+- [x] 1.1 Record each fixture JAR's full option list and value arity from its `-h` (`fake-jmh-benchmarks.jar`, `fake-stress-tests.jar`) into the change directory. Verify: the lists contain JMH's `prof`, `lprof`, `lrf`, `rf`, `rff`, `o`, `p`, `r` and JCStress's `r`, `l`, `p`, `m`, `t`.
+- [x] 1.2 Confirm on the fixture JMH that jopt-simple resolves an ambiguous prefix as an error, not as a pick (find two options sharing a prefix, e.g. `-w`/`-wi`/`-wbs`/`-wf`/`-wm`/`-wmb`: run `-wb 1 -l` and `-wm INDI -l`, then a prefix shared by two names). Verify: the observed rule matches design.md's resolution steps, or design.md is corrected before 2.x.
+- [x] 1.3 Confirm that a `-prof async:…;dir=<d>;libPath=<p>` value with the user's own keys first is accepted by JMH's async profiler (append order), using `-l`, plus one local run of `jmh-with-async.sh` rewritten to pass-through against LocalStack (needs `ASYNC_PATH`). Verify: the artifacts land under `<d>/<benchmark-id>/`.
 
 ## 2. `baas-model`: one reading of the benchmark's arguments
 
-- [ ] 2.1 Add `BenchmarkArgs`: per-tool option names and arities from 1.1, plus the managed and no-run names. Resolution: one or two dashes, `=` split, exact name wins, otherwise a unique prefix; the value of a required-value option is skipped. Verify: unit tests cover every spec scenario of `benchmark-arguments` "Refusals recognise every spelling", plus `-r 1s`, `-p size=10` and `-jvmArgs -Xmx2g` passing through.
-- [ ] 2.2 Add `-prof` value parsing (name, options map, original text) and the managed-key check (`dir`/`libPath` for `async`, `dir` for `jfr`). Verify: unit tests for `async`, `async:event=wall;threads=true`, `--prof=jfr`, `-pro async:dir=x` (refused), and a class-named profiler (recorded, not injected).
-- [ ] 2.3 Add `TagKeys.PROFILERS` to `KNOWN` and `RESERVED`, with a `profilers(List<String> args)` helper (sorted, de-duplicated, comma-joined, empty when none). Verify: `TagKeysTest` covers ordering, duplicates and absence.
-- [ ] 2.4 Reduce `BenchmarkType` to `JMH` and `JCSTRESS` and add `LEGACY_PROCESS_OUTPUT_NAMES`. Remove `RunnerArgs.SET_BY_THE_CLI` and `firstSetByTheCli`. Verify: `mvn -pl baas-model verify` is green and `ModelBoundaryTest` still passes.
+- [x] 2.1 Add `BenchmarkArgs`: per-tool option names and arities from 1.1, plus the managed and no-run names. Resolution: one or two dashes, `=` split, exact name wins, otherwise a unique prefix; the value of a required-value option is skipped. Verify: unit tests cover every spec scenario of `benchmark-arguments` "Refusals recognise every spelling", plus `-r 1s`, `-p size=10` and `-jvmArgs -Xmx2g` passing through.
+- [x] 2.2 Add `-prof` value parsing (name, options map, original text) and the managed-key check (`dir`/`libPath` for `async`, `dir` for `jfr`). Verify: unit tests for `async`, `async:event=wall;threads=true`, `--prof=jfr`, `-pro async:dir=x` (refused), and a class-named profiler (recorded, not injected).
+- [x] 2.3 Add `TagKeys.PROFILERS` to `KNOWN` and `RESERVED`, with a `profilers(List<String> args)` helper (sorted, de-duplicated, comma-joined, empty when none). Verify: `TagKeysTest` covers ordering, duplicates and absence.
+- [x] 2.4 Reduce `BenchmarkType` to `JMH` and `JCSTRESS` and add `LEGACY_PROCESS_OUTPUT_NAMES`. Remove `RunnerArgs.SET_BY_THE_CLI` and `firstSetByTheCli`. Verify: `mvn -pl baas-model verify` is green and `ModelBoundaryTest` still passes.
 
 ## 3. `benchmark-runner`: pass-through
 
