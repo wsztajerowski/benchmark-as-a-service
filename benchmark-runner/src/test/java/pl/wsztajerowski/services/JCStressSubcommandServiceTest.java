@@ -47,6 +47,14 @@ class JCStressSubcommandServiceTest {
             "-m", "sanity", "-t", "Foo", "-f", "1");
     }
 
+    /** The runner's former --mode is no longer translated: JCStress receives it as written, and refuses it. */
+    @Test
+    void theFormerModeOptionReachesJCStressUnchanged(@TempDir Path tmp) {
+        var sut = serviceWith(tmp, List.of("--mode", "sanity"));
+
+        assertThat(sut.jcstressProcess().commands()).endsWith("--mode", "sanity").doesNotContain("-m");
+    }
+
     /** Without -m JCStress keeps its default, so results stay comparable with earlier jobs. */
     @Test
     void noModeAddsNoModeArgument(@TempDir Path tmp) {
