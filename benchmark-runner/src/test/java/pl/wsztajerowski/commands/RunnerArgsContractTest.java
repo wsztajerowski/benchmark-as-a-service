@@ -39,30 +39,15 @@ class RunnerArgsContractTest {
             RunnerArgs.TAG, TagKeys.TYPE + "=" + type.commandName(),
             RunnerArgs.TAG, TagKeys.JDK + "=caller",
             RunnerArgs.TAG, TagKeys.JDK + "=25.0.4"));
+        argv.add("--");
         argv.add("MyBenchmark");
         return argv;
     }
 
-    /**
-     * The runner checks the benchmark JAR exists while parsing; on the instance it is /app/benchmark-under-test.jar.
-     * jmh-with-async likewise checks its {@code --async-path} default, which user-data leaves to the AMI's path.
-     * picocli resolves {@code ${ASYNC_PATH}} from a system property before the environment, so pointing one at a
-     * file keeps the test from passing only where the variable happens to be exported.
-     */
+    /** The runner checks the benchmark JAR exists while parsing; on the instance it is /app/benchmark-under-test.jar. */
     @Test
     void everyTypesInvocationParsesThroughTheRunnersCommandTree(@TempDir Path dir) throws IOException {
-        Path jar = Files.createFile(dir.resolve("benchmark-under-test.jar"));
-        Path asyncLib = Files.createFile(dir.resolve("libasyncProfiler.so"));
-        String previous = System.setProperty("ASYNC_PATH", asyncLib.toString());
-        try {
-            assertEveryTypeParses(jar);
-        } finally {
-            if (previous == null) {
-                System.clearProperty("ASYNC_PATH");
-            } else {
-                System.setProperty("ASYNC_PATH", previous);
-            }
-        }
+        assertEveryTypeParses(Files.createFile(dir.resolve("benchmark-under-test.jar")));
     }
 
     private static void assertEveryTypeParses(Path jar) {

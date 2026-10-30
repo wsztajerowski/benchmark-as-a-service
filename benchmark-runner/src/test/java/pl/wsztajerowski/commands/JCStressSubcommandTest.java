@@ -8,23 +8,24 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JCStressSubcommandTest {
 
+    /** JCStress's own -m reaches it after the separator; the runner has no mode option of its own. */
     @Test
-    void theModeIsLongFormOnly() {
-        var result = new CommandLine(new JCStressSubcommand())
-            .parseArgs("--mode", "sanity", "--project", "p", "--results-table", "t", "--s3-bucket", "b");
+    void theModeIsJCStressesOwnShortOption() {
+        var subcommand = new JCStressSubcommand();
+        new CommandLine(subcommand)
+            .parseArgs("--project", "p", "--results-table", "t", "--s3-bucket", "b", "--", "-m", "sanity");
 
-        assertThat(result.<String>matchedOptionValue("--mode", null)).isEqualTo("sanity");
+        assertThat(subcommand.benchmarkArgs).containsExactly("-m", "sanity");
     }
 
     /**
-     * JCStress's own mode flag is -m, but on the runner -m means nothing: it was the MongoDB
-     * connection string, and was left unassigned rather than made an alias, so an old -m URI is
-     * refused instead of reaching JCStress as a mode.
+     * -m was the MongoDB connection string, then left unassigned; it is still no runner option, so
+     * before the separator it is refused rather than read as anything.
      */
     @Test
-    void theShortMIsNoRunnerOption() {
+    void theFormerModeOptionIsGone() {
         assertThatThrownBy(() -> new CommandLine(new JCStressSubcommand())
-            .parseArgs("-m", "sanity", "--project", "p", "--results-table", "t", "--s3-bucket", "b"))
+            .parseArgs("--mode", "sanity", "--project", "p", "--results-table", "t", "--s3-bucket", "b"))
             .isInstanceOf(CommandLine.UnmatchedArgumentException.class);
     }
 }

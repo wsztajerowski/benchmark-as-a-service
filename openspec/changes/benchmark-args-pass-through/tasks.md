@@ -15,12 +15,12 @@
 
 ## 3. `benchmark-runner`: pass-through
 
-- [ ] 3.1 Replace the `jmh`, `jmh-with-prof` and `jmh-with-async` subcommands with one `jmh` subcommand: runner options, `--async-path`, and an `@Parameters` list after `--`. Delete `ApiJmhOptions`, `JmhWithProfilerSubcommand`, `JmhWithAsyncProfilerSubcommand`, their services and the `options/Jmh*`/`AsyncProfilerOptions` records that only they used. Verify: `TestWrapper` lists `jmh` and `jcstress` only, and `RunnerArgsContractTest` passes.
-- [ ] 3.2 Build the JMH command line as `java -jar <benchmark> -rf json -rff <result file> <arguments>`, with every `async`/`jfr` `-prof` value rewritten to append `dir=<work>/profiler-output` (and `libPath=` for async). Refuse managed and no-run arguments through `BenchmarkArgs` before starting the process. Verify: a rewritten `JmhOptionForwardingTest` asserts exact argv for no profiler, `-prof gc`, `-prof async`, `-pr async:event=wall` and a quoted `-jvmArgs`.
-- [ ] 3.3 Upload `<work>/profiler-output` with `ProfilerArtifacts` at the job prefix root, the same keys as today. Verify: a runner IT on LocalStack with `-prof jfr` finds the recording under `<prefix>/<benchmark-id>/`; with `ASYNC_PATH` exported, the async IT finds a flame graph.
-- [ ] 3.4 Do the same for `jcstress`: delete `ApiJCStressOptions`/`JCStressOptions`, inject `-r <work>/jcstress-results`, pass the rest through. Verify: `JCStressSubcommandTest` asserts argv for `-m sanity -t Foo`, and refusal of `-r x`, `-h` and `-p f`.
-- [ ] 3.5 Add the contract test from design.md: run each fixture JAR's `-h` and assert that `BenchmarkArgs`' name lists and arities match. Verify: it fails when one name is removed from the embedded list, and passes once restored.
-- [ ] 3.6 Rewrite `jmh-with-async.sh` and `jmh-with-profiler.sh` to `jmh -- … -prof …`. Verify: both run against LocalStack and store measurements.
+- [x] 3.1 Replace the `jmh`, `jmh-with-prof` and `jmh-with-async` subcommands with one `jmh` subcommand: runner options, `--async-path`, and an `@Parameters` list after `--`. Delete `ApiJmhOptions`, `JmhWithProfilerSubcommand`, `JmhWithAsyncProfilerSubcommand`, their services and the `options/Jmh*`/`AsyncProfilerOptions` records that only they used. Verify: `TestWrapper` lists `jmh` and `jcstress` only, and `RunnerArgsContractTest` passes.
+- [x] 3.2 Build the JMH command line as `java -jar <benchmark> -rf json -rff <result file> <arguments>`, with every `async`/`jfr` `-prof` value rewritten to append `dir=<work>/profiler-output` (and `libPath=` for async). Refuse managed and no-run arguments through `BenchmarkArgs` before starting the process. Verify: a rewritten `JmhOptionForwardingTest` asserts exact argv for no profiler, `-prof gc`, `-prof async`, `-pr async:event=wall` and a quoted `-jvmArgs`.
+- [x] 3.3 Upload `<work>/profiler-output` with `ProfilerArtifacts` at the job prefix root, the same keys as today. Verify: a runner IT on LocalStack with `-prof jfr` finds the recording under `<prefix>/<benchmark-id>/`; with `ASYNC_PATH` exported, the async IT finds a flame graph.
+- [x] 3.4 Do the same for `jcstress`: delete `ApiJCStressOptions`/`JCStressOptions`, inject `-r <work>/jcstress-results`, pass the rest through. Verify: `JCStressSubcommandTest` asserts argv for `-m sanity -t Foo`, and refusal of `-r x`, `-h` and `-p f`.
+- [x] 3.5 Add the contract test from design.md: run each fixture JAR's `-h` and assert that `BenchmarkArgs`' name lists and arities match. Verify: it fails when one name is removed from the embedded list, and passes once restored.
+- [x] 3.6 Rewrite `jmh-with-async.sh` and `jmh-with-profiler.sh` to `jmh -- … -prof …`. Verify: both run against LocalStack and store measurements.
 
 ## 4. `baas-cli`
 

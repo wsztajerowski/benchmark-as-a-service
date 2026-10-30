@@ -1,6 +1,6 @@
 #!/bin/zsh
 # Runs benchmark-runner locally against LocalStack, with a real
-# async-profiler attached. `baas run jmh-with-async` is the remote equivalent —
+# async-profiler attached. `baas run jmh -- … -prof async:…` is the remote equivalent —
 # this exists to eyeball profiler output without paying for EC2.
 #
 # Prerequisites:
@@ -14,15 +14,13 @@
 # The runner requires --results-table and --s3-bucket, so this script names a LocalStack table
 # and bucket explicitly.
 #
-# Async profiler options passed via --async-additional-param:
-#  event=<event>                    Event to sample: cpu, alloc, lock, wall, itimer;
-#                                   com.foo.Bar.methodName; any event from `perf list`
-#                                   e.g. cache-misses (default: [cpu])
-#  threads=<bool>                   Profile threads separately.
+# Everything after the runner's -- reaches JMH as given; the async-profiler options are JMH's own
+# (`java -jar fake-jmh-benchmarks.jar -prof async:help` lists them). The runner adds dir= and
+# libPath= itself. Extra arguments to this script are appended after -- too.
 
 if [[ -z "$ASYNC_PATH" || ! -f "$ASYNC_PATH" ]]; then
   # --async-path defaults to the on-instance path (/app/async-profiler/lib/...),
-  # which never exists locally, and the runner validates it before doing any work.
+  # which never exists locally, and the runner checks it before starting a -prof async job.
   echo "ASYNC_PATH must point at a local libasyncProfiler shared library." >&2
   echo "  export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib" >&2
   exit 1
@@ -30,9 +28,7 @@ fi
 
 NOW=$(date "+%Y-%m-%d_%H:%M:%S")
 AWS_PROFILE=localstack \
-exec java -jar ./benchmark-runner/target/benchmark-runner.jar -v jmh-with-async \
---async-additional-param event=wall \
---async-additional-param threads=true \
+exec java -jar ./benchmark-runner/target/benchmark-runner.jar -v jmh \
 --benchmark-path=./fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
 --project local-test \
 --results-table baas-results \
@@ -40,5 +36,7 @@ exec java -jar ./benchmark-runner/target/benchmark-runner.jar -v jmh-with-async 
 --s3-service-endpoint=https://s3.localhost.localstack.cloud:4566 \
 --result-path=./benchmark-runner/target/$NOW \
 --s3-bucket baas \
- -wi 1 -f 1 -i 2 \
+ -- \
+-wi 1 -f 1 -i 2 \
+-prof 'async:event=wall;threads=true;output=flamegraph' \
 "$@"
