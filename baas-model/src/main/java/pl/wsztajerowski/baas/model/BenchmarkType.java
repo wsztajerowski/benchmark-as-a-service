@@ -9,20 +9,25 @@ import java.util.List;
  * as. One list, so the CLI
  * cannot accept a type the runner does not have. The names are also compile-time constants, because
  * the runner's picocli {@code @Command(name = ...)} annotations need constants.
+ *
+ * <p>One type per library: profiling is a JMH argument ({@code -prof}), not a type. The profiled
+ * types {@code jmh-with-async} and {@code jmh-with-prof} were retired by
+ * {@code benchmark-args-pass-through}; their jobs stay in storage under
+ * {@link #LEGACY_PROCESS_OUTPUT_NAMES}.
  */
 public enum BenchmarkType {
-    JMH(BenchmarkType.JMH_NAME, BenchmarkType.JMH_WORKING_OUTPUT, "jmh-output.txt"),
-    JMH_WITH_ASYNC(BenchmarkType.JMH_WITH_ASYNC_NAME, BenchmarkType.JMH_WORKING_OUTPUT, "jmh-with-async-output.txt"),
-    JMH_WITH_PROF(BenchmarkType.JMH_WITH_PROF_NAME, BenchmarkType.JMH_WORKING_OUTPUT, "jmh-profiler-output.txt"),
+    JMH(BenchmarkType.JMH_NAME, "jmh-output.txt", "jmh-output.txt"),
     JCSTRESS(BenchmarkType.JCSTRESS_NAME, "jcstress-output.txt", "jcstress-output.txt");
 
     public static final String JMH_NAME = "jmh";
-    public static final String JMH_WITH_ASYNC_NAME = "jmh-with-async";
-    public static final String JMH_WITH_PROF_NAME = "jmh-with-prof";
     public static final String JCSTRESS_NAME = "jcstress";
 
-    /** Every JMH type writes its process output to the same file; only the uploaded name differs. */
-    private static final String JMH_WORKING_OUTPUT = "jmh-output.txt";
+    /**
+     * The process-output names the retired profiled types uploaded as. A stored job of either type
+     * still holds one, and a reader grouping a job's artifacts has to recognise it.
+     */
+    public static final List<String> LEGACY_PROCESS_OUTPUT_NAMES =
+        List.of("jmh-with-async-output.txt", "jmh-profiler-output.txt");
 
     private final String commandName;
     private final String workingOutputName;
