@@ -130,7 +130,7 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   runs `baas-ship-logs.service`'s `ExecStop` while the network is still up (billing has already
   stopped). It uploads what `ship_logs` does — boot log, the process output, `/app/**/*.log` at the
   runner's own keys, every name from `baas-model` (`BenchmarkType` gives both the local file and the
-  per-type key, which differ for the JMH profiler types) — and every exit of the script calls `ship_logs` itself too, so a hook that
+  key it is uploaded as) — and every exit of the script calls `ship_logs` itself too, so a hook that
   never ran loses only the external-stop case. The hook file is `declare -f ship_logs` run by an
   explicit `/bin/bash`: a `#!` line would be stripped with the comments. Never pass
   `--skip-os-shutdown` to a runner's termination; it bypasses the hook.
@@ -153,7 +153,7 @@ usage analysis were merged into it on 2026-10-05 — `git log -- docs/review doc
   copied `--tag project=…` was a duplicate key EC2 rejects for the whole launch, and every copied tag
   was exposed to EC2's 256-character and `aws:`-prefix limits. A caller `--tag` for a
   machine-observed key (`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`,
-  `type`), or for `cliParameters`, is
+  `type`), or for `cliParameters` or `profilers`, is
   rejected outright rather than dropped or allowed to win — the
   same rule that keeps a result's tags from disagreeing with its own `environment.json`.
 
@@ -555,7 +555,7 @@ The watchdog is the only one that survives a deadlocked JVM.
   `s3:ListBucket`, and without it S3 will not say whether a key exists. The only such reads are
   user-data's two `aws s3 cp` downloads of JARs the CLI wrote seconds earlier, so a 403 in
   `cloud-init-output.log` there means the key is missing as often as it means a grant is.
-- **`ASYNC_PATH` gates async coverage.** `JmhWithAsyncProfilerSubcommandServiceIT` is annotated
+- **`ASYNC_PATH` gates async coverage.** `JmhAsyncProfilerIT` is annotated
   `@EnabledIfEnvironmentVariable(named = "ASYNC_PATH", ...)`, so a plain `mvn verify` **silently
   skips** the only test exercising async-profiler end to end. Export it before trusting a green
   build on profiler changes. Same variable `jmh-with-async.sh` needs, since `--async-path`
@@ -615,11 +615,12 @@ The watchdog is the only one that survives a deadlocked JVM.
   column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
 - **`e2e-cloud-test.yml` drives `baas run` end to end, and it is the only thing that does.** Two
-  `ubuntu-latest` CI jobs, each launching its own instance: `benchmark` runs `jmh-with-async` against
-  `fake-jmh-benchmarks` on the real runner AMI, so a bad bake fails CI rather than surviving it —
-  though it asserts only that a flame graph *file* exists, and its `flamegraph,jfr` flags yield
-  empty graphs (finding E1);
-  `jcstress` runs `fake-stress-tests` in JCStress sanity mode (`-- --mode sanity`) and asserts the
+  `ubuntu-latest` CI jobs, each launching its own instance: `benchmark` runs `jmh` with
+  `-prof async:…;output=flamegraph` against `fake-jmh-benchmarks` on the real runner AMI, so a bad
+  bake fails CI rather than surviving it, and fails unless a flame graph names the benchmark method — a
+  graph *file* alone passed while `flamegraph,jfr` wrote empty ones (E1, closed by
+  `benchmark-args-pass-through`); `jcstress` runs `fake-stress-tests` in JCStress sanity mode
+  (`-- -m sanity`) and asserts the
   stored item's shape only, never pass/fail counts — the fixture's `TestWithForbiddenResults` races
   nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
   provisions a paid instance per CI job per triggering event, and it tags
@@ -671,14 +672,20 @@ The watchdog is the only one that survives a deadlocked JVM.
   (and so `latest`) exits 55 without `LOCALSTACK_AUTH_TOKEN`, and this repository holds no secrets. The pin
   replaced `0.12.16`, which took 25–65 s to start against Testcontainers' 60 s wait and stored the SDK's
   `aws-chunked` upload framing as object bytes — `StorageServiceIT` had asserted that corrupted size.
-- **A JCStress job's mode is `--mode`, not `-m`.** The runner forwards it to JCStress as `-m`, but
-  `-m` is no runner option at all: it used to be the Mongo connection string, and was deliberately
-  left unassigned rather than made an alias (`retire-mongodb`). `baas run jcstress -- -m sanity` is
-  refused before launching, pointing at `--mode`; the runner itself rejects `-m` as unknown.
-- **Text after `--` may not name a runner option `baas run` sets** (`RunnerArgs.SET_BY_THE_CLI`:
-  `--tag`, `--project`, `--job-id`, `--results-table`, `--s3-bucket`, the endpoints, …). User-data
-  passes it after the CLI's own options and picocli keeps the last value, so it would override the
-  guarded tags or the project, or fail the job on the instance. Refused with exit 2, before any AWS call.
+- **Everything after `--` reaches the benchmark JAR verbatim, as JMH's or JCStress's own arguments**
+  (`benchmark-args-pass-through`). The runner has no JMH or JCStress options of its own — not `-bvm`,
+  not `--mode`, not `-ae`: a JCStress mode is `-- -m sanity`, a profiler `-- -prof gc` — and takes them
+  after its own `--`, so no benchmark argument can reach a runner option. Two kinds are refused with
+  exit 2 before any AWS call, and by the runner again: those BaaS manages (JMH `-rf`, `-rff`, `-o`;
+  `dir`/`libPath` inside `-prof async:`, `dir` inside `-prof jfr:`; JCStress `-r`) and those that
+  measure nothing (JMH `-h`, `-l`, `-lp`, `-lprof`, `-lrf`; JCStress `-h`, `-l`, `-p`), answered with
+  the local `java -jar` command. **Both match every spelling jopt-simple accepts** — `--`, `=value`,
+  unique prefixes (`-pro` is `-prof`), and single-letter clusters (`-ofile` is `-o file`, which really
+  redirected JMH's output) — through `BenchmarkArgs` in `baas-model`, which also reads the `-prof`
+  values the runner injects into and the `profilers` tag names. Its option lists are the fixture JARs'
+  `-h`, pinned by `BenchmarkArgsContractIT`; a JMH or JCStress bump fails there until they follow. A
+  user's own spelling of a managed profiler key slips the check but not the job: the runner appends
+  the key, and JMH refuses a key given twice, failing the profiler at start.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
 - **A delta spec's `## REMOVED Requirements` heading must repeat the main spec's requirement name
@@ -798,8 +805,9 @@ characters, time-ordered so a listing reads chronologically, entropy-suffixed so
 in the same millisecond cannot collide. Nothing parses it; the format is a readability convention,
 not a contract. Built only by `JobLayout`/`JobId` in `baas-model`, never by hand.
 
-Per-type stdout lands in `jmh-output.txt`, `jmh-profiler-output.txt`, `jmh-with-async-output.txt`,
-or `jcstress-output.txt`; profiling artifacts go under the directory JMH names each benchmark's
+Stdout lands in `jmh-output.txt` or `jcstress-output.txt` (jobs of the retired profiled types hold
+`jmh-with-async-output.txt` or `jmh-profiler-output.txt`, which `jobs show` still groups as output);
+profiling artifacts — every `async` and `jfr` profiler is given `dir=/app/profiler-output` — go under the directory JMH names each benchmark's
 profile, `<fully.qualified.BenchmarkName>-<Mode>` plus `-<param>-<value>` per `@Param`
 (`BenchmarkParams.id()`). **The runner never predicts that name:** it uploads the profiler's whole
 output tree as written, because the JMH that chooses it is the one inside the benchmark JAR, and
@@ -814,7 +822,7 @@ non-obvious entries:
 | `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (7) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Values stay raw (version banners, sysfs syntax); `baas jobs show` shortens them for reading and `baas jobs diff` compares them as stored, group by group, also comparing `packages.txt` when the AMIs differ. Schema 7 renamed `cpu.cores` to `vcpus` (it was always `nproc`) beside a new `physicalCores`, records memory as `totalMib`/`swapTotalMib`, and adds `jvm.release`, the value of the `jdk` tag. A renamed field never keeps its old name with a new meaning, and nothing maps a schema-6 name onto a schema-7 one: across the change `diff` shows both, under its schema warning. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive; `resultJsonKey` on the item points here |
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
-| `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/async-output/` |
+| `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/profiler-output/` |
 | `input/` | The job's own inputs — `benchmark.jar`, and `runner.jar` only when `--runner-jar` overrode the pinned one. Inside the job prefix, so a consumer has one sub-prefix to skip rather than filenames to special-case |
 | `releases/<version>/benchmark-runner.jar` | The version-pinned runner, outside the job tree. Seeded once by the CLI, with a conditional write, and never overwritten; runners can only read it. `releases/`, not `runner/`, because a prefix one character from `jobs/` would need disambiguating in every listing |
 | `image-builds/` | Image Builder build logs (written by the build instance, not by a job) |
@@ -873,7 +881,7 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 | Group | Keys | Set by |
 |---|---|---|
 | Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
-| Derived | `type`, `project`, `source`, `cliParameters` | `baas run`. `cliParameters` is everything after `--`, verbatim — the only record of forks, iterations and the async-profiler event a job ran with, since `jmh-result.json` keeps no profiler options and the item keeps none of either. Absent when nothing follows `--`. `type` and `cliParameters` are reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
+| Derived | `type`, `project`, `source`, `cliParameters`, `profilers` | `baas run`. `type` is `jmh` or `jcstress` — profiling is no type; rows stored before `benchmark-args-pass-through` may say `jmh-with-async`/`jmh-with-prof` and carry no `profilers`. `cliParameters` is everything after `--`, verbatim — the only record of forks, iterations and the profiler options a job ran with, since `jmh-result.json` keeps no profiler options and the item keeps none of either. Absent when nothing follows `--`. `profilers` is the `-prof` names alone, sorted, de-duplicated and comma-joined (`async,gc`), absent when nothing is profiled; the results table marks such a score `*` and `results diff` warns when two jobs' differ. `type`, `cliParameters` and `profilers` are reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
 | Convention | `options`, `hidden` | Free-form. `hidden=true` is filtered out server-side — except under `--show-hidden` (shown faint) and `--job-id`; the picker also omits a project holding only hidden rows; `jobs list` hides nothing and `jobs show` marks it beside the status. It is a convention, not a field. Named `exclude_from_results` until `readable-jobs-show`, renamed without a migration: a stored row carrying the old key is not hidden |
 
@@ -945,11 +953,14 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
 
 ## Adding a benchmark type
 
-A `BenchmarkType` constant in `baas-model` (its name is the runner subcommand, the `baas run`
-argument and an entry in `run`'s help, and it names the process-output file), then on the runner a subcommand class in
-`commands/` named by that constant, a service in `services/`, an options record in
-`options/`, and registration in `TestWrapper`'s `subcommands` list.
-`RunnerArgsContractTest` fails until the runner and the model agree.
+One type per library, not per way of running it — profiling is a JMH argument, which is why the
+profiled types were retired. A `BenchmarkType` constant in `baas-model` (its name is the runner
+subcommand, the `baas run` argument and an entry in `run`'s help, and it names the process-output
+file) with the library's option lists, managed and no-run names in `BenchmarkArgs`, then on the
+runner a subcommand class in `commands/` named by that constant that takes the arguments after `--`,
+a service in `services/`, a run record in `options/`, and registration in `TestWrapper`'s
+`subcommands` list. `RunnerArgsContractTest` fails until the runner and the model agree, and
+`BenchmarkArgsContractIT` until the option lists match the library's `-h`.
 
 `--s3-bucket` and `--results-table` are both required on every subcommand; there is no local-disk
 storage and no other store. `AWS_ENDPOINT_URL_S3` / `--s3-service-endpoint` and

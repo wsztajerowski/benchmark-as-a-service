@@ -34,9 +34,9 @@
 
 ## 5. CI, docs and release
 
-- [ ] 5.1 `e2e-cloud-test.yml`: the benchmark job runs `baas run jmh -- … -prof "async:event=wall;output=flamegraph;threads=true"` and fails unless a downloaded `.html` contains the fixture method `incrementUsingSynchronized`; it asserts `type=jmh` and `profilers=async`. The JCStress job uses `-- -m sanity`. Verify: `actionlint`, and the PR's CI run is green.
-- [ ] 5.2 Delete E1 from `docs/review/open-findings.md` (table row and section). Verify: `grep -n E1 docs/review/open-findings.md` finds nothing.
-- [ ] 5.3 Update CLAUDE.md:
+- [x] 5.1 `e2e-cloud-test.yml`: the benchmark job runs `baas run jmh -- … -prof "async:event=wall;output=flamegraph;threads=true"` and fails unless a downloaded `.html` contains the fixture method `incrementUsingSynchronized`; it asserts `type=jmh` and `profilers=async`. The JCStress job uses `-- -m sanity`. Verify: `actionlint`, and the PR's CI run is green.
+- [x] 5.2 Delete E1 from `docs/review/open-findings.md` (table row and section). Verify: `grep -n E1 docs/review/open-findings.md` finds nothing.
+- [x] 5.3 Update CLAUDE.md:
   - the `-m` gotcha;
   - "Text after `--` may not name a runner option" (replace it with the managed/no-run rule);
   - "Adding a benchmark type";
@@ -45,7 +45,7 @@
   - the user-data stop-hook invariant's "differ for the JMH profiler types".
 
   Verify: `grep -n 'jmh-with\|--mode\|SET_BY_THE_CLI' CLAUDE.md` finds nothing left that describes current behaviour.
-- [ ] 5.4 Update `README.md`, `infra/README.md` and `docs/diagrams/baas-ci-e2e.mmd`. Render the diagram with `mmdc` into the scratchpad and look at the PNG. Verify: `grep -rn 'jmh-with' README.md infra/README.md docs/diagrams` is empty, and the render reads as intended.
+- [x] 5.4 Update `README.md`, `infra/README.md` and `docs/diagrams/baas-ci-e2e.mmd`. Render the diagram with `mmdc` into the scratchpad and look at the PNG. Verify: `grep -rn 'jmh-with' README.md infra/README.md docs/diagrams` is empty, and the render reads as intended.
 - [ ] 5.5 Release notes: the commit carrying the type removal has a `BREAKING CHANGE:` footer with the migration table from design.md, so the release is 9.0.0. Verify: the semantic-release dry run reports a major bump.
 
 ## 6. End-to-end verification (manual — `baas run` path)

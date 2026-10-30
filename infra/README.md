@@ -123,7 +123,7 @@ never overwriting it.
   JVM vendor, kernel tunables and packages it measured on in `environment.json` / `packages.txt`.
 - **What the contract does not constrain** is yours to change: another JDK vendor or a newer Java,
   transparent hugepages, swap. async-profiler is checked for presence only; on OpenJ9 it works
-  only partly, so `jmh-with-async` profiles there are weaker.
+  only partly, so `-prof async` profiles there are weaker.
 - **The bake may reach the internet** (the build security group allows 443 and 80), which is what
   lets an extension download things.
 

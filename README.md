@@ -208,11 +208,17 @@ baas config set --git-resolve-project true
 not the directory you typed the command in — and `baas results query` uses the current directory's
 repository instead of asking. `branch` and `commit` are never derived either way.
 
-Types: `jmh`, `jmh-with-async` (async-profiler flame graphs), `jmh-with-prof` (JMH's own
-profilers), `jcstress`.
+Types: `jmh` and `jcstress`. Profiling is a JMH argument, not a type:
 
-> **`--` is required.** Everything after it is forwarded verbatim to `benchmark-runner.jar`.
-> Without it, picocli parses JMH flags as `baas` options and fails with
+```bash
+baas run --benchmark-jar target/benchmarks.jar jmh -- MyBenchmark -f 1 \
+  -prof gc -prof 'async:event=wall;output=flamegraph'
+baas run --benchmark-jar target/stress-tests.jar jcstress -- -m sanity -t MyTest
+```
+
+> **`--` is required, and everything after it reaches your benchmark JAR verbatim** — they are
+> JMH's or JCStress's own arguments, so `java -jar target/benchmarks.jar -h` lists them all, in the
+> version your JAR holds. Without `--`, picocli parses JMH flags as `baas` options and fails with
 > `Unknown options: '-f', '-wi', '-i'`. `baas` options go *before* the separator:
 >
 > ```bash
@@ -223,6 +229,19 @@ profilers), `jcstress`.
 Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--instance-type`,
 `--timeout`, `--watchdog-margin`, `--tag key=value`, `--format json`.
 
+> **A few benchmark arguments are refused before anything is launched**, in any spelling the
+> benchmark's parser accepts (`--rf=csv`, `-pro`, `-ofile`):
+>
+> - those BaaS sets itself to collect the job — JMH `-rf`, `-rff`, `-o`, the `dir` (and async's
+>   `libPath`) of an `async` or `jfr` profiler; JCStress `-r`;
+> - those that print and exit without measuring, so the job would measure nothing — JMH `-h`, `-l`,
+>   `-lp`, `-lprof`, `-lrf`; JCStress `-h`, `-l`, `-p`. The refusal prints the `java -jar …` command
+>   that answers them locally, for free. `-lprof` locally lists your machine's profilers; the runner
+>   image also has `perf` and async-profiler.
+>
+> `-prof async` uses async-profiler's own defaults (text output): ask for a graph with
+> `-prof 'async:output=flamegraph'`. Quote the value — `;` ends a shell command.
+
 > **`--watchdog-margin` is added to `--timeout`, not a bound of its own.** The instance terminates
 > itself `timeout + margin` seconds after launch (default margin 300, minimum 60), and the CLI stops
 > polling at the same moment — so the watchdog can never fire while the benchmark is still inside
@@ -230,10 +249,11 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 
 > **Tags are how you find a result later.** `--tag key=value` is repeatable and reaches the stored
 > measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and so is
-> `cliParameters`: everything after `--`, as typed (`--async-event wall MyBenchmark -f 1`), absent when
-> nothing follows it. The instance adds what it observes: `imageVersion`, `instanceType`, `jdk`,
-> `cpuModel`, `cpuArch`. Passing `--tag` for one of those observed keys, `type` or `cliParameters` is
-> rejected — they come from what the job ran on and was asked to run, so they can never disagree with it.
+> `cliParameters`: everything after `--`, as typed (`MyBenchmark -f 1 -prof gc`), absent when
+> nothing follows it, and `profilers`: the profilers the job named, sorted (`async,gc`), absent when
+> none. A profiled score is marked `*` in the results table. The instance adds what it observes: `imageVersion`, `instanceType`, `jdk`,
+> `cpuModel`, `cpuArch`. Passing `--tag` for one of those observed keys, `type`, `cliParameters` or
+> `profilers` is rejected — they come from what the job ran on and was asked to run, so they can never disagree with it.
 
 > **A job with nowhere to record itself fails before it costs anything.** If no deployment is
 > configured and its credentials are not a deployment's operator role, `baas run` stops before any
@@ -312,7 +332,7 @@ baas results diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
           A                             B
 JOB       20260724T120000000Z-a3f9c21b  20260811T093000000Z-b7e4d0f2
 INSTANCE  c5.large                      c5.2xlarge
-TYPE      jmh                           jmh-with-async
+TYPE      jmh                           jmh
 
 BENCHMARK                                    MODE                              A                            B UNIT                        Δ VERDICT
 --------------------------------------------------------------------------------------------------------------------------------------------------------
@@ -328,12 +348,13 @@ the mode deciding which way is better. It is `~` when they overlap and `?` when 
 never converted. The header always names each job's instance type and benchmark type, since those
 most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
 on stderr points at `baas jobs diff`. A difference in `cliParameters` (forks, iterations, the profiler event) gets its own warning, since it
-changes the error interval and so the verdict. `-v` adds a `TAGS` block comparing every tag of the two jobs
+changes the error interval and so the verdict, and so does one in `profilers`, since a profiler
+perturbs the score it measures. `-v` adds a `TAGS` block comparing every tag of the two jobs
 (`branch`, `commit`, `jdk`, `cliParameters`, …), and under each row its params in full and its secondary metrics
 (`-prof gc`'s `gc.alloc.rate.norm`, …), with raw values only.
 
-Only measurements from the same library are compared. `jmh`, `jmh-with-prof` and `jmh-with-async`
-compare with each other, while a JCStress job is refused against a JMH one and, for now, against
+Only measurements from the same library are compared. Any two JMH jobs compare, profiled or not —
+including jobs stored under the retired types `jmh-with-async` and `jmh-with-prof` — while a JCStress job is refused against a JMH one and, for now, against
 another JCStress job as well. Use `baas results query --job-id` to read each job's verdict. The
 command exits 0 whenever it compared the jobs, whatever it found. To fail a build on a regression:
 
@@ -518,12 +539,13 @@ Then run the runner directly against LocalStack. Both scripts use the `fake-jmh-
 fixture, so they work straight after a build:
 
 ```bash
-./jmh-with-profiler.sh   # JMH's own profilers (gc, comp, cl, jfr)
-./jmh-with-async.sh      # async-profiler flame graphs
+./jmh-with-profiler.sh   # jmh -- … -prof gc -prof comp -prof cl -prof jfr
+./jmh-with-async.sh      # jmh -- … -prof 'async:…;output=flamegraph'
 ```
 
+Arguments to either script are appended after the runner's `--`, so they are JMH's own.
 `jmh-with-async.sh` additionally needs a local async-profiler library, because `--async-path`
-defaults to the on-instance location and is validated for existence:
+defaults to the on-instance location, and a `-prof async` job checks it exists:
 
 ```bash
 export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib   # .so on Linux
@@ -551,7 +573,7 @@ the reusable workflow, the contract is now *install the CLI* — see [Install](#
 | Workflow | Trigger | Purpose |
 |---|---|---|
 | `ci-pr-build.yml` | PR | `mvn clean verify`, with `ASYNC_PATH` exported so the async-profiler test actually runs |
-| `e2e-cloud-test.yml` | path-filtered PR / manual | One `baas run jmh-with-async` on real EC2, against the runner AMI |
+| `e2e-cloud-test.yml` | path-filtered PR / manual | A `baas run jmh` profiled with async-profiler and a `baas run jcstress`, each on real EC2, against the runner AMI |
 | `install-test.yml` | PR | `scripts/install.sh` against a fixture release, on Linux and macOS |
 | `release.yml` | push to `main` | semantic-release → GitHub Release → GitHub Packages |
 
