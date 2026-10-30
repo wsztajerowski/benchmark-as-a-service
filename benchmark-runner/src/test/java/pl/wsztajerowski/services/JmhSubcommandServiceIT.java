@@ -5,21 +5,17 @@ import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.TestcontainersWithDynamoDbBaseIT;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.options.CommonSharedOptions;
-import pl.wsztajerowski.options.JmhOptions;
+import pl.wsztajerowski.options.JmhRun;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.time.Instant;
 import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
-import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
-import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
-import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
-import static pl.wsztajerowski.options.JmhOutputOptions.jmhOutputOptionsBuilder;
-import static pl.wsztajerowski.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
 
 class JmhSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
 
@@ -27,30 +23,13 @@ class JmhSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
     @Test
     void successful_scenario() throws IOException {
         // given
-        Path result = Files.createTempFile("results", "jmh.json");
-        Path output = Files.createTempFile("outputs", "jmh.txt");
         Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
         JmhSubcommandService sut = new JmhSubcommandService(
             new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
             resultsStore(),
             new CommonSharedOptions(Path.of("test-1"), "req-1", Instant.now(), "test-project", Collections.emptyMap()),
-            new JmhOptions(
-                jmhBenchmarkOptionsBuilder()
-                    .withBenchmarkPath(jmhTestBenchmark)
-                    .withForks(1)
-                    .withTestNameRegex("Incrementing_Synchronized")
-                    .build(),
-                jmhOutputOptionsBuilder()
-                    .withMachineReadableOutput(result)
-                    .withProcessOutput(output)
-                    .build(),
-                jmhWarmupOptionsBuilder()
-                    .withWarmupIterations(0)
-                    .build(),
-                jmhIterationOptionsBuilder()
-                    .withIterations(1)
-                    .build(),
-                jmhJvmOptionsBuilder().build()));
+            new JmhRun(jmhTestBenchmark, List.of("Incrementing_Synchronized", "-f", "1", "-wi", "0", "-i", "1"),
+                Files.createTempDirectory("jmh"), Path.of("no-async-profiler")));
 
         // when
         sut.executeCommand();
