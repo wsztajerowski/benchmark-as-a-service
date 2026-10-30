@@ -12,7 +12,7 @@ sequenceDiagram
     Job->>STS: AssumeRoleWithWebIdentity(vars.OPERATOR_ROLE_ARN, 9000 s)
     STS-->>Job: operator credentials in the environment (no profile)
     Note over Job,CLI: no config sync and no deployment name -- the job holds no configuration file
-    Job->>CLI: run jmh-with-async --detach --format json --timeout 7200 --watchdog-margin 300<br/>--project <repo> --tag branch --tag commit --tag hidden=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 --async-…
+    Job->>CLI: run jmh --detach --format json --timeout 7200 --watchdog-margin 300<br/>--project <repo> --tag branch --tag commit --tag hidden=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-jmh-benchmarks.jar<br/>-- Incrementing_Synchronized -f 1 -wi 1 -i 1 -prof async:… (output=flamegraph)
     CLI->>STS: GetCallerIdentity -- assumed-role/<name>-role-operator, so the deployment is <name>,<br/>and the session is used as is (no AssumeRole)
     CLI->>AWS: HeadBucket(<name>) -- the region is the bucket's, whatever vars.AWS_REGION says
     CLI->>AWS: upload, launch, confirm -- NO poll (see baas-run.mmd, opt --detach)
@@ -26,20 +26,20 @@ sequenceDiagram
     end
     Job->>Job: GITHUB_OUTPUT job_status, the last status read
     Job->>CLI: results --job-id <id> --format json
-    Note over Job: asserts imageVersion, instanceType, project, branch, commit, source=ci
+    Note over Job: asserts imageVersion, instanceType, project, branch, commit, source=ci, type=jmh, profilers=async
     Job->>CLI: results --project <repo> --best-per commit --format json
     Note over Job: asserts the hidden job is absent
     Job->>CLI: results --project <repo> --show-hidden --format json
     Note over Job: asserts it is present
     Job->>CLI: download <run_id> -o ./artifacts
-    Note over Job: asserts environment.json, jmh-result.json, no legacy run-status object, output, flamegraph, JFR, and the followed job_status reads completed
+    Note over Job: asserts environment.json, jmh-result.json, no legacy run-status object, output, a flamegraph naming the benchmark method, and the followed job_status reads completed
     opt failure and a result_path was reported
         Job->>CLI: download <result_path> -o ./failed (by PATH: a failed job has no index entry)
         Job->>Job: print cloud-init-output.log
     end
     Job->>GH: upload ./artifacts
     Note over JC,CLI: same build and federation as the benchmark job, and no config sync either
-    JC->>CLI: run jcstress --format json --project <repo><br/>--tag branch --tag commit --tag hidden=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-stress-tests.jar<br/>-- --mode sanity
+    JC->>CLI: run jcstress --format json --project <repo><br/>--tag branch --tag commit --tag hidden=true<br/>--runner-jar target/benchmark-runner.jar --benchmark-jar fake-stress-tests.jar<br/>-- -m sanity
     CLI->>AWS: upload, launch, poll (see baas-run.mmd)
     CLI-->>JC: one JSON object on stdout
     Note over JC: asserts the summary jobStatus reads completed

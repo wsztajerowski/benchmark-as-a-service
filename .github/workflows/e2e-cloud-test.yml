@@ -1,6 +1,7 @@
 # The project's own end-to-end self-test: one real benchmark job per CI job, each on its own real EC2
 # instance, launched exactly the way a developer's laptop launches one. `benchmark` covers the
-# image-dependent type (jmh-with-async); `jcstress` covers the JCStress path in sanity mode.
+# image-dependent path (a `jmh` job profiled with async-profiler); `jcstress` covers the JCStress path
+# in sanity mode.
 #
 # It drives the CLI rather than re-implementing it. Nothing here provisions or terminates an
 # instance, mints a job identifier, builds an S3 key, installs a JDK or a profiler onto the
@@ -43,13 +44,12 @@ jobs:
       id-token: write
       contents: read
     env:
-      # jmh-with-async is the one type whose failure modes live in what nothing else tests: the
-      # baked AMI, the perf_event_paranoid/kptr_restrict tunables, the pinned perf and
-      # async-profiler versions, and profiling-artifact upload. The others re-test orchestration
-      # that is identical across types. This is the self-test's choice, not a limit on `baas run`:
-      # the type is a positional parameter and consumers run jmh and jcstress through the same
-      # mechanism.
-      BENCHMARK_TYPE: jmh-with-async
+      # A jmh job profiled with async-profiler is the one whose failure modes live in what nothing
+      # else tests: the baked AMI, the perf_event_paranoid/kptr_restrict tunables, the pinned perf
+      # and async-profiler versions, and profiling-artifact upload. This is the self-test's choice,
+      # not a limit on `baas run`: the type and the -prof arguments are the caller's, and consumers
+      # run jmh, with any profiler or none, and jcstress through the same mechanism.
+      BENCHMARK_TYPE: jmh
       BENCHMARK_CLASS: Incrementing_Synchronized
       # The deployment defaults, named so the detached job's follow-up loop knows the bound at
       # which the job's watchdog ends it: timeout + margin.
@@ -129,9 +129,7 @@ jobs:
             --benchmark-jar fake-jmh-benchmarks/target/fake-jmh-benchmarks.jar \
             --tag hidden=true \
             -- "$BENCHMARK_CLASS" -f 1 -wi 1 -i 1 \
-               --async-event=wall \
-               --async-output-type=flamegraph,jfr \
-               --async-additional-param threads=true \
+               -prof 'async:event=wall;output=flamegraph;threads=true' \
             | tee summary.json || status=$?
           job_id=$(jq -r '.jobId // empty' summary.json)
           {
@@ -207,6 +205,8 @@ jobs:
           test "$(jq -r '.[0].tags.branch' measurements.json)" = "$RUN_BRANCH"
           test "$(jq -r '.[0].tags.commit' measurements.json)" = "$RUN_COMMIT"
           test "$(jq -r '.[0].tags.source' measurements.json)" = "ci"
+          test "$(jq -r '.[0].tags.type' measurements.json)" = "jmh"
+          test "$(jq -r '.[0].tags.profilers' measurements.json)" = "async"
 
       # Hidden from the project query, present under its own id and under --show-hidden: the
       # halves of the hiding contract, asserted against each other. The query lists every
@@ -232,13 +232,15 @@ jobs:
           test -s ./artifacts/jmh-result.json
           # Job status lives on the job item now, not in the prefix (run-status-in-dynamodb).
           test ! -e ./artifacts/run-status
-          test -s "./artifacts/${BENCHMARK_TYPE}-output.txt"
+          test -s ./artifacts/jmh-output.txt
           # Written by async-profiler on the baked image — the tunables, the pinned profiler and
-          # perf versions and the artifact upload path, all exercised end to end.
+          # perf versions and the artifact upload path, all exercised end to end. A graph file is
+          # not enough: with flamegraph,jfr requested together every graph held the single frame
+          # `all` and CI stayed green (finding E1), so the graph must name the benchmark method.
           find ./artifacts -name '*.html' | grep -q . || {
             echo "no flamegraph produced — the profiler did not run on the baked image"; exit 1; }
-          find ./artifacts -name '*.jfr' | grep -q . || {
-            echo "no JFR recording produced"; exit 1; }
+          find ./artifacts -name '*.html' -exec grep -l incrementUsingSynchronized {} + | grep -q . || {
+            echo "no flamegraph names incrementUsingSynchronized — the profile is empty"; exit 1; }
 
       # The outcome as recorded on the job item, as the follow-up loop last read it.
       - name: The job item recorded the outcome
@@ -309,8 +311,8 @@ jobs:
       # No `config sync` and no deployment name: with no configuration file, `baas` takes the
       # deployment from the operator role this job federated into (<name>-role-operator).
 
-      # --mode is the runner's, forwarded to JCStress as -m; -m itself is no runner option and
-      # baas run refuses it. --runner-jar and hidden as in the job above.
+      # -m is JCStress's own mode flag, passed through like every argument after --. --runner-jar
+      # and hidden as in the job above.
       - name: Run the JCStress tests on EC2
         id: run
         run: |
@@ -324,7 +326,7 @@ jobs:
             --runner-jar benchmark-runner/target/benchmark-runner.jar \
             --benchmark-jar fake-stress-tests/target/fake-stress-tests.jar \
             --tag hidden=true \
-            -- --mode sanity \
+            -- -m sanity \
             | tee summary.json || status=$?
           job_id=$(jq -r '.jobId // empty' summary.json)
           {
