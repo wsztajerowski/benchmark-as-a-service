@@ -5,6 +5,7 @@ import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
+import pl.wsztajerowski.baas.model.TagKeys;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +62,9 @@ public final class ResultsTable {
         columns.addAll(COLUMNS);
         var table = new Table(console, RULE_WIDTH + (withProject ? PROJECT.width() + 1 : 0), columns);
         table.printHeader();
+        // A score measured under a profiler is marked, since a profiler perturbs it. Only when some
+        // row is marked do the others make room for the mark, so a table with none is unchanged.
+        boolean anyProfiled = rows.stream().anyMatch(ResultsTable::profiled);
         for (ResultRow r : rows) {
             // A hidden row is shown only under --show-hidden, and faint so it reads as set aside.
             UnaryOperator<String> rowStyle = r.hidden() ? console::faint : UnaryOperator.identity();
@@ -76,7 +80,7 @@ public final class ResultsTable {
                 cells.add(verdict(console, r, rowStyle));
                 cells.add(new Cell("tests", rowStyle));
             } else {
-                cells.add(number(console, r.score(), rowStyle));
+                cells.add(number(console, r.score(), rowStyle, anyProfiled ? (profiled(r) ? "*" : " ") : ""));
                 cells.add(new Cell(r.scoreUnit() != null ? r.scoreUnit() : "", rowStyle));
             }
             table.printRow(cells);
@@ -95,6 +99,17 @@ public final class ResultsTable {
                 console.println("    " + console.faint("tags    " + tagLine(r.tags())));
             }
         }
+        if (anyProfiled) {
+            console.println("");
+            console.println(PROFILED_FOOTNOTE);
+        }
+    }
+
+    /** The footnote under a table holding at least one {@code *}. */
+    static final String PROFILED_FOOTNOTE = "* measured under a profiler; -v names it in the profilers tag";
+
+    private static boolean profiled(ResultRow r) {
+        return r.jcstress() == null && r.tags().containsKey(TagKeys.PROFILERS);
     }
 
     /** Sorted by key so two rows' lines can be compared by eye. Used for params and tags alike. */
@@ -122,8 +137,8 @@ public final class ResultsTable {
     }
 
     /** An unknown value is de-emphasised, so it cannot be read as a measurement. */
-    private static Cell number(Console console, double value, UnaryOperator<String> rowStyle) {
-        String text = String.format("%.3f", value);
+    private static Cell number(Console console, double value, UnaryOperator<String> rowStyle, String mark) {
+        String text = String.format("%.3f", value) + mark;
         return Double.isFinite(value) ? new Cell(text, rowStyle) : new Cell(text, console::faint);
     }
 

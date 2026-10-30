@@ -139,6 +139,11 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
             logger.warn("The jobs ran with different parameters after -- ({}), which change the "
                 + "error interval and so the verdict", parameters);
         }
+        String profilers = ResultsDiff.profilerDifference(a, b);
+        if (profilers != null) {
+            logger.warn("The jobs ran under different profilers ({}); a profiler perturbs the score "
+                + "it measures", profilers);
+        }
 
         List<Row> rows = ResultsDiff.compare(a, b);
         if ("json".equalsIgnoreCase(format)) {

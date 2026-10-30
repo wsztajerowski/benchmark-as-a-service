@@ -255,6 +255,18 @@ class ResultsDiffTest {
     }
 
     @Test
+    void differentProfilersAreReportedAndAnUnprofiledSideIsNone() {
+        var clean = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of());
+        var async = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("profilers", "async"));
+        var gc = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("profilers", "gc"));
+
+        assertThat(ResultsDiff.profilerDifference(List.of(clean), List.of(async))).isEqualTo("profilers: none → async");
+        assertThat(ResultsDiff.profilerDifference(List.of(gc), List.of(async))).isEqualTo("profilers: gc → async");
+        assertThat(ResultsDiff.profilerDifference(List.of(gc), List.of(gc))).isNull();
+        assertThat(ResultsDiff.profilerDifference(List.of(clean), List.of())).isNull();
+    }
+
+    @Test
     void wrapBreaksAtSpacesAndSplitsAWordLongerThanTheColumn() {
         assertThat(ResultsDiffSubcommand.wrap("short", 10)).containsExactly("short");
         assertThat(ResultsDiffSubcommand.wrap("one two three four", 9)).containsExactly("one two", "three", "four");

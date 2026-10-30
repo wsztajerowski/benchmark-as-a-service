@@ -84,7 +84,7 @@ public class UserDataScriptBuilder {
 
         # Ships what the job has produced so far to its prefix: the boot log, the benchmark
         # process output (the runner redirects it into WORK_DIR/PROCESS_OUTPUT_FILE as it runs, and
-        # uploads it as PROCESS_OUTPUT_NAME, which differs per JMH type) and
+        # uploads it as PROCESS_OUTPUT_NAME) and
         # every *.log below WORK_DIR under logs/ — the keys the runner itself uses, so after a
         # completed job this overwrites rather than duplicates. Defined before the watchdog forks,
         # which calls it, and serialised into the shutdown hook below, so the explicit uploads and
@@ -313,7 +313,9 @@ public class UserDataScriptBuilder {
         # names the table: `baas run` resolves it before provisioning and fails when it cannot, and
         # job status lives there too, so there is no job without one.
         # BENCHMARK_PARAMS_ARRAY and RUNNER_TAGS_ARRAY are array literals written by build(),
-        # one quoted element per argument, so bash parses them once, as data — no eval.
+        # one quoted element per argument, so bash parses them once, as data — no eval. The
+        # benchmark's arguments follow the runner's --, so none of them can be read as a runner
+        # option: they reach the benchmark JAR verbatim.
         # RunCommand.buildRunnerTags already rejects a caller tag whose key is
         # machine-observed (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type),
         # so the caller tags should never actually collide with the six observed --tag lines
@@ -340,7 +342,7 @@ public class UserDataScriptBuilder {
           @TAG_FLAG@ "@JVM_VENDOR_TAG@=${JVM_VENDOR_RAW}" \\
           @TAG_FLAG@ "@CPU_MODEL_TAG@=${CPU_MODEL_RAW}" \\
           @TAG_FLAG@ "@CPU_ARCH_TAG@=${CPU_ARCH}" \\
-          "${BENCHMARK_PARAMS_ARRAY[@]}"
+          -- "${BENCHMARK_PARAMS_ARRAY[@]}"
         EXIT_CODE=$?
 
         # The outcome, on the job item — what `baas run` polls and `baas jobs list` shows.

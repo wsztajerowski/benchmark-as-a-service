@@ -160,10 +160,72 @@ class RunCommandTest {
     @Test
     void recordsEverythingAfterTheSeparatorAsCliParameters() {
         var command = new RunCommand();
-        command.benchmarkParams.addAll(List.of("--async-event", "wall", "MyBenchmark", "-f", "1", "-wi", "2"));
+        command.benchmarkParams.addAll(List.of("MyBenchmark", "-f", "1", "-wi", "2", "-prof", "async:event=wall"));
 
-        assertThat(command.buildRunnerTags("jmh-with-async", "lynx-journal"))
-            .containsEntry("cliParameters", "--async-event wall MyBenchmark -f 1 -wi 2");
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal"))
+            .containsEntry("cliParameters", "MyBenchmark -f 1 -wi 2 -prof async:event=wall");
+    }
+
+    @Test
+    void recordsTheProfilersSortedWithoutTheirOptions() {
+        var command = new RunCommand();
+        command.benchmarkParams.addAll(List.of("MyBenchmark", "-prof", "gc", "-pro", "async:event=alloc", "-prof", "gc"));
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal")).containsEntry("profilers", "async,gc");
+    }
+
+    @Test
+    void anUnprofiledJobCarriesNoProfilersTag() {
+        var command = new RunCommand();
+        command.benchmarkParams.addAll(List.of("MyBenchmark", "-f", "1"));
+
+        assertThat(command.buildRunnerTags("jmh", "lynx-journal")).doesNotContainKey("profilers");
+    }
+
+    @Test
+    void aCallerCannotClaimOrDenyProfiling() {
+        var command = new RunCommand();
+        command.extraTags.put("profilers", "gc");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
+            .hasMessageContaining("profilers");
+    }
+
+    @Test
+    void aNoRunArgumentIsRefusedWithTheLocalCommand() {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+        command.benchmarkJar = java.nio.file.Path.of("build/b.jar");
+        command.benchmarkParams.addAll(List.of("-lprof"));
+
+        assertThatThrownBy(command::refuseManagedOrNoRun)
+            .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
+            .hasMessageContaining("-lprof makes JMH print and exit without measuring")
+            .hasMessageContaining("java -jar build/b.jar -lprof");
+        assertThat(command.localCommand).isEqualTo("java -jar build/b.jar -lprof");
+        assertThat(command.localCommandCaveat).contains("perf and async-profiler");
+    }
+
+    @Test
+    void helpCarriesNoProfilerCaveat() {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+        command.benchmarkJar = java.nio.file.Path.of("my dir/b.jar");
+        command.benchmarkParams.addAll(List.of("-h"));
+
+        assertThatThrownBy(command::refuseManagedOrNoRun).hasMessageContaining("java -jar 'my dir/b.jar' -h");
+        assertThat(command.localCommandCaveat).isNull();
+    }
+
+    @Test
+    void aManagedArgumentIsRefusedNamingIt() {
+        var command = new RunCommand();
+        command.benchmarkType = "jcstress";
+        command.benchmarkParams.addAll(List.of("-rx"));
+
+        assertThatThrownBy(command::refuseManagedOrNoRun)
+            .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
+            .hasMessageContaining("-r is managed by BaaS");
     }
 
     @Test
