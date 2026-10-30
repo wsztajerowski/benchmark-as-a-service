@@ -55,26 +55,26 @@ class RunCommandLaunchTest {
         return base.toArray(String[]::new);
     }
 
-    /** G1: the benchmark's arguments come last on the runner's command line, where picocli's last value wins. */
+    /** A flag BaaS manages, in any spelling JMH accepts, is refused before anything reaches AWS. */
     @Test
-    void aRunnerOptionTheCliSetsIsRefusedAfterTheDoubleDashBeforeAnyAwsCall() throws Exception {
+    void aManagedArgumentIsRefusedAfterTheDoubleDashBeforeAnyAwsCall() throws Exception {
         Path jar = Files.writeString(dir.resolve("b.jar"), "jar");
 
         int exit = run("--benchmark-jar", jar.toString(), "--runner-jar", jar.toString(), "--project", "lynx-journal",
-            "jmh", "--", "MyBenchmark", "--tag", "imageVersion=1.0.0");
+            "jmh", "--", "MyBenchmark", "-pro", "async:dir=/tmp/x");
 
         assertThat(exit).isEqualTo(2);
         assertThat(aws.events).as("nothing reached AWS").isEmpty();
         assertThat(aws.uploads).isEmpty();
     }
 
-    /** -m is JCStress's mode flag but no runner option; refused before it can fail a paid boot. */
+    /** An argument that would measure nothing is refused before a paid boot. */
     @Test
-    void aShortModeFlagIsRefusedAfterTheDoubleDashBeforeAnyAwsCall() throws Exception {
+    void aNoRunArgumentIsRefusedAfterTheDoubleDashBeforeAnyAwsCall() throws Exception {
         Path jar = Files.writeString(dir.resolve("b.jar"), "jar");
 
         int exit = run("--benchmark-jar", jar.toString(), "--runner-jar", jar.toString(), "--project", "lynx-journal",
-            "jcstress", "--", "-m", "sanity");
+            "jcstress", "--", "-p", "old.bin.gz");
 
         assertThat(exit).isEqualTo(2);
         assertThat(aws.events).as("nothing reached AWS").isEmpty();

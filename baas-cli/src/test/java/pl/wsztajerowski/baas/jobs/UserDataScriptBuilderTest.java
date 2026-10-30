@@ -175,6 +175,12 @@ class UserDataScriptBuilderTest {
         assertThat(script()).contains("BENCHMARK_PARAMS_ARRAY=('MyBenchmark' '-f' '1')");
     }
 
+    /** After the runner's own --, so no benchmark argument can be read as a runner option. */
+    @Test
+    void theBenchmarkParametersFollowTheRunnersSeparator() {
+        assertThat(script()).contains("-- \"${BENCHMARK_PARAMS_ARRAY[@]}\"");
+    }
+
     /**
      * S6: parameters used to travel as one string and be re-split by {@code eval}, which expanded
      * {@code $} and backticks on the instance and broke on a {@code "}. Every character must reach
@@ -434,7 +440,7 @@ class UserDataScriptBuilderTest {
         List<String> params = List.of("pl.wsztajerowski.SomeBenchmark.measure", "-f", "3", "-wi", "5", "-i", "10",
             "-p", "size=1,10,100,1000,10000,100000", "-p", "implementation=synchronized,reentrant,stamped,atomic",
             "-p", "threads=1,2,4,8,16", "-jvmArgs", "-XX:+UseG1GC -Xms4g -Xmx4g");
-        String encoded = build("eu-central-1", "baas-381492019823", "jmh-with-async",
+        String encoded = build("eu-central-1", "baas-381492019823", "jmh",
             "20260724T120000000Z-a3f9c21b", "benchmark-as-a-service",
             "jobs/benchmark-as-a-service/20260724T120000000Z-a3f9c21b", "2026-07-24T12:00:00.123Z",
             7200, 7500, "1.2.0", "ami-0ae60d9d990dc00df", "releases/6.1.0/benchmark-runner.jar", params, tags);
@@ -589,21 +595,21 @@ class UserDataScriptBuilderTest {
     }
 
     /**
-     * Every JMH type writes jmh-output.txt, and the runner uploads it as the type's own name. A
-     * stopped jmh-with-async job has to leave it at that name too, not beside it under the local one.
+     * A stopped job's output has to land at the name the runner uploads it as, not beside it — the
+     * same name for a profiled job as for any other, now that profiling is a JMH argument.
      */
     @Test
-    void aStoppedProfilerJobsOutputLandsAtTheNameTheRunnerUploadsItAs() throws Exception {
+    void aStoppedProfiledJobsOutputLandsAtTheNameTheRunnerUploadsItAs() throws Exception {
         Path work = jobWorkingDirectory();
-        String script = new String(Base64.getDecoder().decode(build("eu-central-1", "baas-a1b2c3d4", "jmh-with-async",
+        String script = new String(Base64.getDecoder().decode(build("eu-central-1", "baas-a1b2c3d4", "jmh",
             "20260724T120000000Z-a3f9c21b", "lynx-journal", "jobs/lynx-journal/20260724T120000000Z-a3f9c21b",
-            "2026-07-24T12:00:00Z", 7200, 7500, "1.0.0", "ami-0123456789abcdef0", null, List.of("MyBenchmark"),
-            Map.of())), StandardCharsets.UTF_8);
+            "2026-07-24T12:00:00Z", 7200, 7500, "1.0.0", "ami-0123456789abcdef0", null,
+            List.of("MyBenchmark", "-prof", "async:output=flamegraph"), Map.of())), StandardCharsets.UTF_8);
 
         List<String> calls = runAgainstStubAws(script, "ok", "WORK_DIR='" + work + "'\nship_logs\n");
 
         assertThat(calls).contains("s3 cp " + work.resolve("jmh-output.txt")
-            + " s3://baas-a1b2c3d4/jobs/lynx-journal/20260724T120000000Z-a3f9c21b/jmh-with-async-output.txt");
+            + " s3://baas-a1b2c3d4/jobs/lynx-journal/20260724T120000000Z-a3f9c21b/jmh-output.txt");
     }
 
     /** Uploads are best effort: one that fails must not keep the rest, or the termination, from running. */
