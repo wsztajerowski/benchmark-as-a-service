@@ -12,7 +12,7 @@ import pl.wsztajerowski.infra.StorageService;
 import pl.wsztajerowski.process.BenchmarkProcessBuilder;
 import pl.wsztajerowski.results.JCStressMeasurementMapper;
 import pl.wsztajerowski.options.CommonSharedOptions;
-import pl.wsztajerowski.options.JCStressOptions;
+import pl.wsztajerowski.options.JCStressRun;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -28,47 +28,36 @@ public class JCStressSubcommandService {
     private final CommonSharedOptions commonOptions;
     private final StorageService storageService;
     private final ResultsStore resultsStore;
-    private final Path benchmarkPath;
+    private final JCStressRun run;
 
-    private final JCStressOptions jcStressOptions;
-
-    public JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, Path benchmarkPath, JCStressOptions jcStressOptions) {
+    public JCStressSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JCStressRun run) {
         requireNonNull(storageService, "Please provide a storage service");
         requireNonNull(resultsStore, "Please provide a results store");
         this.storageService = storageService;
         this.resultsStore = resultsStore;
         this.commonOptions = commonOptions;
-        this.benchmarkPath = benchmarkPath;
-        this.jcStressOptions = jcStressOptions;
+        this.run = run;
     }
 
-    /** JCStress's command line, without the output redirection. An absent option adds no argument. */
+    /**
+     * JCStress's command line, without the output redirection: the report directory the runner
+     * parses, then the user's arguments as given.
+     */
     BenchmarkProcessBuilder jcstressProcess() {
-        return benchmarkProcessBuilder(benchmarkPath)
-            .addArgumentWithValue("-r", jcStressOptions.reportPath())
-            .addArgumentIfValueIsNotNull("-c", jcStressOptions.cpuNumber())
-            .addArgumentIfValueIsNotNull("-f", jcStressOptions.forks())
-            .addArgumentIfValueIsNotNull("-fsm", jcStressOptions.forkMultiplier())
-            .addArgumentIfValueIsNotNull("-hs", jcStressOptions.heapSize())
-            .addArgumentIfValueIsNotNull("-jvmArgs", jcStressOptions.jvmArgs())
-            .addArgumentIfValueIsNotNull("-jvmArgsPrepend", jcStressOptions.jvmArgsPrepend())
-            .addArgumentIfValueIsNotNull("-pth", jcStressOptions.preTouchHeap())
-            .addArgumentIfValueIsNotNull("-sc", jcStressOptions.splitCompilationModes())
-            .addArgumentIfValueIsNotNull("-spinStyle", jcStressOptions.spinStyle())
-            .addArgumentIfValueIsNotNull("-strideCount", jcStressOptions.strideCount())
-            .addArgumentIfValueIsNotNull("-strideSize", jcStressOptions.strideSize())
-            .addArgumentIfValueIsNotNull("-m", jcStressOptions.mode())
-            .addArgumentIfValueIsNotNull("-t", jcStressOptions.testNameRegex());
+        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.benchmarkPath())
+            .addArgumentWithValue("-r", run.reportPath());
+        run.arguments().forEach(builder::addArgument);
+        return builder;
     }
 
     public void executeCommand() {
-        Path reportPath = jcStressOptions.reportPath();
+        Path reportPath = run.reportPath();
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JCStress. Output path: {}", outputPath);
         int exitCode;
         try {
             exitCode = jcstressProcess()
-                .withOutputPath(jcStressOptions.processOutput())
+                .withOutputPath(run.processOutput())
                 .buildAndStartProcess()
                 .waitFor();
         } catch (AssertionError | InterruptedException e) {
@@ -77,7 +66,7 @@ public class JCStressSubcommandService {
 
         logger.info("Saving test outputs on S3");
         storageService
-            .saveFile(outputPath.resolve(BenchmarkType.JCSTRESS.processOutputName()), jcStressOptions.processOutput());
+            .saveFile(outputPath.resolve(BenchmarkType.JCSTRESS.processOutputName()), run.processOutput());
         JobLogs.upload(storageService, outputPath);
 
         // Not fatal on its own: whether JCStress exits non-zero for failed tests is not something
@@ -88,7 +77,7 @@ public class JCStressSubcommandService {
             logger.warn("JCStress exited with code {}", exitCode);
         }
         if (!Files.isRegularFile(resultFilepath)) {
-            logger.error("JCStress output:\n{}", readQuietly(jcStressOptions.processOutput()));
+            logger.error("JCStress output:\n{}", readQuietly(run.processOutput()));
             throw new JavaWonderlandException(
                 "JCStress exited with exit code %d and wrote no report at %s".formatted(exitCode, resultFilepath));
         }

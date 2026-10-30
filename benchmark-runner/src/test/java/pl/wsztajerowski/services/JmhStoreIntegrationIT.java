@@ -7,11 +7,12 @@ import pl.wsztajerowski.infra.ResultsStore;
 import pl.wsztajerowski.infra.ResultsStoreException;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.options.CommonSharedOptions;
-import pl.wsztajerowski.options.JmhOptions;
+import pl.wsztajerowski.options.JmhRun;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.time.Instant;
 import java.util.Collections;
 
@@ -20,11 +21,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.PK;
 import static pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper.fromItem;
 import static pl.wsztajerowski.baas.model.ResultKeys.PK_PREFIX;
-import static pl.wsztajerowski.options.JmhBenchmarkOptions.jmhBenchmarkOptionsBuilder;
-import static pl.wsztajerowski.options.JmhIterationOptions.jmhIterationOptionsBuilder;
-import static pl.wsztajerowski.options.JmhJvmOptions.jmhJvmOptionsBuilder;
-import static pl.wsztajerowski.options.JmhOutputOptions.jmhOutputOptionsBuilder;
-import static pl.wsztajerowski.options.JmhWarmupOptions.jmhWarmupOptionsBuilder;
 
 /**
  * The run-level guarantees the DynamoDB write path exists to provide: one item per measurement and
@@ -88,31 +84,14 @@ class JmhStoreIntegrationIT extends TestcontainersWithDynamoDbBaseIT {
 
     private void runJmhServiceAgainstTheFakeBenchmark(ResultsStore resultsStore, Instant createdAt)
         throws IOException {
-        Path result = Files.createTempFile("results", "jmh.json");
-        Path output = Files.createTempFile("outputs", "jmh.txt");
         Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
 
         new JmhSubcommandService(
             new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
             resultsStore,
             new CommonSharedOptions(Path.of("test-1"), "req-1", createdAt, "test-project", Collections.emptyMap()),
-            new JmhOptions(
-                jmhBenchmarkOptionsBuilder()
-                    .withBenchmarkPath(jmhTestBenchmark)
-                    .withForks(1)
-                    .withTestNameRegex("Incrementing_Synchronized")
-                    .build(),
-                jmhOutputOptionsBuilder()
-                    .withMachineReadableOutput(result)
-                    .withProcessOutput(output)
-                    .build(),
-                jmhWarmupOptionsBuilder()
-                    .withWarmupIterations(0)
-                    .build(),
-                jmhIterationOptionsBuilder()
-                    .withIterations(1)
-                    .build(),
-                jmhJvmOptionsBuilder().build()))
+            new JmhRun(jmhTestBenchmark, List.of("Incrementing_Synchronized", "-f", "1", "-wi", "0", "-i", "1"),
+                Files.createTempDirectory("jmh"), Path.of("no-async-profiler")))
             .executeCommand();
     }
 }
