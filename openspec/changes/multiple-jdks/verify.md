@@ -137,7 +137,9 @@ the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Bench
   an ambiguous prefix (`-jv` starts `jvm`, `jvmArgs`, `jvmArgsAppend`, `jvmArgsPrepend`), so the job launches and JMH
   then fails it itself (`j is not a recognized option`, checked locally with the fixture JAR). No fork runs on an
   unrecorded JVM; the cost is one boot. Either refuse an ambiguous prefix of a managed option, as the profiler keys
-  already are, or drop `-jv /x` from the scenario.
+  already are, or drop `-jv /x` from the scenario. **Resolved (user, 2026-10-31): the example was dropped**; the
+  scenario now names `--jvm=/x`, which `RunCommandTest.theForksJvmIsRefusedNamingTheJdkOption` and
+  `BenchmarkArgsTest` cover.
 - **W2 — a profiler listing's job carries no `jdkId`.** "A listing runs on the selected JDK" says the job carries
   `jdkId=temurin-26`. The listing ran on Temurin (`…d2d6453c`; its `environment.json` says `temurin-26`), but a listing
   stores no measurement, and the job item's tags are the CLI's (`project`, `type`, `source`), so `jdkId` is in no tag.
