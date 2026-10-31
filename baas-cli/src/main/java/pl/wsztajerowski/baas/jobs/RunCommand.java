@@ -475,7 +475,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         Optional<String> managed = reading.firstManaged(benchmarkParams);
         if (managed.isPresent()) {
             throw CommandRefusal.usage(managed.get() + " is managed by BaaS and cannot be set after --: the "
-                + "runner sets it to collect the job's results and artifacts.\nNothing was launched.");
+                + "runner sets it to collect the job's results and artifacts, or to load the runner image's "
+                + "async-profiler.\nNothing was launched.");
         }
         if (reading.listsProfilersBesideOthers(benchmarkParams)) {
             throw CommandRefusal.usage("-lprof lists " + reading.tool() + "'s profilers on the runner and exits, "
