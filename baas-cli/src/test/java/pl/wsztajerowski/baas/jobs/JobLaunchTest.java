@@ -189,6 +189,18 @@ class JobLaunchTest {
 
         assertThat(launch().run(requestOnJdk("temurin-26"))).isZero();
         assertThat(userData()).contains("export JDK_ID='temurin-26'");
+        assertThat(listener.session.job().tags()).containsEntry("jdkId", "temurin-26");
+    }
+
+    /** The CLI chose and checked the id, so the job item carries it; the runner gets it as --jdk, not as a caller tag. */
+    @Test
+    void theJobItemCarriesTheJdkTheJobRunsOn() throws Exception {
+        aws.image = Optional.of(SELECTING_IMAGE);
+
+        launch().run(requestOnJdk(null));
+
+        assertThat(listener.session.job().tags()).containsEntry("jdkId", "corretto-25");
+        assertThat(userData()).doesNotContain("'jdkId=");
     }
 
     @Test
@@ -227,6 +239,7 @@ class JobLaunchTest {
 
         assertThat(launch().run(requestOnJdk(null))).isZero();
         assertThat(userData()).contains("export JDK_ID=''");
+        assertThat(listener.session.job().tags()).doesNotContainKey("jdkId");
     }
 
     @Test

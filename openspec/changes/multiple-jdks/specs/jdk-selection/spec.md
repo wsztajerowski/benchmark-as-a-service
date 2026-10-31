@@ -46,7 +46,9 @@ SHALL read the runner image's `baas-jdks` tag in the same lookup that resolves t
 refuse an id the tag does not name with exit 2, before any upload, naming the image and listing the ids
 it holds. For an image without the tag it SHALL accept no `--jdk` and refuse any, saying the image
 predates JDK selection and must be rebuilt; a job without `--jdk` on such an image SHALL run on the `java`
-on `PATH`, as before this change, and SHALL carry no `jdkId`, since no id was observed. The runner SHALL start the benchmark process with
+on `PATH`, as before this change, and SHALL carry no `jdkId`, since no id was observed. The job item SHALL
+carry the selected id as its `jdkId` tag, from the reservation on, so a job that stores no measurement is
+found by its JDK too. The runner SHALL start the benchmark process with
 `/opt/jdks/<id>/bin/java`, for `jmh` and `jcstress` alike, and SHALL refuse an id it does not find there
 before running anything.
 
@@ -69,6 +71,11 @@ before running anything.
 - **WHEN** `baas run --jdk corretto-25 jmh -- MyBenchmark` runs against an image without a `baas-jdks` tag
 - **THEN** it exits 2 saying the image predates JDK selection and naming `baas admin image build`, while the
   same command without `--jdk` is launched, runs on the `java` on `PATH` and carries no `jdkId`
+
+#### Scenario: A job is found by its JDK before and without measurements
+- **WHEN** `baas run --jdk temurin-26 jmh -- -lprof` is launched
+- **THEN** its job item carries `jdkId=temurin-26` from the reservation on, and `baas jobs list --tag
+  jdkId=temurin-26` lists it
 
 #### Scenario: JCStress runs on the selected JDK
 - **WHEN** `baas run --jdk temurin-26 jcstress -- -m sanity` completes

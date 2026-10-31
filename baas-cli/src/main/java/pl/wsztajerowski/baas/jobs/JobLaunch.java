@@ -150,6 +150,22 @@ public final class JobLaunch {
         return asked;
     }
 
+    /**
+     * The job item's tags: the CLI-side ones the runner also gets, plus the JDK the job runs on. The
+     * other observed tags reach only the measurements, since the instance observes them after the
+     * item is written; the JDK id is the CLI's own choice, checked against the image, so the item can
+     * carry it — and a job that stores no measurement, a profiler listing, is still found by its JDK.
+     * Absent on an image from before JDK selection, as on its measurements.
+     */
+    static Map<String, String> jobTags(Request request) {
+        if (request.jdk() == null) {
+            return request.runnerTags();
+        }
+        Map<String, String> tags = new java.util.LinkedHashMap<>(request.runnerTags());
+        tags.put(pl.wsztajerowski.baas.model.TagKeys.JDK_ID, request.jdk());
+        return tags;
+    }
+
     /** Runs the job to its end, or to its hand-over under {@code --detach}; returns the command's exit code. */
     public int run(Request request) throws InterruptedException {
         String prefix = deployment.prefix();
@@ -210,7 +226,7 @@ public final class JobLaunch {
         // 4. Build user-data. The job item's sort key is built here, once, by ResultKeys, and
         //    handed to the instance verbatim; see UserDataScriptBuilder's JOB_SORT_KEY.
         JobItem job = new JobItem(jobId, request.project(), jobInstant, resultPath, request.instanceType(),
-            JobStatus.LAUNCHING, null, null, request.runnerTags(), null, request.watchdogSeconds());
+            JobStatus.LAUNCHING, null, null, jobTags(request), null, request.watchdogSeconds());
         String userData = new UserDataScriptBuilder().build(
             aws.region(), deployment, job, runnerImage, request, runnerJarS3Key);
         // The script is what actually decides whether a job works; when a runner dies before it

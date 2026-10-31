@@ -108,7 +108,7 @@ the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Bench
 | Dimension | Status |
 |---|---|
 | Completeness | 36/39 tasks; open: 8.7 (needs an IAM administrator), 9.1 (rollout after 9.0.0), and this one until recorded |
-| Correctness | 13 of 13 requirements implemented; 2 scenarios diverge (W1, W2) |
+| Correctness | 13 of 13 requirements implemented; the 2 diverging scenarios (W1, W2) resolved with the user |
 | Coherence | Design followed; deviations below |
 
 ### Requirement → code → test
@@ -145,6 +145,12 @@ the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Bench
   stores no measurement, and the job item's tags are the CLI's (`project`, `type`, `source`), so `jdkId` is in no tag.
   Measuring jobs carry it through their measurements. Either add the resolved id to the job item's tags in `JobLaunch`
   (it is known there; it would also make `jobs list --tag jdkId=…` work), or reword the scenario to the manifest.
+  **Resolved (user, 2026-10-31): the job item carries `jdkId`.** `JobLaunch.jobTags` adds the resolved id to the
+  reservation's tags (absent on an image from before JDK selection); the runner still gets it as `--jdk` and tags the
+  measurements itself. `JobLaunchTest` pins both; the `jdk-selection` requirement gained the scenario "A job is found
+  by its JDK before and without measurements". Live: listing `20261031T225853127Z-16b19e5b` (`--jdk temurin-26 jmh --
+  -lprof`) is the one job `jobs list --project multiple-jdks-e2e --tag jdkId=temurin-26` returns — the earlier jobs'
+  items predate the fix. 14 paid jobs of the 20 allowed.
 
 ### Deviations from design or tasks
 
