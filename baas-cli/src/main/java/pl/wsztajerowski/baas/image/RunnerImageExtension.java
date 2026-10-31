@@ -71,11 +71,11 @@ public final class RunnerImageExtension {
         #         inputs:
         #           commands:
         #             - dnf install -y bpftrace
-        #       - name: AddTemurin26
+        #       - name: AddCorretto27
         #         action: ExecuteBash
         #         inputs:
         #           commands:
-        #             - baas-install-jdk temurin-26 https://github.com/adoptium/temurin26-binaries/releases/download/jdk-26.0.2.1%2B1/OpenJDK26U-jdk_x64_linux_hotspot_26.0.2.1_1.tar.gz 451c12e68747bcfa2fb5a2c16b00483fedb9fa6d77bc962d30957f76ac17044d
+        #             - baas-install-jdk corretto-27 https://corretto.aws/downloads/resources/27.0.1.0.11/amazon-corretto-27.0.1.0.11-linux-x64.tar.gz 2a8a5a833ec1b2e6e66bcf8a530438f471ebbbc928be90ab153b2985cdeac8e8
         """;
 
     private RunnerImageExtension() {

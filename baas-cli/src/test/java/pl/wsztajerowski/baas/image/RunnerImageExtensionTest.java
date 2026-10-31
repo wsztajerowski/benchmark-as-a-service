@@ -103,7 +103,11 @@ class RunnerImageExtensionTest {
             .isTrue();
     }
 
-    /** The way to add a JDK is the starter's own example, and the example, uncommented, is storable. */
+    /**
+     * The way to add a JDK is the starter's own example — Corretto 27, the newest Corretto, beside the
+     * base's 25 LTS — and the example, uncommented, is storable. Commented, it installs nothing: a
+     * first build is the base alone.
+     */
     @Test
     void theStarterShowsHowToAddAJdk() {
         String starter = RunnerImageExtension.withMarker("");
@@ -114,9 +118,9 @@ class RunnerImageExtensionTest {
         assertThat(starter)
             .contains("baas-install-jdk <id> <url of a .tar.gz JDK> <its sha256, from the vendor>")
             .contains("Leave java on PATH and `alternatives` alone")
-            .contains("- baas-install-jdk temurin-26 https://");
+            .contains("- baas-install-jdk corretto-27 https://corretto.aws/");
         var file = RunnerImageExtension.parse(uncommented);
-        assertThat(file.content()).contains("name: AddTemurin26");
+        assertThat(file.content()).contains("name: AddCorretto27");
         Map<String, Object> document = new org.yaml.snakeyaml.Yaml().load(file.content());
         assertThat(document).containsKeys("name", "schemaVersion", "phases");
         RunnerImageExtension.requireStorable(file.content());

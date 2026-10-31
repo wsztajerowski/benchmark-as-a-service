@@ -67,7 +67,7 @@ job.
 
 ### The base installs Corretto's full JDK, and the helper refuses a JDK without `jcmd`
 
-`java-25-amazon-corretto-devel` is the same Corretto build with its tools, so `jcmd` sits in its own
+`java-25-amazon-corretto-devel` is Corretto with its tools, so `jcmd` sits in its own
 `java.home` and JMH's JFR profiler finds it (closes PT1). `baas-install-jdk` refuses an archive without
 `bin/jcmd`, and the contract checks every `/opt/jdks/<id>` for it, so `-prof jfr` works on every
 selectable JDK. The helper is a short shell script rendered by `RunnerImageRenderer` into the base
@@ -140,9 +140,21 @@ The CLI passes the id into user-data, which captures every value into a shell va
 
 ### Comparability with existing results
 
-None is kept: existing results are erased. Within the new data, a job without `--jdk` measures on the same
-Corretto 25 as today, from the `-devel` package instead of `-headless` — the same JVM build, with tools
-added beside it, and a new `imageVersion`. The score comparison against a pre-change run is a task.
+None is kept: existing results are erased. Within the new data, a job without `--jdk` measures on
+Corretto 25 as today, from the `-devel` package instead of `-headless`, and a new `imageVersion`. Since
+the AMI is rebuilt anyway, the parent also moves to the newest AL2023 release (`2023.12.20261102.0`,
+decided with the user 2026-10-31), which brings Corretto 25.0.5.0.10 (was 25.0.4+7), a newer kernel and
+newer packages — so the score comparison against a pre-change run (a task) compares the whole base move,
+not only the package split. Corretto 25 stays the default: it is the LTS, and the runner's compile
+release.
+
+### Corretto 27 is an option, not a default
+
+The newest Corretto (27, non-LTS, updates until 28 ships) is offered as the extension starter's
+commented example, `baas-install-jdk corretto-27 <Amazon's tarball> <its SHA-256>`, so a first build is the
+base alone and one uncommented step adds it. The tarball, not the `java-27-amazon-corretto-devel` RPM: a
+second Corretto RPM becomes the `alternatives` default and moves the runner's own `java`. (Corretto 27 is
+also absent from the August parent's repository; AL2023 locks an AMI to its release's package snapshot.)
 
 ## Risks / Trade-offs
 
