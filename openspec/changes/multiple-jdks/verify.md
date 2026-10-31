@@ -102,3 +102,57 @@ the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Bench
   `…4e7ebe63` (JMH) and `…154689bb` (JCStress) completed with `jdkVersion=25.0.4`, `jdkVendor=Amazon.com Inc.` and
   no `jdkId`, as designed.
 - **8.7: not done yet** — it needs a deployer for a second deployment name (an IAM administrator).
+
+## 10. `/opsx:verify` (2026-10-31)
+
+| Dimension | Status |
+|---|---|
+| Completeness | 36/39 tasks; open: 8.7 (needs an IAM administrator), 9.1 (rollout after 9.0.0), and this one until recorded |
+| Correctness | 13 of 13 requirements implemented; 2 scenarios diverge (W1, W2) |
+| Coherence | Design followed; deviations below |
+
+### Requirement → code → test
+
+| Requirement | Code | Tests / evidence |
+|---|---|---|
+| jdk-selection: JDKs under one directory | `Jdks`, `RunnerImageRenderer` (link, helper) | `RunnerImageRendererTest` (helper run on local archives), container 1.x/3.x, live 8.1 |
+| jdk-selection: the image publishes its JDKs | contract in `RunnerImageRenderer`, `ImageBuilderService.tagJdks`, `ImageShowSubcommand.printJdks` | `ImageBuilderServiceTest` (tag before pointer, missing list retires), `ImageCommandsTest`, live 8.1 |
+| jdk-selection: a job chooses its JDK | `JobLaunch.selectJdk`, `RunCommand --jdk`, `UserDataScriptBuilder` (`JDK_ID`), `ApiCommonSharedOptions.javaExecutable` | `JobLaunchTest` (4 cases), `UserDataScriptBuilderTest`, `ApiCommonSharedOptionsTest`, `JmhSelectedJdkIT`, live 8.2/8.4/8.5, CI 8.8 |
+| benchmark-arguments: managed arguments | `BenchmarkArgs.JVM`, `choosesTheJdk`, `RunCommand`, runner `BenchmarkArguments` | `BenchmarkArgsTest`, `RunCommandTest`, runner `BenchmarkArgumentsTest`, live 8.4 — **W1** |
+| benchmark-arguments: listing runs as a job | unchanged path, `--jdk` before `--` | `RunCommandTest.theProfilerListingTakesAJdk`, `JmhCommandLineTest`, live listing `…d2d6453c` on `temurin-26` — **W2** |
+| results-store-schema: tags | `TagKeys`, user-data tag lines | `TagKeysTest`, `RunCommandTest` (reserved), live 8.2 |
+| runner-image-provisioning: no run-time tooling | `UserDataScriptBuilder` | `installsNothing`, live jfr on every JDK (8.3) |
+| runner-image-provisioning: the contract | `CONTRACT_TEMPLATE` | `RunnerImageRendererTest` (JDK block run in bash), container, live 8.1 |
+| runner-image-provisioning: the base definition | `infra/runner-image.yaml` (`-devel`, parent 2023.12.20261102.0), helper | `RunnerImageRendererTest`, `RunnerImageDefinitionTest`, container |
+| runner-image-provisioning: environment, grouped | user-data manifest schema 8 | `UserDataScriptBuilderTest` (JSON shape, selection arrays run in bash), live manifest of `…17de370f` |
+| runner-image-provisioning: jobs diff by group | `EnvironmentManifest.GROUPS`, help text | `EnvironmentManifestTest` (incl. `jvm` not mapped onto `jdk`), `JobsConsoleOutputTest`, `JobsDiffCommandTest` |
+| results-diff: environment warnings | `ResultsDiff.cpuDifference`, `WARNED_TAGS` | `ResultsDiffTest`, `ResultsDiffCommandTest` (order, stdout unchanged), live 8.2 |
+| job-tracking: `jobs show` | `EnvironmentView` (`jdk.id`, `runnerJdk`) | `EnvironmentViewTest`, `JobsShowCommandTest`, live `jobs show` |
+| benchmark-results-query: tag filters | unchanged; examples use `jdkVersion` | `ResultsFiltersTest`, `TableTest` |
+
+### Open warnings
+
+- **W1 — an ambiguous prefix of `-jvm` is not refused before launch.** The `benchmark-arguments` scenario "A fork JVM is
+  refused in favour of --jdk" names `… -- MyBenchmark -jv /x` as exiting 2. `BenchmarkArgs` resolves no option from
+  an ambiguous prefix (`-jv` starts `jvm`, `jvmArgs`, `jvmArgsAppend`, `jvmArgsPrepend`), so the job launches and JMH
+  then fails it itself (`j is not a recognized option`, checked locally with the fixture JAR). No fork runs on an
+  unrecorded JVM; the cost is one boot. Either refuse an ambiguous prefix of a managed option, as the profiler keys
+  already are, or drop `-jv /x` from the scenario.
+- **W2 — a profiler listing's job carries no `jdkId`.** "A listing runs on the selected JDK" says the job carries
+  `jdkId=temurin-26`. The listing ran on Temurin (`…d2d6453c`; its `environment.json` says `temurin-26`), but a listing
+  stores no measurement, and the job item's tags are the CLI's (`project`, `type`, `source`), so `jdkId` is in no tag.
+  Measuring jobs carry it through their measurements. Either add the resolved id to the job item's tags in `JobLaunch`
+  (it is known there; it would also make `jobs list --tag jdkId=…` work), or reword the scenario to the manifest.
+
+### Deviations from design or tasks
+
+- Parent and Corretto patch moved during apply (user, 2026-10-31): al2023 2023.12.20261102.0, Corretto 25.0.5.0.10;
+  Corretto 27 offered only as the extension starter's commented example. Design, proposal and 3.1 updated.
+- The contract carries the bucket and region (rendered by `RunnerImageParameters.plan`), so setup's `imageParameters`
+  takes the stack name; not in the design's text, which said only "the build role's existing grant".
+- 4.1 named `RunnerImageBuildSequenceTest` for the order "read and tag before the pointer moves"; the order lives inside
+  `ImageBuilderService.publish`, so `ImageBuilderServiceTest.theImagesJdksAreTaggedBeforeThePointerMoves` pins it, and
+  the sequence test pins the bucket passed to `publish`.
+- 8.6's baseline was the August-parent 1.4.0 image, so the comparison covers the whole base move (parent, kernel,
+  packages, `-devel`, 25.0.4 → 25.0.5), not only the package split. Scores agreed within 0.05 % per CPU model.
+- 13 paid jobs of the 20 allowed, the listing for this verify included.
