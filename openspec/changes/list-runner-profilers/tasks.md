@@ -44,7 +44,7 @@
       `JmhSubcommandService.executeCommand`: no `-rf`/`-rff`, upload process output and logs, no
       result JSON, no store write, non-zero exit fails as today; an IT on LocalStack runs the fixture
       JAR with `-lprof` and asserts `jmh-output.txt` is uploaded and no measurement is written
-- [ ] 3.4 Run `JmhAsyncProfilerIT` with `ASYNC_PATH` exported on macOS (locally) and on Linux (CI's PR
+- [x] 3.4 Run `JmhAsyncProfilerIT` with `ASYNC_PATH` exported on macOS (locally) and on Linux (CI's PR
       build) and confirm it ran, not skipped, and passed on both
 
 ## 4. CLI (`baas-cli`)
