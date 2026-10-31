@@ -133,6 +133,23 @@ public record ResultRow(
         return tags.get(key);
     }
 
+    /**
+     * The profilers this measurement ran under, or null when none: its {@code profilers} tag, or for a
+     * row stored under a retired profiled type — which never carried the tag — what that type implied.
+     * {@code jmh-with-prof} recorded no profiler names, hence {@code unrecorded}.
+     */
+    public String profilers() {
+        String tagged = tags.get(TagKeys.PROFILERS);
+        if (tagged != null) {
+            return tagged;
+        }
+        return switch (String.valueOf(tags.get(TagKeys.TYPE))) {
+            case "jmh-with-async" -> "async";
+            case "jmh-with-prof" -> "unrecorded";
+            default -> null;
+        };
+    }
+
     /** Tagged {@code hidden=true}: hidden from sweeps, shown faint under {@code --show-hidden}. */
     public boolean hidden() {
         return ResultsQueryService.HIDDEN_VALUE.equals(tags.get(ResultsQueryService.HIDDEN));

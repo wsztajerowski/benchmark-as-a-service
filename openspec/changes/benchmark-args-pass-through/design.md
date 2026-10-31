@@ -149,8 +149,11 @@ then be wrong for half its contents.
   `type`, and a query filtering on it raises no unknown-key warning.
 - Because the reservation writes the CLI-side tags, the job item and every measurement carry the same
   value without the runner deriving anything.
-- A profiler named by class (`-prof org.openjdk.jmh.profile.AsyncProfiler`) is recorded as written and
-  not injected. Neither BaaS nor JMH canonicalises names, and that spelling is rare.
+- A profiler named by the class JMH resolves it to is canonicalised for the two the runner manages
+  (`org.openjdk.jmh.profile.AsyncProfiler` → `async`, `…JavaFlightRecorderProfiler` → `jfr`):
+  injected, checked and tagged under the short name. *Changed after code review:* the first draft
+  recorded them as written and injected nothing, which silently lost a class-named JFR recording (it
+  wrote outside `profiler-output`). Any other class name is recorded as written.
 
 ### Refusals are usage errors raised before any AWS call, after the type and tags are checked
 

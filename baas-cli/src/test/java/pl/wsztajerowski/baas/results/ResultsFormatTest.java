@@ -215,6 +215,25 @@ class ResultsFormatTest {
         assertThat(out).contains(ResultsTable.PROFILED_FOOTNOTE);
     }
 
+    /** A row stored under a retired profiled type carries no profilers tag, and was profiled all the same. */
+    @Test
+    void aRowOfARetiredProfiledTypeIsMarkedAndJcstressCellsKeepTheirEdge() {
+        var legacy = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.Q.offer", "jmh-with-async", "thrpt",
+            41790355.108, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of("type", "jmh-with-async"));
+        var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",
+            48213977.412, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+
+        String out = table(List.of(clean, legacy, jcstress(0, 0)), false);
+
+        var lines = out.lines().toList();
+        String legacyLine = lines.stream().filter(l -> l.contains("a3f9c21b")).findFirst().orElseThrow();
+        String jcstressLine = lines.stream().filter(l -> l.contains("jc-1")).findFirst().orElseThrow();
+        assertThat(legacyLine).contains(String.format("%.3f", 41790355.108) + "* ops/s");
+        // Both cells end in the mark's column: the JCStress verdict is padded where a score is marked.
+        assertThat(jcstressLine.indexOf("40/40") + "40/40".length()).isEqualTo(legacyLine.indexOf("*"));
+        assertThat(out).contains(ResultsTable.PROFILED_FOOTNOTE);
+    }
+
     @Test
     void aTableWithNoProfiledRowHasNoMarkAndNoFootnote() {
         var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",

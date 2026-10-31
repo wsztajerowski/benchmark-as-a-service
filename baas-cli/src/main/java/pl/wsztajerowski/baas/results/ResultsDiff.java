@@ -197,7 +197,8 @@ final class ResultsDiff {
     }
 
     /**
-     * The two jobs' {@code profilers} as {@code profilers: a → b} when they differ, else null, with
+     * The two jobs' profilers ({@link ResultRow#profilers()}, so a job stored under a retired
+     * profiled type counts as profiled) as {@code profilers: a → b} when they differ, else null, with
      * an unprofiled side shown as {@code none}. Warned apart from {@link #parameterDifference}, which
      * also fires then: that one is about the error interval, and a profiler moves the score itself.
      */
@@ -205,8 +206,8 @@ final class ResultsDiff {
         if (a.isEmpty() || b.isEmpty()) {
             return null;
         }
-        String left = tag(a, TagKeys.PROFILERS);
-        String right = tag(b, TagKeys.PROFILERS);
+        String left = a.get(0).profilers();
+        String right = b.get(0).profilers();
         return Objects.equals(left, right) ? null
             : "profilers: " + (left == null ? "none" : left) + " → " + (right == null ? "none" : right);
     }
