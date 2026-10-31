@@ -93,8 +93,8 @@ The missing-library check stays as it is: only when `-prof async` is requested, 
 *Rejected:* the environment for listings only, with `libPath=` kept for measuring jobs — two mechanisms
 for where async-profiler lives, chosen by job kind; keeping `libPath=` and the environment on every job —
 the same duplication, always; `LD_LIBRARY_PATH` alone — macOS ignores it, breaking the developer's
-`JmhAsyncProfilerIT`; one variable chosen by OS — an OS branch, resting on the unverified belief that
-Linux's JVM ignores `JAVA_LIBRARY_PATH`; `DYLD_LIBRARY_PATH` on macOS — stripped by `/usr/bin/java`;
+`JmhAsyncProfilerIT`; one variable chosen by OS — an OS branch that buys nothing (Linux's JVM does ignore
+`JAVA_LIBRARY_PATH`, verify.md 1.1); `DYLD_LIBRARY_PATH` on macOS — stripped by `/usr/bin/java`;
 `-Djava.library.path` on the host and forks — changes every job's command line, is dropped from forks
 by a user `-jvmArgs`, and collides with a user's own; symlinking the library into a default library
 directory in the image — an image rebuild, and a local Mac would still need its own setup; the IT

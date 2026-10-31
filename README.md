@@ -235,9 +235,13 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > - those BaaS sets itself to collect the job — JMH `-rf`, `-rff`, `-o`, the `dir` (and async's
 >   `libPath`) of an `async` or `jfr` profiler; JCStress `-r`;
 > - those that print and exit without measuring, so the job would measure nothing — JMH `-h`, `-l`,
->   `-lp`, `-lprof`, `-lrf`; JCStress `-h`, `-l`, `-p`. The refusal prints the `java -jar …` command
->   that answers them locally, for free. `-lprof` locally lists your machine's profilers; the runner
->   image also has `perf` and async-profiler.
+>   `-lp`, `-lrf`; JCStress `-h`, `-l`, `-p`. The refusal prints the `java -jar …` command that
+>   answers them locally, for free.
+>
+> **`-lprof` alone lists the runner's profilers.** Which profilers work depends on the machine and on
+> the JMH version in your JAR, so `baas run --benchmark-jar target/benchmarks.jar jmh -- -lprof` runs
+> it as a job on the runner (a boot of a minute or two) and prints JMH's listing verbatim. Nothing else
+> may follow `--` beside it.
 >
 > `-prof async` uses async-profiler's own defaults (text output): ask for a graph with
 > `-prof 'async:output=flamegraph'`. Quote the value — `;` ends a shell command.
