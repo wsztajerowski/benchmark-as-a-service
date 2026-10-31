@@ -220,6 +220,23 @@ class RunCommandDetachTest {
             "  stop it    baas --deployment dev jobs terminate " + JOB.jobId());
     }
 
+    /** A listing measured nothing, so nothing is to be queried: its output is the artifact. */
+    @Test
+    void aCompletedListingPointsOnlyAtItsArtifacts() {
+        var command = command(false);
+        command.benchmarkType = "jmh";
+        command.benchmarkParams.add("-lprof");
+        command.summaryJobId = JOB.jobId();
+        command.summaryDeployment = "dev";
+        command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
+        List<String> lines = new ArrayList<>();
+
+        command.hints(0, lines::add);
+
+        assertThat(lines).containsExactly("Next",
+            "  artifacts  baas --deployment dev jobs download " + JOB.jobId());
+    }
+
     @Test
     void anAttachedSuccessStillPointsAtItsMeasurements() {
         var command = command(false);

@@ -36,6 +36,12 @@ class BenchmarkArgsTest {
         "MyBenchmark --prof=async:libPath=/x.so, libPath in -prof async",
         "MyBenchmark -prof jfr:-dir=/tmp/x, dir in -prof jfr",
         "MyBenchmark -prof async:event=wall;dir=/tmp/x, dir in -prof async",
+        "MyBenchmark -prof async:libP=/x.so, libPath in -prof async",
+        "MyBenchmark -prof async:li=/x.so, libPath in -prof async",
+        "MyBenchmark -prof async:l=/x.so, libPath in -prof async",
+        "MyBenchmark -prof async:di=/tmp/x, dir in -prof async",
+        "MyBenchmark -prof jfr:di=/tmp/x, dir in -prof jfr",
+        "MyBenchmark -prof org.openjdk.jmh.profile.AsyncProfiler:libPa=/x.so, libPath in -prof async",
     })
     void aManagedArgumentIsFoundInEverySpellingJmhAccepts(String line, String expected) {
         assertThat(JMH.firstManaged(args(line))).contains(expected);
@@ -48,6 +54,9 @@ class BenchmarkArgsTest {
         "MyBenchmark -jvmArgs -rf",
         "MyBenchmark -prof gc -prof async:event=wall;output=flamegraph",
         "MyBenchmark -prof jfr:configName=profile",
+        "MyBenchmark -prof async:output=flamegraph;direction=forward",
+        "MyBenchmark -prof async:lock=1ms",
+        "MyBenchmark -prof gc:dir=/tmp/x",
         "MyBenchmark -v EXTRA -wi 1 -i 3",
         "MyBenchmark -- -rf",
     })
@@ -61,16 +70,41 @@ class BenchmarkArgsTest {
         "-h, -h",
         "-l, -l",
         "-lp, -lp",
-        "-lprof, -lprof",
         "-lrf, -lrf",
         "-lr, -lrf",
-        "-lpro, -lprof",
         "-hl, -h",
-        "--lprof, -lprof",
         "MyBenchmark -f 1 -l, -l",
     })
     void aNoRunArgumentIsFoundInEverySpellingJmhAccepts(String line, String expected) {
         assertThat(JMH.firstNoRun(args(line))).contains(expected);
+    }
+
+    /** {@code -lprof} lists the host's profilers, so it is a listing job on the runner, not a no-run refusal. */
+    @ParameterizedTest
+    @ValueSource(strings = {"-lprof", "--lprof", "-lpro", "-lpr"})
+    void theProfilerListingAloneIsAListingInEverySpelling(String line) {
+        assertThat(JMH.isProfilerListing(args(line))).isTrue();
+        assertThat(JMH.listsProfilersBesideOthers(args(line))).isFalse();
+        assertThat(JMH.firstNoRun(args(line))).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-lprof MyBenchmark", "MyBenchmark -lprof", "-lprof -prof gc", "-f 1 --lprof", "-lprof -lprof"})
+    void theProfilerListingBesideAnythingElseIsRefused(String line) {
+        assertThat(JMH.isProfilerListing(args(line))).isFalse();
+        assertThat(JMH.listsProfilersBesideOthers(args(line))).isTrue();
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"-lp", "-l", "MyBenchmark", "-prof gc"})
+    void otherArgumentsAreNoProfilerListing(String line) {
+        assertThat(JMH.isProfilerListing(args(line))).isFalse();
+        assertThat(JMH.listsProfilersBesideOthers(args(line))).isFalse();
+    }
+
+    @Test
+    void jcstressHasNoProfilerListing() {
+        assertThat(JCSTRESS.isProfilerListing(args("-lprof"))).isFalse();
     }
 
     @Test

@@ -16,8 +16,9 @@ import static java.util.Map.entry;
  * How a benchmark JAR's own parser — JMH's or JCStress's, both jopt-simple — reads the arguments
  * after {@code baas run <type> … --}. Those arguments reach the JAR verbatim; this reading exists only
  * to find the few BaaS manages ({@link #managed}), the ones that would make a paid job measure nothing
- * ({@link #noRun}), and JMH's {@code -prof} values, which the runner points at the job's artifacts
- * and the CLI records as the {@code profilers} tag. The CLI's refusal, the runner's refusal, the
+ * ({@link #noRun}), JMH's profiler listing ({@link #isProfilerListing}), and JMH's {@code -prof}
+ * values, which the runner points at the job's artifacts and the CLI records as the {@code profilers}
+ * tag. The CLI's refusal, the runner's refusal, the
  * runner's injection and the tag all read through here, so they cannot read one argument three ways.
  *
  * <p>It follows jopt-simple as observed against the fixture JARs (the change's
@@ -92,12 +93,15 @@ public final class BenchmarkArgs {
     /** JMH's option that names a profiler. */
     public static final String PROF = "prof";
 
+    /** JMH's option that lists the profilers of the host it runs on, then exits. */
+    public static final String LIST_PROFILERS = "lprof";
+
     /**
-     * The profiler option keys the runner sets, by profiler name. {@code dir} is where the profiler
-     * writes, which must be the directory the runner uploads; {@code libPath} is the async-profiler
-     * baked into the image. The runner appends these to every such {@code -prof}, so a user value for
-     * one, in any spelling, gives JMH the key twice — refused at profiler start, failing the job.
-     * The check before launch matches the exact key, to say why before anything is paid for.
+     * The profiler option keys BaaS owns, by profiler name, refused in every spelling a profiler's
+     * parser could resolve to them. {@code dir} is where the profiler writes, which must be the
+     * directory the runner uploads, and the runner appends it to every such {@code -prof}.
+     * {@code libPath} is not appended — the runner puts the baked async-profiler on the process's
+     * library path — but a user value would win over that path, so it is refused all the same.
      */
     public static final Map<String, List<String>> MANAGED_PROFILER_KEYS =
         Map.of("async", List.of("dir", "libPath"), "jfr", List.of("dir"));
@@ -124,9 +128,9 @@ public final class BenchmarkArgs {
             entry("wm", Arity.REQUIRED), entry("e", Arity.REQUIRED), entry("p", Arity.REQUIRED),
             entry("wmb", Arity.REQUIRED),
             entry("l", Arity.NONE), entry("lp", Arity.NONE), entry("lrf", Arity.NONE),
-            entry("lprof", Arity.NONE), entry("h", Arity.NONE)),
+            entry(LIST_PROFILERS, Arity.NONE), entry("h", Arity.NONE)),
         Set.of("rf", "rff", "o"),
-        Set.of("h", "l", "lp", "lprof", "lrf"));
+        Set.of("h", "l", "lp", "lrf"));
 
     private static final BenchmarkArgs JCSTRESS = new BenchmarkArgs("JCStress",
         Map.ofEntries(
@@ -218,8 +222,12 @@ public final class BenchmarkArgs {
                 Profiler profiler = Profiler.parse(occurrence.value());
                 List<String> keys = MANAGED_PROFILER_KEYS.getOrDefault(profiler.canonicalName(), List.of());
                 for (String key : profiler.keys()) {
-                    if (keys.contains(key)) {
-                        return Optional.of(key + " in -prof " + profiler.canonicalName());
+                    // Every prefix, not only the exact key: JMH resolves a unique one (`libP=` loads
+                    // that library), and an ambiguous one JMH rejects anyway. A key that merely starts
+                    // with a managed one (`direction`) is its own option.
+                    Optional<String> owned = keys.stream().filter(managedKey -> managedKey.startsWith(key)).findFirst();
+                    if (owned.isPresent()) {
+                        return Optional.of(owned.get() + " in -prof " + profiler.canonicalName());
                     }
                 }
             }
@@ -233,6 +241,26 @@ public final class BenchmarkArgs {
             .filter(occurrence -> noRun.contains(occurrence.name()))
             .map(occurrence -> "-" + occurrence.name())
             .findFirst();
+    }
+
+    /**
+     * Whether {@code args} are JMH's profiler listing and nothing else — a listing job, which runs on
+     * the runner because its answer depends on the host, and measures nothing.
+     */
+    public boolean isProfilerListing(List<String> args) {
+        return args.size() == 1 && listsProfilers(args);
+    }
+
+    /**
+     * Whether {@code args} ask for the profiler listing beside anything else: JMH would list and exit,
+     * ignoring the rest, so the command line would say something the job did not do.
+     */
+    public boolean listsProfilersBesideOthers(List<String> args) {
+        return listsProfilers(args) && !isProfilerListing(args);
+    }
+
+    private boolean listsProfilers(List<String> args) {
+        return read(args).stream().anyMatch(occurrence -> occurrence.name().equals(LIST_PROFILERS));
     }
 
     /** Every {@code -prof} value, in order. */

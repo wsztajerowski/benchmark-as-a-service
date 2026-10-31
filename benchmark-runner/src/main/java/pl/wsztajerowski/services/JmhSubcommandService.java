@@ -29,6 +29,14 @@ public class JmhSubcommandService {
     private final StorageService storageService;
     private final ResultsStore resultsStore;
 
+    /**
+     * Where a JVM looks for {@code System.loadLibrary}: Linux's reads {@code LD_LIBRARY_PATH},
+     * macOS's {@code JAVA_LIBRARY_PATH} — not {@code DYLD_LIBRARY_PATH}, which SIP strips when
+     * {@code java} is {@code /usr/bin/java}. Both are set on every OS, so nothing depends on which
+     * one a JVM reads; JMH's async-profiler falls back to {@code loadLibrary} without a {@code libPath}.
+     */
+    static final List<String> LIBRARY_PATH_VARIABLES = List.of("LD_LIBRARY_PATH", "JAVA_LIBRARY_PATH");
+
     public JmhSubcommandService(StorageService storageService, ResultsStore resultsStore, CommonSharedOptions commonOptions, JmhRun run) {
         requireNonNull(storageService, "Please provide a storage service");
         requireNonNull(resultsStore, "Please provide a results store");
@@ -41,11 +49,19 @@ public class JmhSubcommandService {
     /**
      * JMH's command line, without the output redirection: the result format and file the runner
      * reads back, then the user's arguments as given — except that every {@code async} and
-     * {@code jfr} profiler is pointed at {@link JmhRun#profilerOutput()}, and async at the baked
-     * library, after the user's own keys.
+     * {@code jfr} profiler is pointed at {@link JmhRun#profilerOutput()}, after the user's own keys.
+     * The baked async-profiler's directory is on the process's library path, for the forks and for a
+     * profiler listing alike, which asks for no result file and gets none.
      */
     BenchmarkProcessBuilder jmhProcess() {
-        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.benchmarkPath())
+        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.benchmarkPath());
+        Path asyncDirectory = run.asyncPath().toAbsolutePath().getParent();
+        LIBRARY_PATH_VARIABLES.forEach(name -> builder.prependToPathVariable(name, asyncDirectory));
+        if (isProfilerListing()) {
+            run.arguments().forEach(builder::addArgument);
+            return builder;
+        }
+        builder
             .addArgumentWithValue("-rf", "json")
             .addArgumentWithValue("-rff", run.resultFile());
         BenchmarkArgs.of(BenchmarkType.JMH)
@@ -54,22 +70,27 @@ public class JmhSubcommandService {
         return builder;
     }
 
+    private boolean isProfilerListing() {
+        return BenchmarkArgs.of(BenchmarkType.JMH).isProfilerListing(run.arguments());
+    }
+
     private String managedProfilerOptions(BenchmarkArgs.Profiler profiler) {
-        String dir = "dir=" + run.profilerOutput().toAbsolutePath();
         return switch (profiler.canonicalName()) {
-            case "async" -> dir + ";libPath=" + asyncLibrary();
-            case "jfr" -> dir;
+            case "async" -> {
+                requireAsyncLibrary();
+                yield "dir=" + run.profilerOutput().toAbsolutePath();
+            }
+            case "jfr" -> "dir=" + run.profilerOutput().toAbsolutePath();
             default -> null;
         };
     }
 
     /** Checked only when a job asks for async-profiler, so a job without it never needs the library. */
-    private Path asyncLibrary() {
+    private void requireAsyncLibrary() {
         if (!Files.exists(run.asyncPath())) {
             throw new JavaWonderlandException(
                 "-prof async needs async-profiler, which is not at %s (--async-path, or ASYNC_PATH)".formatted(run.asyncPath()));
         }
-        return run.asyncPath().toAbsolutePath();
     }
 
     public void executeCommand() {
@@ -101,6 +122,12 @@ public class JmhSubcommandService {
             }
         } catch (InterruptedException | IOException e) {
             throw new JavaWonderlandException(e);
+        }
+
+        if (isProfilerListing()) {
+            // The listing is the process output, already uploaded; JMH wrote no result to store.
+            logger.info("Listed the profilers of this host; nothing was measured");
+            return;
         }
 
         logger.info("Processing JMH results: {}", run.resultFile());

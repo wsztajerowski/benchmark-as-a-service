@@ -196,25 +196,60 @@ class RunCommandTest {
         var command = new RunCommand();
         command.benchmarkType = "jmh";
         command.benchmarkJar = java.nio.file.Path.of("build/b.jar");
-        command.benchmarkParams.addAll(List.of("-lprof"));
+        command.benchmarkParams.addAll(List.of("-l"));
 
         assertThatThrownBy(command::refuseManagedOrNoRun)
             .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
-            .hasMessageContaining("-lprof makes JMH print and exit without measuring")
-            .hasMessageContaining("java -jar build/b.jar -lprof");
-        assertThat(command.localCommand).isEqualTo("java -jar build/b.jar -lprof");
-        assertThat(command.localCommandCaveat).contains("perf and async-profiler");
+            .hasMessageContaining("-l makes JMH print and exit without measuring")
+            .hasMessageContaining("java -jar build/b.jar -l");
+        assertThat(command.localCommand).isEqualTo("java -jar build/b.jar -l");
     }
 
     @Test
-    void helpCarriesNoProfilerCaveat() {
+    void aLocalCommandIsQuotedForTheShell() {
         var command = new RunCommand();
         command.benchmarkType = "jmh";
         command.benchmarkJar = java.nio.file.Path.of("my dir/b.jar");
         command.benchmarkParams.addAll(List.of("-h"));
 
         assertThatThrownBy(command::refuseManagedOrNoRun).hasMessageContaining("java -jar 'my dir/b.jar' -h");
-        assertThat(command.localCommandCaveat).isNull();
+    }
+
+    /** The runner's profilers depend on the runner: a listing alone is a job, not a refusal. */
+    @Test
+    void theProfilerListingAloneIsLaunched() {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+        command.benchmarkJar = java.nio.file.Path.of("build/b.jar");
+        command.benchmarkParams.addAll(List.of("-lprof"));
+
+        command.refuseManagedOrNoRun();
+
+        assertThat(command.localCommand).isNull();
+    }
+
+    @Test
+    void theProfilerListingBesideAnythingElseIsRefused() {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+        command.benchmarkJar = java.nio.file.Path.of("build/b.jar");
+        command.benchmarkParams.addAll(List.of("-lprof", "MyBenchmark"));
+
+        assertThatThrownBy(command::refuseManagedOrNoRun)
+            .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
+            .hasMessageContaining("must be the only argument after --")
+            .hasMessageContaining("Nothing was launched");
+    }
+
+    @Test
+    void aSpellingOfAManagedProfilerKeyIsRefused() {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+        command.benchmarkJar = java.nio.file.Path.of("build/b.jar");
+        command.benchmarkParams.addAll(List.of("MyBenchmark", "-prof", "async:libP=/tmp/lib.so"));
+
+        assertThatThrownBy(command::refuseManagedOrNoRun)
+            .hasMessageContaining("libPath in -prof async is managed by BaaS");
     }
 
     /** --mode is no JCStress option, but not BaaS's to refuse either: JCStress says so on the instance. */
