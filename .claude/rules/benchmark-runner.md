@@ -5,7 +5,6 @@ paths:
   - "fake-stress-tests/**"
   - "baas-model/src/*/java/pl/wsztajerowski/baas/model/BenchmarkArgs*.java"
   - "baas-model/src/*/java/pl/wsztajerowski/baas/model/BenchmarkType*.java"
-  - "jmh-with-*.sh"
 ---
 
 # Benchmark runner and benchmark arguments
@@ -34,8 +33,7 @@ The runner module, what reaches the benchmark JAR, and how a library is added.
 - **`ASYNC_PATH` gates async coverage.** `JmhAsyncProfilerIT` is annotated
   `@EnabledIfEnvironmentVariable(named = "ASYNC_PATH", ...)`, so a plain `mvn verify` **silently
   skips** the only test exercising async-profiler end to end. Export it before trusting a green
-  build on profiler changes. Same variable `jmh-with-async.sh` needs, since `--async-path`
-  otherwise defaults to the on-instance path.
+  build on profiler changes.
 
 ## Adding a benchmark type
 
