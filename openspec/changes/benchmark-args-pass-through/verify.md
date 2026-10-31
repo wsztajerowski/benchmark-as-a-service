@@ -1,6 +1,6 @@
 # Verify: benchmark-args-pass-through
 
-Run 2026-10-31 on branch `benchmark-args-pass-through`. Paid jobs used **8 of the 20 allowed**, all
+Run 2026-10-31 on branch `benchmark-args-pass-through`. Paid jobs used **10 of the 20 allowed**, all
 c5.large on `baas-development`, all `hidden=true`.
 
 ## Summary
@@ -136,6 +136,18 @@ text and scenarios.
   runner directly; every `baas run` job, CI included, is tagged by the CLI.
 - **R9 — Merge `workingOutputName`/`processOutputName`.** It is cleanup that touches user-data for no
   behaviour change.
+
+## Final paid checks after review (jobs 9 and 10 of 20)
+
+- **`-prof org.openjdk.jmh.profile.JavaFlightRecorderProfiler`** (`20261031T000741257Z-275d3e35`): the
+  job completed and was tagged `profilers=async,jfr`, but every iteration failed with "Cannot find
+  jcmd anywhere". The runner image's headless Corretto has no `jcmd`. JMH exits 0 then, so the job
+  stored no measurement. Neither problem is from this change: the old `jmh-with-prof --profiler jfr`
+  fails the same way. Filed as **PT1** and **PT2** in `docs/review/open-findings.md`.
+- **`-prof 'org.openjdk.jmh.profile.AsyncProfiler:event=wall;output=flamegraph' -prof gc`**
+  (`20261031T000924927Z-035688a8`): completed, tagged `profilers=async,gc`. Both `flame-wall-*.html`
+  are under the benchmark's directory and name `incrementUsingSynchronized`. Class-name injection (R1)
+  holds on the AMI.
 
 ## Final assessment
 

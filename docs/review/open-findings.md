@@ -44,6 +44,8 @@ None open.
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
 | S10 | Actions on mutable tags; dependabot covers only Maven | S | Low | open |
 | pr83/W5 | A JCStress row's `mode` is the string `"null"` in CSV and JSON | XS | Low | open |
+| PT1 | The runner image has no `jcmd`, so `-prof jfr` fails every iteration on the AMI | S | Med | open |
+| PT2 | A JMH job whose every iteration failed ends `completed` with no measurement | S | Med | open |
 | pr83/W3 | `avgt` scores in `s/op` print as `0.000000` in JSON and CSV | S | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
@@ -175,6 +177,26 @@ which lists as `vanished` — arguably the better failure.
 replaced, still exists: the `baas-operator` profile in `~/.aws/config` assumes it successfully
 (2026-10-05). The deployer cannot remove it (outside its prefix). Delete it, and the profile, with an
 identity above the deployer.
+
+### PT1 — the runner image has no `jcmd`, so `-prof jfr` fails on the AMI · Should · S
+
+Found 2026-10-31 by `benchmark-args-pass-through`'s final paid check (job
+`20261031T000741257Z-275d3e35` on `baas-development`). The image bakes
+`java-25-amazon-corretto-headless` (`infra/runner-image.yaml`, `corretto.package`), which ships no
+`jcmd`, and JMH's `JavaFlightRecorderProfiler` drives JFR through it, so every iteration fails:
+`IllegalStateException: Cannot find jcmd anywhere`. It predates the change: the retired
+`jmh-with-prof … --profiler jfr` failed the same way, and only async-profiler was ever exercised on
+the AMI. CI's fixture JFR test runs on a full JDK. **Fix:** bake the `-devel` package (or `jcmd` alone),
+bump `imageVersion`, rebuild, and give the contract a `jcmd` check. That is a change to the measurement
+environment, so it is its own change.
+
+### PT2 — a JMH job whose every iteration failed ends `completed` with no measurement · Should · S
+
+Same job as PT1: without `-foe`, JMH reports each failed iteration and exits 0 with an empty result
+(`[ ]`), so the runner stores nothing and the job item says `completed`. `baas run` then exits 0, and
+only an empty `results query --job-id` reveals it. It predates the change. **Fix options:** treat an
+empty result file as a failure in `JmhSubcommandService` (the job ends `failed:<n>`), or keep JMH's
+semantics and say so in `baas run`'s summary. `-foe true` is the user's per-job alternative today.
 
 ### E4 — the results table formats scores in the machine's locale · Could · XS
 
