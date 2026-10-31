@@ -43,7 +43,8 @@ arguments after it, so no benchmark argument can be read as a runner option.
 `baas run` SHALL refuse, with exit 2 and before any AWS call, an argument after `--` that sets something
 BaaS manages, naming the argument and saying it is managed by BaaS. For `jmh` these SHALL be the
 result format (`-rf`), the result file (`-rff`), the output file (`-o`), and the keys `dir` and
-`libPath` within an `async` profiler's options and `dir` within a `jfr` profiler's options. For
+`libPath` within an `async` profiler's options and `dir` within a `jfr` profiler's options, and the JVM
+the benchmark forks run on (`-jvm`), which `--jdk` chooses instead. For
 `jcstress` it SHALL be the report directory (`-r`). The runner SHALL apply the same refusal before
 starting the benchmark, so a job launched without the CLI is refused alike.
 
@@ -54,6 +55,14 @@ starting the benchmark, so a job launched without the CLI is refused alike.
 #### Scenario: A profiler output directory is refused
 - **WHEN** `baas run jmh … -- MyBenchmark -prof async:dir=/tmp/x` is run
 - **THEN** it exits 2 saying the `dir` of the `async` profiler is managed by BaaS
+
+#### Scenario: A fork JVM is refused in favour of --jdk
+- **WHEN** `baas run jmh … -- MyBenchmark -jvm /opt/jdks/temurin-26/bin/java` or `… -- MyBenchmark --jvm=/x` is run
+- **THEN** it exits 2 saying `-jvm` is managed by BaaS and naming `--jdk`, and nothing is uploaded or launched
+
+#### Scenario: JVM arguments still pass through
+- **WHEN** `baas run jmh … -- MyBenchmark -jvmArgsAppend -Xmx2g` is run
+- **THEN** the job is launched, and JMH receives `-jvmArgsAppend -Xmx2g`
 
 #### Scenario: A JCStress report directory is refused
 - **WHEN** `baas run jcstress … -- -r /tmp/report` is run
@@ -160,7 +169,8 @@ spelling the parser accepts; with any other argument after `--` it SHALL be refu
 any AWS call, saying `-lprof` must stand alone. The runner SHALL apply the same refusal. A listing job
 SHALL store no measurements and no result JSON; its listing SHALL be the job's process output, and it
 SHALL end `completed` when JMH exits 0 and `failed:<n>` otherwise. async-profiler SHALL be reported as
-the runner image provides it.
+the runner image provides it. The listing SHALL run on the JDK the job selects with `--jdk`, like any job,
+so it lists the profilers available on that JDK.
 
 In text mode `baas run` SHALL print the listing job's process output on standard output, byte for byte
 as stored, in place of the measurement table, and its next-step hint SHALL name only
@@ -172,6 +182,11 @@ listing. A detached listing job SHALL be reported like any detached job.
 - **THEN** standard output holds JMH's `Supported profilers` and `Unsupported profilers` lists, `async`
   and `perf` are under `Supported profilers`, the job's status is `completed`, and
   `baas results query --job-id <jobId>` finds no measurement
+
+#### Scenario: A listing runs on the selected JDK
+- **WHEN** `baas run --jdk temurin-26 jmh -- -lprof` completes on an image holding `temurin-26`
+- **THEN** the listing comes from JMH running on `/opt/jdks/temurin-26/bin/java`, and the job carries
+  `jdkId=temurin-26`
 
 #### Scenario: The listing is the stored process output, verbatim
 - **WHEN** a listing job's output begins with JVM `WARNING:` lines
