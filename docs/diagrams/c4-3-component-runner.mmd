@@ -7,7 +7,7 @@ C4Component
         Component(wrapper, "commands: TestWrapper + two subcommands", "picocli", "JmhSubcommand, JCStressSubcommand: runner options, then the benchmark's own arguments after --; BenchmarkArguments refuses managed and no-run flags; option names from RunnerArgs / BenchmarkType")
         Component(options, "options", "records, imports nothing internal", "CommonSharedOptions, JmhRun, JCStressRun, S3Options")
         Component(services, "services: *SubcommandService", "Java, constructed directly — no builders", "One per type: run the process, save its output (and jmh-result.json), JobLogs.upload, map, resultsStore.write")
-        Component(process, "process", "BenchmarkProcessBuilder", "Spawns java -jar benchmark.jar with the user's arguments plus the managed result and profiler flags")
+        Component(process, "process", "BenchmarkProcessBuilder", "Spawns the selected JDK's java (or java from PATH) -jar benchmark.jar with the user's arguments plus the managed result and profiler flags")
         Component(results, "results", "JmhRunResults, JmhMeasurementMapper, JCStressMeasurementMapper", "map: StoredMeasurement values, each naming the uploaded jmh-result.json")
         Component(infra, "infra", "ResultsStore (DynamoDbResultsStore, via ResultsStoreBuilder), StorageService.of (S3StorageService), ResultLoaderService, JCStressHtmlResultParser, HtmlParser", "Adapters and parsers; --results-table and --s3-bucket both required")
         Component(entities, "entities", "JmhResult, Metric, JCStressResult", "Parsed result shapes")
@@ -18,7 +18,7 @@ C4Component
     ComponentDb_Ext(table, "Results table", "DynamoDB")
     ComponentDb_Ext(bucket, "Job bucket", "S3")
 
-    Rel(userData, wrapper, "timeout N java -jar benchmark-runner.jar <type> --results-table … --s3-bucket … --tag …")
+    Rel(userData, wrapper, "timeout N java -jar benchmark-runner.jar <type> --results-table … --s3-bucket … [--jdk …] --tag …")
     Rel(wrapper, services, "new …SubcommandService(storage, store, options).executeCommand()")
     Rel(wrapper, infra, "buildResultsStore, StorageService.of")
     Rel(services, process, "spawns")

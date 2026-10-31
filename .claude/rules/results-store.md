@@ -37,7 +37,7 @@ non-obvious entries:
 |---|---|
 | `launch-error.txt` | Only for a job whose `RunInstances` failed: the AWS error code, message and job id, and what was requested. There is no instance and so no boot log; this is what `baas jobs download <jobId>` then has to show |
 | `cloud-init-output.log` | Runner boot log, uploaded before every termination, a cancelled or timed-out job's included (with the process output and `logs/` so far) — start here when a job fails before producing output |
-| `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (7) and seven groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Values stay raw (version banners, sysfs syntax); `baas jobs show` shortens them for reading and `baas jobs diff` compares them as stored, group by group, also comparing `packages.txt` when the AMIs differ. Schema 7 renamed `cpu.cores` to `vcpus` (it was always `nproc`) beside a new `physicalCores`, records memory as `totalMib`/`swapTotalMib`, and adds `jvm.release`, the value of the `jdk` tag. A renamed field never keeps its old name with a new meaning, and nothing maps a schema-6 name onto a schema-7 one: across the change `diff` shows both, under its schema warning. |
+| `environment.json` | The environment the job measured on, and nothing else: `schemaVersion` (8) and eight groups — `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jdk` (the JDK the benchmark ran on: `id`, `home`, banner `version`, `release`, `vendor`, `vendorVersion`, `vmName`), `runnerJdk` (`java` on `PATH`, which ran the runner: `release`, `vendorVersion`), `tools`, `tunables`. No job identity: that is on the job item and its tags. Written **before** the benchmark, so it survives a failed job. Values stay raw (version banners, sysfs syntax); `baas jobs show` shortens them for reading and `baas jobs diff` compares them as stored, group by group, also comparing `packages.txt` when the AMIs differ. Schema 7 renamed `cpu.cores` to `vcpus` (it was always `nproc`) beside a new `physicalCores`, records memory as `totalMib`/`swapTotalMib`, and adds `jvm.release`. Schema 8 renamed `jvm` to `jdk` (`name` to `vmName`), reads it from the selected JDK's own `java` rather than `PATH`'s, and added `jdk.id`, `jdk.home` and `runnerJdk`; on an image from before JDK selection `jdk.id` and `jdk.home` are empty. A renamed field never keeps its old name with a new meaning, and nothing maps an old schema's name onto a new one: across the change `diff` shows both, under its schema warning. Both deployments' data was erased when schema 8 shipped (9.0.0), so no stored manifest carries `jvm`. |
 | `jmh-result.json` | JMH's own machine-readable output, verbatim. The stored item drops `rawData` and `scorePercentiles` for the 400 KB cap, so this is the only place they survive, fetched with `baas jobs download <jobId>`; `resultJsonKey` on the item points here | A profiler listing (`-- -lprof` alone) has none and stores no measurement: its answer is `jmh-output.txt`, and its job item ends `completed` like any other
 | `packages.txt` | `rpm -qa`, split out because several hundred lines would drown the manifest's ~20 fields |
 | `logs/**/*.log` | Any `.log` up to 8 levels *below the working directory* (hence the `/app` invariant in `user-data.md`), keyed by its relative path so same-named files cannot collide. Every benchmark type ships them; async-profiler's own logs land under `logs/profiler-output/` |
@@ -96,16 +96,22 @@ The vocabulary is defined once, in `baas-model`'s `TagKeys`:
 
 | Group | Keys | Set by |
 |---|---|---|
-| Machine-observed | `imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden |
+| Machine-observed | `imageVersion`, `instanceType`, `jdkId`, `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch` | The instance, from the same shell variables `environment.json` uses. A caller `--tag` for one of these is **rejected**, not overridden. The three JDK tags describe the JDK the benchmark ran on (`jdk.id`, `jdk.release`, `jdk.vendor`): `jdkId` is the `--jdk` id, the image's default (`corretto-25`) when none was given, and absent on a job from an image that predates JDK selection — no id was observed, so none is claimed |
 | Derived | `type`, `project`, `source`, `cliParameters`, `profilers` | `baas run`. `type` is `jmh` or `jcstress` — profiling is no type; rows stored before `benchmark-args-pass-through` may say `jmh-with-async`/`jmh-with-prof` and carry no `profilers`. `cliParameters` is everything after `--`, verbatim — the only record of forks, iterations and the profiler options a job ran with, since `jmh-result.json` keeps no profiler options and the item keeps none of either. Absent when nothing follows `--`. `profilers` is the `-prof` names alone, sorted, de-duplicated and comma-joined (`async,gc`), absent when nothing is profiled; the results table marks such a score `*` and `results diff` warns when two jobs' differ. `type`, `cliParameters` and `profilers` are reserved like the observed keys, and a `--tag project=` is rejected: `--project` (or git) is its only input, since the runner partitions by the tag while the S3 prefix and job item take `--project`, and two inputs split one job across two projects. `source` alone is caller-overridable by design. `source` is `ci` when the environment says so (`CI` or `GITHUB_ACTIONS` set and not `false`) and `local` otherwise — a `--tag source=nightly` is accepted, not rejected, because how a job was triggered is not something the instance observes |
 | Caller-supplied | `commit`, `branch` | `--tag` only — never derived, absent when not passed |
 | Convention | `options`, `hidden` | Free-form. `hidden=true` is filtered out server-side — except under `--show-hidden` (shown faint) and `--job-id`; the picker also omits a project holding only hidden rows; `jobs list` hides nothing and `jobs show` marks it beside the status. It is a convention, not a field. Named `exclude_from_results` until `readable-jobs-show`, renamed without a migration: a stored row carrying the old key is not hidden |
 
 `imageVersion` is the image's *label*: the base version (`1.3.0`), or `1.3.0+ext.<sha256[0:8]>` when
 the deployment has an extension. A filter on `1.3.0` therefore never returns an extended image's
-results, and one extension is labelled alike in every deployment. `jvmVendor` exists because an
-extension may swap the JDK for another vendor's build of the same version, which `jdk` cannot tell
-apart.
+results, and one extension is labelled alike in every deployment. `jdkVendor` exists because two
+vendors' builds of one release share a `jdkVersion`; `jdkId` because one deployment's ids are its
+own, chosen by its extension.
+
+**JDK names what is installed, chosen and ran; JVM is left to runtime behaviour.** `--jdk`, the
+`jdk*` tags, the `jdk` and `runnerJdk` manifest groups and `/opt/jdks` all say JDK; "JVM" stays for
+what a running VM does (flags, the parked `jvm-flags.json`) and for JMH's own `-jvm`/`-jvmArgs`. The
+tags were `jdk` and `jvmVendor`, and the group `jvm`, until `multiple-jdks` (9.0.0), renamed without a
+migration because both deployments' data was erased at that rollout.
 
 `branch` used to survive only as a segment of the result path and was stored nowhere. The unified
 prefix drops that segment, so what the path stopped carrying the tags now carry — which is the
@@ -146,6 +152,9 @@ JCStress too until verdict diffs exist (`results-diff`). Pairs are `--best-per`'
 project, and its direction (`ResultsGrouping.lowerIsBetter`) is reused, never copied. A verdict is
 called only when the `score ± error` intervals do not overlap; a pair in different units is shown,
 never converted. Exit 0 whatever the verdicts, like a JCStress job's `completed`: gate CI with `jq`.
+A `cpuModel` difference is warned about on its own line, before the one naming the other observed
+tags: comparing JDKs is one job per JDK, whose `jdk*` tags differ on purpose, and two jobs of one
+instance type can land on different CPUs (Xeon 8275CL and 8124M on `c5.2xlarge`, ~9% apart).
 Existence comes from the job item in the same index `Query`, so it tells an unknown id from a job that
 measured nothing.
 

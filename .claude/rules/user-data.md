@@ -30,6 +30,13 @@ Breaking these costs money or silently loses data.
   JSON string inside a heredoc — three levels of quoting, and a mistake in any of them yields a
   file that only fails weeks later in `baas jobs diff`. Values that can contain `"` or `\` go
   through `json_escape`.
+- **Two `java`s, read apart.** `JDK_ID` is the JDK the job selected, already checked by `baas run`
+  against the image's `baas-jdks` tag; the manifest's `jdk` group and the `jdkVersion`/`jdkVendor` tags
+  come from `/opt/jdks/<id>/bin/java`, and `runnerJdk` from `java` on `PATH`, which runs the runner.
+  The runner gets `--jdk <id>` and the result `jdkId=<id>` only when `JDK_ID` is set: an image from
+  before JDK selection gets neither, records `jdk` from `java` on `PATH` with empty `id` and `home`, and
+  carries no `jdkId`. Both are bash arrays, so an absent id expands to nothing rather than an empty
+  argument.
 - **`imageVersion`/`instanceType` reach the database via the runner's `--tag`, not EC2 tags.**
   `ResultsQueryService` reads the item's top-level `tags` map; tagging the *instance* leaves every stored
   result with a null `imageVersion`, and `--tag`/`--best-per` on it silently match nothing. The tag values are the
