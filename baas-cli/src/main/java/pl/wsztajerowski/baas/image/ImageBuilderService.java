@@ -490,7 +490,8 @@ public class ImageBuilderService {
                         image.imageId(),
                         tags.get(RunnerImage.VERSION_TAG),
                         tags.get(RunnerImage.PARENT_TAG),
-                        image.creationDate());
+                        image.creationDate(),
+                        RunnerImage.parseJdksTag(tags.get(RunnerImage.JDKS_TAG)));
                 });
         } catch (Ec2Exception e) {
             // A pointer naming a deregistered AMI is InvalidAMIID.NotFound, which is a normal

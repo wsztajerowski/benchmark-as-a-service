@@ -28,20 +28,22 @@ class JobsShowCommandTest {
     private static final String ID = "20261006T165241024Z-47516b65";
     private static final String PATH = "jobs/baas-e2e/" + ID;
     private static final String MANIFEST = """
-        {"schemaVersion": 7, "machine": {"imageVersion": "1.3.0", "amiId": "ami-0fce", "instanceType": "c5.2xlarge"},
-         "jvm": {"version": "25.0.4", "vendor": "Amazon.com Inc."}}
+        {"schemaVersion": 8, "machine": {"imageVersion": "1.3.0", "amiId": "ami-0fce", "instanceType": "c5.2xlarge"},
+         "jdk": {"version": "25.0.4", "vendor": "Amazon.com Inc."}}
         """;
 
-    /** The manifest of job 20261026T111802133Z-3a07e193, as schema 7 records it. */
+    /** The manifest of job 20261026T111802133Z-3a07e193, as schema 8 records it. */
     private static final String FULL_MANIFEST = """
-        {"schemaVersion": 7,
+        {"schemaVersion": 8,
          "machine": {"imageVersion": "1.3.0", "amiId": "ami-006bf9067587a5c80", "instanceType": "c5.2xlarge"},
          "cpu": {"model": "Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz", "arch": "x86_64", "vcpus": "8",
                  "physicalCores": "4", "threadsPerCore": "2", "maxMhz": ""},
          "memory": {"totalMib": "15622", "swapTotalMib": "0"},
          "os": {"version": "Amazon Linux 2023.12.20260803", "kernelRelease": "6.1.177-224.371.amzn2023.x86_64"},
-         "jvm": {"version": "openjdk version \\"25.0.4\\" 2026-07-21 LTS", "release": "25.0.4",
-                 "vendor": "Amazon.com Inc.", "vendorVersion": "Corretto-25.0.4.7.1", "name": "OpenJDK 64-Bit Server VM"},
+         "jdk": {"id": "corretto-25", "home": "/opt/jdks/corretto-25",
+                 "version": "openjdk version \\"25.0.4\\" 2026-07-21 LTS", "release": "25.0.4",
+                 "vendor": "Amazon.com Inc.", "vendorVersion": "Corretto-25.0.4.7.1", "vmName": "OpenJDK 64-Bit Server VM"},
+         "runnerJdk": {"release": "25.0.4", "vendorVersion": "Corretto-25.0.4.7.1"},
          "tools": {"perf": "perf version 6.1.177-224.371.amzn2023.x86_64",
                    "asyncProfiler": "Async-profiler 4.0 built on Apr  8 2025"},
          "tunables": {"perfEventParanoid": "1", "kptrRestrict": "0", "transparentHugepages": "[always] madvise never"}}
@@ -154,7 +156,7 @@ class JobsShowCommandTest {
         assertThat(run.exit()).isZero();
         assertThat(run.out())
             .contains("Job " + ID + "   completed", "jmh-with-async", "branch=main")
-            .contains("Environment (schema 7)", "machine", "imageVersion 1.3.0", "jvm", "version 25.0.4")
+            .contains("Environment (schema 8)", "machine", "imageVersion 1.3.0", "jdk", "version 25.0.4")
             .contains("Artifacts (5)", "environment.json", "input/ (2 files)", "Bench.run-Throughput/ (1 file)")
             .doesNotContain("SCORE");
     }
@@ -215,7 +217,8 @@ class JobsShowCommandTest {
             .containsPattern("(?m)^  cpu +model Intel\\(R\\) Xeon\\(R\\) Platinum 8275CL CPU @ 3.00GHz · arch x86_64 · "
                 + "vcpus 8 · physicalCores 4 · threadsPerCore 2$")
             .containsPattern("(?m)^  memory +15.3 GiB · no swap$")
-            .containsPattern("(?m)^  jvm +Corretto 25.0.4.7.1 \\(Amazon.com Inc.\\) · name OpenJDK 64-Bit Server VM$")
+            .containsPattern("(?m)^  jdk +corretto-25 · Corretto 25.0.4.7.1 \\(Amazon.com Inc.\\) · vmName OpenJDK 64-Bit Server VM$")
+            .containsPattern("(?m)^  runnerJdk +Corretto 25.0.4.7.1$")
             .containsPattern("(?m)^  tools +perf 6.1.177-224.371.amzn2023.x86_64 · async-profiler 4.0$")
             .containsPattern("(?m)^  tunables +perfEventParanoid 1 · kptrRestrict 0 · thp always$")
             .doesNotContain("maxMhz", "instanceType c5.2xlarge", "openjdk version");
@@ -224,7 +227,7 @@ class JobsShowCommandTest {
     @Test
     void anUnknownFieldIsShownAsRecorded() throws Exception {
         var run = show(job(JobStatus.COMPLETED, null), null, FULL_MANIFEST
-            .replace("\"name\": \"OpenJDK", "\"flavour\": \"server\", \"name\": \"OpenJDK")
+            .replace("\"vmName\": \"OpenJDK", "\"flavour\": \"server\", \"vmName\": \"OpenJDK")
             .replace("Async-profiler 4.0 built on Apr  8 2025", "asprof (custom build)"), List.of());
 
         assertThat(run.out()).contains("flavour server", "asyncProfiler asprof (custom build)");
@@ -285,7 +288,7 @@ class JobsShowCommandTest {
         Map<String, Object> parsed = new ObjectMapper().readValue(run.out(), Map.class);
         @SuppressWarnings("unchecked")
         Map<String, Object> environment = (Map<String, Object>) parsed.get("environment");
-        assertThat(environment).containsEntry("schemaVersion", 7);
+        assertThat(environment).containsEntry("schemaVersion", 8);
         assertThat((Map<String, Object>) environment.get("memory")).containsEntry("totalMib", "15622");
     }
 

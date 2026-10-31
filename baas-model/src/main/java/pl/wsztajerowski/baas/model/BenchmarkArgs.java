@@ -114,6 +114,13 @@ public final class BenchmarkArgs {
         "org.openjdk.jmh.profile.AsyncProfiler", "async",
         "org.openjdk.jmh.profile.JavaFlightRecorderProfiler", "jfr");
 
+    /**
+     * JMH's forks' JVM. Managed because a job records the JDK it selected ({@code baas run --jdk}):
+     * forks sent elsewhere would be measured under tags naming a JDK that did not run them. JCStress
+     * has no such option; its forks follow the JVM it was started with, as JMH's do without one.
+     */
+    static final String JVM = "jvm";
+
     private static final BenchmarkArgs JMH = new BenchmarkArgs("JMH",
         Map.ofEntries(
             entry("i", Arity.REQUIRED), entry("bs", Arity.REQUIRED), entry("r", Arity.REQUIRED),
@@ -122,14 +129,14 @@ public final class BenchmarkArgs {
             entry("si", Arity.REQUIRED), entry("gc", Arity.REQUIRED), entry("foe", Arity.REQUIRED),
             entry("v", Arity.REQUIRED), entry("f", Arity.REQUIRED), entry("wf", Arity.REQUIRED),
             entry("o", Arity.REQUIRED), entry("rff", Arity.REQUIRED), entry(PROF, Arity.REQUIRED),
-            entry("tg", Arity.REQUIRED), entry("jvm", Arity.REQUIRED), entry("jvmArgs", Arity.REQUIRED),
+            entry("tg", Arity.REQUIRED), entry(JVM, Arity.REQUIRED), entry("jvmArgs", Arity.REQUIRED),
             entry("jvmArgsAppend", Arity.REQUIRED), entry("jvmArgsPrepend", Arity.REQUIRED),
             entry("tu", Arity.REQUIRED), entry("opi", Arity.REQUIRED), entry("rf", Arity.REQUIRED),
             entry("wm", Arity.REQUIRED), entry("e", Arity.REQUIRED), entry("p", Arity.REQUIRED),
             entry("wmb", Arity.REQUIRED),
             entry("l", Arity.NONE), entry("lp", Arity.NONE), entry("lrf", Arity.NONE),
             entry(LIST_PROFILERS, Arity.NONE), entry("h", Arity.NONE)),
-        Set.of("rf", "rff", "o"),
+        Set.of("rf", "rff", "o", JVM),
         Set.of("h", "l", "lp", "lrf"));
 
     private static final BenchmarkArgs JCSTRESS = new BenchmarkArgs("JCStress",
@@ -233,6 +240,15 @@ public final class BenchmarkArgs {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * True when {@code managed}, as {@link #firstManaged} describes it, is the forks' JVM — which a
+     * user chooses with {@code baas run --jdk}, so a refusal should say so instead of calling it the
+     * runner's.
+     */
+    public static boolean choosesTheJdk(String managed) {
+        return ("-" + JVM).equals(managed);
     }
 
     /** The first argument that would make the tool exit without measuring, as {@code -name}. */

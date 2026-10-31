@@ -52,7 +52,7 @@ class JobsDiffCommandTest {
             .getSubcommands().get("jobs").getSubcommands().get("diff")
             .getUsageMessage(CommandLine.Help.Ansi.OFF);
 
-        assertThat(usage).contains("baas jobs list", "machine, cpu, memory, os, jvm, tools")
+        assertThat(usage).contains("baas jobs list", "machine, cpu, memory, os, jdk, runnerJdk,")
             .doesNotContain("result path");
     }
 

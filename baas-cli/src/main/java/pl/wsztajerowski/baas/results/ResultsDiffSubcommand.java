@@ -127,6 +127,11 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
             throw CommandRefusal.refused(refusal);
         }
 
+        String cpu = ResultsDiff.cpuDifference(a, b);
+        if (cpu != null) {
+            logger.warn("The jobs ran on different CPU models ({}); a hardware difference can exceed the "
+                + "one being compared — repeat a job until both share a CPU model", cpu);
+        }
         List<String> drift = ResultsDiff.environmentDifferences(a, b);
         if (!drift.isEmpty()) {
             // A caveat, not a payload line: a redirect of stdout should not keep it, and it changes

@@ -70,13 +70,13 @@ class TableTest {
 
     @Test
     void tagLinesFollowEachRowOnlyWhenAskedFor() {
-        var rows = List.of(row("p", Map.of("jdk", "25.0.4", "branch", "main")));
+        var rows = List.of(row("p", Map.of("jdkVersion", "25.0.4", "branch", "main")));
         var withTags = new StringWriter();
         var without = new StringWriter();
         ResultsTable.print(Console.plain(new PrintWriter(withTags)), rows, false, true);
         ResultsTable.print(Console.plain(new PrintWriter(without)), rows, false, false);
 
-        assertThat(withTags.toString().lines().toList().get(3)).isEqualTo("    tags    branch=main  jdk=25.0.4");
+        assertThat(withTags.toString().lines().toList().get(3)).isEqualTo("    tags    branch=main  jdkVersion=25.0.4");
         assertThat(without.toString().lines()).hasSize(3);
     }
 

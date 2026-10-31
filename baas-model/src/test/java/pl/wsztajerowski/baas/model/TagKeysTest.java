@@ -8,16 +8,17 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TagKeysTest {
 
     @Test
-    void theKnownVocabularyIsExactlyTheThirteenDocumentedKeys() {
+    void theKnownVocabularyIsExactlyTheFourteenDocumentedKeys() {
         assertThat(TagKeys.KNOWN).containsExactlyInAnyOrder(
             "project", "type", "commit", "branch", "source", "cliParameters", "profilers",
-            "jdk", "jvmVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion");
+            "jdkId", "jdkVersion", "jdkVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion");
     }
 
     @Test
     void machineObservedKeysAreTheKnownKeysMinusTheCallerOverridableOnes() {
         assertThat(TagKeys.MACHINE_OBSERVED)
-            .containsExactlyInAnyOrder("type", "jdk", "jvmVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion")
+            .containsExactlyInAnyOrder("type", "jdkId", "jdkVersion", "jdkVendor", "cpuModel", "cpuArch", "instanceType",
+                "imageVersion")
             .doesNotContain("project", "commit", "branch", "source");
     }
 
@@ -28,6 +29,13 @@ class TagKeysTest {
             .contains("cliParameters", "profilers")
             .hasSize(TagKeys.MACHINE_OBSERVED.size() + 2);
         assertThat(TagKeys.MACHINE_OBSERVED).doesNotContain("cliParameters", "profilers");
+    }
+
+    /** JDK names what was installed, chosen and ran; the pre-9.0.0 names are gone, not aliased. */
+    @Test
+    void theJdkKeysReplaceTheOldNames() {
+        assertThat(TagKeys.KNOWN).doesNotContain("jdk", "jvmVendor");
+        assertThat(TagKeys.RESERVED).contains("jdkId", "jdkVersion", "jdkVendor");
     }
 
     @Test

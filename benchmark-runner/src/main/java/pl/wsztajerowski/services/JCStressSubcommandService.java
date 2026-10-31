@@ -44,7 +44,7 @@ public class JCStressSubcommandService {
      * parses, then the user's arguments as given.
      */
     BenchmarkProcessBuilder jcstressProcess() {
-        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.benchmarkPath())
+        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.java(), run.benchmarkPath())
             .addArgumentWithValue("-r", run.reportPath());
         run.arguments().forEach(builder::addArgument);
         return builder;

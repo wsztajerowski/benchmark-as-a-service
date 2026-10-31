@@ -8,12 +8,18 @@ import java.util.List;
 /**
  * One JMH job as the runner starts it: the benchmark JAR, the arguments that follow {@code baas run
  * jmh … --} exactly as the user wrote them, the directory everything the runner manages is written
- * to, and the baked async-profiler library a {@code -prof async} is pointed at.
+ * to, the baked async-profiler library a {@code -prof async} is pointed at, and the {@code java} the
+ * benchmark process starts with — JMH's forks follow its {@code java.home}.
  */
-public record JmhRun(Path benchmarkPath, List<String> arguments, Path workDir, Path asyncPath) {
+public record JmhRun(Path benchmarkPath, List<String> arguments, Path workDir, Path asyncPath, String java) {
 
     public JmhRun {
         arguments = List.copyOf(arguments);
+    }
+
+    /** A run on {@code java} from {@code PATH}. */
+    public JmhRun(Path benchmarkPath, List<String> arguments, Path workDir, Path asyncPath) {
+        this(benchmarkPath, arguments, workDir, asyncPath, "java");
     }
 
     /** {@code -rff}: JMH's machine-readable result, read back to store the measurements. */

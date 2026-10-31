@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EnvironmentViewTest {
 
     private static Map<String, List<String>> view(String groups) {
-        return EnvironmentView.of(EnvironmentManifest.parse("job", "{\"schemaVersion\": 7, " + groups + "}"));
+        return EnvironmentView.of(EnvironmentManifest.parse("job", "{\"schemaVersion\": 8, " + groups + "}"));
     }
 
     @Test
@@ -27,16 +27,40 @@ class EnvironmentViewTest {
     }
 
     @Test
-    void aJvmWithoutAVendorVersionKeepsItsBannerReleaseAndVendor() {
-        assertThat(view("\"jvm\": {\"version\": \"openjdk version \\\"25.0.4\\\"\", \"release\": \"25.0.4\", "
-            + "\"vendor\": \"Eclipse Adoptium\"}").get("jvm"))
+    void aJdkWithoutAVendorVersionKeepsItsBannerReleaseAndVendor() {
+        assertThat(view("\"jdk\": {\"version\": \"openjdk version \\\"25.0.4\\\"\", \"release\": \"25.0.4\", "
+            + "\"vendor\": \"Eclipse Adoptium\"}").get("jdk"))
             .containsExactly("version openjdk version \"25.0.4\"", "release 25.0.4", "vendor Eclipse Adoptium");
     }
 
     @Test
     void aVendorVersionWithoutAVendorStandsAlone() {
-        assertThat(view("\"jvm\": {\"vendorVersion\": \"Temurin-25.0.4+7\"}").get("jvm"))
+        assertThat(view("\"jdk\": {\"vendorVersion\": \"Temurin-25.0.4+7\"}").get("jdk"))
             .containsExactly("Temurin 25.0.4+7");
+    }
+
+    /** The id --jdk selected it by comes first; the home is that id's directory, so not repeated. */
+    @Test
+    void aSelectedJdkShowsItsIdAndItsBuild() {
+        assertThat(view("\"jdk\": {\"id\": \"corretto-25\", \"home\": \"/opt/jdks/corretto-25\", "
+            + "\"version\": \"openjdk version \\\"25.0.4\\\"\", \"release\": \"25.0.4\", \"vendor\": \"Amazon.com Inc.\", "
+            + "\"vendorVersion\": \"Corretto-25.0.4.7.1\", \"vmName\": \"OpenJDK 64-Bit Server VM\"}").get("jdk"))
+            .containsExactly("corretto-25", "Corretto 25.0.4.7.1 (Amazon.com Inc.)", "vmName OpenJDK 64-Bit Server VM");
+    }
+
+    /** An image from before JDK selection records no id; whatever home there is stays visible. */
+    @Test
+    void aJdkWithoutAnIdShowsItsHomeAsRecorded() {
+        assertThat(view("\"jdk\": {\"id\": \"\", \"home\": \"/usr/lib/jvm/x\", \"vendorVersion\": \"Corretto-25.0.4.7.1\"}")
+            .get("jdk"))
+            .containsExactly("home /usr/lib/jvm/x", "Corretto 25.0.4.7.1");
+    }
+
+    @Test
+    void theRunnersJdkIsShownByItsBuild() {
+        assertThat(view("\"runnerJdk\": {\"release\": \"25.0.4\", \"vendorVersion\": \"Corretto-25.0.4.7.1\"}")
+            .get("runnerJdk"))
+            .containsExactly("Corretto 25.0.4.7.1");
     }
 
     @Test

@@ -63,6 +63,9 @@ class BenchmarkArgumentsTest {
             .contains("dir in -prof async is managed by BaaS");
         assertThat(execute(argv("jcstress", jar, "-r", "/tmp/report")).err())
             .contains("-r is managed by BaaS");
+        assertThat(execute(argv("jmh", jar, "MyBenchmark", "-jvm=/usr/bin/java")).err())
+            .contains("-jvm is managed by BaaS")
+            .contains("baas run --jdk");
     }
 
     @Test

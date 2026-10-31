@@ -13,8 +13,9 @@ import java.util.Optional;
 import java.util.Set;
 
 /**
- * A job's {@code environment.json}: since schemaVersion 6 the measurement environment in seven
- * groups, and nothing about the job's identity. Fields are held as {@code group.field}; a flat
+ * A job's {@code environment.json}: since schemaVersion 6 the measurement environment by group
+ * (eight since schemaVersion 8, which renamed {@code jvm} to {@code jdk} and added {@code runnerJdk}),
+ * and nothing about the job's identity. Fields are held as {@code group.field}; a flat
  * manifest from an older schema parses too, its fields under no group, so a comparison across a
  * schema change still shows what it can. {@code tree} is the parsed document itself, which is what
  * {@code jobs show --format json} prints: the stored text never reaches the output.
@@ -30,7 +31,8 @@ public record EnvironmentManifest(String jobId, Map<String, String> fields, Map<
     private static final String SCHEMA_VERSION = "schemaVersion";
 
     /** The groups, in the order the manifest writes and every view prints them. */
-    public static final List<String> GROUPS = List.of("machine", "cpu", "memory", "os", "jvm", "tools", "tunables");
+    public static final List<String> GROUPS =
+        List.of("machine", "cpu", "memory", "os", "jdk", "runnerJdk", "tools", "tunables");
 
     public static EnvironmentManifest parse(String jobId, String json) {
         Map<String, Object> raw;

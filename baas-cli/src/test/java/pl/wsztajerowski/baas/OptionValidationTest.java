@@ -61,10 +61,10 @@ class OptionValidationTest {
     @Test
     void aReservedTagIsRefusedBeforeTheJarOrAnyUpload() throws Exception {
         var captured = baas("run", "--runner-jar", "/nonexistent-runner.jar",
-            "--benchmark-jar", "/nonexistent.jar", "--project", "p", "--tag", "jdk=21", "jmh");
+            "--benchmark-jar", "/nonexistent.jar", "--project", "p", "--tag", "jdkVersion=21", "jmh");
 
         assertThat(captured.exitCode()).isNotZero();
-        assertThat(captured.err()).contains("--tag jdk").doesNotContain("Benchmark JAR not found");
+        assertThat(captured.err()).contains("--tag jdkVersion").doesNotContain("Benchmark JAR not found");
     }
 
     @Test

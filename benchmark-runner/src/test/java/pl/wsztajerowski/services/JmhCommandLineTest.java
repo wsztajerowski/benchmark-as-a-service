@@ -44,6 +44,20 @@ class JmhCommandLineTest {
                 "MyBenchmark", "-f", "1", "-v", "EXTRA", "-p", "size=10", "-jvmArgs", "-Xmx2g -XX:+UseZGC", "-prof", "gc");
     }
 
+    /** The selected JDK starts JMH, whose forks then follow its java.home; a listing job is no exception. */
+    @Test
+    void theSelectedJdksJavaStartsTheBenchmark(@TempDir Path dir) {
+        String java = "/opt/jdks/temurin-26/bin/java";
+        for (List<String> args : List.of(List.of("MyBenchmark"), List.of("-lprof"))) {
+            var run = new JmhRun(dir.resolve("b.jar"), args, dir, dir.resolve("none.so"), java);
+            var commands = new JmhSubcommandService((s, l) -> { }, m -> { },
+                new CommonSharedOptions(dir.resolve("r"), "id", Instant.now(), "p", Map.of()), run)
+                .jmhProcess().commands();
+
+            assertThat(commands).as(args.toString()).startsWith(java, "-jar", dir.resolve("b.jar").toString());
+        }
+    }
+
     @Test
     void asyncAndJfrArePointedAtTheProfilerOutputAfterTheUsersKeys(@TempDir Path dir) throws IOException {
         Path lib = Files.createFile(dir.resolve("libasyncProfiler.so"));

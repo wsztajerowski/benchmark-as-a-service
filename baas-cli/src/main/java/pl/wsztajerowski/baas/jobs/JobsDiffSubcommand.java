@@ -35,8 +35,9 @@ import java.util.concurrent.Callable;
         "Each job is named by the id `baas run` printed and `baas jobs list` shows:",
         "  baas jobs diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2",
         "",
-        "Only the environment is compared: machine, cpu, memory, os, jvm, tools and",
-        "tunables. When the two AMIs differ, the installed packages are compared too."
+        "Only the environment is compared: machine, cpu, memory, os, jdk, runnerJdk,",
+        "tools and tunables. When the two AMIs differ, the installed packages are",
+        "compared too."
     }
 )
 public class JobsDiffSubcommand implements Callable<Integer> {

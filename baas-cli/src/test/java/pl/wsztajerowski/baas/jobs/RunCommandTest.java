@@ -228,6 +228,19 @@ class RunCommandTest {
         assertThat(command.localCommand).isNull();
     }
 
+    /** Which profilers work depends on the JDK too, so a listing job selects one like any job. */
+    @Test
+    void theProfilerListingTakesAJdk() {
+        var command = new RunCommand();
+
+        new picocli.CommandLine(command).parseArgs("--benchmark-jar", "b.jar", "--jdk", "temurin-26", "jmh", "--", "-lprof");
+        command.refuseManagedOrNoRun();
+
+        assertThat(command.jdk).isEqualTo("temurin-26");
+        assertThat(command.benchmarkParams).containsExactly("-lprof");
+        assertThat(command.localCommand).isNull();
+    }
+
     @Test
     void theProfilerListingBesideAnythingElseIsRefused() {
         var command = new RunCommand();
@@ -250,6 +263,23 @@ class RunCommandTest {
 
         assertThatThrownBy(command::refuseManagedOrNoRun)
             .hasMessageContaining("libPath in -prof async is managed by BaaS");
+    }
+
+    /** The job records the JDK it selected; forks sent to another JVM would be measured under the wrong tags. */
+    @Test
+    void theForksJvmIsRefusedNamingTheJdkOption() {
+        for (String spelling : List.of("-jvm", "--jvm")) {
+            var command = new RunCommand();
+            command.benchmarkType = "jmh";
+            command.benchmarkParams.addAll(List.of("MyBenchmark", spelling, "/x"));
+
+            assertThatThrownBy(command::refuseManagedOrNoRun)
+                .as(spelling)
+                .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
+                .hasMessageContaining("-jvm is managed by BaaS")
+                .hasMessageContaining("--jdk <id>")
+                .hasMessageContaining("Nothing was launched");
+        }
     }
 
     /** --mode is no JCStress option, but not BaaS's to refuse either: JCStress says so on the instance. */
@@ -415,7 +445,7 @@ class RunCommandTest {
     }
 
     /**
-     * imageVersion/instanceType/jdk/cpuModel/cpuArch are captured on the instance so a result's
+     * imageVersion/instanceType/jdkVersion/cpuModel/cpuArch are captured on the instance so a result's
      * tags can never disagree with its own environment.json (see UserDataScriptBuilder). Silently
      * dropping a colliding --tag would be its own surprise, so buildRunnerTags rejects it outright
      * instead — same defect class as the one this branch's final review flagged.
@@ -423,11 +453,11 @@ class RunCommandTest {
     @Test
     void rejectsACallerTagThatCollidesWithAMachineObservedKey() {
         var command = new RunCommand();
-        command.extraTags.put("jdk", "8");
+        command.extraTags.put("jdkVersion", "8");
 
         assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("jdk")
+            .hasMessageContaining("jdkVersion")
             .as("the error must list every reserved key, not just the one that collided")
             .hasMessageContaining("imageVersion")
             .hasMessageContaining("instanceType")
@@ -442,13 +472,24 @@ class RunCommandTest {
      * not run on.
      */
     @Test
-    void rejectsACallerTagForTheJvmVendor() {
+    void rejectsACallerTagForTheJdkVendor() {
         var command = new RunCommand();
-        command.extraTags.put("jvmVendor", "Acme");
+        command.extraTags.put("jdkVendor", "Acme");
 
         assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("jvmVendor");
+            .hasMessageContaining("jdkVendor");
+    }
+
+    /** The id is what --jdk selects; a caller value would name a JDK the benchmark did not run on. */
+    @Test
+    void rejectsACallerTagForTheJdkId() {
+        var command = new RunCommand();
+        command.extraTags.put("jdkId", "temurin-26");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("jdkId");
     }
 
     /**

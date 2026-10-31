@@ -40,9 +40,9 @@ class JobsConsoleOutputTest {
         command.jobA = "20260724T120000000Z-a3f9c21b";
         command.jobB = "20260811T093000000Z-b7e4d0f2";
         Map<String, Map<String, Difference>> differences = new LinkedHashMap<>();
-        Map<String, Difference> jvm = new LinkedHashMap<>();
-        jvm.put("version", new Difference("25.0.3", "25.0.4"));
-        differences.put("jvm", jvm);
+        Map<String, Difference> jdk = new LinkedHashMap<>();
+        jdk.put("version", new Difference("25.0.3", "25.0.4"));
+        differences.put("jdk", jdk);
         differences.put("tools", Map.of("perf", new Difference("", "6.1")));
         var out = new StringWriter();
         command.printDiff(Console.withFlags(new PrintWriter(out), colour, colour), differences, packages);
@@ -56,11 +56,11 @@ class JobsConsoleOutputTest {
     @Test
     void thePlainDiffNamesTheGroupsThenListsTheFields() {
         String fmt = "%-10s %-18s %-30s %-30s%n";
-        String expected = "Differs in: jvm, tools" + System.lineSeparator()
+        String expected = "Differs in: jdk, tools" + System.lineSeparator()
             + System.lineSeparator()
             + String.format(fmt, "GROUP", "FIELD", "20260724T120000000Z-a3f9c21b", "20260811T093000000Z-b7e4d0f2")
             + "-".repeat(91) + System.lineSeparator()
-            + String.format(fmt, "jvm", "version", "25.0.3", "25.0.4")
+            + String.format(fmt, "jdk", "version", "25.0.3", "25.0.4")
             + String.format(fmt, "tools", "perf", "(absent)", "6.1");
 
         assertThat(diff(false)).isEqualTo(expected);
@@ -90,7 +90,7 @@ class JobsConsoleOutputTest {
 
         String out = diff(false, packages);
 
-        assertThat(out).startsWith("Differs in: jvm, tools, packages")
+        assertThat(out).startsWith("Differs in: jdk, tools, packages")
             .contains("Packages (AMIs differ): 1 changed · 1 added · 0 removed")
             .contains("changed  openssl-libs  3.0.8-1.amzn2023.0.14 → 3.0.8-1.amzn2023.0.16")
             .contains("added    zstd-libs 1.5.5-1.amzn2023.0.2");

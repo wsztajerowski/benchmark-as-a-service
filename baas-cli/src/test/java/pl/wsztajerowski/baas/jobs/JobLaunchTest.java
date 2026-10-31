@@ -167,6 +167,68 @@ class JobLaunchTest {
             .contains("export AWS_REGION='eu-central-1'");
     }
 
+    // ─── JDK selection ──────────────────────────────────────────────────────────
+
+    private static final pl.wsztajerowski.baas.image.RunnerImage SELECTING_IMAGE = new pl.wsztajerowski.baas.image.RunnerImage(
+        "ami-1", "1.5.0", "ami-parent", "2026-11-01T00:00:00Z", List.of("corretto-25", "temurin-26"));
+
+    private JobLaunch.Request requestOnJdk(String jdk) throws Exception {
+        var plain = request(null, false);
+        return new JobLaunch.Request(plain.benchmarkType(), plain.benchmarkParams(), plain.benchmarkJar(), null,
+            plain.instanceType(), plain.project(), plain.timeoutSeconds(), plain.watchdogSeconds(), plain.runnerTags(),
+            false, plain.cliVersion(), plain.sourceRepo(), jdk);
+    }
+
+    private String userData() {
+        return new String(Base64.getDecoder().decode(aws.userData), StandardCharsets.UTF_8);
+    }
+
+    @Test
+    void aJdkTheImageHoldsReachesTheInstance() throws Exception {
+        aws.image = Optional.of(SELECTING_IMAGE);
+
+        assertThat(launch().run(requestOnJdk("temurin-26"))).isZero();
+        assertThat(userData()).contains("export JDK_ID='temurin-26'");
+    }
+
+    @Test
+    void noJdkSelectsTheImagesDefault() throws Exception {
+        aws.image = Optional.of(SELECTING_IMAGE);
+
+        assertThat(launch().run(requestOnJdk(null))).isZero();
+        assertThat(userData()).contains("export JDK_ID='corretto-25'");
+    }
+
+    /** A misspelt id costs nothing: refused with exit 2 before any upload, listing what the image holds. */
+    @Test
+    void aJdkTheImageDoesNotHoldIsRefusedBeforeAnyUpload() throws Exception {
+        aws.image = Optional.of(SELECTING_IMAGE);
+        var request = requestOnJdk("temruin-26");
+
+        assertThatThrownBy(() -> launch().run(request))
+            .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
+            .hasMessageContaining("1.5.0 (ami-1) holds no JDK 'temruin-26'")
+            .hasMessageContaining("corretto-25 (default), temurin-26")
+            .hasMessageContaining("Nothing was launched")
+            .satisfies(refusal -> assertThat(((pl.wsztajerowski.baas.cli.CommandRefusal) refusal).exitCode()).isEqualTo(2));
+        assertThat(aws.events).containsExactly("currentImage /dev/runner/ami-id");
+        assertThat(listener.jobId).isNull();
+    }
+
+    /** CI runs a new CLI against an image built before selection: --jdk is refused, a job without it runs as before. */
+    @Test
+    void anImageFromBeforeJdkSelectionRefusesAnyJdkAndRunsWithoutOne() throws Exception {
+        var request = requestOnJdk("corretto-25");
+        assertThatThrownBy(() -> launch().run(request))
+            .isInstanceOf(pl.wsztajerowski.baas.cli.CommandRefusal.class)
+            .hasMessageContaining("predates JDK selection")
+            .hasMessageContaining("admin image build");
+        assertThat(aws.events).containsExactly("currentImage /dev/runner/ami-id");
+
+        assertThat(launch().run(requestOnJdk(null))).isZero();
+        assertThat(userData()).contains("export JDK_ID=''");
+    }
+
     @Test
     void withNoRunnerImageNothingIsUploadedOrReserved() throws Exception {
         aws.image = Optional.empty();

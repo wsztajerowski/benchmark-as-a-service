@@ -54,10 +54,11 @@ final class ResultsDiff {
 
     /**
      * The tags a reader most often needs to explain a delta are printed in the header instead; these
-     * are the rest of what the instance observed, diagnosed in full by {@code baas jobs diff}.
+     * are the rest of what the instance observed, diagnosed in full by {@code baas jobs diff}. The CPU
+     * model is not among them: it gets a warning of its own ({@link #cpuDifference}).
      */
     static final List<String> WARNED_TAGS = List.of(
-        TagKeys.IMAGE_VERSION, TagKeys.JDK, TagKeys.JVM_VENDOR, TagKeys.CPU_MODEL, TagKeys.CPU_ARCH);
+        TagKeys.IMAGE_VERSION, TagKeys.JDK_ID, TagKeys.JDK_VERSION, TagKeys.JDK_VENDOR, TagKeys.CPU_ARCH);
 
     private static final Comparator<ResultRow> ORDER = Comparator
         .comparing(ResultRow::benchmarkName, Comparator.nullsFirst(Comparator.naturalOrder()))
@@ -179,6 +180,21 @@ final class ResultsDiff {
             }
         }
         return differences;
+    }
+
+    /**
+     * The two jobs' CPU models as {@code a → b} when they differ, else null. Warned apart from
+     * {@link #environmentDifferences}: comparing JDKs means one job per JDK, whose JDK tags differ on
+     * purpose, and two jobs of one instance type can still land on different CPUs — a difference
+     * that can exceed the one being compared, and must not be lost among the intended ones.
+     */
+    static String cpuDifference(List<ResultRow> a, List<ResultRow> b) {
+        if (a.isEmpty() || b.isEmpty()) {
+            return null;
+        }
+        String left = tag(a, TagKeys.CPU_MODEL);
+        String right = tag(b, TagKeys.CPU_MODEL);
+        return Objects.equals(left, right) ? null : orAbsent(left) + " → " + orAbsent(right);
     }
 
     /**

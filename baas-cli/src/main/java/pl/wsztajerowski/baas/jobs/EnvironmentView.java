@@ -56,10 +56,14 @@ final class EnvironmentView {
             case "memory.totalMib" -> Optional.of(mib(value).map(EnvironmentView::gib).orElse(raw));
             case "memory.swapTotalMib" -> Optional.of(mib(value)
                 .map(mib -> mib == 0 ? "no swap" : "swap " + gib(mib)).orElse(raw));
+            // The id --jdk selected it by; its home is that id's directory under /opt/jdks.
+            case "jdk.id" -> Optional.of(value);
+            case "jdk.home" -> fields.getOrDefault("id", "").isEmpty() ? Optional.of(raw) : Optional.empty();
             // Corretto-25.0.4.7.1 names the build exactly; the banner and the release repeat it.
-            case "jvm.vendorVersion" -> Optional.of(value.replaceFirst("-", " ")
+            case "jdk.vendorVersion", "runnerJdk.vendorVersion" -> Optional.of(value.replaceFirst("-", " ")
                 + (fields.getOrDefault("vendor", "").isEmpty() ? "" : " (" + fields.get("vendor") + ")"));
-            case "jvm.version", "jvm.release", "jvm.vendor" -> vendorVersion ? Optional.empty() : Optional.of(raw);
+            case "jdk.version", "jdk.release", "jdk.vendor", "runnerJdk.release" ->
+                vendorVersion ? Optional.empty() : Optional.of(raw);
             case "tools.perf" -> Optional.of(matched(PERF, value).map(v -> "perf " + v).orElse(raw));
             case "tools.asyncProfiler" -> Optional.of(matched(ASYNC_PROFILER, value)
                 .map(v -> "async-profiler " + v).orElse(raw));

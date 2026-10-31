@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.model.BenchmarkType;
+import pl.wsztajerowski.baas.model.Jdks;
 import pl.wsztajerowski.baas.model.RunnerArgs;
 import pl.wsztajerowski.baas.model.TagKeys;
 
@@ -35,10 +36,11 @@ class RunnerArgsContractTest {
             RunnerArgs.S3_BUCKET, "baas-123456789012",
             RunnerArgs.BENCHMARK_PATH, benchmarkJar.toString(),
             RunnerArgs.RESULTS_TABLE, "baas-123456789012-results",
+            RunnerArgs.JDK, Jdks.DEFAULT_ID,
             RunnerArgs.TAG, TagKeys.PROJECT + "=lynx-journal",
             RunnerArgs.TAG, TagKeys.TYPE + "=" + type.commandName(),
-            RunnerArgs.TAG, TagKeys.JDK + "=caller",
-            RunnerArgs.TAG, TagKeys.JDK + "=25.0.4"));
+            RunnerArgs.TAG, TagKeys.JDK_VERSION + "=caller",
+            RunnerArgs.TAG, TagKeys.JDK_VERSION + "=25.0.4"));
         argv.add("--");
         argv.add("MyBenchmark");
         return argv;
@@ -63,7 +65,8 @@ class RunnerArgsContractTest {
             assertThat(common.resultPath()).isEqualTo(Path.of("jobs/lynx-journal/" + JOB_ID));
             assertThat(common.project()).isEqualTo("lynx-journal");
             // The observed value is rendered after the caller's, and the runner's tag map is last-wins.
-            assertThat(common.tags()).containsEntry(TagKeys.JDK, "25.0.4");
+            assertThat(common.tags()).containsEntry(TagKeys.JDK_VERSION, "25.0.4");
+            assertThat(options.jdk).isEqualTo(Jdks.DEFAULT_ID);
             assertThat(options.resultsTableName).isEqualTo("baas-123456789012-results");
         }
     }

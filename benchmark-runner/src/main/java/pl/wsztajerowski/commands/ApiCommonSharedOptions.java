@@ -3,6 +3,7 @@ package pl.wsztajerowski.commands;
 import pl.wsztajerowski.baas.model.RunnerArgs;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.model.Jdks;
 import pl.wsztajerowski.baas.model.JobId;
 import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.TagKeys;
@@ -11,12 +12,15 @@ import pl.wsztajerowski.infra.ResultsStoreBuilder;
 import pl.wsztajerowski.options.CommonSharedOptions;
 import pl.wsztajerowski.options.S3Options;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 @Command
 public class ApiCommonSharedOptions {
@@ -52,6 +56,13 @@ public class ApiCommonSharedOptions {
         defaultValue = "${AWS_ENDPOINT_URL_S3}",
         description = "Custom S3 Service endpoint")
     URI s3ServiceEndpoint;
+
+    @Option(names = RunnerArgs.JDK,
+        description = "Id of the JDK under --jdks-root the benchmark process runs on. Default: java on PATH.")
+    String jdk;
+
+    @Option(names = RunnerArgs.JDKS_ROOT, hidden = true, defaultValue = Jdks.ROOT)
+    Path jdksRoot;
 
     private Instant resolvedCreatedAt;
 
@@ -107,6 +118,32 @@ public class ApiCommonSharedOptions {
         }
         throw new IllegalStateException(
             "Cannot determine the project: pass --project <name> (or --tag project=<name>).");
+    }
+
+    /**
+     * The {@code java} the benchmark process starts with: the selected JDK's, or {@code java} on
+     * {@code PATH} when the job selected none (an image from before JDK selection). Refuses an id that
+     * is malformed or has no {@code bin/java} on this image before anything runs; the CLI checked the
+     * image's published list, so this is the second line.
+     */
+    public String javaExecutable() {
+        if (jdk == null) {
+            return "java";
+        }
+        Path java = jdksRoot.resolve(jdk).resolve("bin").resolve("java");
+        if (!Jdks.isValidId(jdk) || !Files.isExecutable(java)) {
+            throw new IllegalStateException("No JDK '%s' on this image: %s is not there. JDKs under %s: %s."
+                .formatted(jdk, java, jdksRoot, installedIds()));
+        }
+        return java.toString();
+    }
+
+    private String installedIds() {
+        try (Stream<Path> entries = Files.list(jdksRoot)) {
+            return String.join(", ", entries.map(path -> path.getFileName().toString()).sorted().toList());
+        } catch (IOException e) {
+            return "none";
+        }
     }
 
     public ResultsStore buildResultsStore() {
