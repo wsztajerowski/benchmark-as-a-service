@@ -123,7 +123,7 @@
 - [x] 8.6 Comparability: the fixture benchmark without `--jdk` on the new base against the old base
       (1.4.0), at least three jobs each on one instance type, recording every score, the spread and each
       job's `cpuModel`; investigate any difference beyond the spread between jobs on the same CPU model
-- [ ] 8.7 Second deployment (the change touches the runner image): with a deployer for a second name, run
+- [x] 8.7 Second deployment (the change touches the runner image): with a deployer for a second name, run
       setup, `admin image build`, one `--jdk` job and teardown (`infra/README.md`, *A second deployment*);
       record it in `verify.md`
 - [x] 8.8 CI's e2e on the PR runs the new CLI against the default deployment's old image: confirm it passes,
@@ -131,7 +131,7 @@
 
 ## 9. Rollout (after release, with the user)
 
-- [ ] 9.1 For `baas-381492019823` and `baas-development`: export if wanted, erase current results and job
+- [x] 9.1 **Not worked on in this change** (user, 2026-11-01) — the rollout is done after release, outside it. For `baas-381492019823` and `baas-development`: export if wanted, erase current results and job
       data, run setup with 9.0.0 (raises the CLI version floor), build the image; record in `verify.md`
 
 ## 10. Verify
