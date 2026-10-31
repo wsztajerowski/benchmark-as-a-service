@@ -97,4 +97,8 @@ the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Bench
   8124M 467.84/467.89M and 406.90/407.04M). The one outlier, size=2 of `…2dd31d8e` (+33 %), ran on the *pre-change*
   base and code, with an error as tight as the others: a different steady state of the fixture (a JIT/alignment
   mode, like `Incrementing_Synchronized`'s), not something this change introduced. No score moved with it.
-- **8.7, 8.8: not done yet** — 8.7 needs a deployer for a second deployment name (an IAM administrator), 8.8 a PR.
+- **8.8 CI on PR #125:** every check passed — `build`, both `e2e-cloud-test` jobs and `install.sh` on macOS and
+  Ubuntu. The e2e jobs ran the new CLI against `baas-381492019823`'s image 1.4.0, which predates JDK selection:
+  `…4e7ebe63` (JMH) and `…154689bb` (JCStress) completed with `jdkVersion=25.0.4`, `jdkVendor=Amazon.com Inc.` and
+  no `jdkId`, as designed.
+- **8.7: not done yet** — it needs a deployer for a second deployment name (an IAM administrator).
