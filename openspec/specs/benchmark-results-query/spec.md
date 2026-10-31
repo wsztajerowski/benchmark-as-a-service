@@ -182,6 +182,12 @@ SHALL be followed by an indented line labelled `params` listing its params, when
 indented line labelled `tags` listing every tag; without `-v`, no such line SHALL be printed. A score or
 score error that the stored item does not carry, or that is not finite, SHALL be reported as unknown and
 never as a number: JSON `null`, an empty CSV cell, and a de-emphasised table cell.
+In the table, a measurement carrying a `profilers` tag, or stored under a retired profiled type
+(`jmh-with-async`, `jmh-with-prof`), SHALL have its score followed by `*`, with the scores of unmarked
+rows, JCStress verdicts included, aligned as if the mark were there. When at least one printed row is marked, the
+table SHALL be followed by one line saying that `*` marks a measurement taken under a profiler, which
+`-v` names; when none is marked, that line SHALL NOT be printed. JSON and CSV SHALL carry no mark beyond
+the tag itself.
 
 #### Scenario: Table has no error column
 - **WHEN** `baas results query --project p` prints a table
@@ -206,6 +212,23 @@ never as a number: JSON `null`, an empty CSV cell, and a de-emphasised table cel
 #### Scenario: A missing score is not reported as zero
 - **WHEN** a stored measurement carries no score, and it is printed as JSON, as CSV and as a table
 - **THEN** JSON carries `"score":null`, the CSV score cell is empty, and the table cell is de-emphasised rather than `0.000`
+
+#### Scenario: A profiled measurement is marked
+- **WHEN** the table prints one measurement carrying `profilers=async` and one carrying no `profilers` tag
+- **THEN** the first score is followed by `*`, both scores' decimal points are in the same column, and
+  the table is followed by the footnote line
+
+#### Scenario: A row of a retired profiled type is marked
+- **WHEN** the table prints a measurement stored with `type=jmh-with-async` and no `profilers` tag
+- **THEN** its score is followed by `*`, and the footnote line is printed
+
+#### Scenario: No footnote without a profiled row
+- **WHEN** no printed measurement carries a `profilers` tag
+- **THEN** no score carries `*`, and no footnote line is printed
+
+#### Scenario: Machine formats carry no mark
+- **WHEN** a measurement carrying `profilers=async` is printed as JSON
+- **THEN** its `score` is a plain number, and its `tags` object carries `profilers`
 
 ### Requirement: `baas results query` lists every measurement by default
 `baas results` SHALL be a noun whose verbs are `query` and `diff`; `baas query` SHALL be the top-level

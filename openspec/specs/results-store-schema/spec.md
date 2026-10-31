@@ -113,9 +113,13 @@ environment and `local` otherwise, and an explicitly supplied value SHALL win ov
 `baas run` SHALL record everything following its `--` separator as the tag `cliParameters`, the
 arguments joined by a single space with any argument holding whitespace or a quote single-quoted, and
 SHALL omit the tag when nothing follows `--`.
-`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`, `type` and `cliParameters`
-SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them before
-launching anything.
+`baas run` SHALL record the profilers the benchmark's arguments name as the tag `profilers`: each
+profiler's name as given, without its options, sorted alphabetically, without duplicates, joined by `,`.
+It SHALL omit the tag when no profiler is named. The job item and every measurement of the job SHALL
+carry the same value.
+`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`, `type`, `cliParameters` and
+`profilers` SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them
+before launching anything.
 Tag keys outside the vocabulary SHALL be permitted, and a query naming an unknown key SHALL produce a
 warning rather than silently returning nothing.
 
@@ -134,12 +138,28 @@ warning rather than silently returning nothing.
 - **THEN** the command exits non-zero naming `jvmVendor` as reserved, and no instance is launched
 
 #### Scenario: The run's parameters are recorded as a tag
-- **WHEN** `baas run jmh-with-async -- --async-event wall MyBenchmark -f 1` completes
-- **THEN** its stored measurement carries `cliParameters=--async-event wall MyBenchmark -f 1`
+- **WHEN** `baas run jmh -- MyBenchmark -f 1 -prof async:event=wall` completes
+- **THEN** its stored measurement carries `cliParameters=MyBenchmark -f 1 -prof async:event=wall`
 
 #### Scenario: A caller cannot set the recorded parameters
 - **WHEN** `baas run --tag cliParameters=-f5 jmh -- MyBenchmark` is invoked
 - **THEN** the command exits non-zero naming `cliParameters` as reserved, and no instance is launched
+
+#### Scenario: Profilers are recorded sorted, without their options
+- **WHEN** `baas run jmh -- MyBenchmark -prof gc -prof async:event=alloc -prof gc` completes
+- **THEN** the job item and every stored measurement carry `profilers=async,gc`
+
+#### Scenario: The order profilers are given in does not change the tag
+- **WHEN** one job is run with `-prof gc -prof async` and another with `-prof async -prof gc`
+- **THEN** both carry `profilers=async,gc`
+
+#### Scenario: An unprofiled job carries no profilers tag
+- **WHEN** `baas run jmh -- MyBenchmark` completes
+- **THEN** its measurements carry no `profilers` key, and no stored value stands in for it
+
+#### Scenario: A caller cannot claim or deny profiling
+- **WHEN** `baas run --tag profilers=gc jmh -- MyBenchmark` is invoked
+- **THEN** the command exits non-zero naming `profilers` as reserved, and no instance is launched
 
 #### Scenario: Branch is recorded as a tag
 - **WHEN** a job is launched with `--tag branch=main`

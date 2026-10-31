@@ -24,7 +24,7 @@ and the swap state; `perf_event_paranoid` and `kptr_restrict` are additionally b
 - **THEN** the running kernel reports the values declared in `infra/runner-image.yaml`
 
 #### Scenario: async-profiler can walk kernel stacks
-- **WHEN** a `jmh-with-async` benchmark runs on the current AMI
+- **WHEN** a `jmh` benchmark profiled with `-prof async` runs on the current AMI
 - **THEN** profiling succeeds without a permissions error from `perf_event_open`
 
 ### Requirement: The runner installs no tooling at run time
@@ -41,8 +41,8 @@ the benchmark job requires SHALL already be present in the AMI.
   `/app/async-profiler/lib/libasyncProfiler.so` exists at the declared version
 
 #### Scenario: Baked async-profiler is at the path the runner defaults to
-- **WHEN** `jmh-with-async` runs without an explicit `--async-path`
-- **THEN** the runner's default path resolves to the baked async-profiler
+- **WHEN** a `jmh` job names `-prof async` without a library path
+- **THEN** the library path the runner injects resolves to the baked async-profiler
 
 ### Requirement: Exactly one runner image exists at a time
 The system SHALL maintain exactly one runner AMI, published at `/<prefix>/runner/ami-id`. It SHALL NOT
