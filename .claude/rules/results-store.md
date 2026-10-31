@@ -166,7 +166,11 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
 `ResultKeys`, the item from `JobItemMapper`, the status vocabulary and terminal set from `JobStatus`.
 
 - **Only the CLI's `launching` reservation creates it**, with every identity field and the
-  CLI-side tags. It is written before `RunInstances`, and a reservation that cannot be written
+  CLI-side tags, plus `jdkId`: the one observed-side tag the CLI knows before launch, because it chose
+  the id and checked it against the image. The other observed tags (`imageVersion`, `jdkVersion`,
+  `cpuModel`, …) reach only the measurements — nothing writes tags to the item after the reservation —
+  so `jobs list --tag jdkId=…` works, `--tag cpuModel=…` does not, and a profiler listing, which stores no
+  measurement, is still found by its JDK. It is written before `RunInstances`, and a reservation that cannot be written
   launches nothing. Every later write — `launched`, `running`, `completed`/`failed:<n>`,
   `timed-out`, `cancelled`, `launch-failed` — is a conditional `UpdateItem` requiring
   `attribute_exists(pk)` and refusing to replace a terminal status: the first outcome wins.
