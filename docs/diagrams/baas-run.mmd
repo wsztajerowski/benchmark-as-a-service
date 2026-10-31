@@ -88,7 +88,12 @@ sequenceDiagram
             JL-->>User: StatusLine.update on STDOUT when interactive, else "Still running (state)... elapsed" on stderr
         end
     end
-    alt completed
+    alt completed, and -lprof was the only argument after --
+        JL->>Port: getText(bucket, jobPrefix/jmh-output.txt)
+        Port->>S3: GetObject -- the listing the runner uploaded, no measurements read
+        JL->>RC: Listener.printListing(listing, jobId)
+        RC-->>User: the listing verbatim on stdout (with --format json only a log line)
+    else completed
         JL->>Port: jobRows(table, jobId)
         Port->>DDB: ResultsQueryService.queryByJobId -- jobId-index, attribute_exists(kind), no hidden filter
         JL->>RC: Listener.printResults(rows, jobId)
@@ -100,4 +105,4 @@ sequenceDiagram
     opt --format json -- in call()'s finally, on the failure path too
         RC-->>User: printJobSummary -- {jobId, project, resultPath, status, jobStatus, exitCode, instanceId}
     end
-    Note over RC,User: hints (interactive only): detached -> jobs show / jobs terminate,<br/>completed -> query --job-id / jobs download, otherwise -> jobs show / jobs download
+    Note over RC,User: hints (interactive only): detached -> jobs show / jobs terminate,<br/>completed -> query --job-id / jobs download,<br/>a completed -lprof listing -> jobs download alone, otherwise -> jobs show / jobs download
