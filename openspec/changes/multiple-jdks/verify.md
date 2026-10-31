@@ -50,3 +50,51 @@ NVR installs, `/opt/jdks/corretto-25/bin/jcmd` exists, `baas-install-jdk corrett
 published SHA-256 `2a8a5a83…`) and `temurin-26` install, `java` on `PATH` stays Corretto-25.0.5.0.10, the contract block
 lists `corretto-25,corretto-27,temurin-26` with no failure, and the fixture's `-prof jfr` on
 `/opt/jdks/corretto-27/bin/java` wrote `profile.jfr` (`# VM version: JDK 27.0.1`).
+
+## 8. End to end on `baas-development` (2026-10-31, eu-central-1, all `c5.2xlarge`)
+
+12 paid jobs of the 20 the user allowed. The worktree's reactor CLI and runner (`--runner-jar`) for the new image;
+the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Benchmark:
+`Summing_Array.sum -f 1 -wi 2 -w 2s -i 5 -r 2s`, as in `list-runner-profilers` 6.4.
+
+- **8.1 image:** the Temurin experiment extension was replaced (first by none, for the baseline image 1.4.0
+  `ami-0fb6489199a99e9c8`), then the new base was built with an extension of two `baas-install-jdk` lines
+  (`corretto-27` from Amazon's 27.0.1.0.11 tarball, `temurin-26`): `1.5.0+ext.e383db2d`, `ami-061cc6355f7ae8dc4`,
+  parent `ami-0c5768ce3a885d023` (al2023 2023.12.20261102.0). `admin image show` listed
+  `corretto-25 25.0.5 Amazon.com Inc. (default)`, `corretto-27 27.0.1 Amazon.com Inc.`,
+  `temurin-26 26.0.2.1 Eclipse Adoptium`; the AMI carries `baas-jdks=corretto-25,corretto-27,temurin-26`, and
+  `image-builds/1.5.0+ext.e383db2d/` holds the list. The replaced image was retired.
+- **8.2 tags and manifest:** every job without `--jdk` carries `jdkId=corretto-25 jdkVersion=25.0.5
+  jdkVendor=Amazon.com Inc.`; `--jdk temurin-26` (`…17de370f`) carries `temurin-26 26.0.2.1 Eclipse Adoptium`, and its
+  `environment.json` (schema 8) records `jdk.id temurin-26`, `jdk.home /opt/jdks/temurin-26`, `vendorVersion
+  Temurin-26.0.2.1+1`, and `runnerJdk` `25.0.5` / `Corretto-25.0.5.0.10`. `jobs show` prints `jdk  temurin-26 ·
+  Temurin 26.0.2.1+1 (Eclipse Adoptium) · vmName …` and `runnerJdk  Corretto 25.0.5.0.10`. `results diff` of a
+  Corretto and the Temurin job on the same CPU (`…e4806334` → `…17de370f`) warned only about `jdkId`, `jdkVersion`,
+  `jdkVendor`; across CPUs (`…ac812cb2`, 8124M → 8275CL) it first warned about the CPU models on their own line, then
+  the JDK tags — where the table called size=2 a +10.3 % "improvement" that is the host, not the JDK.
+- **8.3 `-prof jfr`** (`-p size=1 -i 2`): `corretto-25` `…608cc45c`, `temurin-26` `…678a2263`, and also `corretto-27`
+  `…3819e5d7` — each stored its measurement with `profilers=jfr` and uploaded `…-size-1/profile.jfr`
+  (243–257 KB); no "Cannot find jcmd" in any output. PT1 is closed on the real image.
+- **8.4 refusals:** `--jdk temruin-26` exited 2 with `Runner image 1.5.0+ext.e383db2d (ami-061cc6355f7ae8dc4) holds no
+  JDK 'temruin-26'. Its JDKs: corretto-25 (default), corretto-27, temurin-26.` and the project prefix held 21 objects
+  before and after; `-- MyBenchmark -jvm /x` exited 2 naming `--jdk <id>`.
+- **8.5 JCStress:** `--jdk temurin-26 jcstress -- -m sanity` (`…44ca9f1e`) completed with `jdkId=temurin-26`,
+  `jdk.home /opt/jdks/temurin-26`, runner on Corretto 25.0.5.0.10.
+- **Also:** `--jdk corretto-27` on the comparison benchmark (`…d4559973`, 8275CL): 513,417,933 / 449,167,993 ops/s.
+- **8.6 comparability**, default JDK, before (1.4.0: August parent, `-headless` 25.0.4) and after (1.5.0: November
+  parent, `-devel` 25.0.5):
+
+  | Job | Base | CPU | size=1 (ops/s) | size=2 (ops/s) |
+  |---|---|---|---|---|
+  | before `…2dd31d8e` | 1.4.0 | 8275CL | 513,339,544 ± 279,537 | **598,870,972** ± 200,815 |
+  | before `…abafadb0` | 1.4.0 | 8275CL | 513,301,686 ± 381,529 | 448,982,680 ± 350,882 |
+  | before `…fb8da6dd` | 1.4.0 | 8124M | 467,842,674 ± 358,090 | 406,901,401 ± 504,821 |
+  | after `…ac812cb2` | 1.5.0+ext | 8124M | 467,886,250 ± 306,868 | 407,035,963 ± 167,287 |
+  | after `…e4806334` | 1.5.0+ext | 8275CL | 513,245,136 ± 479,099 | 449,143,885 ± 155,907 |
+  | after `…807fdcc4` | 1.5.0+ext | 8275CL | 513,083,298 ± 256,751 | 448,925,238 ± 394,897 |
+
+  Per CPU model, before and after agree within 0.05 % (8275CL size=1 513.08–513.34M, size=2 448.93–449.14M;
+  8124M 467.84/467.89M and 406.90/407.04M). The one outlier, size=2 of `…2dd31d8e` (+33 %), ran on the *pre-change*
+  base and code, with an error as tight as the others: a different steady state of the fixture (a JIT/alignment
+  mode, like `Incrementing_Synchronized`'s), not something this change introduced. No score moved with it.
+- **8.7, 8.8: not done yet** — 8.7 needs a deployer for a second deployment name (an IAM administrator), 8.8 a PR.
