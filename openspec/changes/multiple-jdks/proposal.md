@@ -16,8 +16,10 @@ did not measure. Separately, the base's `java-25-amazon-corretto-headless` has n
   JDK names what is installed, chosen and ran; JVM is left to runtime behaviour and to JMH's own options.
   Both deployments' current measurements and jobs are erased at rollout, so no reader maps old names.
   Ships in 9.0.0.
-- **The base installs Corretto 25 as `java-25-amazon-corretto-devel`** (same build, with `jcmd`), and links
-  it as `/opt/jdks/corretto-25`. `imageVersion` is bumped.
+- **The base installs Corretto 25 as `java-25-amazon-corretto-devel`** (with `jcmd`), and links
+  it as `/opt/jdks/corretto-25`. The parent moves to the newest AL2023 release
+  (`2023.12.20261102.0`), whose repository has the newest Corretto 25 patch (25.0.5.0.10); Corretto 25 LTS
+  stays the default. `imageVersion` is bumped.
 - **The base ships `baas-install-jdk <id> <url> <sha256>`**, which an extension uses to add a JDK: it
   downloads, verifies the checksum, unpacks into `/opt/jdks/<id>`, and refuses an existing id, a
   checksum mismatch or a JDK without `bin/jcmd`.

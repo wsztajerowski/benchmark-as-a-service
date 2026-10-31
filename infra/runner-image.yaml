@@ -33,7 +33,7 @@ imageVersion: "1.5.0"
 # package repository — in every region. `baas admin build-image` resolves it in the stack's
 # region and requires exactly one Amazon-owned image.
 parentImage:
-  amiName: al2023-ami-2023.12.20260803.3-kernel-6.1-x86_64
+  amiName: al2023-ami-2023.12.20261102.0-kernel-6.1-x86_64
 
 tools:
   # AL2023 `core` repo package, from the regional S3 mirror — no external Corretto repo is
@@ -43,7 +43,7 @@ tools:
   # runs on without `baas run --jdk`.
   corretto:
     package: java-25-amazon-corretto-devel
-    version: "25.0.4+7-1.amzn2023.1"
+    version: "25.0.5.0.10-1.amzn2023.1"
 
   # perf is NOT in the parent AMI (it belongs to no comps group, `ami` included), so JMH's
   # -prof perf / perfnorm / perfasm are broken until it is baked. Not pinned: the RPM is built
