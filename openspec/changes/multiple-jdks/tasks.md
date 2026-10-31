@@ -126,7 +126,7 @@
 - [ ] 8.7 Second deployment (the change touches the runner image): with a deployer for a second name, run
       setup, `admin image build`, one `--jdk` job and teardown (`infra/README.md`, *A second deployment*);
       record it in `verify.md`
-- [ ] 8.8 CI's e2e on the PR runs the new CLI against the default deployment's old image: confirm it passes,
+- [x] 8.8 CI's e2e on the PR runs the new CLI against the default deployment's old image: confirm it passes,
       jobs carrying no `jdkId`
 
 ## 9. Rollout (after release, with the user)
