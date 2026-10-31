@@ -59,20 +59,15 @@ public final class TagKeys {
     public static final String SOURCE_LOCAL = "local";
 
     /**
-     * Observed on the instance (or derived from the benchmark type), so a caller may not set them:
-     * an override would let a result's tags disagree with its own environment.json. `project`,
-     * `commit`, `branch` and `source` are deliberately absent — design.md specifies caller-wins for
-     * those. `source` in particular says how a job was triggered, which the instance never
-     * observes: a forged value misleads nobody about the environment, and reserving it would
-     * foreclose a consumer labelling a nightly or release job.
-     */
-    public static final List<String> MACHINE_OBSERVED =
-        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK_ID, JDK_VERSION, JDK_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
-
-    /**
-     * Every key a caller may not set: the observed ones, and {@link #CLI_PARAMETERS} and
-     * {@link #PROFILERS}, which record what the job was asked to run — a caller value could claim
-     * settings it never ran with.
+     * Every key a caller may not set with {@code --tag}. The machine-observed ones — observed on the
+     * instance, or derived from the benchmark type — because an override would let a result's tags
+     * disagree with its own environment.json; and {@link #CLI_PARAMETERS} and {@link #PROFILERS},
+     * which record what the job was asked to run, so a caller value could claim settings it never
+     * ran with. {@code project} is refused separately, pointing at {@code --project}. {@code commit},
+     * {@code branch} and {@code source} are deliberately absent — caller-wins. {@code source} in
+     * particular says how a job was triggered, which the instance never observes: a forged value
+     * misleads nobody about the environment, and reserving it would foreclose a consumer labelling a
+     * nightly or release job.
      */
     public static final List<String> RESERVED = List.of(
         IMAGE_VERSION, INSTANCE_TYPE, JDK_ID, JDK_VERSION, JDK_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS,

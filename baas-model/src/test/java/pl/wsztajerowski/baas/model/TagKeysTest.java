@@ -15,20 +15,15 @@ class TagKeysTest {
     }
 
     @Test
-    void machineObservedKeysAreTheKnownKeysMinusTheCallerOverridableOnes() {
-        assertThat(TagKeys.MACHINE_OBSERVED)
-            .containsExactlyInAnyOrder("type", "jdkId", "jdkVersion", "jdkVendor", "cpuModel", "cpuArch", "instanceType",
-                "imageVersion")
-            .doesNotContain("project", "commit", "branch", "source");
+    void reservedKeysAreTheObservedOnesAndTheRecordedArguments() {
+        assertThat(TagKeys.RESERVED).containsExactlyInAnyOrder(
+            "type", "jdkId", "jdkVersion", "jdkVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion",
+            "cliParameters", "profilers");
     }
 
     @Test
-    void reservedKeysAreTheObservedOnesAndTheRecordedArguments() {
-        assertThat(TagKeys.RESERVED)
-            .containsAll(TagKeys.MACHINE_OBSERVED)
-            .contains("cliParameters", "profilers")
-            .hasSize(TagKeys.MACHINE_OBSERVED.size() + 2);
-        assertThat(TagKeys.MACHINE_OBSERVED).doesNotContain("cliParameters", "profilers");
+    void reservedIsASubsetOfKnown() {
+        assertThat(TagKeys.KNOWN).containsAll(TagKeys.RESERVED);
     }
 
     /** JDK names what was installed, chosen and ran; the pre-9.0.0 names are gone, not aliased. */
@@ -41,7 +36,7 @@ class TagKeysTest {
     @Test
     void branchIsKnownButCallerSupplied() {
         assertThat(TagKeys.KNOWN).contains(TagKeys.BRANCH);
-        assertThat(TagKeys.MACHINE_OBSERVED).doesNotContain(TagKeys.BRANCH);
+        assertThat(TagKeys.RESERVED).doesNotContain(TagKeys.BRANCH);
     }
 
     /**
@@ -53,18 +48,13 @@ class TagKeysTest {
     @Test
     void sourceIsKnownButCallerSupplied() {
         assertThat(TagKeys.KNOWN).contains(TagKeys.SOURCE);
-        assertThat(TagKeys.MACHINE_OBSERVED).doesNotContain(TagKeys.SOURCE);
+        assertThat(TagKeys.RESERVED).doesNotContain(TagKeys.SOURCE);
     }
 
     @Test
     void theDerivedSourceValuesAreCiAndLocal() {
         assertThat(TagKeys.SOURCE_CI).isEqualTo("ci");
         assertThat(TagKeys.SOURCE_LOCAL).isEqualTo("local");
-    }
-
-    @Test
-    void machineObservedIsASubsetOfKnown() {
-        assertThat(TagKeys.KNOWN).containsAll(TagKeys.MACHINE_OBSERVED);
     }
 
     @Test
