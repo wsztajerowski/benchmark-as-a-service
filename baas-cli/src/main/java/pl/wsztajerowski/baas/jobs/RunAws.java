@@ -29,6 +29,9 @@ public interface RunAws {
     /** Best effort is the caller's call: this throws when the write fails. */
     void putText(String bucket, String key, String text);
 
+    /** A text object, empty when there is none; throws when the bucket cannot be read. */
+    Optional<String> getText(String bucket, String key);
+
     /** The release-pinned runner JAR's key, seeding it (checksum-verified) when absent. */
     String pinnedRunnerJar(String bucket, String version, String sourceRepo);
 

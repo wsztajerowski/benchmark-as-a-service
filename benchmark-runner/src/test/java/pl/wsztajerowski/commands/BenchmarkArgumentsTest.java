@@ -69,11 +69,23 @@ class BenchmarkArgumentsTest {
     void aNoRunArgumentIsRefusedBeforeAnythingRuns(@TempDir Path dir) throws IOException {
         Path jar = Files.createFile(dir.resolve("benchmarks.jar"));
 
-        assertThat(execute(argv("jmh", jar, "-lprof")))
+        assertThat(execute(argv("jmh", jar, "-lp")))
             .returns(2, Run::exitCode)
-            .extracting(Run::err).asString().contains("-lprof makes JMH print and exit without measuring");
+            .extracting(Run::err).asString().contains("-lp makes JMH print and exit without measuring");
         assertThat(execute(argv("jcstress", jar, "-p", "old.bin.gz")).err())
             .contains("-p makes JCStress print and exit without measuring");
+    }
+
+    /** JMH would list and exit, ignoring the rest: the job would not do what its command line says. */
+    @Test
+    void aProfilerListingBesideOtherArgumentsIsRefused(@TempDir Path dir) throws IOException {
+        Path jar = Files.createFile(dir.resolve("benchmarks.jar"));
+
+        assertThat(execute(argv("jmh", jar, "-lprof", "-f", "1")))
+            .returns(2, Run::exitCode)
+            .extracting(Run::err).asString().contains("-lprof lists JMH's profilers and exits")
+            .contains("must be the only argument after --");
+        assertThat(execute(argv("jmh", jar, "MyBenchmark", "-lpr")).exitCode()).isEqualTo(2);
     }
 
     /** Without the separator a JMH flag is a runner option the runner does not have. */

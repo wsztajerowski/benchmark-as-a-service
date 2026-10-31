@@ -54,6 +54,13 @@ public final class AwsRunAws implements RunAws {
     }
 
     @Override
+    public Optional<String> getText(String bucket, String key) {
+        try (var s3 = factory.s3()) {
+            return new S3UploadService(s3).getObjectIfExists(bucket, key);
+        }
+    }
+
+    @Override
     public String pinnedRunnerJar(String bucket, String version, String sourceRepo) {
         try (var s3 = factory.s3()) {
             return RunnerJarResolver.resolve(s3, bucket, version, sourceRepo);

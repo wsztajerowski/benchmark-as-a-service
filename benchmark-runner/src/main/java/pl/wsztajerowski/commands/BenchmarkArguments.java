@@ -23,6 +23,11 @@ final class BenchmarkArguments {
             throw new ParameterException(spec.commandLine(),
                 "%s is managed by BaaS and cannot be set after --".formatted(managed));
         });
+        if (reading.listsProfilersBesideOthers(arguments)) {
+            throw new ParameterException(spec.commandLine(),
+                "-lprof lists %s's profilers and exits, ignoring everything else; it must be the only argument after --"
+                    .formatted(reading.tool()));
+        }
         reading.firstNoRun(arguments).ifPresent(noRun -> {
             throw new ParameterException(spec.commandLine(),
                 "%s makes %s print and exit without measuring; the job would measure nothing"

@@ -201,6 +201,39 @@ class RunCommandSummaryTest {
         assertThat(printed).isTrue();
     }
 
+    /** The listing is printed byte for byte, JVM warnings included, and nothing else is on stdout. */
+    @Test
+    void aListingIsPrintedVerbatim() {
+        var command = new RunCommand();
+        var out = new StringWriter();
+        command.console = Console.plain(new PrintWriter(out));
+        String listing = "WARNING: A restricted method in java.lang.System has been called\n\n"
+            + "Supported profilers:\n       async: async-profiler profiler provider. \n";
+
+        command.printListing(listing, "20260920T161636923Z-08785de7");
+
+        assertThat(out.toString()).isEqualTo(listing);
+    }
+
+    @Test
+    void aListingLeavesStandardOutputToTheSummaryUnderJson() throws Exception {
+        var command = new RunCommand();
+        command.format = "json";
+        command.summaryJobId = "20260920T161636923Z-08785de7";
+        command.summaryProject = "benchmark-as-a-service";
+        command.summaryResultPath = "jobs/benchmark-as-a-service/20260920T161636923Z-08785de7/";
+        command.summaryInstanceId = "i-03c3ad558f45b388c";
+        var out = new StringWriter();
+        command.console = Console.plain(new PrintWriter(out));
+
+        command.printListing("Supported profilers:\n", "20260920T161636923Z-08785de7");
+        command.printJobSummary(0);
+
+        String captured = out.toString().strip();
+        assertThat(captured.lines()).hasSize(1);
+        assertThat(JSON.readTree(captured).get("jobId").asText()).isEqualTo("20260920T161636923Z-08785de7");
+    }
+
     @Test
     void withoutTheOptionNoObjectIsWritten() {
         var captured = run("run", "--benchmark-jar", "/nonexistent.jar", "not-a-type");

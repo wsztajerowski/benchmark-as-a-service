@@ -9,6 +9,8 @@ import pl.wsztajerowski.baas.session.DeploymentNames;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.image.RunnerImage;
+import pl.wsztajerowski.baas.model.BenchmarkArgs;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.JobId;
 import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
@@ -68,6 +70,9 @@ public final class JobLaunch {
 
         /** A completed job's measurements, as the command shows them. */
         void printResults(List<ResultRow> rows, String jobId);
+
+        /** A completed profiler listing's process output, verbatim: the job measured nothing. */
+        void printListing(String listing, String jobId);
     }
 
     private final RunAws aws;
@@ -210,7 +215,9 @@ public final class JobLaunch {
         }
 
         // 8. Poll, then report.
-        return poll(current, deployment.resultsTable(), request.watchdogSeconds());
+        boolean listing = BenchmarkArgs.of(BenchmarkType.fromCommandName(request.benchmarkType()))
+            .isProfilerListing(request.benchmarkParams());
+        return poll(current, deployment.resultsTable(), request.watchdogSeconds(), listing);
     }
 
     /**
@@ -303,7 +310,8 @@ public final class JobLaunch {
         }
     }
 
-    private int poll(JobSession current, String resultsTable, int capSeconds) throws InterruptedException {
+    private int poll(JobSession current, String resultsTable, int capSeconds, boolean listing)
+            throws InterruptedException {
         JobItem job = current.job();
         String logPath = "s3://" + deployment.bucket() + "/" + JobLayout.artifactKey(job.resultPath(), JobLayout.BOOT_LOG_NAME);
         JobSession.Outcome outcome;
@@ -325,7 +333,7 @@ public final class JobLaunch {
                 line.close();
             }
         }
-        return report(outcome, resultsTable, job.jobId(), current.instanceId(), logPath);
+        return report(outcome, resultsTable, job, current.instanceId(), logPath, listing);
     }
 
     /** Short enough never to wrap an 80-column terminal, so a redraw stays on one row. */
@@ -335,11 +343,14 @@ public final class JobLaunch {
     }
 
     /** Says what the outcome was, shows the results of a completed job, and returns its exit code. */
-    private int report(JobSession.Outcome outcome, String resultsTable, String jobId, String instanceId,
-                       String logPath) {
+    private int report(JobSession.Outcome outcome, String resultsTable, JobItem job, String instanceId,
+                       String logPath, boolean listing) {
+        String jobId = job.jobId();
         String status = outcome.status();
         logger.info("Job status: {}", status);
-        if (outcome.completed()) {
+        if (outcome.completed() && listing) {
+            showListing(job);
+        } else if (outcome.completed()) {
             showResults(resultsTable, jobId);
         } else if (status.startsWith(JobStatus.FAILED_PREFIX)) {
             logger.error("Benchmark failed. Runner log: {}", logPath);
@@ -367,6 +378,21 @@ public final class JobLaunch {
         } catch (RuntimeException e) {
             logger.debug("Could not check for stored measurements: {}", e.getMessage());
             return false;
+        }
+    }
+
+    /**
+     * The listing is the job's process output, the same object {@code baas jobs download} fetches. The
+     * job has completed whatever this read does, so a failure here is a warning, as for results.
+     */
+    private void showListing(JobItem job) {
+        String key = JobLayout.artifactKey(job.resultPath(), BenchmarkType.JMH.processOutputName());
+        try {
+            aws.getText(deployment.bucket(), key).ifPresentOrElse(
+                listing -> listener.printListing(listing, job.jobId()),
+                () -> logger.warn("Job {} completed but its listing is not at s3://{}/{}", job.jobId(), deployment.bucket(), key));
+        } catch (Exception e) {
+            logger.warn("Could not fetch the profiler listing: {}", e.getMessage());
         }
     }
 
