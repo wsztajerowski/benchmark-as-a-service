@@ -136,6 +136,6 @@
 
 ## 10. Verify
 
-- [ ] 10.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a requirement →
+- [x] 10.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory — a requirement →
       code → test → gap table, open warnings under stable IDs (W1, W2…), and any deviation from design or
       tasks
