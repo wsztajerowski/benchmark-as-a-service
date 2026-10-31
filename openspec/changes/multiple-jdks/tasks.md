@@ -109,18 +109,18 @@
 
 ## 8. End-to-end verification (manual — no automated test covers the `baas run` path)
 
-- [ ] 8.1 On `baas-development`, with the reactor CLI: replace the Temurin extension with one using
+- [x] 8.1 On `baas-development`, with the reactor CLI: replace the Temurin extension with one using
       `baas-install-jdk temurin-26 …`, build the image, and confirm `baas admin image show` lists
       `corretto-25 (default)` and `temurin-26`, and the AMI carries `baas-jdks=corretto-25,temurin-26`
-- [ ] 8.2 Run the same fixture benchmark with no `--jdk` and with `--jdk temurin-26`: tags `jdkId`,
+- [x] 8.2 Run the same fixture benchmark with no `--jdk` and with `--jdk temurin-26`: tags `jdkId`,
       `jdkVersion`, `jdkVendor` and the manifest's `jdk`/`runnerJdk` describe Corretto and Temurin
       respectively, and `results diff` between them shows the JDK warning (and the CPU one when the hosts
       differ)
-- [ ] 8.3 `-prof jfr` on `corretto-25` and on `temurin-26`: both store a measurement and upload `profile.jfr`
-- [ ] 8.4 `--jdk temruin-26` exits 2 before any upload, listing the ids; `-- MyBenchmark -jvm /x` exits 2
+- [x] 8.3 `-prof jfr` on `corretto-25` and on `temurin-26`: both store a measurement and upload `profile.jfr`
+- [x] 8.4 `--jdk temruin-26` exits 2 before any upload, listing the ids; `-- MyBenchmark -jvm /x` exits 2
       naming `--jdk`
-- [ ] 8.5 `--jdk temurin-26 jcstress -- -m sanity` completes with `jdkId=temurin-26`
-- [ ] 8.6 Comparability: the fixture benchmark without `--jdk` on the new base against the old base
+- [x] 8.5 `--jdk temurin-26 jcstress -- -m sanity` completes with `jdkId=temurin-26`
+- [x] 8.6 Comparability: the fixture benchmark without `--jdk` on the new base against the old base
       (1.4.0), at least three jobs each on one instance type, recording every score, the spread and each
       job's `cpuModel`; investigate any difference beyond the spread between jobs on the same CPU model
 - [ ] 8.7 Second deployment (the change touches the runner image): with a deployer for a second name, run
