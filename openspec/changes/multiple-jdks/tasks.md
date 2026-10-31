@@ -29,27 +29,27 @@
 
 ## 3. The base image
 
-- [ ] 3.1 `infra/runner-image.yaml`: Corretto package → `java-25-amazon-corretto-devel` at the same build,
+- [x] 3.1 `infra/runner-image.yaml`: Corretto package → `java-25-amazon-corretto-devel` at the same build,
       `imageVersion` bumped; `RunnerImageDefinitionTest` passes
-- [ ] 3.2 `RunnerImageRenderer` base: link Corretto as `/opt/jdks/corretto-25` and install
+- [x] 3.2 `RunnerImageRenderer` base: link Corretto as `/opt/jdks/corretto-25` and install
       `baas-install-jdk` on `PATH` (download, `sha256sum -c`, unpack into a temporary directory, refuse an
       existing id or no `bin/jcmd`, rename into place); renderer tests pin the script and that the base stays
       within the component size limit
-- [ ] 3.3 The helper refuses a wrong digest, an existing id and a JRE without `jcmd`: shell tests run the
+- [x] 3.3 The helper refuses a wrong digest, an existing id and a JRE without `jcmd`: shell tests run the
       rendered script against local archives (a container or `bats`-free shell harness) and record exit
       codes
-- [ ] 3.4 Contract: check every `/opt/jdks/<id>` (id format and length, `bin/java` runs, `bin/jcmd` exists,
+- [x] 3.4 Contract: check every `/opt/jdks/<id>` (id format and length, `bin/java` runs, `bin/jcmd` exists,
       `corretto-25` present, ids within 256 characters) and write `image-builds/<label>/jdks.json`
       (`[{id, release, vendor, default}]`, default first); renderer tests pin both
-- [ ] 3.5 Update the extension starter text: how to add a JDK with `baas-install-jdk`, that `/opt/jdks` is
+- [x] 3.5 Update the extension starter text: how to add a JDK with `baas-install-jdk`, that `/opt/jdks` is
       what `--jdk` selects, and that `java` on `PATH` is the runner's
 
 ## 4. Publishing the image's JDKs
 
-- [ ] 4.1 `ImageBuilderService.publish` (build and adoption alike) reads `jdks.json` and tags the AMI
+- [x] 4.1 `ImageBuilderService.publish` (build and adoption alike) reads `jdks.json` and tags the AMI
       `baas-jdks`; a missing list retires the image and names it; `ImageBuildAws` gains the S3 read;
       `RunnerImageBuildSequenceTest` pins the order (read and tag before the pointer moves)
-- [ ] 4.2 `RunnerImage` carries the tag's ids; `ImageShowSubcommand` lists the JDKs from `jdks.json` with
+- [x] 4.2 `RunnerImage` carries the tag's ids; `ImageShowSubcommand` lists the JDKs from `jdks.json` with
       release, vendor and the default marked; tests for an image with and without the tag
 
 ## 5. Selecting a JDK

@@ -116,7 +116,7 @@ public final class AwsSetupAws implements SetupAws {
     }
 
     @Override
-    public Map<String, String> imageParameters(Map<String, String> deployed) {
+    public Map<String, String> imageParameters(String stack, Map<String, String> deployed) {
         var renderer = new RunnerImageRenderer();
         String parentAmiId = deployed.get(RunnerImageParameters.PARENT_AMI_ID);
         if (parentAmiId == null) {
@@ -124,7 +124,7 @@ public final class AwsSetupAws implements SetupAws {
                 parentAmiId = new ParentImageResolver(ec2).resolve(renderer.definition().parentImage().amiName(), region);
             }
         }
-        var plan = RunnerImageParameters.plan(renderer,
+        var plan = RunnerImageParameters.plan(renderer, DeploymentNames.of(stack), region,
             deployed.getOrDefault(RunnerImageParameters.IMAGE_VERSION, renderer.definition().imageVersion()),
             deployed.getOrDefault(RunnerImageParameters.COMPONENT_DATA, renderer.renderBase()),
             parentAmiId,

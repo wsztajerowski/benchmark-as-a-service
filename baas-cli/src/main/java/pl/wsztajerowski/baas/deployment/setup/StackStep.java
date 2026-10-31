@@ -52,7 +52,7 @@ final class StackStep implements SetupStep {
                 // The same plan `baas admin image build` submits. Letting the template's placeholder
                 // defaults stand would register a no-op component at a version, and Image Builder
                 // would then refuse the real one at that same version.
-                parameters.putAll(aws.imageParameters(Map.of()));
+                parameters.putAll(aws.imageParameters(stack, Map.of()));
                 aws.submitCreate(stack, parameters);
                 context.created = true;
                 // Before the wait, not after: an interrupted create must still leave a file naming
@@ -65,7 +65,7 @@ final class StackStep implements SetupStep {
                 // image is `admin image build`'s: everything it deployed is kept, and only what the
                 // stack lacks gets a value.
                 parameters.putAll(GitHubStep.forUpdate(context));
-                parameters.putAll(aws.imageParameters(aws.stackParameters(stack)));
+                parameters.putAll(aws.imageParameters(stack, aws.stackParameters(stack)));
                 context.stackChanged = aws.update(stack, parameters);
                 if (context.stackChanged && recording.isPresent()
                     && !recording.get().equals(context.recordedCliVersion)) {

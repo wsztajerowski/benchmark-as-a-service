@@ -11,13 +11,15 @@ import static pl.wsztajerowski.baas.image.RunnerImageParameters.*;
 class RunnerImageParametersTest {
 
     private static final String PARENT = "ami-070cc8ab883065d64";
+    private static final pl.wsztajerowski.baas.session.DeploymentNames DEPLOYMENT =
+        pl.wsztajerowski.baas.session.DeploymentNames.of("baas-123456789012");
     private static final String EXTENSION = "name: ext\nschemaVersion: 1.0\nphases: []\n";
 
     private final RunnerImageRenderer renderer = new RunnerImageRenderer();
     private final String base = renderer.renderBase();
 
     private RunnerImageParameters plan(String extension, Map<String, String> deployed) {
-        return RunnerImageParameters.plan(renderer, "1.3.0", base, PARENT, extension, deployed);
+        return RunnerImageParameters.plan(renderer, DEPLOYMENT, "eu-central-1", "1.3.0", base, PARENT, extension, deployed);
     }
 
     @Test
@@ -85,7 +87,7 @@ class RunnerImageParametersTest {
         Map<String, String> preChange = Map.of(
             IMAGE_VERSION, "1.2.0", PARENT_AMI_ID, PARENT, COMPONENT_DATA, "the 1.2.0 component");
 
-        var plan = RunnerImageParameters.plan(renderer, "1.2.0", "the 1.2.0 component", PARENT, "", preChange);
+        var plan = RunnerImageParameters.plan(renderer, DEPLOYMENT, "eu-central-1", "1.2.0", "the 1.2.0 component", PARENT, "", preChange);
 
         assertThat(plan.values()).containsEntry(RECIPE_VERSION, "1.2.1").containsEntry(LABEL, "1.2.0");
         assertThat(plan.absentFrom(preChange))

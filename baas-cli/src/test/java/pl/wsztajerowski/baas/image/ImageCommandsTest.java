@@ -112,4 +112,40 @@ class ImageCommandsTest {
         assertThat(ImageShowSubcommand.driftWarning("dev", "1.3.0", "1.3.0")).isNull();
         assertThat(ImageShowSubcommand.driftWarning("dev", "1.3.0", null)).isNull();
     }
+
+    // ─── The image's JDKs ────────────────────────────────────────────────────────
+
+    private static String jdks(RunnerImage image, java.util.Optional<String> list) {
+        var out = new java.io.StringWriter();
+        ImageShowSubcommand.printJdks(pl.wsztajerowski.baas.console.Console.plain(new java.io.PrintWriter(out)), image, list);
+        return out.toString();
+    }
+
+    private static final RunnerImage SELECTING = new RunnerImage("ami-1", "1.5.0+ext.3f9a1c2e", "ami-p", "2026-11-01",
+        java.util.List.of("corretto-25", "temurin-26"));
+
+    @Test
+    void imageShowListsTheJdksWithReleaseVendorAndTheDefault() {
+        String out = jdks(SELECTING, java.util.Optional.of("[{\"id\":\"corretto-25\",\"release\":\"25.0.4\","
+            + "\"vendor\":\"Amazon.com Inc.\",\"default\":true},{\"id\":\"temurin-26\",\"release\":\"26.0.2.1\","
+            + "\"vendor\":\"Eclipse Adoptium\",\"default\":false}]"));
+
+        assertThat(out.lines()).containsExactly(
+            "  JDKs:        corretto-25  25.0.4    Amazon.com Inc.   (default)",
+            "               temurin-26   26.0.2.1  Eclipse Adoptium");
+    }
+
+    /** The tag is what baas run checks; when the contract's list is gone, its ids still show. */
+    @Test
+    void withoutItsListAnImageShowsTheIdsItsTagNames() {
+        assertThat(jdks(SELECTING, java.util.Optional.empty()).lines()).containsExactly(
+            "  JDKs:        corretto-25  (default)",
+            "               temurin-26");
+    }
+
+    @Test
+    void anImageFromBeforeJdkSelectionSaysSo() {
+        assertThat(jdks(new RunnerImage("ami-1", "1.4.0", "ami-p", "2026-10-01"), java.util.Optional.empty()))
+            .contains("none selectable", "predates JDK selection");
+    }
 }

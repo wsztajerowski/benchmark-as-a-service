@@ -25,9 +25,12 @@ interface ImageBuildAws extends AutoCloseable {
     /** Submits these image parameters; every other deployed parameter is carried forward. */
     void updateStack(String stack, Map<String, String> imageParameters) throws IOException;
 
-    /** Builds or adopts the image, repoints the pointer, then retires the replaced AMI. Returns the new AMI. */
-    String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion)
-        throws InterruptedException;
+    /**
+     * Builds or adopts the image, tags it with the JDKs its contract recorded in {@code bucket},
+     * repoints the pointer, then retires the replaced AMI. Returns the new AMI.
+     */
+    String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion,
+                   String bucket) throws InterruptedException;
 
     @Override
     void close();

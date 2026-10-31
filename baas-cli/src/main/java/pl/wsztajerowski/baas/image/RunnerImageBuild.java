@@ -66,7 +66,8 @@ public final class RunnerImageBuild {
         }
         String parentAmiId = aws.resolveParent(definition.parentImage().amiName(), region);
 
-        var plan = RunnerImageParameters.plan(renderer, baseVersion, base, parentAmiId, extension, deployed);
+        var plan = RunnerImageParameters.plan(renderer, DeploymentNames.of(prefix), region, baseVersion, base,
+            parentAmiId, extension, deployed);
 
         // Before the stack update, not after: a rejected component version costs a minute of
         // CloudFormation rollback, and the message names the resource rather than the fix. Only
@@ -87,7 +88,7 @@ public final class RunnerImageBuild {
 
         String parameterName = DeploymentNames.of(prefix).amiPointer();
         String amiId = aws.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
-            plan.values().get(RunnerImageParameters.RECIPE_VERSION));
+            plan.values().get(RunnerImageParameters.RECIPE_VERSION), DeploymentNames.of(prefix).bucket());
         return new Result(amiId, plan.label(), parentAmiId, extension, parameterName);
     }
 

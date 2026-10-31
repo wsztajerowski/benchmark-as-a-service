@@ -55,8 +55,9 @@ final class FakeImageBuildAws implements ImageBuildAws {
     }
 
     @Override
-    public String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion) {
-        calls.add("publish " + pipelineArn + " " + pointer);
+    public String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion,
+                          String bucket) {
+        calls.add("publish " + pipelineArn + " " + pointer + " " + bucket);
         return "ami-new";
     }
 
