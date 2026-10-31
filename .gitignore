@@ -34,7 +34,6 @@ buildNumber.properties
 *.html
 # Test fixtures are sources, not generated reports.
 !**/src/test/resources/**/*.html
-/volume/
 **/.aws-sam/
 /**/.env
 /**/.vars
