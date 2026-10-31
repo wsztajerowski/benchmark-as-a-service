@@ -11,7 +11,7 @@ sequenceDiagram
     participant DDB as DynamoDB results table
     participant GH as GitHub Releases (laptop only)
 
-    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--tag k=v] [--format json] [--detach]
+    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--jdk id] [--tag k=v] [--format json] [--detach]
     Note over RC: execute() -- before any AWS call:<br/>--format text or json, else exit 2. type in BenchmarkType.commandNames(), else exit 2.<br/>An unreleased CLI (BaasVersion.isReleased() false) without --runner-jar -> exit 1. baas run builds nothing.
     RC->>RC: OperatorSession.of(Invocation.configService(spec)).config()
     Note over RC: resolveProject -- --project, or GitProject.repositoryName of the JAR's directory<br/>when git.resolveProject is on, else IllegalStateException naming --project.<br/>resolveResultsTable, instanceType, resolveTimings -> watchdogBound = timeout + margin (margin >= 60).<br/>buildRunnerTags: project, type, source + every --tag. A machine-observed key or project is REJECTED.<br/>--benchmark-jar missing on disk -> exit 1.
@@ -19,10 +19,11 @@ sequenceDiagram
 
     JL->>Port: currentImage(/<prefix>/runner/ami-id)
     Port->>SSM: getParameter (ImageBuilderService.currentImage)
-    Port->>EC2: describeImages(amiId) -- baas-image-version tag
+    Port->>EC2: describeImages(amiId) -- baas-image-version and baas-jdks tags
     alt no pointer or no image
         JL-->>RC: noImageMessage (names admin image build), 1 -- nothing uploaded
     end
+    Note over JL: selectJdk -- --jdk, else the image's default (first in baas-jdks).<br/>An id the tag does not name -> exit 2 listing the ids. An image without baas-jdks<br/>refuses any --jdk (exit 2, names admin image build) and runs without one, on java from PATH.
     JL->>Port: stackOutputs(<prefix>)
     Port->>CF: describeStacks -- SubnetId, SecurityGroupId
     Note over JL: resolveNetworking: a missing output throws, before any upload
@@ -42,7 +43,7 @@ sequenceDiagram
             Port->>S3: putObject If-None-Match * (412/409 = another launch seeded it)
         end
     end
-    Note over JL: new UserDataScriptBuilder().build(...) with job.sortKey() from ResultKeys --<br/>installs nothing, see the instance-side diagram
+    Note over JL: new UserDataScriptBuilder().build(...) with job.sortKey() from ResultKeys and JDK_ID --<br/>installs nothing. The runner gets --jdk, which starts the benchmark on /opt/jdks/id/bin/java
     JL->>JS: new JobSession(job, recorder, stopRecorder (5 s client), instances)
     JL->>JS: reserve()
     JS->>DDB: UpdateItem status launching + identity, condition attribute_not_exists(pk)

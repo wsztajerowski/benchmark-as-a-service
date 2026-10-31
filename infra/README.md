@@ -120,10 +120,16 @@ never overwriting it.
 - **Never put a credential in it.** Anyone who can describe the stack can read it.
 - **Results stay distinguishable.** The image label becomes `<base>+ext.<hash>`, so results from an
   extended image never share an `imageVersion` tag with a stock image's, and every job records the
-  JVM vendor, kernel tunables and packages it measured on in `environment.json` / `packages.txt`.
-- **What the contract does not constrain** is yours to change: another JDK vendor or a newer Java,
-  transparent hugepages, swap. async-profiler is checked for presence only; on OpenJ9 it works
-  only partly, so `-prof async` profiles there are weaker.
+  JDK, kernel tunables and packages it measured on in `environment.json` / `packages.txt`.
+- **Add a JDK with `baas-install-jdk <id> <url> <sha256>`**, which the base installs: it checks the
+  digest, unpacks into `/opt/jdks/<id>` and refuses an existing id or a JRE without `jcmd`. Every
+  `/opt/jdks/<id>` is one `baas run --jdk <id>` can select; the contract checks each and records the
+  list the image is tagged with (`baas-jdks`). Leave `java` on `PATH` and `alternatives` alone — they
+  run the runner. The README's [Working with the image extension](../README.md#working-with-the-image-extension)
+  has the example and the tips.
+- **What the contract does not constrain** is yours to change: more JDKs, transparent hugepages,
+  swap. async-profiler is checked for presence only; on OpenJ9 it works only partly, so `-prof async`
+  profiles there are weaker.
 - **The bake may reach the internet** (the build security group allows 443 and 80), which is what
   lets an extension download things.
 

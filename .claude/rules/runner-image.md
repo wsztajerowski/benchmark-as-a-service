@@ -7,7 +7,8 @@ paths:
 # The runner image (`infra/runner-image.yaml`, `baas admin image build`)
 
 The measurement environment's base: base version, pinned parent
-release, Corretto and async-profiler versions, kernel tunables. Ships in the JAR as
+release, Corretto (the full JDK, the default under `/opt/jdks`) and async-profiler versions, kernel
+tunables, and the `baas-install-jdk` helper extensions add JDKs with. Ships in the JAR as
 `/templates/runner-image.yaml` because both `setup` and `admin image build` render it at runtime.
 
 - **`baas run` has no fallback.** No AMI at `/<prefix>/runner/ami-id` → the runner-image lookup
@@ -92,6 +93,27 @@ release, Corretto and async-profiler versions, kernel tunables. Ships in the JAR
   template parameters.
 - **No `AWS::ImageBuilder::Image` in the template.** That resource builds during stack operations,
   adding ~15 minutes to every `baas admin deployment setup`.
+- **Every JDK a job can select is a directory `/opt/jdks/<id>`, and only the base and the extension
+  put one there.** The base installs Corretto as `java-25-amazon-corretto-devel` — `-headless` has no
+  `jcmd`, which JMH's `-prof jfr` runs from the benchmark JVM's own `java.home` ("Cannot find jcmd
+  anywhere", the closed PT1) — and links it as `/opt/jdks/corretto-25`, the default. An extension adds more with
+  the base's `baas-install-jdk <id> <url> <sha256>`: download, `sha256sum -c`, unpack into a temporary
+  directory under `/opt`, refuse an existing id or an archive without `bin/jcmd`, then rename into
+  place, so a failed install leaves nothing a contract would trip over. `java` on `PATH` and
+  `alternatives` stay Corretto: they run the runner, which needs its compile release; `--jdk` changes
+  only the benchmark process's `java`. Ids, the root and the default come from `baas-model`'s `Jdks`,
+  which the renderer substitutes into the helper and the contract.
+- **The image's JDK list is what the contract observed, never what the extension declares.** The
+  contract checks every `/opt/jdks` entry (id `[a-z0-9][a-z0-9.-]*`, at most 32 characters, `bin/java`
+  runs, `bin/jcmd` exists, the default present, ids joined within the 256 characters an AMI tag value
+  holds) and writes `image-builds/<label>/jdks.json` (`[{id, release, vendor, default}]`, default first)
+  through the build role's existing `image-builds/*` grant — the bucket and region are rendered into the
+  contract, so it differs per deployment, which is fine: its version is the recipe's, derived per stack.
+  Publishing (build and adoption alike) reads that list and tags the AMI `baas-jdks=<ids>` *before*
+  the pointer moves; a missing or malformed list retires the image like a contract failure. `baas run`
+  reads the tag in its existing image lookup and refuses an unknown `--jdk` before any upload; an image
+  without the tag (built before 1.5.0) accepts no `--jdk` and runs on `java` from `PATH`. Parsing the
+  extension for `baas-install-jdk` lines was rejected: a loop or a variable defeats it.
 - **A build is waited for or adopted, never repeated — only two starts in the same seconds race.**
   The CLI runs the whole build, so Ctrl+C or a closed lid mid-build used to leave Image Builder
   finishing an AMI no pointer named and nothing retired, and a re-run started a second build.

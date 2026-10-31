@@ -74,7 +74,10 @@ sequenceDiagram
             RD-->>User: "not supported yet", names results query --job-id, exit 1
         end
         Note over RD: Pair by benchmark, mode, params. Delta B against A always. Verdict: units differ, ? (error unknown),<br/>~ (intervals overlap), else regression or improvement by the mode. Then only in A, only in B.
-        opt imageVersion, jdk, jvmVendor, cpuModel or cpuArch differ
+        opt cpuModel differs
+            RD-->>User: warning on stderr naming both CPU models, on its own line, first
+        end
+        opt imageVersion, jdkId, jdkVersion, jdkVendor or cpuArch differ
             RD-->>User: warning on stderr naming baas jobs diff A B
         end
         RD->>Out: header (job, instance type, benchmark type) then the rows (-v adds raw secondary metrics) or one JSON object

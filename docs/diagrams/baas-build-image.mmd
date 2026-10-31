@@ -8,6 +8,7 @@ sequenceDiagram
     participant EC2 as AWS EC2
     participant IB as AWS Image Builder
     participant SSM as AWS SSM
+    participant S3 as AWS S3
 
     User->>BIC: baas admin image build [--extension ext.yaml]
     Note over BIC: Invocation.configService(spec).load() -- requirePrefix, resolveRegion
@@ -29,7 +30,7 @@ sequenceDiagram
     end
     RIB->>EC2: ParentImageResolver.resolve(amiName, region) -- describeImages, owner amazon
     EC2-->>RIB: exactly one image in this region, else refused
-    Note over RIB: RunnerImageParameters.plan: label = base or base+ext.sha256[0:8],<br/>contract rendered with the label, extension and recipe versions derived from the deployed stack
+    Note over RIB: RunnerImageParameters.plan: label = base or base+ext.sha256[0:8],<br/>contract rendered with the label, the bucket and the region, extension and recipe versions derived from the deployed stack
 
     RIB->>IBS: preflightVersion(<prefix>-component-runner, baseVersion, base)
     IBS->>IB: listComponents(owner Self, filter name) -- deliberately WITHOUT byName
@@ -42,7 +43,7 @@ sequenceDiagram
     Note over RIB,CF: every image parameter is sent, every other declared one carried forward<br/>with UsePreviousValue, so CI's federation survives
     RIB->>CF: getStackOutputs -> RunnerImagePipelineArn (missing -> refused)
 
-    RIB->>IBS: publish(pipelineArn, /<prefix>/runner/ami-id, label, parentAmiId, recipeVersion)
+    RIB->>IBS: publish(pipelineArn, /<prefix>/runner/ami-id, label, parentAmiId, recipeVersion, bucket)
     IBS->>SSM: readPointer -- the AMI being replaced, if any
     IBS->>IB: listImagePipelineImages -- newest build of the pipeline (adoptOrBuild)
     alt newest build in progress, same recipe version
@@ -55,7 +56,7 @@ sequenceDiagram
         IBS->>IB: startImagePipelineExecution(pipelineArn)
         IB-->>IBS: imageBuildVersionArn
     end
-    Note over IB,EC2: Image Builder bakes the base, the extension, then the contract,<br/>snapshots the AMI and runs the contract's test phase on a booted instance
+    Note over IB,EC2: Image Builder bakes the base, the extension, then the contract,<br/>snapshots the AMI and runs the contract's test phase on a booted instance.<br/>The test phase checks every /opt/jdks entry and writes image-builds/label/jdks.json
     loop await, every 30 s
         IBS->>IB: getImage(imageBuildVersionArn)
         IB-->>IBS: in progress, AVAILABLE, or failed
@@ -65,6 +66,12 @@ sequenceDiagram
         IBS-->>BIC: exit 1
     end
     IBS->>EC2: ensureIdentityTags -- describeImages, createTags(baas-image-version, baas-parent-ami) if absent
+    IBS->>S3: tagJdks -- getObject image-builds/label/jdks.json, the list the contract wrote
+    alt list missing or malformed
+        Note over IBS: retire the new AMI. Throws naming the key, pointer untouched.
+        IBS-->>BIC: exit 1
+    end
+    IBS->>EC2: createTags(baas-jdks = the ids, default first) -- before the pointer moves
     IBS->>SSM: writePointer -- putParameter(/<prefix>/runner/ami-id = newAmiId)
     Note over IBS,SSM: REPOINT BEFORE RETIRE. Deregistering first would aim the pointer<br/>at a deleted AMI for the whole build, failing every job launched in that window.
     opt a replaced AMI that differs from the new one

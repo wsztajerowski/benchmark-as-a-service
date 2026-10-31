@@ -79,14 +79,14 @@
 
 ## 7. Docs and findings
 
-- [ ] 7.1 `.claude/rules/results-store.md` (tags, manifest groups, the JDK/JVM naming rule),
+- [x] 7.1 `.claude/rules/results-store.md` (tags, manifest groups, the JDK/JVM naming rule),
       `runner-image.md` (`-devel`, `/opt/jdks`, the helper, `jdks.json`, `baas-jdks`), `benchmark-runner.md`
       (`-jvm` managed, `--jdk`, the perfasm gap), `user-data.md` (what reads which `java`)
-- [ ] 7.2 `CLAUDE.md`: the Accepted-risks row quoting `jdk: 25.0.4 → 25.0.3` uses the new field name; add
+- [x] 7.2 `CLAUDE.md`: the Accepted-risks row quoting `jdk: 25.0.4 → 25.0.3` uses the new field name; add
       the JDK/JVM naming rule only if a rules file cannot hold it
-- [ ] 7.3 `README.md`: `--jdk` in *Run a benchmark*, and comparing JDKs (one job per JDK, then
+- [x] 7.3 `README.md`: `--jdk` in *Run a benchmark*, and comparing JDKs (one job per JDK, then
       `results diff`, reading its JDK and CPU-model warnings)
-- [ ] 7.6 `README.md`: a *Working with the image extension* section, linked from *Build the runner
+- [x] 7.6 `README.md`: a *Working with the image extension* section, linked from *Build the runner
       image* and pointing to `infra/README.md` for the full workflow rather than repeating it:
       - the round trip: `admin image show --extension > ext.yaml`, edit, `admin image build --extension
         ext.yaml`; what the `# baas-extension-base:` marker guards; ASCII only, the 4096-byte limit, never
@@ -100,9 +100,9 @@
         `/opt/jdks`; after the build, check `admin image show` lists the JDK before using `--jdk`; a JDK
         the contract rejects fails the build and the previous image keeps serving; each extra JDK adds
         ~200 MB to the snapshot
-- [ ] 7.4 `docs/diagrams/baas-run.mmd`, `baas-build-image.mmd`, `baas-results.mmd`: render each edited file
+- [x] 7.4 `docs/diagrams/baas-run.mmd`, `baas-build-image.mmd`, `baas-results.mmd`: render each edited file
       with `mmdc` and look at the PNG before committing
-- [ ] 7.5 `docs/review/open-findings.md`: delete PT1 (closed); widen PT2 to jobs where only some benchmarks
+- [x] 7.5 `docs/review/open-findings.md`: delete PT1 (closed); widen PT2 to jobs where only some benchmarks
       failed under `-foe false` (exit 0, result file holding only the successful variants, observed locally
       2026-10-31); add the perfasm save-location gap as a finding
 
