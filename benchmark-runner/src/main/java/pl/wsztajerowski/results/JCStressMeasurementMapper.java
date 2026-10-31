@@ -1,7 +1,7 @@
 package pl.wsztajerowski.results;
 
 import pl.wsztajerowski.baas.model.JcstressSummary;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
 
@@ -25,7 +25,7 @@ public final class JCStressMeasurementMapper {
             project,
             jobId,
             createdAt,
-            MeasurementKind.JCSTRESS,
+            BenchmarkType.JCSTRESS,
             null, null, null, Map.of(), null, null, null,
             Map.of(),
             summaryOf(result),

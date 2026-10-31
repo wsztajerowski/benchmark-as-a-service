@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.TagKeys;
 
 import java.util.ArrayList;
@@ -75,8 +75,8 @@ final class ResultsDiff {
      * and its partner's rows are reported one-sided.
      */
     static String refusal(String jobA, List<ResultRow> a, String jobB, List<ResultRow> b) {
-        Set<MeasurementKind> kindsA = kinds(a);
-        Set<MeasurementKind> kindsB = kinds(b);
+        Set<BenchmarkType> kindsA = kinds(a);
+        Set<BenchmarkType> kindsB = kinds(b);
         for (var side : List.of(Map.entry(jobA, kindsA), Map.entry(jobB, kindsB))) {
             if (side.getValue().size() > 1) {
                 // No runner writes one; picking either kind would compare half a job silently.
@@ -88,7 +88,7 @@ final class ResultsDiff {
             return "Job " + jobA + " is " + libraries(kindsA) + " and job " + jobB + " is " + libraries(kindsB)
                 + ": measurements from different libraries are not comparable.";
         }
-        if (kindsA.contains(MeasurementKind.JCSTRESS) || kindsB.contains(MeasurementKind.JCSTRESS)) {
+        if (kindsA.contains(BenchmarkType.JCSTRESS) || kindsB.contains(BenchmarkType.JCSTRESS)) {
             // JCStress stores a verdict per job, not a score, and its fixtures race: comparing two
             // needs its own rules. Until then each job's verdict is one lookup away.
             return "Comparing JCStress jobs is not supported yet. Read each job's verdict with "
@@ -236,17 +236,17 @@ final class ResultsDiff {
         return row.benchmarkName() + "\u0000" + row.mode() + "\u0000" + row.paramsKey();
     }
 
-    private static Set<MeasurementKind> kinds(List<ResultRow> rows) {
-        Set<MeasurementKind> kinds = EnumSet.noneOf(MeasurementKind.class);
+    private static Set<BenchmarkType> kinds(List<ResultRow> rows) {
+        Set<BenchmarkType> kinds = EnumSet.noneOf(BenchmarkType.class);
         rows.forEach(row -> kinds.add(row.kind()));
         return kinds;
     }
 
-    private static String libraries(Set<MeasurementKind> kinds) {
+    private static String libraries(Set<BenchmarkType> kinds) {
         return kinds.stream().map(ResultsDiff::library).collect(Collectors.joining(" and "));
     }
 
-    private static String library(MeasurementKind kind) {
+    private static String library(BenchmarkType kind) {
         return switch (kind) {
             case JMH -> "JMH";
             case JCSTRESS -> "JCStress";

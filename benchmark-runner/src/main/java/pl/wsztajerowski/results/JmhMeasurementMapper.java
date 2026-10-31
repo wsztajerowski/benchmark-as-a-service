@@ -1,6 +1,6 @@
 package pl.wsztajerowski.results;
 
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jmh.JmhResult;
@@ -34,7 +34,7 @@ public final class JmhMeasurementMapper {
             project,
             jobId,
             createdAt,
-            MeasurementKind.JMH,
+            BenchmarkType.JMH,
             fullyQualified.substring(0, lastDot),
             fullyQualified.substring(lastDot + 1),
             result.mode(),

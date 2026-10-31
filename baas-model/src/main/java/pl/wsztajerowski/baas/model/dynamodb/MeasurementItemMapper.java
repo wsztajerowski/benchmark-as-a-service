@@ -2,7 +2,7 @@ package pl.wsztajerowski.baas.model.dynamodb;
 
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JcstressSummary;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -151,7 +151,7 @@ public final class MeasurementItemMapper {
             str(item, PROJECT),
             str(item, JOB_ID),
             Instant.parse(str(item, CREATED_AT)),
-            MeasurementKind.valueOf(str(item, KIND)),
+            BenchmarkType.valueOf(str(item, KIND)),
             str(item, BENCHMARK_CLASS),
             str(item, BENCHMARK_METHOD),
             str(item, MODE),

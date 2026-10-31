@@ -83,7 +83,7 @@ class ResultsGroupingTest {
     void aScoreTheItemDoesNotCarryNeverWinsALowerIsBetterGroup() {
         var missing = ResultRow.from(new pl.wsztajerowski.baas.model.StoredMeasurement(
             "p", "job-missing", java.time.Instant.parse("2026-08-19T09:00:00Z"),
-            pl.wsztajerowski.baas.model.MeasurementKind.values()[0], "com.example.Bench", "run", "avgt",
+            pl.wsztajerowski.baas.model.BenchmarkType.values()[0], "com.example.Bench", "run", "avgt",
             Map.of(), null, null, "ns/op", Map.of(), null, Map.of("branch", "main"), null, null, null));
 
         assertThat(missing.score()).isNaN();

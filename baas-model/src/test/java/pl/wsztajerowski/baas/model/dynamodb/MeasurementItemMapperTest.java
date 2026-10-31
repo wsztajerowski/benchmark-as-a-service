@@ -47,6 +47,19 @@ class MeasurementItemMapperTest {
             .isEqualTo(original);
     }
 
+    /**
+     * The {@code kind} attribute is the {@link pl.wsztajerowski.baas.model.BenchmarkType} constant's
+     * name, and every stored item already holds one of these two strings: renaming a constant would
+     * make those items unreadable.
+     */
+    @Test
+    void theKindAttributeIsTheStoredBenchmarkTypeName() {
+        assertThat(MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh()).get("kind").s())
+            .isEqualTo("JMH");
+        assertThat(MeasurementItemMapper.toItem(StoredMeasurementFixtures.jcstress()).get("kind").s())
+            .isEqualTo("JCSTRESS");
+    }
+
     @Test
     void theItemCarriesBothKeyPairs() {
         var item = MeasurementItemMapper.toItem(StoredMeasurementFixtures.jmh());

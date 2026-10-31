@@ -2,7 +2,7 @@ package pl.wsztajerowski.baas.results;
 
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JcstressSummary;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.results.ResultsDiff.Row;
 import pl.wsztajerowski.baas.results.ResultsDiff.Verdict;
 
@@ -20,7 +20,7 @@ class ResultsDiffTest {
     static ResultRow jmh(String job, String benchmark, String mode, double score, double error, String unit,
                          Map<String, String> params, Map<String, String> tags) {
         return new ResultRow(job, benchmark, tags.getOrDefault("type", "jmh"), mode, score, error, unit,
-            "2026-08-20T17:44:32.812Z", tags, "p", params, null, Map.of(), MeasurementKind.JMH);
+            "2026-08-20T17:44:32.812Z", tags, "p", params, null, Map.of(), BenchmarkType.JMH);
     }
 
     static ResultRow jmh(String job, String benchmark, String mode, double score, double error) {
@@ -31,7 +31,7 @@ class ResultsDiffTest {
         return new ResultRow(job, "(jcstress) " + job, "jcstress", null, Double.NaN, Double.NaN, "",
             "2026-08-20T17:44:32.812Z", Map.of("type", "jcstress"), "p", Map.of(),
             new JcstressSummary(42, 41, 1, 0, Map.of("T", "FORBIDDEN"), Map.of(), Map.of()), Map.of(),
-            MeasurementKind.JCSTRESS);
+            BenchmarkType.JCSTRESS);
     }
 
     // --- the library guard ---

@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas.results;
 
 import pl.wsztajerowski.baas.model.JcstressSummary;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
@@ -38,7 +38,7 @@ public record ResultRow(
      * The library that produced the measurement, as stored — required on every item, unlike the
      * free-form {@code type} tag. {@code results diff} refuses to compare across it.
      */
-    MeasurementKind kind
+    BenchmarkType kind
 ) {
 
     public ResultRow {
@@ -57,7 +57,7 @@ public record ResultRow(
                      JcstressSummary jcstress, Map<String, SecondaryMetric> secondaryMetrics) {
         this(jobId, benchmarkName, benchmarkType, mode, score, scoreError, scoreUnit, createdAt,
             tags, project, params, jcstress, secondaryMetrics,
-            jcstress != null ? MeasurementKind.JCSTRESS : MeasurementKind.JMH);
+            jcstress != null ? BenchmarkType.JCSTRESS : BenchmarkType.JMH);
     }
 
     /** Without a verdict or secondary metrics: a JMH row built by hand, mostly in tests. */
