@@ -555,7 +555,7 @@ Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and bo
 LocalStack S3 and the LocalStack table, which has to exist: the runner treats absent store
 configuration as an error rather than quietly discarding results, and no option discards them.
 
-Setting `ASYNC_PATH` also enables `JmhWithAsyncProfilerSubcommandServiceIT`, which is skipped
+Setting `ASYNC_PATH` also enables `JmhAsyncProfilerIT`, which is skipped
 without it — so `mvn verify` covers async profiling only when that variable is set.
 
 Endpoints: S3 browser `http://localhost:4566/baas/` · DynamoDB at the same LocalStack endpoint
