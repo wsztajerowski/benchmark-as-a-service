@@ -20,7 +20,7 @@ starting the benchmark, so a job launched without the CLI is refused alike.
 - **THEN** it exits 2 saying the `dir` of the `async` profiler is managed by BaaS
 
 #### Scenario: A fork JVM is refused in favour of --jdk
-- **WHEN** `baas run jmh … -- MyBenchmark -jvm /opt/jdks/temurin-26/bin/java` or `… -- MyBenchmark -jv /x` is run
+- **WHEN** `baas run jmh … -- MyBenchmark -jvm /opt/jdks/temurin-26/bin/java` or `… -- MyBenchmark --jvm=/x` is run
 - **THEN** it exits 2 saying `-jvm` is managed by BaaS and naming `--jdk`, and nothing is uploaded or launched
 
 #### Scenario: JVM arguments still pass through
