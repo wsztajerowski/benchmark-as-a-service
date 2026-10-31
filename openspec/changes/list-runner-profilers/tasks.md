@@ -72,15 +72,15 @@
 
 ## 6. End-to-end verification (manual — no automated test covers the `baas run` path)
 
-- [ ] 6.1 With the reactor CLI (`baas-dev` alias, `--runner-jar`), run `baas run --benchmark-jar
+- [x] 6.1 With the reactor CLI (`baas-dev` alias, `--runner-jar`), run `baas run --benchmark-jar
       <fixture> jmh -- -lprof`: listing printed verbatim on stdout, `async` and `perf` under *Supported*,
       status `completed`, only the `jobs download` hint, `results query --job-id` finds nothing. Repeat
       with `--format json | jq .` and confirm one object. Record the outputs in `verify.md`
 - [x] 6.2 Run `-- -lprof MyBenchmark` and `-- MyBenchmark -prof async:libP=/x`: both exit 2 and launch
       nothing
-- [ ] 6.3 Run one fixture benchmark with `-prof async:output=flamegraph` and confirm the flame graph is
+- [x] 6.3 Run one fixture benchmark with `-prof async:output=flamegraph` and confirm the flame graph is
       under the job's prefix (`jobs download`)
-- [ ] 6.4 Comparability: run the same fixture benchmark without profilers before (installed release) and
+- [x] 6.4 Comparability: run the same fixture benchmark without profilers before (installed release) and
       after (reactor build), same instance type, at least three jobs each; record every score and the
       spread in `verify.md`, and investigate any difference outside the recorded spread rather than
       accepting it
