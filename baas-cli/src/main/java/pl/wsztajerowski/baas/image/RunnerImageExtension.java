@@ -43,9 +43,15 @@ public final class RunnerImageExtension {
         #
         # The contract fails the bake if the image no longer has: Java at or above the runner's
         # version on PATH, the aws CLI, async-profiler under /app/async-profiler, a perf matching the
-        # running kernel, kernel.perf_event_paranoid <= 1 and kernel.kptr_restrict = 0. Everything
-        # else (another JDK vendor, transparent hugepages, swap) is yours to change, and every job
-        # records what it measured on in environment.json.
+        # running kernel, kernel.perf_event_paranoid <= 1, kernel.kptr_restrict = 0, and a full JDK
+        # (bin/java and bin/jcmd) in every entry of /opt/jdks, corretto-25 included. Everything else
+        # (more JDKs, transparent hugepages, swap) is yours to change, and every job records what it
+        # measured on in environment.json.
+        #
+        # Each /opt/jdks/<id> is a JDK `baas run --jdk <id>` can select. Add one with
+        #   baas-install-jdk <id> <url of a .tar.gz JDK> <its sha256, from the vendor>
+        # which checks the digest and refuses a JRE. Leave java on PATH and `alternatives` alone:
+        # they run the runner itself. `baas admin image show` lists the JDKs once the image is built.
         #
         # Never put a credential here: anyone who can describe the stack can read this document.
         #
@@ -65,6 +71,11 @@ public final class RunnerImageExtension {
         #         inputs:
         #           commands:
         #             - dnf install -y bpftrace
+        #       - name: AddTemurin26
+        #         action: ExecuteBash
+        #         inputs:
+        #           commands:
+        #             - baas-install-jdk temurin-26 https://github.com/adoptium/temurin26-binaries/releases/download/jdk-26.0.2.1%2B1/OpenJDK26U-jdk_x64_linux_hotspot_26.0.2.1_1.tar.gz 451c12e68747bcfa2fb5a2c16b00483fedb9fa6d77bc962d30957f76ac17044d
         """;
 
     private RunnerImageExtension() {

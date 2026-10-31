@@ -28,7 +28,7 @@ class RunnerImageBuildSequenceTest {
 
         assertThat(aws.calls).containsExactly(
             "stackExists", "stackParameters", "resolveParent", "preflightVersion " + bundledBase,
-            "updateStack", "stackOutputs", "publish arn:pipeline /" + D + "/runner/ami-id");
+            "updateStack", "stackOutputs", "publish arn:pipeline /" + D + "/runner/ami-id " + D);
         assertThat(result.amiId()).isEqualTo("ami-new");
         assertThat(aws.submitted).containsEntry(RunnerImageParameters.IMAGE_VERSION, bundledBase);
     }

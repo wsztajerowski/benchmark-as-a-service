@@ -81,15 +81,19 @@ public class ImageBuilderService {
      * @param recipeVersion the recipe version the stack declares now; a build found from another
      *                      version was started before an extension push, and is retired rather
      *                      than published
+     * @param jdkList       the JDK list the contract recorded for {@code imageVersion}; an image
+     *                      without one is retired, never published
      * @return the AMI ID now published at {@code parameterName}
      */
     public String publish(String pipelineArn, String parameterName, String imageVersion,
-                          String parentAmiId, String recipeVersion) throws InterruptedException {
+                          String parentAmiId, String recipeVersion, JdkListSource jdkList)
+            throws InterruptedException {
         Optional<String> replaced = readPointer(parameterName);
         replaced.ifPresent(amiId -> logger.debug("Current runner AMI: {}", amiId));
 
         String newAmiId = adoptOrBuild(pipelineArn, recipeVersion, replaced);
         ensureIdentityTags(newAmiId, imageVersion, parentAmiId);
+        tagJdks(newAmiId, imageVersion, jdkList, replaced);
 
         writePointer(parameterName, newAmiId);
         logger.info("Published {} to {}", newAmiId, parameterName);
@@ -334,6 +338,61 @@ public class ImageBuilderService {
                 .findFirst()
                 .map(summary -> imageBuilder.getComponent(r -> r.componentBuildVersionArn(summary.arn()))
                     .component().data()));
+    }
+
+    /** Reads the JDK list the contract wrote for an image label; empty when there is none. */
+    @FunctionalInterface
+    public interface JdkListSource {
+        Optional<String> read(String label);
+    }
+
+    /**
+     * Tags the AMI {@value RunnerImage#JDKS_TAG} with the ids the contract observed, the default
+     * first, before the pointer moves: {@code baas run} checks {@code --jdk} against this tag. An
+     * image whose list is missing or unreadable is retired like one that failed its contract — a
+     * published image without the tag would refuse every {@code --jdk}.
+     */
+    void tagJdks(String amiId, String label, JdkListSource jdkList, Optional<String> published) {
+        String key = RunnerImageRenderer.jdkListKey(label);
+        List<String> ids;
+        try {
+            ids = jdkList.read(label).map(ImageBuilderService::jdkIds).orElse(List.of());
+        } catch (RuntimeException e) {
+            logger.debug("Cannot read {}: {}", key, e.getMessage());
+            ids = List.of();
+        }
+        if (ids.isEmpty()) {
+            if (published.map(p -> !p.equals(amiId)).orElse(true)) {
+                retireQuietly(amiId);
+            }
+            throw new IllegalStateException(("Image %s has no readable JDK list at %s, which its contract writes, so it "
+                + "was not published and has been retired; the pointer was not moved.").formatted(amiId, key));
+        }
+        logger.debug("Tagging {} with its JDKs: {}", amiId, ids);
+        Tag tag = Tag.builder().key(RunnerImage.JDKS_TAG).value(String.join(",", ids)).build();
+        ec2.createTags(r -> r.resources(amiId).tags(tag));
+    }
+
+    /** The ids of a contract's JDK list, the default first; empty when the list is malformed. */
+    static List<String> jdkIds(String json) {
+        try {
+            var entries = new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
+            List<String> ids = new java.util.ArrayList<>();
+            for (var entry : entries) {
+                String id = entry.path("id").asText();
+                if (!pl.wsztajerowski.baas.model.Jdks.isValidId(id)) {
+                    return List.of();
+                }
+                if (entry.path("default").asBoolean()) {
+                    ids.addFirst(id);
+                } else {
+                    ids.add(id);
+                }
+            }
+            return entries.isArray() ? ids : List.of();
+        } catch (java.io.IOException e) {
+            return List.of();
+        }
     }
 
     /**

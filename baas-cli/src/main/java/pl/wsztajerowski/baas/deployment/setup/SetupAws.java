@@ -88,7 +88,7 @@ public interface SetupAws {
      * The runner-image parameters a stack submission carries: the deployed ones where they exist,
      * the bundled base and a freshly resolved parent otherwise — which on a create is everything.
      */
-    Map<String, String> imageParameters(Map<String, String> deployed);
+    Map<String, String> imageParameters(String stack, Map<String, String> deployed);
 
     /** Returns once CloudFormation accepted the create. */
     void submitCreate(String stack, Map<String, String> parameters);

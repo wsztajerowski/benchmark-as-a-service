@@ -18,6 +18,13 @@ import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import pl.wsztajerowski.baas.aws.S3UploadService;
+import pl.wsztajerowski.baas.console.Printable;
+
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.Callable;
 
 @Command(
@@ -93,6 +100,14 @@ public class ImageShowSubcommand implements Callable<Integer> {
                 orUnknown(image.imageVersion()), image.amiId(), orUnknown(image.parentAmiId()),
                 orUnknown(image.createdAt()), parameterName);
             printExtension(console, extension, image.imageVersion());
+            Optional<String> jdkList = Optional.empty();
+            if (image.selectsJdks() && image.imageVersion() != null) {
+                try (var s3 = factory.s3()) {
+                    jdkList = new S3UploadService(s3).getObjectIfExists(config.names().bucket(),
+                        RunnerImageRenderer.jdkListKey(image.imageVersion()));
+                }
+            }
+            printJdks(console, image, jdkList);
 
             // The base this CLI bundles is not necessarily the one deployed, and a difference
             // between them is the usual reason a result carries an unexpected imageVersion tag.
@@ -127,7 +142,44 @@ public class ImageShowSubcommand implements Callable<Integer> {
             console.printf("                 %s: %s%n", phase, String.join(", ", names)));
     }
 
-    /** {@code 1.3.0} from {@code 1.3.0+ext.3f9a1c2e}; null for an image with no version tag. */
+    /**
+     * The JDKs a job can select with {@code baas run --jdk}: from the list the image's contract
+     * recorded, with release and vendor, or from the AMI's tag alone when that list is gone.
+     */
+    static void printJdks(Console console, RunnerImage image, Optional<String> jdkList) {
+        if (!image.selectsJdks()) {
+            console.println("  JDKs:        none selectable (the image predates JDK selection; rebuild it)");
+            return;
+        }
+        List<String[]> rows = new ArrayList<>();
+        jdkList.ifPresent(json -> {
+            try {
+                for (var entry : new ObjectMapper().readTree(json)) {
+                    rows.add(new String[]{Printable.of(entry.path("id").asText()), Printable.of(entry.path("release").asText()),
+                        Printable.of(entry.path("vendor").asText()), entry.path("default").asBoolean() ? "(default)" : ""});
+                }
+            } catch (java.io.IOException e) {
+                rows.clear();
+            }
+        });
+        if (rows.isEmpty()) {
+            image.jdkIds().forEach(id -> rows.add(new String[]{id, "", "", id.equals(image.defaultJdk()) ? "(default)" : ""}));
+        }
+        int[] width = new int[3];
+        rows.forEach(row -> { for (int i = 0; i < 3; i++) width[i] = Math.max(width[i], row[i].length()); });
+        String label = "  JDKs:        ";
+        for (String[] row : rows) {
+            var line = new StringBuilder(label);
+            for (int i = 0; i < 4; i++) {
+                if (i == 3 || width[i] > 0) {
+                    line.append(i < 3 ? row[i] + " ".repeat(width[i] - row[i].length() + 2) : row[i]);
+                }
+            }
+            console.println(line.toString().stripTrailing());
+            label = " ".repeat(label.length());
+        }
+    }
+
     /**
      * What to do about a bundled base that differs from the published one, by direction. Newer:
      * build it. Older: upgrading the CLI is the fix — build-image refuses an older base, and saying
@@ -146,6 +198,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
             + "); build-image refuses an older base.";
     }
 
+    /** {@code 1.3.0} from {@code 1.3.0+ext.3f9a1c2e}; null for an image with no version tag. */
     static String baseOf(String label) {
         if (label == null || label.isEmpty()) {
             return null;

@@ -113,7 +113,8 @@ class FakeEc2 implements Ec2Client {
 
     @Override
     public CreateTagsResponse createTags(CreateTagsRequest request) {
-        calls.add("createTags:" + String.join(",", request.resources()));
+        calls.add("createTags:" + String.join(",", request.resources()) + " "
+            + String.join(",", request.tags().stream().map(tag -> tag.key() + "=" + tag.value()).toList()));
         return CreateTagsResponse.builder().build();
     }
 

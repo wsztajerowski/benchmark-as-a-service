@@ -31,6 +31,12 @@ class ImageBuilderServiceTest {
     private final FakeEc2 ec2 = new FakeEc2(calls);
     private final FakeSsm ssm = new FakeSsm(calls);
 
+    /** The contract's list for any label, its read recorded in the shared call log. */
+    private final ImageBuilderService.JdkListSource jdks = label -> {
+        calls.add("readJdkList " + label);
+        return java.util.Optional.of(JDK_LIST);
+    };
+
     private ImageBuilderService service() {
         return new ImageBuilderService(imageBuilder, ec2, ssm, Duration.ZERO);
     }
@@ -47,7 +53,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
         ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(calls)
             .as("a deregister before the pointer write is a window in which every job fails")
@@ -61,7 +67,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
         ec2.images.put(PREVIOUS_AMI, imageWithSnapshots(PREVIOUS_AMI, "snap-old"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(published).isEqualTo(NEW_AMI);
         assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
@@ -76,7 +82,7 @@ class ImageBuilderServiceTest {
         imageBuilder.terminalStatus = ImageStatus.FAILED;
         imageBuilder.failureReason = "step InstallToolchain returned 1";
 
-        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION))
+        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("step InstallToolchain returned 1");
 
@@ -99,7 +105,7 @@ class ImageBuilderServiceTest {
         ec2.images.put(NEW_AMI, imageWithSnapshots(NEW_AMI, "snap-failed"));
         ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
 
-        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION))
+        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks))
             .hasMessageContaining("component-contract failed");
 
         assertThat(calls)
@@ -118,7 +124,7 @@ class ImageBuilderServiceTest {
         for (ImageStatus status : List.of(ImageStatus.DEPRECATED, ImageStatus.DISABLED, ImageStatus.UNKNOWN_TO_SDK_VERSION)) {
             imageBuilder.terminalStatus = status;
 
-            assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION))
+            assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Image build");
         }
@@ -130,7 +136,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.0.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION);
+        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
         assertThat(calls).noneMatch(call -> call.startsWith("deregisterImage"));
@@ -149,7 +155,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(published).isEqualTo(NEW_AMI);
         assertThat(ssm.parameters)
@@ -167,7 +173,7 @@ class ImageBuilderServiceTest {
         ec2.deregisterClientFailure = software.amazon.awssdk.core.exception.SdkClientException.create(
             "Unable to execute HTTP request: Read timed out");
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(published).isEqualTo(NEW_AMI);
         assertThat(ssm.parameters).containsEntry(POINTER, NEW_AMI);
@@ -178,9 +184,9 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.0.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION);
+        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION, jdks);
 
-        assertThat(calls).noneMatch(call -> call.startsWith("createTags"));
+        assertThat(calls).noneMatch(call -> call.startsWith("createTags") && call.contains(RunnerImage.VERSION_TAG));
     }
 
     @Test
@@ -188,11 +194,57 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, Image.builder().imageId(NEW_AMI).creationDate("2026-08-11T00:00:00Z").build());
 
-        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION);
+        service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(calls)
             .as("without them `baas admin image show` has no identity to report and results carry no version")
-            .contains("createTags:" + NEW_AMI);
+            .anyMatch(call -> call.startsWith("createTags:" + NEW_AMI + " " + RunnerImage.VERSION_TAG + "="));
+    }
+
+    // ─── The image's JDKs ────────────────────────────────────────────────────────
+
+    private static final String JDK_LIST = "[{\"id\":\"corretto-25\",\"release\":\"25.0.4\",\"vendor\":\"Amazon.com Inc.\","
+        + "\"default\":true},{\"id\":\"temurin-26\",\"release\":\"26.0.2.1\",\"vendor\":\"Eclipse Adoptium\",\"default\":false}]";
+
+    /** baas run checks --jdk against the tag, so the tag is on the AMI before the pointer names it. */
+    @Test
+    void theImagesJdksAreTaggedBeforeThePointerMoves() throws Exception {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+
+        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
+
+        assertThat(calls).containsSubsequence("readJdkList 1.1.0",
+            "createTags:" + NEW_AMI + " baas-jdks=corretto-25,temurin-26", "putParameter:" + NEW_AMI);
+    }
+
+    /** An image without its list would refuse every --jdk: retired like one that failed its contract. */
+    @Test
+    void anImageWithoutItsJdkListIsRetiredAndThePointerKept() {
+        ssm.parameters.put(POINTER, PREVIOUS_AMI);
+        imageBuilder.amiId = NEW_AMI;
+        ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
+        ec2.images.put(PREVIOUS_AMI, taggedImage(PREVIOUS_AMI, "1.0.0", "ami-parent"));
+
+        assertThatThrownBy(() -> service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION,
+                label -> java.util.Optional.empty()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("image-builds/1.1.0/jdks.json")
+            .hasMessageContaining("not published");
+        assertThat(ssm.parameters).containsEntry(POINTER, PREVIOUS_AMI);
+        assertThat(calls).contains("deregisterImage:" + NEW_AMI).doesNotContain("deregisterImage:" + PREVIOUS_AMI);
+    }
+
+    @Test
+    void theDefaultLeadsTheIdsAndAMalformedListHasNone() {
+        assertThat(ImageBuilderService.jdkIds("[{\"id\":\"temurin-26\"},{\"id\":\"corretto-25\",\"default\":true}]"))
+            .containsExactly("corretto-25", "temurin-26");
+        assertThat(ImageBuilderService.jdkIds("[{\"id\":\"Temurin_26\"}]")).isEmpty();
+        assertThat(ImageBuilderService.jdkIds("{\"id\":\"corretto-25\"}")).isEmpty();
+        assertThat(ImageBuilderService.jdkIds("not json")).isEmpty();
+        assertThat(ImageBuilderService.jdkIds("[]")).isEmpty();
     }
 
     @Test
@@ -391,7 +443,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(imageBuilder.startedPipelines).as("never a second build").isEmpty();
         assertThat(imageBuilder.polledBuilds).containsOnly(RECIPE_IMAGES + RECIPE_VERSION + "/3");
@@ -407,7 +459,7 @@ class ImageBuilderServiceTest {
         imageBuilder.pipelineImages.add(earlierBuild(RECIPE_VERSION, ImageStatus.AVAILABLE, NEW_AMI));
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(imageBuilder.startedPipelines).isEmpty();
         assertThat(published).isEqualTo(NEW_AMI);
@@ -430,7 +482,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
 
-        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        String published = service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(imageBuilder.startedPipelines).containsExactly(PIPELINE);
         assertThat(published).isEqualTo(NEW_AMI);
@@ -445,7 +497,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.1.0", "ami-parent"));
 
-        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION);
+        service().publish(PIPELINE, POINTER, "1.1.0", "ami-parent", RECIPE_VERSION, jdks);
 
         assertThat(imageBuilder.startedPipelines).containsExactly(PIPELINE);
     }
@@ -457,7 +509,7 @@ class ImageBuilderServiceTest {
         imageBuilder.amiId = NEW_AMI;
         ec2.images.put(NEW_AMI, taggedImage(NEW_AMI, "1.0.0", "ami-parent"));
 
-        assertThat(service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION)).isEqualTo(NEW_AMI);
+        assertThat(service().publish(PIPELINE, POINTER, "1.0.0", "ami-parent", RECIPE_VERSION, jdks)).isEqualTo(NEW_AMI);
         assertThat(imageBuilder.startedPipelines).containsExactly(PIPELINE);
     }
 

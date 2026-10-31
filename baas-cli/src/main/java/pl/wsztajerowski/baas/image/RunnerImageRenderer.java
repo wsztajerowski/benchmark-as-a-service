@@ -8,6 +8,8 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 
+import pl.wsztajerowski.baas.model.Jdks;
+
 /**
  * Turns {@code infra/runner-image.yaml} into the two BaaS-owned AWSTOE components: the base, which
  * bakes the declared toolchain, and the contract, which runs last and fails the bake when anything
@@ -81,24 +83,48 @@ public class RunnerImageRenderer {
             .replace("{{PERF_EVENT_PARANOID}}", Integer.toString(kernel.perfEventParanoid()))
             .replace("{{KPTR_RESTRICT}}", Integer.toString(kernel.kptrRestrict()))
             .replace("{{TRANSPARENT_HUGEPAGES}}", kernel.transparentHugepages())
-            .replace("{{SWAP_COMMANDS}}", kernel.swapDisabled() ? DISABLE_SWAP : KEEP_SWAP));
+            .replace("{{SWAP_COMMANDS}}", kernel.swapDisabled() ? DISABLE_SWAP : KEEP_SWAP)
+            .replace("{{JDKS_ROOT}}", Jdks.ROOT)
+            .replace("{{DEFAULT_JDK}}", Jdks.DEFAULT_ID)
+            .replace("{{JDK_ID_PATTERN}}", Jdks.ID_PATTERN.pattern())
+            .replace("{{JDK_ID_MAX}}", Integer.toString(Jdks.MAX_ID_LENGTH)));
     }
 
     /**
      * The contract component document for an image carrying {@code label}. It writes the label —
      * the one value that depends on the extension, which is why the base must not — and, in the
-     * {@code test} phase, checks the booted image for everything a BaaS workflow relies on.
+     * {@code test} phase, checks the booted image for everything a BaaS workflow relies on, then
+     * records the image's JDKs at {@link #jdkListKey} in the deployment's {@code bucket}, where
+     * publishing the image reads them.
      */
-    public String renderContract(String label) {
+    public String renderContract(String label, String bucket, String region) {
         var asyncProfiler = definition.tools().asyncProfiler();
 
         return requireFits("contract", CONTRACT_TEMPLATE
+            .replace("{{JDK_LIST_URI}}", "s3://" + bucket + "/" + jdkListKey(label))
+            .replace("{{REGION}}", region)
+            .replace("{{JDKS_ROOT}}", Jdks.ROOT)
+            .replace("{{DEFAULT_JDK}}", Jdks.DEFAULT_ID)
+            .replace("{{JDK_ID_PATTERN}}", Jdks.ID_PATTERN.pattern())
+            .replace("{{JDK_ID_MAX}}", Integer.toString(Jdks.MAX_ID_LENGTH))
+            .replace("{{JDK_TAG_MAX}}", Integer.toString(JDKS_TAG_LIMIT))
             .replace("{{LABEL}}", label)
             .replace("{{JAVA_FLOOR}}", Integer.toString(javaFloor))
             .replace("{{PERF_PACKAGE}}", definition.tools().perf().packageName())
             .replace("{{ASYNC_PROFILER_LIB}}", asyncProfiler.libraryPath())
             .replace("{{ASPROF}}", asyncProfiler.installPath() + "/bin/asprof"));
     }
+
+    /**
+     * Where the contract records the JDKs of the image labelled {@code label}: beside Image Builder's
+     * own logs, under the one prefix the build role may write.
+     */
+    public static String jdkListKey(String label) {
+        return "image-builds/" + label + "/jdks.json";
+    }
+
+    /** The longest value an AMI tag holds, and so the longest {@code baas-jdks} list. */
+    static final int JDKS_TAG_LIMIT = 256;
 
     private static String requireFits(String component, String document) {
         int size = document.getBytes(StandardCharsets.UTF_8).length;
@@ -178,6 +204,35 @@ public class RunnerImageRenderer {
                       tar -xf /tmp/ap.tgz -C /tmp
                       mv /tmp/async-profiler-*-linux-x64 '{{ASYNC_PROFILER_HOME}}'
                       rm -f /tmp/ap.tgz
+                      mkdir -p '{{JDKS_ROOT}}'
+                      ln -s "$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")" '{{JDKS_ROOT}}/{{DEFAULT_JDK}}'
+              - name: InstallJdkHelper
+                action: ExecuteBash
+                inputs:
+                  commands:
+                    - |
+                      set -euxo pipefail
+                      cat > /usr/local/bin/baas-install-jdk <<'HELPER'
+                      #!/bin/bash
+                      # baas-install-jdk <id> <url> <sha256>: a JDK baas run --jdk <id> can select
+                      set -euo pipefail
+                      die() { echo "baas-install-jdk: $1" >&2; exit 1; }
+                      [ $# -eq 3 ] || die "usage: baas-install-jdk <id> <url> <sha256>"
+                      id=$1; root='{{JDKS_ROOT}}'
+                      [[ $id =~ ^{{JDK_ID_PATTERN}}$ && ${#id} -le {{JDK_ID_MAX}} ]] || die "id '$id' must match {{JDK_ID_PATTERN}}, at most {{JDK_ID_MAX}} characters"
+                      [ ! -e "$root/$id" ] || die "$root/$id already exists"
+                      tmp=$(mktemp -d /opt/.baas-install-jdk.XXXXXX)
+                      trap 'rm -rf "$tmp"' EXIT
+                      curl -fsSL "$2" -o "$tmp/jdk.tar"
+                      echo "$3  $tmp/jdk.tar" | sha256sum -c - || die "$2 does not have SHA-256 $3"
+                      mkdir "$tmp/jdk"
+                      tar -xf "$tmp/jdk.tar" -C "$tmp/jdk" --strip-components=1
+                      [ -x "$tmp/jdk/bin/java" ] || die "the archive holds no bin/java"
+                      [ -x "$tmp/jdk/bin/jcmd" ] || die "the archive holds no bin/jcmd: a JRE, not a JDK"
+                      mv "$tmp/jdk" "$root/$id"
+                      "$root/$id/bin/java" -version
+                      HELPER
+                      chmod 755 /usr/local/bin/baas-install-jdk
               - name: ApplyKernelTunables
                 action: ExecuteBash
                 inputs:
@@ -238,7 +293,20 @@ public class RunnerImageRenderer {
                       [ "$(cat /etc/baas-image-version 2>/dev/null)" = '{{LABEL}}' ] || fail "/etc/baas-image-version does not hold {{LABEL}}"
                       [ "$(sysctl -n kernel.perf_event_paranoid)" -le 1 ] || fail "kernel.perf_event_paranoid is $(sysctl -n kernel.perf_event_paranoid), above 1"
                       [ "$(sysctl -n kernel.kptr_restrict)" -eq 0 ] || fail "kernel.kptr_restrict is $(sysctl -n kernel.kptr_restrict), not 0"
+                      root='{{JDKS_ROOT}}'; default='{{DEFAULT_JDK}}'; ids=; json=
+                      [ -e "$root/$default" ] || fail "no default JDK $root/$default"
+                      prop() { printf '%s\\n' "$p" | awk -F' = ' -v k="$1" '{ sub(/^ +/, "", $1) } $1 == k { print $2; exit }' | sed 's/[\\"]/\\\\&/g'; }
+                      for id in "$default" $(ls -A "$root" | grep -vxF "$default"); do
+                        [[ $id =~ ^{{JDK_ID_PATTERN}}$ && ${#id} -le {{JDK_ID_MAX}} ]] || { fail "JDK id '$id' in $root must match {{JDK_ID_PATTERN}}, at most {{JDK_ID_MAX}} characters"; continue; }
+                        p=$("$root/$id/bin/java" -XshowSettings:properties -version 2>&1) || { fail "JDK $id: $root/$id/bin/java does not run"; continue; }
+                        [ -x "$root/$id/bin/jcmd" ] || fail "JDK $id has no bin/jcmd"
+                        json="$json${json:+,}$(printf '{"id":"%s","release":"%s","vendor":"%s","default":%s}' "$id" "$(prop java.version)" "$(prop java.vendor)" "$([ "$id" = "$default" ] && echo true || echo false)")"
+                        ids="$ids${ids:+,}$id"
+                      done
+                      [ ${#ids} -le {{JDK_TAG_MAX}} ] || fail "the JDK ids take ${#ids} characters joined, above the {{JDK_TAG_MAX}} an AMI tag holds"
                       [ "$failed" -eq 0 ] || exit 1
+                      printf '[%s]\\n' "$json" > /tmp/jdks.json
+                      aws s3 cp /tmp/jdks.json '{{JDK_LIST_URI}}' --region '{{REGION}}' || { echo "BaaS contract FAILED: cannot write the JDK list" >&2; exit 1; }
                       echo "BaaS contract: every check passed"
         """;
 

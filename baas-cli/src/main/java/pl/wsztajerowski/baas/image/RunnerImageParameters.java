@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.image;
 
 import pl.wsztajerowski.baas.session.BaasVersion;
+import pl.wsztajerowski.baas.session.DeploymentNames;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -39,17 +40,19 @@ public record RunnerImageParameters(Map<String, String> values, String label) {
     /**
      * Plans the image parameters for one stack submission.
      *
+     * @param deployment  the deployment whose bucket the contract records the image's JDKs in
+     * @param region      the deployment's region
      * @param baseVersion the base component's version
      * @param baseData    the base component's document
      * @param parentAmiId the parent AMI the recipe builds from
      * @param extension   the extension to deploy, empty for none
      * @param deployed    the deployed stack's parameters; empty when the stack is being created
      */
-    public static RunnerImageParameters plan(RunnerImageRenderer renderer, String baseVersion, String baseData,
-                                             String parentAmiId, String extension,
-                                             Map<String, String> deployed) {
+    public static RunnerImageParameters plan(RunnerImageRenderer renderer, DeploymentNames deployment, String region,
+                                             String baseVersion, String baseData, String parentAmiId,
+                                             String extension, Map<String, String> deployed) {
         String label = label(baseVersion, extension);
-        String contract = renderer.renderContract(label);
+        String contract = renderer.renderContract(label, deployment.bucket(), region);
 
         boolean extensionChanged = !sameDocument(extension, deployed.getOrDefault(EXTENSION_DATA, ""));
         boolean recipeChanged = extensionChanged
