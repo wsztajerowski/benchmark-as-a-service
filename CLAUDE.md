@@ -120,8 +120,9 @@ data.
   not overlooked (ADR 0010). A result measured while a shell was open is indistinguishable by query;
   the operator who connected knows the job id. Results from before and after every runner registered
   its agent share one `imageVersion`, too: the change date is the only boundary.
-- **`baas run` has no local mode.** It always provisions EC2. The only no-cost way to exercise the
-  runner is `./jmh-with-profiler.sh` / `./jmh-with-async.sh` against LocalStack.
+- **`baas run` has no local mode.** It always provisions EC2. The no-cost way to exercise the
+  runner is its integration tests, which start their own LocalStack through Testcontainers; there
+  is no `docker-compose` setup and no local runner script.
 - **A reactor build cannot launch a job.** The CLI pins the runner JAR to its own released version,
   and `0.0.0-semantically-released` names no release — so `baas run` fails immediately, before
   resolving the project or the results table, unless `--runner-jar` is passed. Same no-fallback
@@ -139,9 +140,6 @@ data.
   its status in the table, so a job without one could not be seen at all. The old behaviour — unset
   URI selects a no-op store, the job reports success, numbers vanish — is what any reintroduced
   fallback brings back. `baas-model`'s `ban-mongodb` enforcer rule stays as the guard.
-- **`docker-compose` has no init container.** Create the bucket and any SSM params by hand:
-  `aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas`, and the results
-  table if you want one.
 - **`s3-hook-lambda` is gone** — module, CloudFormation resources, `<prefix>-lambda` bucket, and the
   S3-object-create trigger path. Any reference you find is stale.
 - **The zsh orchestration helpers are gone** (`run-remote-benchmark.zsh`, `wait-for-gha-run.sh`,
