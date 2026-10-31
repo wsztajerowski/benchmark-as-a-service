@@ -24,9 +24,15 @@ public class BenchmarkProcessBuilder {
         outputPath = Paths.get("output.txt");
     }
 
+    /** {@code java -jar <benchmark>} on {@code java} from {@code PATH}. */
     public static BenchmarkProcessBuilder benchmarkProcessBuilder(Path benchmarkPath) {
+        return benchmarkProcessBuilder("java", benchmarkPath);
+    }
+
+    /** {@code <java> -jar <benchmark>}: the benchmark process, and every fork it starts, run on {@code java}. */
+    public static BenchmarkProcessBuilder benchmarkProcessBuilder(String java, Path benchmarkPath) {
         return new BenchmarkProcessBuilder()
-            .addArgument("java")
+            .addArgument(java)
             .addArgument("-jar")
             .addArgument(benchmarkPath.toString());
     }

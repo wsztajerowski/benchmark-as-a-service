@@ -7,13 +7,18 @@ import java.util.List;
 
 /**
  * One JCStress job as the runner starts it: the test JAR, the arguments that follow {@code baas run
- * jcstress … --} exactly as the user wrote them, and the directory the report and process output
- * are written to.
+ * jcstress … --} exactly as the user wrote them, the directory the report and process output
+ * are written to, and the {@code java} JCStress starts with — its forks follow its {@code java.home}.
  */
-public record JCStressRun(Path benchmarkPath, List<String> arguments, Path workDir) {
+public record JCStressRun(Path benchmarkPath, List<String> arguments, Path workDir, String java) {
 
     public JCStressRun {
         arguments = List.copyOf(arguments);
+    }
+
+    /** A run on {@code java} from {@code PATH}. */
+    public JCStressRun(Path benchmarkPath, List<String> arguments, Path workDir) {
+        this(benchmarkPath, arguments, workDir, "java");
     }
 
     /** {@code -r}: JCStress's report, parsed to store the job's summary. */

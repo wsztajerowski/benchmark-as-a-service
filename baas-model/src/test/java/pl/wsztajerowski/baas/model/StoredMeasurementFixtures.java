@@ -27,7 +27,7 @@ public final class StoredMeasurementFixtures {
             "ops/s",
             Map.of("·gc.alloc.rate", new SecondaryMetric(1234.5, "MB/sec")),
             null,
-            Map.of("project", "lynx-journal", "type", "jmh", "jdk", "25.0.4"),
+            Map.of("project", "lynx-journal", "type", "jmh", "jdkVersion", "25.0.4"),
             "main/jmh/20260817_220706",
             "main/jmh/20260817_220706/jmh-result.json",
             "main/jmh/20260817_220706/environment.json");

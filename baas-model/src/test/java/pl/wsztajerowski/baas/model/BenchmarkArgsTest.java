@@ -42,6 +42,9 @@ class BenchmarkArgsTest {
         "MyBenchmark -prof async:di=/tmp/x, dir in -prof async",
         "MyBenchmark -prof jfr:di=/tmp/x, dir in -prof jfr",
         "MyBenchmark -prof org.openjdk.jmh.profile.AsyncProfiler:libPa=/x.so, libPath in -prof async",
+        "MyBenchmark -jvm /usr/bin/java, -jvm",
+        "MyBenchmark --jvm=/usr/bin/java, -jvm",
+        "MyBenchmark -jvm=/usr/bin/java, -jvm",
     })
     void aManagedArgumentIsFoundInEverySpellingJmhAccepts(String line, String expected) {
         assertThat(JMH.firstManaged(args(line))).contains(expected);
@@ -59,6 +62,8 @@ class BenchmarkArgsTest {
         "MyBenchmark -prof gc:dir=/tmp/x",
         "MyBenchmark -v EXTRA -wi 1 -i 3",
         "MyBenchmark -- -rf",
+        "MyBenchmark -jvmArgs -Xmx1g -jvmArgsAppend -Dx=1 -jvmArgsPrepend -Dy=2",
+        "MyBenchmark -jvmArgs -jvm",
     })
     void ordinaryJmhArgumentsAreNeitherManagedNorNoRun(String line) {
         assertThat(JMH.firstManaged(args(line))).isEmpty();
@@ -172,6 +177,14 @@ class BenchmarkArgsTest {
             .contains("org.openjdk.jmh.profile.GCProfiler");
         assertThat(JMH.profilersTag(args("-prof org.openjdk.jmh.profile.AsyncProfiler -prof jfr")))
             .contains("async,jfr");
+    }
+
+    /** The forks' JVM is chosen with baas run --jdk, so its refusal says that rather than "the runner sets it". */
+    @Test
+    void onlyTheForksJvmChoosesTheJdk() {
+        assertThat(BenchmarkArgs.choosesTheJdk(JMH.firstManaged(args("MyBenchmark --jvm=/x")).orElseThrow())).isTrue();
+        assertThat(BenchmarkArgs.choosesTheJdk(JMH.firstManaged(args("MyBenchmark -rf csv")).orElseThrow())).isFalse();
+        assertThat(BenchmarkArgs.choosesTheJdk("-jvmArgs")).isFalse();
     }
 
     /** JMH resolves a profiler by its class name too; written so, its managed keys are still BaaS's. */

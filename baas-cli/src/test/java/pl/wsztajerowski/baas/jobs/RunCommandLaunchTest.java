@@ -132,7 +132,7 @@ class RunCommandLaunchTest {
 
     @Test
     void aReservedTagIsRefusedBeforeAnyAwsCall() throws Exception {
-        int exit = run(args("--tag", "jdk=21"));
+        int exit = run(args("--tag", "jdkVersion=21"));
 
         assertThat(exit).isNotZero();
         assertThat(aws.events).isEmpty();

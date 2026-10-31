@@ -13,9 +13,16 @@ public final class TagKeys {
     public static final String TYPE = "type";
     public static final String COMMIT = "commit";
     public static final String BRANCH = "branch";
-    public static final String JDK = "jdk";
-    /** {@code java.vendor} on the instance: tells apart two vendors' builds of one Java version. */
-    public static final String JVM_VENDOR = "jvmVendor";
+    /**
+     * The id of the JDK the benchmark ran on, as {@code baas run --jdk} names it ({@code corretto-25}
+     * when none was given). Absent on a job from an image that predates JDK selection: no id was
+     * observed, so none is claimed.
+     */
+    public static final String JDK_ID = "jdkId";
+    /** The selected JDK's release ({@code 25.0.4}), from its own version banner. */
+    public static final String JDK_VERSION = "jdkVersion";
+    /** The selected JDK's {@code java.vendor}: tells apart two vendors' builds of one release. */
+    public static final String JDK_VENDOR = "jdkVendor";
     public static final String CPU_MODEL = "cpuModel";
     public static final String CPU_ARCH = "cpuArch";
     public static final String INSTANCE_TYPE = "instanceType";
@@ -37,8 +44,8 @@ public final class TagKeys {
     public static final String PROFILERS = "profilers";
 
     public static final Set<String> KNOWN = Set.of(
-        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, PROFILERS, JDK, JVM_VENDOR, CPU_MODEL,
-        CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
+        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, PROFILERS, JDK_ID, JDK_VERSION, JDK_VENDOR,
+        CPU_MODEL, CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
 
     /**
      * The convention a CI job uses to keep its measurements out of everyone's results: a row tagged
@@ -60,7 +67,7 @@ public final class TagKeys {
      * foreclose a consumer labelling a nightly or release job.
      */
     public static final List<String> MACHINE_OBSERVED =
-        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
+        List.of(IMAGE_VERSION, INSTANCE_TYPE, JDK_ID, JDK_VERSION, JDK_VENDOR, CPU_MODEL, CPU_ARCH, TYPE);
 
     /**
      * Every key a caller may not set: the observed ones, and {@link #CLI_PARAMETERS} and
@@ -68,7 +75,8 @@ public final class TagKeys {
      * settings it never ran with.
      */
     public static final List<String> RESERVED = List.of(
-        IMAGE_VERSION, INSTANCE_TYPE, JDK, JVM_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS, PROFILERS);
+        IMAGE_VERSION, INSTANCE_TYPE, JDK_ID, JDK_VERSION, JDK_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS,
+        PROFILERS);
 
     private TagKeys() {}
 

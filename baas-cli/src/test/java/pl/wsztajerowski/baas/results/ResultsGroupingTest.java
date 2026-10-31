@@ -204,11 +204,11 @@ class ResultsGroupingTest {
     void groupsByAnyTagNotJustBranch() {
         var rows = List.of(
             new ResultRow("r1", "com.example.Bench.run", "jmh", "thrpt", 10.0, 1.0, "ops/s", "t",
-                Map.of("jdk", "25.0.3")),
+                Map.of("jdkVersion", "25.0.3")),
             new ResultRow("r2", "com.example.Bench.run", "jmh", "thrpt", 20.0, 1.0, "ops/s", "t",
-                Map.of("jdk", "25.0.4")));
+                Map.of("jdkVersion", "25.0.4")));
 
-        assertThat(ResultsGrouping.bestPerGroup(rows, "jdk")).hasSize(2);
+        assertThat(ResultsGrouping.bestPerGroup(rows, "jdkVersion")).hasSize(2);
     }
 
     /** Under --all-projects two projects can share a benchmark name; neither may absorb the other. */

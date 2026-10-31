@@ -222,23 +222,40 @@ class ResultsDiffTest {
     @Test
     void aDifferentImageIsReportedAndTheHeaderTagsAreNot() {
         var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "instanceType", "c5.large", "imageVersion", "1.3.0", "jdk", "25.0.4"));
+            Map.of("type", "jmh", "instanceType", "c5.large", "imageVersion", "1.3.0", "jdkVersion", "25.0.4"));
         var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh-with-async", "instanceType", "c5.2xlarge", "imageVersion", "1.4.0", "jdk", "25.0.4"));
+            Map.of("type", "jmh-with-async", "instanceType", "c5.2xlarge", "imageVersion", "1.4.0", "jdkVersion", "25.0.4"));
 
         assertThat(ResultsDiff.environmentDifferences(List.of(a), List.of(b)))
             .containsExactly("imageVersion: 1.3.0 → 1.4.0");
     }
 
+    /** One job per JDK: the JDK tags differ on purpose, and a CPU difference is warned about on its own. */
+    @Test
+    void aJdkComparisonOnDifferentCpusWarnsTheCpuApartFromTheJdkTags() {
+        var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("jdkId", "corretto-25", "jdkVersion", "25.0.4",
+            "jdkVendor", "Amazon.com Inc.", "cpuModel", "Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz"));
+        var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("jdkId", "temurin-26", "jdkVersion", "26.0.2.1",
+            "jdkVendor", "Eclipse Adoptium", "cpuModel", "Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz"));
+
+        assertThat(ResultsDiff.cpuDifference(List.of(a), List.of(b))).isEqualTo(
+            "Intel(R) Xeon(R) Platinum 8275CL CPU @ 3.00GHz → Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz");
+        assertThat(ResultsDiff.environmentDifferences(List.of(a), List.of(b))).containsExactly(
+            "jdkId: corretto-25 → temurin-26", "jdkVersion: 25.0.4 → 26.0.2.1",
+            "jdkVendor: Amazon.com Inc. → Eclipse Adoptium");
+        assertThat(ResultsDiff.cpuDifference(List.of(a), List.of(a))).isNull();
+        assertThat(ResultsDiff.cpuDifference(List.of(a), List.of())).isNull();
+    }
+
     @Test
     void tagKeysAreBothJobsKeysWithoutTheHeadersTwo() {
         var a = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "main", "jdk", "25.0.4"));
+            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "main", "jdkVersion", "25.0.4"));
         var b = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "instanceType", "c5.large", "commit", "abc", "jdk", "25.0.4"));
+            Map.of("type", "jmh", "instanceType", "c5.large", "commit", "abc", "jdkVersion", "25.0.4"));
 
-        assertThat(ResultsDiff.tagKeys(List.of(a), List.of(b))).containsExactly("branch", "commit", "jdk");
-        assertThat(ResultsDiff.tagKeys(List.of(), List.of(b))).containsExactly("commit", "jdk");
+        assertThat(ResultsDiff.tagKeys(List.of(a), List.of(b))).containsExactly("branch", "commit", "jdkVersion");
+        assertThat(ResultsDiff.tagKeys(List.of(), List.of(b))).containsExactly("commit", "jdkVersion");
         assertThat(ResultsDiff.tagKeys(List.of(), List.of())).isEmpty();
     }
 

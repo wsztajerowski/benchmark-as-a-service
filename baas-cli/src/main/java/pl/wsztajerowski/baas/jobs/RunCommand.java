@@ -146,6 +146,11 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     @Option(names = "--instance-type", description = "EC2 instance type (overrides config default).")
     String instanceType;
 
+    @Option(names = "--jdk", paramLabel = "<id>", description = "JDK the benchmark runs on, by its id on the "
+        + "runner image (default: the image's default, corretto-25). baas admin image show lists them; an id the "
+        + "image does not hold is refused before anything is uploaded.")
+    String jdk;
+
     @Option(names = "--timeout", description = "Benchmark process timeout in seconds.")
     Integer timeoutSeconds;
 
@@ -156,7 +161,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
         + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
-        + "machine-observed keys (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type) — those are "
+        + "machine-observed keys (imageVersion, instanceType, jdkId, jdkVersion, jdkVendor, cpuModel, cpuArch, type) — those are "
         + "captured on the instance so a result's tags can't disagree with its own environment.json — "
         + "and for project, which --project names.")
     Map<String, String> extraTags = new LinkedHashMap<>();
@@ -329,7 +334,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         summaryDeployment = config.getPrefix();
         var request = new JobLaunch.Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar,
             resolvedInstanceType, resolvedProject, resolvedTimeout, resolvedWallClock,
-            runnerTags, detach, BaasVersion.current(), BaasVersion.sourceRepo());
+            runnerTags, detach, BaasVersion.current(), BaasVersion.sourceRepo(), jdk);
         return new JobLaunch(awsFactory.apply(operatorSession().factory()), config.names(), this).run(request);
     }
 
@@ -473,6 +478,11 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     void refuseManagedOrNoRun() {
         BenchmarkArgs reading = BenchmarkArgs.of(BenchmarkType.fromCommandName(benchmarkType));
         Optional<String> managed = reading.firstManaged(benchmarkParams);
+        if (managed.isPresent() && BenchmarkArgs.choosesTheJdk(managed.get())) {
+            throw CommandRefusal.usage(managed.get() + " is managed by BaaS and cannot be set after --: choose the "
+                + "JDK the benchmark runs on with --jdk <id>, before --. baas admin image show lists the image's "
+                + "JDKs.\nNothing was launched.");
+        }
         if (managed.isPresent()) {
             throw CommandRefusal.usage(managed.get() + " is managed by BaaS and cannot be set after --: the "
                 + "runner sets it to collect the job's results and artifacts, or to load the runner image's "

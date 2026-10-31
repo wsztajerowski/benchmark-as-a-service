@@ -56,9 +56,10 @@ public class JmhSubcommand implements Runnable {
     public void run() {
         BenchmarkArguments.refuseManagedOrNoRun(spec, BenchmarkType.JMH, benchmarkArgs);
         // In the order the builder used to evaluate them: the request options can refuse the run
-        // (no project) before any client is built or any storage line is logged.
+        // (no project, a JDK not on this image) before any client is built or any storage line is logged.
         var common = apiCommonSharedOptions.getRequestOptions();
-        var run = new JmhRun(benchmarkPath, benchmarkArgs, getWorkingDirectory(), asyncPath);
+        var run = new JmhRun(benchmarkPath, benchmarkArgs, getWorkingDirectory(), asyncPath,
+            apiCommonSharedOptions.javaExecutable());
         var store = apiCommonSharedOptions.buildResultsStore();
         var storage = StorageService.of(apiCommonSharedOptions.getS3Options());
         new JmhSubcommandService(storage, store, common, run).executeCommand();

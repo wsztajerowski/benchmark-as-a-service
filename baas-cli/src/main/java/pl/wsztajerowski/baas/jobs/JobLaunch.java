@@ -6,6 +6,7 @@ import software.amazon.awssdk.awscore.exception.AwsServiceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import pl.wsztajerowski.baas.session.DeploymentNames;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.image.RunnerImage;
@@ -42,10 +43,27 @@ public final class JobLaunch {
     public record Request(String benchmarkType, List<String> benchmarkParams, Path benchmarkJar, Path runnerJar,
                           String instanceType, String project, int timeoutSeconds,
                           int watchdogSeconds, Map<String, String> runnerTags, boolean detach,
-                          String cliVersion, String sourceRepo) {
+                          String cliVersion, String sourceRepo, String jdk) {
         public Request {
             benchmarkParams = List.copyOf(benchmarkParams);
             runnerTags = java.util.Collections.unmodifiableMap(new java.util.LinkedHashMap<>(runnerTags));
+        }
+
+        /** A request without {@code --jdk}. */
+        public Request(String benchmarkType, List<String> benchmarkParams, Path benchmarkJar, Path runnerJar,
+                       String instanceType, String project, int timeoutSeconds, int watchdogSeconds,
+                       Map<String, String> runnerTags, boolean detach, String cliVersion, String sourceRepo) {
+            this(benchmarkType, benchmarkParams, benchmarkJar, runnerJar, instanceType, project, timeoutSeconds,
+                watchdogSeconds, runnerTags, detach, cliVersion, sourceRepo, null);
+        }
+
+        /**
+         * The JDK the job runs on, once checked against the image: {@code --jdk}, else the image's
+         * default, else none — an image from before JDK selection runs on {@code java} from {@code PATH}.
+         */
+        Request withJdk(String resolved) {
+            return new Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar, instanceType, project,
+                timeoutSeconds, watchdogSeconds, runnerTags, detach, cliVersion, sourceRepo, resolved);
         }
     }
 
@@ -105,6 +123,33 @@ public final class JobLaunch {
             there is no boot-time install path.""".formatted(deployment, region, Hints.command(deployment, "admin image build"));
     }
 
+    /**
+     * The JDK the job runs on: the one asked for, which the image must hold, or the image's default.
+     * An image from before JDK selection accepts no {@code --jdk} and runs on {@code java} from
+     * {@code PATH}, under no JDK id.
+     */
+    String selectJdk(String asked, RunnerImage image) {
+        if (!image.selectsJdks()) {
+            if (asked != null) {
+                throw CommandRefusal.usage("""
+                    Runner image %s (%s) predates JDK selection, so it accepts no --jdk.
+                      Rebuild it:  %s
+                    Nothing was launched.""".formatted(image.imageVersion(), image.amiId(),
+                    Hints.command(deployment.prefix(), "admin image build")));
+            }
+            return null;
+        }
+        if (asked == null) {
+            return image.defaultJdk();
+        }
+        if (!image.jdkIds().contains(asked)) {
+            throw CommandRefusal.usage("""
+                Runner image %s (%s) holds no JDK '%s'. Its JDKs: %s.
+                Nothing was launched.""".formatted(image.imageVersion(), image.amiId(), asked, image.describeJdks()));
+        }
+        return asked;
+    }
+
     /** Runs the job to its end, or to its hand-over under {@code --detach}; returns the command's exit code. */
     public int run(Request request) throws InterruptedException {
         String prefix = deployment.prefix();
@@ -121,6 +166,9 @@ public final class JobLaunch {
         RunnerImage runnerImage = resolved.get();
         logger.debug("Resolved runner AMI: {} (image version {})",
             runnerImage.amiId(), runnerImage.imageVersion());
+        // Checked against what the image holds, in the same lookup: a misspelt id costs nothing,
+        // where the runner's own check would cost a boot.
+        request = request.withJdk(selectJdk(request.jdk(), runnerImage));
 
         // Before naming the job and before any upload: a torn-down or wrong deployment used to
         // upload the benchmark JAR and only then fail here. Resolved per job rather than cached in

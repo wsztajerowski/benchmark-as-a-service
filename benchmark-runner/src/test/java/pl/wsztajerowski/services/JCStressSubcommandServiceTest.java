@@ -63,6 +63,18 @@ class JCStressSubcommandServiceTest {
         assertThat(sut.jcstressProcess().commands()).doesNotContain("-m");
     }
 
+    @Test
+    void theSelectedJdksJavaStartsJCStress(@TempDir Path tmp) {
+        var sut = new JCStressSubcommandService(
+            (storagePath, localPath) -> { },
+            measurements -> { },
+            new CommonSharedOptions(tmp.resolve("result"), "req-1", Instant.now(), "p", Map.of()),
+            new JCStressRun(tmp.resolve("tests.jar"), List.of("-m", "sanity"), tmp, "/opt/jdks/temurin-26/bin/java"));
+
+        assertThat(sut.jcstressProcess().commands())
+            .startsWith("/opt/jdks/temurin-26/bin/java", "-jar", tmp.resolve("tests.jar").toString());
+    }
+
     private static JCStressSubcommandService serviceWith(Path tmp, List<String> arguments) {
         return new JCStressSubcommandService(
             (storagePath, localPath) -> { },

@@ -20,6 +20,10 @@ public final class RunnerArgs {
     public static final String JOB_ID_SHORT = "-id";
     public static final String S3_SERVICE_ENDPOINT = "--s3-service-endpoint";
     public static final String DYNAMODB_ENDPOINT = "--dynamodb-endpoint";
+    /** The id of the JDK under {@link Jdks#ROOT} the benchmark process runs on; absent, {@code java} on {@code PATH}. */
+    public static final String JDK = "--jdk";
+    /** Where the runner looks for {@link #JDK}'s directory: {@link Jdks#ROOT}, moved only by tests. */
+    public static final String JDKS_ROOT = "--jdks-root";
 
     private RunnerArgs() {
     }

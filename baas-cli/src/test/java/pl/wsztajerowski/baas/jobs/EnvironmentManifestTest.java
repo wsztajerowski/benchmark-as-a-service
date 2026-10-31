@@ -9,10 +9,10 @@ class EnvironmentManifestTest {
 
     private static final String BASE = """
         {
-          "schemaVersion": 6,
+          "schemaVersion": 8,
           "machine": { "imageVersion": "1.0.0", "amiId": "ami-aaa", "instanceType": "c5.2xlarge" },
           "os": { "version": "Amazon Linux 2023", "kernelRelease": "6.1.177-224.371.amzn2023" },
-          "jvm": { "version": "openjdk version \\"25.0.1\\" 2025-10-21", "vendor": "Amazon.com Inc." }
+          "jdk": { "version": "openjdk version \\"25.0.1\\" 2025-10-21", "vendor": "Amazon.com Inc." }
         }
         """;
 
@@ -30,8 +30,8 @@ class EnvironmentManifestTest {
         var b = EnvironmentManifest.parse("b", BASE.replace("25.0.1", "25.0.3"));
 
         assertThat(EnvironmentManifest.diff(a, b))
-            .containsOnlyKeys("jvm")
-            .hasEntrySatisfying("jvm", fields -> assertThat(fields)
+            .containsOnlyKeys("jdk")
+            .hasEntrySatisfying("jdk", fields -> assertThat(fields)
                 .containsOnlyKeys("version")
                 .hasEntrySatisfying("version", difference -> {
                     assertThat(difference.left()).contains("25.0.1");
@@ -43,15 +43,15 @@ class EnvironmentManifestTest {
      * Two vendors' builds of one Java version share the version banner; only the vendor tells them
      * apart, and that is the difference an image extension makes reachable.
      */
-    /** The banner and the release both move, and both are named under jvm. */
+    /** The banner and the release both move, and both are named under jdk. */
     @Test
-    void aJvmChangeListsVersionAndReleaseUnderJvm() {
+    void aJdkChangeListsVersionAndReleaseUnderJdk() {
         String v7 = BASE.replace("\"vendor\":", "\"release\": \"25.0.1\", \"vendor\":");
         var a = EnvironmentManifest.parse("a", v7);
         var b = EnvironmentManifest.parse("b", v7.replace("25.0.1", "25.0.3"));
 
-        assertThat(EnvironmentManifest.diff(a, b)).containsOnlyKeys("jvm");
-        assertThat(EnvironmentManifest.diff(a, b).get("jvm")).containsOnlyKeys("version", "release")
+        assertThat(EnvironmentManifest.diff(a, b)).containsOnlyKeys("jdk");
+        assertThat(EnvironmentManifest.diff(a, b).get("jdk")).containsOnlyKeys("version", "release")
             .containsEntry("release", new EnvironmentManifest.Difference("25.0.1", "25.0.3"));
     }
 
@@ -60,7 +60,7 @@ class EnvironmentManifestTest {
         var a = EnvironmentManifest.parse("a", BASE);
         var b = EnvironmentManifest.parse("b", BASE.replace("Amazon.com Inc.", "Eclipse Adoptium"));
 
-        assertThat(EnvironmentManifest.diff(a, b).get("jvm"))
+        assertThat(EnvironmentManifest.diff(a, b).get("jdk"))
             .containsOnlyKeys("vendor")
             .hasEntrySatisfying("vendor", difference -> {
                 assertThat(difference.left()).isEqualTo("Amazon.com Inc.");
@@ -73,13 +73,13 @@ class EnvironmentManifestTest {
     void addedAndRemovedFieldsAreReported() {
         var a = EnvironmentManifest.parse("a", BASE);
         var b = EnvironmentManifest.parse("b", BASE.replace("\"vendor\": \"Amazon.com Inc.\"",
-            "\"vendor\": \"Amazon.com Inc.\", \"name\": \"OpenJDK 64-Bit Server VM\""));
+            "\"vendor\": \"Amazon.com Inc.\", \"vmName\": \"OpenJDK 64-Bit Server VM\""));
 
-        var jvm = EnvironmentManifest.diff(a, b).get("jvm");
+        var jdk = EnvironmentManifest.diff(a, b).get("jdk");
 
-        assertThat(jvm).containsOnlyKeys("name");
-        assertThat(jvm.get("name").left()).isEmpty();
-        assertThat(jvm.get("name").right()).isEqualTo("OpenJDK 64-Bit Server VM");
+        assertThat(jdk).containsOnlyKeys("vmName");
+        assertThat(jdk.get("vmName").left()).isEmpty();
+        assertThat(jdk.get("vmName").right()).isEqualTo("OpenJDK 64-Bit Server VM");
     }
 
     /** A field a newer runner adds is reported too — parsing into named fields would drop it. */
@@ -99,7 +99,7 @@ class EnvironmentManifestTest {
     @Test
     void theSchemaVersionIsNeverADifference() {
         var a = EnvironmentManifest.parse("a", BASE);
-        var b = EnvironmentManifest.parse("b", BASE.replace("\"schemaVersion\": 6", "\"schemaVersion\": 99"));
+        var b = EnvironmentManifest.parse("b", BASE.replace("\"schemaVersion\": 8", "\"schemaVersion\": 99"));
 
         assertThat(b.schemaVersion()).hasValue("99");
         assertThat(EnvironmentManifest.diff(a, b)).isEmpty();
@@ -116,13 +116,24 @@ class EnvironmentManifestTest {
         assertThat(EnvironmentManifest.diff(a, b).get("")).containsOnlyKeys("imageVersion");
     }
 
+    /** A schema-7 manifest's jvm group is not read as jdk: its fields show as present on one side only. */
+    @Test
+    void theRenamedGroupIsNotMappedOntoTheNewOne() {
+        var v7 = EnvironmentManifest.parse("a", BASE.replace("\"jdk\": {", "\"jvm\": {"));
+        var v8 = EnvironmentManifest.parse("b", BASE);
+
+        var diff = EnvironmentManifest.diff(v7, v8);
+        assertThat(diff).containsOnlyKeys("jdk", "");
+        assertThat(diff.get("")).containsOnlyKeys("jvm.version", "jvm.vendor");
+    }
+
     @Test
     void groupsAreReportedInTheManifestsOrder() {
         var a = EnvironmentManifest.parse("a", BASE);
         var b = EnvironmentManifest.parse("b",
             BASE.replace("25.0.1", "25.0.3").replace("ami-aaa", "ami-bbb").replace("6.1.177", "6.1.180"));
 
-        assertThat(EnvironmentManifest.diff(a, b).keySet()).containsExactly("machine", "os", "jvm");
+        assertThat(EnvironmentManifest.diff(a, b).keySet()).containsExactly("machine", "os", "jdk");
     }
 
     private static String withMemory(String totalMib) {
