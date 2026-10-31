@@ -8,7 +8,7 @@ import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.session.BaasConfig;
 
@@ -284,9 +284,9 @@ class ResultsDiffCommandTest {
         var metricA = Map.of("gc.alloc.rate.norm", new SecondaryMetric(48.0, "B/op"));
         var metricB = Map.of("gc.alloc.rate.norm", new SecondaryMetric(96.0, "B/op"));
         jobs.put(A, List.of(new ResultRow(A, "com.example.Foo.bar", "jmh-with-prof", "avgt", 10, 0.1, "ns/op",
-            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metricA, MeasurementKind.JMH)));
+            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metricA, BenchmarkType.JMH)));
         jobs.put(B, List.of(new ResultRow(B, "com.example.Foo.bar", "jmh-with-prof", "avgt", 10, 0.1, "ns/op",
-            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metricB, MeasurementKind.JMH)));
+            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metricB, BenchmarkType.JMH)));
 
         String plain = run("results", "diff", A, B).out();
         String verbose = run("results", "diff", "-v", A, B).out();
@@ -300,7 +300,7 @@ class ResultsDiffCommandTest {
     void aMetricOnOneSideOnlyShowsTheOtherAsUnknown() throws Exception {
         var metric = Map.of("gc.count", new SecondaryMetric(3.0, "counts"));
         jobs.put(A, List.of(new ResultRow(A, "com.example.Foo.bar", "jmh-with-prof", "avgt", 10, 0.1, "ns/op",
-            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metric, MeasurementKind.JMH)));
+            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metric, BenchmarkType.JMH)));
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "avgt", 10, 0.1, "ns/op", Map.of(), Map.of())));
 
         String metricLine = run("results", "diff", "-v", A, B).out().lines()

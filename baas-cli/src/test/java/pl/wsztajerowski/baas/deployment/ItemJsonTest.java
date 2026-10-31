@@ -2,7 +2,7 @@ package pl.wsztajerowski.baas.deployment;
 
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
@@ -47,7 +47,7 @@ class ItemJsonTest {
     @Test
     void aMeasurementItemRoundTrips() {
         var measurement = new StoredMeasurement(
-            "p", "20261023T090642860Z-5165200d", Instant.parse("2026-10-23T09:06:42.860Z"), MeasurementKind.JMH,
+            "p", "20261023T090642860Z-5165200d", Instant.parse("2026-10-23T09:06:42.860Z"), BenchmarkType.JMH,
             "com.example.Bench", "m", "thrpt", Map.of("size", "10"), 1234.5, null, "ops/s",
             Map.of(), null, Map.of("imageVersion", "1.4.0"),
             "jobs/p/20261023T090642860Z-5165200d", "jobs/p/20261023T090642860Z-5165200d/jmh-result.json",

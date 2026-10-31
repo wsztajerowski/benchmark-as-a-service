@@ -1,7 +1,7 @@
 package pl.wsztajerowski.results;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jmh.JmhResult;
 import pl.wsztajerowski.entities.jmh.Metric;
@@ -42,7 +42,7 @@ class JmhMeasurementMapperTest {
     void carriesTheKindAndTheS3Pointers() {
         var measurement = map("com.example.Bench.method");
 
-        assertThat(measurement.kind()).isEqualTo(MeasurementKind.JMH);
+        assertThat(measurement.kind()).isEqualTo(BenchmarkType.JMH);
         assertThat(measurement.resultJsonKey()).isEqualTo("main/jmh/ts/jmh-result.json");
         assertThat(measurement.environmentJsonKey()).isEqualTo("main/jmh/ts/environment.json");
     }

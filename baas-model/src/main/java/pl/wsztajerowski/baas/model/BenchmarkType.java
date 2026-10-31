@@ -14,6 +14,10 @@ import java.util.List;
  * types {@code jmh-with-async} and {@code jmh-with-prof} were retired by
  * {@code benchmark-args-pass-through}; their jobs stay in storage under
  * {@link #LEGACY_PROCESS_OUTPUT_NAMES}.
+ *
+ * <p>The type is also what a stored measurement records as its {@code kind}: the constant's
+ * {@link #name()} is written to the results table, so the constant names are a storage format and
+ * must not be renamed.
  */
 public enum BenchmarkType {
     JMH(BenchmarkType.JMH_NAME, "jmh-output.txt", "jmh-output.txt"),

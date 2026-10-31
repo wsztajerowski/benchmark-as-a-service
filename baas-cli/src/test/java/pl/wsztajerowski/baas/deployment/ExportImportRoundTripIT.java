@@ -12,7 +12,7 @@ import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
@@ -108,7 +108,7 @@ class ExportImportRoundTripIT {
     @Test
     void aBundleRestoresItemByItemAndObjectByObject() throws Exception {
         var measurement = MeasurementItemMapper.toItem(new StoredMeasurement(
-            "p", JOB_ID, Instant.parse("2026-10-23T09:06:42.860Z"), MeasurementKind.JMH,
+            "p", JOB_ID, Instant.parse("2026-10-23T09:06:42.860Z"), BenchmarkType.JMH,
             "com.example.Bench", "m", "thrpt", Map.of("size", "10"), 8234574.731914, 12.5, "ops/s",
             Map.of(), null, Map.of("imageVersion", "1.4.0", "source", "local"),
             JOB.substring(0, JOB.length() - 1), JOB + "jmh-result.json", JOB + "environment.json"));
