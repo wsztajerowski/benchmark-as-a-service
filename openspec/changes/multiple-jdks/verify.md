@@ -101,13 +101,21 @@ the pre-change build (`c85bc8f`, its own CLI and runner) for the baseline. Bench
   Ubuntu. The e2e jobs ran the new CLI against `baas-381492019823`'s image 1.4.0, which predates JDK selection:
   `…4e7ebe63` (JMH) and `…154689bb` (JCStress) completed with `jdkVersion=25.0.4`, `jdkVendor=Amazon.com Inc.` and
   no `jdkId`, as designed.
-- **8.7: not done yet** — it needs a deployer for a second deployment name (an IAM administrator).
+- **8.7 from scratch (2026-11-01):** the baas-admin deployer cannot take on a new deployment name, so with the user
+  `baas-development` itself was rebuilt from nothing with the worktree CLI. `admin deployment export` (110 items, 354
+  recordings, extension `e383db2d`, kept in `~/.baas/exports/baas-development-2026-11-01`; not re-imported — the user
+  does not need the development history), `teardown --yes` (stack, bucket, table, image, pointer and config removed),
+  `setup --non-interactive` (create path: the submitted `RunnerImageContractData` writes
+  `s3://baas-development/image-builds/1.5.0/jdks.json --region eu-central-1`), then `admin image build --extension`
+  with the exported extension: `1.5.0+ext.e383db2d`, `ami-02f0dc3f67b976fa8`, JDKs `corretto-25 (default)`,
+  `corretto-27`, `temurin-26`. One job, `--jdk corretto-27` (`20261031T232703304Z-d6003e3d`), completed with
+  `jdkId=corretto-27 jdkVersion=27.0.1`, and `jobs list --tag jdkId=corretto-27` finds it. 15 paid jobs of 20.
 
 ## 10. `/opsx:verify` (2026-10-31)
 
 | Dimension | Status |
 |---|---|
-| Completeness | 36/39 tasks; open: 8.7 (needs an IAM administrator), 9.1 (rollout after 9.0.0), and this one until recorded |
+| Completeness | 39/39 tasks; 9.1 (rollout) taken out of this change by the user |
 | Correctness | 13 of 13 requirements implemented; the 2 diverging scenarios (W1, W2) resolved with the user |
 | Coherence | Design followed; deviations below |
 
