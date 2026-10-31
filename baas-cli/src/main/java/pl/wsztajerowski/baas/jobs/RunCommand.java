@@ -60,9 +60,13 @@ import java.util.regex.Pattern;
         "  baas run --benchmark-jar target/stress.jar --project my-bench \\",
         "    jcstress -- -m sanity",
         "",
-        "BaaS sets -rf, -rff and -o (JCStress: -r) and the dir of an async or jfr",
-        "profiler; -h, -l, -lp, -lprof and -lrf (JCStress: -h, -l, -p) measure",
-        "nothing. Both are refused before anything is launched.",
+        "BaaS sets -rf, -rff and -o (JCStress: -r), the dir of an async or jfr",
+        "profiler and async's libPath; -h, -l, -lp and -lrf (JCStress: -h, -l, -p)",
+        "measure nothing. Both are refused before anything is launched.",
+        "",
+        "-lprof alone lists the profilers of the runner, for your JAR's JMH version",
+        "and the chosen instance type. It is a job, printed verbatim when it ends:",
+        "  baas run --benchmark-jar target/b.jar jmh -- -lprof",
         "",
         "--project can be derived from the JAR's git repository instead:",
         "  baas config set --git-resolve-project true",
@@ -245,8 +249,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             return;
         }
         if (localCommand != null) {
-            Hints.show(console(), sink, "run it here", localCommand,
-                localCommandCaveat == null ? null : "on the runner image", localCommandCaveat);
+            Hints.show(console(), sink, "run it here", localCommand, null, null);
             return;
         }
         if (summaryJobId == null) {
@@ -257,6 +260,9 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             // Nothing has been measured yet: the job is followed, not queried.
             Hints.show(console(), sink, "follow it", Hints.command(d, "jobs show " + summaryJobId),
                 "stop it", Hints.command(d, "jobs terminate " + summaryJobId));
+        } else if (exitCode == 0 && isProfilerListing()) {
+            // A listing measured nothing: its answer is the process output, already printed.
+            Hints.show(console(), sink, "artifacts", Hints.command(d, "jobs download " + summaryJobId), null, null);
         } else if (exitCode == 0) {
             Hints.show(console(), sink, "measurements", Hints.command(d, "query --job-id " + summaryJobId),
                 "artifacts", Hints.command(d, "jobs download " + summaryJobId));
@@ -471,13 +477,14 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             throw CommandRefusal.usage(managed.get() + " is managed by BaaS and cannot be set after --: the "
                 + "runner sets it to collect the job's results and artifacts.\nNothing was launched.");
         }
+        if (reading.listsProfilersBesideOthers(benchmarkParams)) {
+            throw CommandRefusal.usage("-lprof lists " + reading.tool() + "'s profilers on the runner and exits, "
+                + "ignoring everything else, so it must be the only argument after --.\nNothing was launched.");
+        }
         Optional<String> noRun = reading.firstNoRun(benchmarkParams);
         if (noRun.isPresent()) {
             localCommand = "java -jar " + shellWord(String.valueOf(benchmarkJar)) + " "
                 + String.join(" ", benchmarkParams.stream().map(RunCommand::shellWord).toList());
-            localCommandCaveat = noRun.get().equals("-lprof")
-                ? "perf and async-profiler are also available there; this lists this machine's profilers"
-                : null;
             throw CommandRefusal.usage(noRun.get() + " makes " + reading.tool() + " print and exit without "
                 + "measuring, so the job would measure nothing. Run it locally: " + localCommand
                 + "\nNothing was launched.");
@@ -500,7 +507,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     String localCommand;
 
     /** The {@code -lprof} caveat beside {@link #localCommand}: the runner image is not this machine. */
-    String localCommandCaveat;
 
     /**
      * The results table this job records its status in and stores its measurements to.
@@ -637,6 +643,28 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     @Override
     public void printResults(List<ResultRow> rows, String jobId) {
         reportJobResults(rows, jobId, r -> ResultsTable.print(console(), r));
+    }
+
+    /**
+     * The listing as JMH printed it on the runner, JVM warnings included: filtering them would match
+     * JVM wording that changes between releases. Under {@code --format json} the summary stays the
+     * one payload on standard output, as for measurements.
+     */
+    @Override
+    public void printListing(String listing, String jobId) {
+        if (jsonSummary()) {
+            logger.info("Job {} listed the runner's profilers — {}",
+                jobId, Hints.command(summaryDeployment, "jobs download " + jobId));
+            return;
+        }
+        logger.info("Profilers on the runner, job {} (baas jobs download {}):", jobId, jobId);
+        console().print(listing);
+    }
+
+    /** Asked by the hints too, which must never throw: an unknown type is no listing. */
+    private boolean isProfilerListing() {
+        return VALID_TYPES.contains(benchmarkType)
+            && BenchmarkArgs.of(BenchmarkType.fromCommandName(benchmarkType)).isProfilerListing(benchmarkParams);
     }
 
     /**

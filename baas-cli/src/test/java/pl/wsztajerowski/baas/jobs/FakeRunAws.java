@@ -35,6 +35,8 @@ public final class FakeRunAws implements RunAws {
     public final List<String> events = new ArrayList<>();
     public final Map<String, String> uploads = new HashMap<>();
     public final Map<String, String> texts = new HashMap<>();
+    /** What the job's instance uploads as its process output: the job id is minted inside the launch. */
+    public String processOutput;
     public Optional<RunnerImage> image = Optional.of(new RunnerImage("ami-1", "1.3.0", "ami-parent", "2026-10-01T00:00:00Z"));
     public Map<String, String> outputs = new HashMap<>(Map.of(
         CoreStack.OUTPUT_SUBNET_ID, "subnet-1", CoreStack.OUTPUT_SECURITY_GROUP_ID, "sg-1"));
@@ -95,6 +97,15 @@ public final class FakeRunAws implements RunAws {
     @Override
     public Instances instances(String deployment) {
         return instances;
+    }
+
+    @Override
+    public Optional<String> getText(String bucket, String key) {
+        events.add("getText " + key);
+        if (processOutput != null && key.endsWith("/" + pl.wsztajerowski.baas.model.BenchmarkType.JMH.processOutputName())) {
+            return Optional.of(processOutput);
+        }
+        return Optional.ofNullable(texts.get(key));
     }
 
     @Override

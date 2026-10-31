@@ -45,6 +45,7 @@ class JobLaunchTest {
         JobSession session;
         StatusLine statusLine;
         List<ResultRow> printed;
+        String listing;
 
         @Override
         public void named(String jobId, String resultPath) {
@@ -77,6 +78,11 @@ class JobLaunchTest {
         public void printResults(List<ResultRow> rows, String jobId) {
             printed = rows;
         }
+
+        @Override
+        public void printListing(String listing, String jobId) {
+            this.listing = listing;
+        }
     }
 
     private JobLaunch launch() {
@@ -96,6 +102,25 @@ class JobLaunchTest {
             if (aws.events.get(i).startsWith(prefix)) return i;
         }
         return -1;
+    }
+
+    /** A completed listing shows its stored process output and reads no measurements. */
+    @Test
+    void aCompletedListingShowsItsProcessOutputInsteadOfMeasurements() throws Exception {
+        Path benchmarkJar = Files.writeString(dir.resolve("b.jar"), "jar");
+        var request = new JobLaunch.Request("jmh", List.of("-lprof"), benchmarkJar, null,
+            "c5.2xlarge", "lynx-journal", 600, 900,
+            Map.of("project", "lynx-journal", "type", "jmh", "source", "local"), false, "7.1.1",
+            "Wiktor-Sztajerowski/benchmark-as-a-service");
+        aws.processOutput = "Supported profilers:\n       async: async-profiler profiler provider. \n";
+
+        int exit = launch().run(request);
+
+        assertThat(exit).isZero();
+        assertThat(aws.events).noneMatch(e -> e.startsWith("jobRows"));
+        assertThat(aws.events.getLast()).isEqualTo("getText jobs/lynx-journal/" + listener.jobId + "/jmh-output.txt");
+        assertThat(listener.printed).isNull();
+        assertThat(listener.listing).isEqualTo(aws.processOutput);
     }
 
     @Test

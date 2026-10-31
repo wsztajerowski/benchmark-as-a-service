@@ -58,5 +58,29 @@ class JmhSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
                 .isEqualTo("test-1/jmh-result.json"));
     }
 
+    /** A listing job's answer is its process output; it measured nothing, so it stores nothing. */
+    @Test
+    void aProfilerListingUploadsItsOutputAndStoresNoMeasurement() throws IOException {
+        // given
+        Path jmhTestBenchmark = Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath();
+        JmhSubcommandService sut = new JmhSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            resultsStore(),
+            new CommonSharedOptions(Path.of("test-listing"), "req-listing", Instant.now(), "test-project", Collections.emptyMap()),
+            new JmhRun(jmhTestBenchmark, List.of("-lprof"), Files.createTempDirectory("jmh"), Path.of("no-async-profiler")));
+
+        // when
+        sut.executeCommand();
+
+        // then
+        assertThat(storedMeasurements()).isEmpty();
+        JSONArray objectsInTestBucket = listObjectsInTestBucket();
+        assertThatJson(objectsInTestBucket)
+            .inPath("$[*].Key")
+            .isArray()
+            .anySatisfy(o -> assertThat(o).asString().isEqualTo("test-listing/jmh-output.txt"))
+            .noneSatisfy(o -> assertThat(o).asString().isEqualTo("test-listing/jmh-result.json"));
+    }
+
 
 }
