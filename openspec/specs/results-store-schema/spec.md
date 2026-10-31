@@ -101,8 +101,11 @@ metric name to score and unit. The item SHALL NOT contain `rawData` or `scorePer
 - **THEN** its item carries `totalTests`, `passedTests` and the failed, error and interesting test maps
 
 ### Requirement: Tags are the queryable dimensions, with a shared known-key vocabulary
-The runner SHALL record `project`, `type`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`, `instanceType` and
-`imageVersion` as tags on every measurement. It SHALL record `commit`, `branch` and `source` on every
+The runner SHALL record `project`, `type`, `jdkId`, `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch`,
+`instanceType` and `imageVersion` as tags on every measurement. `jdkId` SHALL be the id of the JDK the
+benchmark ran on — the one named by `--jdk`, or the image's default when none was given — and
+`jdkVersion` and `jdkVendor` SHALL describe that JDK, never the runner's own. A job on an image that
+predates JDK selection SHALL carry no `jdkId` rather than a stand-in for it. It SHALL record `commit`, `branch` and `source` on every
 measurement for which they are supplied, and SHALL omit them otherwise rather than storing a
 placeholder value standing in for an unknown one. These key names SHALL be defined once as constants
 in the shared model module and used by both the runner and the CLI. `branch` and `source` SHALL be
@@ -117,25 +120,35 @@ SHALL omit the tag when nothing follows `--`.
 profiler's name as given, without its options, sorted alphabetically, without duplicates, joined by `,`.
 It SHALL omit the tag when no profiler is named. The job item and every measurement of the job SHALL
 carry the same value.
-`imageVersion`, `instanceType`, `jdk`, `jvmVendor`, `cpuModel`, `cpuArch`, `type`, `cliParameters` and
-`profilers` SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them
+`imageVersion`, `instanceType`, `jdkId`, `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch`, `type`,
+`cliParameters` and `profilers` SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them
 before launching anything.
 Tag keys outside the vocabulary SHALL be permitted, and a query naming an unknown key SHALL produce a
 warning rather than silently returning nothing.
 
 #### Scenario: Environment tags are observed on the instance
 - **WHEN** a benchmark runs on an instance
-- **THEN** its stored measurement carries `jdk`, `jvmVendor`, `cpuModel`, `cpuArch` and `instanceType`
-  values matching that job's `environment.json`
+- **THEN** its stored measurement carries `jdkId`, `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch` and
+  `instanceType` values matching that job's `environment.json`
+
+#### Scenario: The JDK tags describe the selected JDK
+- **WHEN** `baas run --jdk temurin-26 jmh -- MyBenchmark` completes while the runner runs on Corretto 25
+- **THEN** its measurements carry `jdkId=temurin-26` and Temurin's `jdkVersion` and `jdkVendor`, not
+  Corretto's
+
+#### Scenario: The default JDK is named, not left out
+- **WHEN** `baas run jmh -- MyBenchmark` completes without `--jdk`
+- **THEN** its measurements carry `jdkId=corretto-25`
 
 #### Scenario: Results can be grouped by JVM vendor
 - **WHEN** results measured on two vendors' builds of the same Java version exist for one benchmark and
-  `jvmVendor` is the grouping tag
+  `jdkVendor` is the grouping tag
 - **THEN** they are reported as separate groups rather than merged
 
 #### Scenario: A caller cannot set the JVM vendor
-- **WHEN** `baas run --tag jvmVendor=Acme jmh -- MyBenchmark` is invoked
-- **THEN** the command exits non-zero naming `jvmVendor` as reserved, and no instance is launched
+- **WHEN** `baas run --tag jdkVendor=Acme jmh -- MyBenchmark` or `baas run --tag jdkId=zulu-21 jmh -- MyBenchmark`
+  is invoked
+- **THEN** the command exits non-zero naming the key as reserved, and no instance is launched
 
 #### Scenario: The run's parameters are recorded as a tag
 - **WHEN** `baas run jmh -- MyBenchmark -f 1 -prof async:event=wall` completes

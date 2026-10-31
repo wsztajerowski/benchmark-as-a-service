@@ -347,7 +347,7 @@ In the human-readable view:
   section already shows. `hidden=true` SHALL be shown as the marker `hidden` beside the status instead of
   as a tag.
 - Each environment field SHALL be shown in a form made for reading when the field is one the CLI knows —
-  memory in GiB, the JVM as its vendor version and vendor, tool versions as their version numbers,
+  memory in GiB, the JDK as its vendor version and vendor, with the `--jdk` id it was selected by, tool versions as their version numbers,
   `transparentHugepages` as its selected mode — and as recorded otherwise. A field with an empty value
   SHALL be omitted, and `machine.instanceType` SHALL NOT be repeated in the Environment section.
 - The artifacts SHALL be printed one per line with their sizes, grouped as process output and logs,
@@ -398,9 +398,10 @@ watchdog bound when recorded.
 
 #### Scenario: Environment values are shown for reading
 - **WHEN** a job whose manifest records `memory.totalMib` 15622, `memory.swapTotalMib` 0,
-  `jvm.vendorVersion` `Corretto-25.0.4.7.1`, `tools.asyncProfiler` `Async-profiler 4.0 built on Apr  8 2025`,
+  `jdk.vendorVersion` `Corretto-25.0.4.7.1`, `jdk.id` `corretto-25`, `tools.asyncProfiler` `Async-profiler 4.0 built on Apr  8 2025`,
   `tunables.transparentHugepages` `[always] madvise never` and an empty `cpu.maxMhz` is shown
-- **THEN** memory is shown as `15.3 GiB` with no swap, the JVM as Corretto 25.0.4.7.1 from its vendor,
+- **THEN** memory is shown as `15.3 GiB` with no swap, the JDK as Corretto 25.0.4.7.1 from its vendor and
+  `corretto-25`,
   async-profiler as `4.0`, transparent huge pages as `always`, and `maxMhz` does not appear
 
 #### Scenario: An unknown field is shown as recorded

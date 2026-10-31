@@ -29,7 +29,7 @@ and the swap state; `perf_event_paranoid` and `kptr_restrict` are additionally b
 
 ### Requirement: The runner installs no tooling at run time
 The user-data script SHALL NOT invoke `yum update`, install a JDK, or download async-profiler. Every tool
-the benchmark job requires SHALL already be present in the AMI.
+the benchmark job requires — every JDK a job can select included — SHALL already be present in the AMI.
 
 #### Scenario: User-data performs no package deployment
 - **WHEN** `UserDataScriptBuilder.build(...)` output is decoded
@@ -37,12 +37,13 @@ the benchmark job requires SHALL already be present in the AMI.
 
 #### Scenario: Baked tooling is present and pinned
 - **WHEN** an instance launched from an image built without an extension is inspected
-- **THEN** `java -version` reports the Corretto version declared in `infra/runner-image.yaml`, and
-  `/app/async-profiler/lib/libasyncProfiler.so` exists at the declared version
+- **THEN** `java -version` reports the Corretto version declared in `infra/runner-image.yaml`, `jcmd` is
+  present beside it, and `/app/async-profiler/lib/libasyncProfiler.so` exists at the declared version
 
 #### Scenario: Baked async-profiler is at the path the runner defaults to
 - **WHEN** a `jmh` job names `-prof async` without a library path
-- **THEN** the library path the runner injects resolves to the baked async-profiler
+- **THEN** the library directory the runner puts on the benchmark process's library path holds the baked
+  async-profiler
 
 ### Requirement: Exactly one runner image exists at a time
 The system SHALL maintain exactly one runner AMI, published at `/<prefix>/runner/ami-id`. It SHALL NOT
@@ -163,8 +164,12 @@ The contract SHALL verify, on an instance booted from the newly built image, tha
 `PATH` and its specification version is at least the Java version the runner is compiled for; `aws`
 runs; async-profiler's library and `asprof` are present at the path the runner defaults to; `perf`
 runs and matches the running kernel; `amazon-ssm-agent` is installed and enabled to start at boot;
-`/etc/baas-image-version` exists; `kernel.perf_event_paranoid` is at most 1; and
-`kernel.kptr_restrict` is 0. When any check fails, the build SHALL fail, the pointer SHALL remain
+`/etc/baas-image-version` exists; `kernel.perf_event_paranoid` is at most 1;
+`kernel.kptr_restrict` is 0; and every entry of `/opt/jdks` is a JDK a job can select — its name matches
+`[a-z0-9][a-z0-9.-]*` and is at most 32 characters, its `bin/java` runs and its `bin/jcmd` exists — with
+the base's default among them and every id together within the length an AMI tag value can hold. The
+contract SHALL then record each JDK's id, release, vendor and whether it is the default in the image's
+JDK list (see `jdk-selection`). When any check fails, the build SHALL fail, the pointer SHALL remain
 unchanged, and the failure SHALL name the check. The contract SHALL NOT constrain the JVM vendor, a
 JVM version above the floor, the SSM agent's version, the transparent hugepage mode or the swap state.
 
@@ -180,6 +185,14 @@ JVM version above the floor, the SSM agent's version, the transparent hugepage m
 #### Scenario: A JVM below the floor fails the bake
 - **WHEN** an extension leaves only a Java 17 on `PATH`
 - **THEN** the build fails naming the Java check
+
+#### Scenario: A JDK without jcmd fails the bake
+- **WHEN** an extension unpacks a JRE, which has no `bin/jcmd`, into `/opt/jdks/some-jre`
+- **THEN** the build fails naming the JDK check and `some-jre`
+
+#### Scenario: A malformed JDK id fails the bake
+- **WHEN** an extension creates `/opt/jdks/Temurin_26`
+- **THEN** the build fails naming the JDK id check
 
 #### Scenario: A kernel upgrade that strands perf fails the bake
 - **WHEN** an extension upgrades the kernel after the base installed `perf`
@@ -294,7 +307,12 @@ or of its hash.
 
 ### Requirement: The base definition ships with the CLI and pins only what it must
 `infra/runner-image.yaml` SHALL declare the base's version, its parent as one exact Amazon Linux 2023
-release, and the pinned versions of the Amazon Corretto package and async-profiler. It SHALL NOT pin
+release, and the pinned versions of the Amazon Corretto package and async-profiler. The Corretto package
+SHALL be the full JDK (`-devel`), so `jcmd` is present, and the base SHALL make it the default `java` and
+link it as `/opt/jdks/corretto-25`, the image's default JDK. The base SHALL install
+`baas-install-jdk <id> <url> <sha256>` on `PATH` for extensions: it SHALL download the archive, refuse it
+when its SHA-256 differs, unpack it into `/opt/jdks/<id>`, and refuse an id already present or a JDK
+without `bin/jcmd`, failing the bake in each case. It SHALL NOT pin
 `perf`, which the base SHALL install for the running kernel, and SHALL NOT pin the AWS CLI, which the
 base SHALL take from the parent image. It SHALL ship as a `baas-cli` classpath resource so the CLI can
 render it without repository access. The file SHALL be the only place a base tool version is declared;
@@ -313,21 +331,34 @@ tools added by an extension are declared in that extension.
 - **WHEN** a BaaS developer changes the async-profiler version
 - **THEN** the only file requiring an edit is `infra/runner-image.yaml`
 
+#### Scenario: An extension adds a JDK in one line
+- **WHEN** an extension runs `baas-install-jdk temurin-26 <url> <sha256>` with the archive's correct digest
+- **THEN** `/opt/jdks/temurin-26/bin/java` and `bin/jcmd` exist on the image, and `java` on `PATH` is still
+  Corretto
+
+#### Scenario: A wrong digest fails the bake
+- **WHEN** an extension runs `baas-install-jdk temurin-26 <url> <sha256>` with a digest the archive does not
+  have
+- **THEN** the build fails before anything is unpacked into `/opt/jdks`
+
 #### Scenario: perf follows the parent's kernel
 - **WHEN** an instance launched from an image is inspected
 - **THEN** the installed `perf` package matches the running kernel release
 
 ### Requirement: Every job records its environment, grouped
 Before starting the benchmark process, user-data SHALL write `<result-path>/environment.json` carrying
-`schemaVersion` 7 and the measurement environment in seven groups: `machine` (`imageVersion`, `amiId`,
+`schemaVersion` 8 and the measurement environment in eight groups: `machine` (`imageVersion`, `amiId`,
 `instanceType`), `cpu` (`model`, `arch`, `vcpus`, `physicalCores`, `threadsPerCore`, `maxMhz`), `memory`
-(`totalMib`, `swapTotalMib`), `os` (`version`, `kernelRelease`), `jvm` (`version`, `release`, `vendor`,
-`vendorVersion`, `name`), `tools` (`perf`, `asyncProfiler`) and `tunables` (`perfEventParanoid`,
-`kptrRestrict`, `transparentHugepages`). `cpu.vcpus` SHALL be the number of online logical CPUs, and
+(`totalMib`, `swapTotalMib`), `os` (`version`, `kernelRelease`), `jdk` (`id`, `home`, `version`, `release`,
+`vendor`, `vendorVersion`, `vmName`), `runnerJdk` (`release`, `vendorVersion`), `tools` (`perf`,
+`asyncProfiler`) and `tunables` (`perfEventParanoid`, `kptrRestrict`, `transparentHugepages`). `jdk` SHALL
+describe the JDK the benchmark runs on — the one the job selected, read from `/opt/jdks/<id>/bin/java` — and
+`runnerJdk` the `java` on `PATH` the runner itself runs on. `cpu.vcpus` SHALL be the number of online logical CPUs, and
 `cpu.physicalCores` the number of sockets multiplied by the cores per socket, or empty when either is not
 reported. `memory.totalMib` and `memory.swapTotalMib` SHALL be the kernel's KiB totals divided by 1024 and
-rounded down. `jvm.release` SHALL be the version number quoted in the JVM's version banner, and
-`jvm.version` the banner itself. It SHALL NOT record the job's identity — project, branch, type, job
+rounded down. `jdk.release` SHALL be the version number quoted in the selected JDK's version banner,
+`jdk.version` the banner itself, and `jdk.vmName` its `java.vm.name`. It SHALL NOT list the image's other
+JDKs. It SHALL NOT record the job's identity — project, branch, type, job
 identifier, creation instant — nor the region or the AWS CLI version. It SHALL also write
 `<result-path>/packages.txt` containing `rpm -qa`. Both SHALL be uploaded before the benchmark process
 starts. Every value SHALL be captured into a shell variable before the file is written, and the
@@ -343,8 +374,8 @@ machine-observed result tags SHALL be read from the same variables.
 
 #### Scenario: The manifest is the environment only
 - **WHEN** `environment.json` is read
-- **THEN** it has exactly the members `schemaVersion`, `machine`, `cpu`, `memory`, `os`, `jvm`, `tools`
-  and `tunables`, and no job identity
+- **THEN** it has exactly the members `schemaVersion`, `machine`, `cpu`, `memory`, `os`, `jdk`,
+  `runnerJdk`, `tools` and `tunables`, and no job identity
 
 #### Scenario: Manifest records what the image does not control
 - **WHEN** `environment.json` is read
@@ -361,12 +392,17 @@ machine-observed result tags SHALL be read from the same variables.
   `memory.totalKb`
 
 #### Scenario: Tags agree with the manifest
-- **WHEN** a job's result carries the tags `jdk` and `cpuModel`
-- **THEN** they equal `jvm.release` and `cpu.model` in that job's `environment.json`
+- **WHEN** a job's result carries the tags `jdkId`, `jdkVersion`, `jdkVendor` and `cpuModel`
+- **THEN** they equal `jdk.id`, `jdk.release`, `jdk.vendor` and `cpu.model` in that job's `environment.json`
+
+#### Scenario: The selected JDK and the runner's are recorded apart
+- **WHEN** `baas run --jdk temurin-26 jmh -- MyBenchmark` runs on an image whose `java` on `PATH` is Corretto 25
+- **THEN** `jdk` records `id` `temurin-26`, `home` `/opt/jdks/temurin-26` and Temurin's release and vendor,
+  and `runnerJdk` records Corretto's release
 
 ### Requirement: Two jobs' environments are compared group by group
 `baas jobs diff <jobA> <jobB>` SHALL resolve each job id through the job-ID index, fetch both jobs'
-`environment.json`, and compare every field of the seven groups — and nothing else. It SHALL print
+`environment.json`, and compare every field of the eight groups — and nothing else. It SHALL print
 first `Differs in:` naming the differing groups, then each differing field with both values, grouped. When
 `machine.amiId` differs it SHALL also read both jobs' `packages.txt` and report, as a `packages` group,
 the packages whose version changed and those added or removed; when the AMIs are equal it SHALL read no
@@ -388,11 +424,11 @@ to standard output.
 
 #### Scenario: A JVM change is named by group
 - **WHEN** two jobs used JDK 25.0.3 and 25.0.4
-- **THEN** the output starts `Differs in: jvm` and lists `version` and `release` with both values under `jvm`
+- **THEN** the output starts `Differs in: jdk` and lists `version` and `release` with both values under `jdk`
 
 #### Scenario: Two vendors' builds of one Java version are told apart
 - **WHEN** two jobs used Corretto 25.0.4 and another vendor's 25.0.4
-- **THEN** the `jvm` vendor fields are reported as differing
+- **THEN** the `jdk` vendor fields are reported as differing
 
 #### Scenario: A rebuilt image reports its package changes
 - **WHEN** two jobs ran on different AMIs whose `packages.txt` differ in one package's version

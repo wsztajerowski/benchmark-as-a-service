@@ -40,7 +40,7 @@ SHALL apply no row limit unless `--limit` is given.
 or not the key is in the known-key vocabulary.
 
 #### Scenario: Known tag filters
-- **WHEN** results tagged `jdk=25.0.4` exist and `--tag jdk=25.0.4` is queried
+- **WHEN** results tagged `jdkVersion=25.0.4` exist and `--tag jdkVersion=25.0.4` is queried
 - **THEN** those results are returned
 
 #### Scenario: Custom tag filters
@@ -48,7 +48,7 @@ or not the key is in the known-key vocabulary.
 - **THEN** those results are returned
 
 #### Scenario: Repeated tag options combine conjunctively
-- **WHEN** `--tag jdk=25.0.4 --tag cpuArch=aarch64` is given
+- **WHEN** `--tag jdkVersion=25.0.4 --tag cpuArch=aarch64` is given
 - **THEN** only measurements carrying both tags are returned
 
 ### Requirement: Benchmark name matching accepts a regular expression
