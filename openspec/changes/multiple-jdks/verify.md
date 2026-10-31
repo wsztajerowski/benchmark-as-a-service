@@ -39,3 +39,14 @@ pinned `java-25-amazon-corretto-devel`:
 - **3.4 the contract's JDK block** on that image: no failure, ids `corretto-25,temurin-26`, and the list
   `[{"id":"corretto-25","release":"25.0.4","vendor":"Amazon.com Inc.","default":true},{"id":"temurin-26","release":"26.0.2.1","vendor":"Eclipse Adoptium","default":false}]`.
   The S3 upload itself is not exercised here (no credentials in the container); 8.1 covers it.
+
+### Base moved to the newest AL2023 release (user decision, 2026-10-31)
+
+The August parent's repository holds no Corretto 27 (newest 26.0.2; `dnf --releasever=2023.12.20260803`), so with
+the user the parent moved to `al2023-ami-2023.12.20261102.0-kernel-6.1-x86_64` (eu-central-1, published 2026-10-30),
+keeping Corretto 25 LTS as the default at that release's newest patch, `25.0.5.0.10-1.amzn2023.1`. Corretto 27 is the
+starter's commented example, not a default. Rechecked in the container at `--releasever=2023.12.20261102`: the pinned
+NVR installs, `/opt/jdks/corretto-25/bin/jcmd` exists, `baas-install-jdk corretto-27` (27.0.1.0.11 tarball, Amazon's
+published SHA-256 `2a8a5a83…`) and `temurin-26` install, `java` on `PATH` stays Corretto-25.0.5.0.10, the contract block
+lists `corretto-25,corretto-27,temurin-26` with no failure, and the fixture's `-prof jfr` on
+`/opt/jdks/corretto-27/bin/java` wrote `profile.jfr` (`# VM version: JDK 27.0.1`).

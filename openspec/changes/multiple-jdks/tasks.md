@@ -29,7 +29,8 @@
 
 ## 3. The base image
 
-- [x] 3.1 `infra/runner-image.yaml`: Corretto package → `java-25-amazon-corretto-devel` at the same build,
+- [x] 3.1 `infra/runner-image.yaml`: Corretto package → `java-25-amazon-corretto-devel` (25.0.5.0.10), parent →
+      `al2023-ami-2023.12.20261102.0-kernel-6.1-x86_64` (user, 2026-10-31),
       `imageVersion` bumped; `RunnerImageDefinitionTest` passes
 - [x] 3.2 `RunnerImageRenderer` base: link Corretto as `/opt/jdks/corretto-25` and install
       `baas-install-jdk` on `PATH` (download, `sha256sum -c`, unpack into a temporary directory, refuse an

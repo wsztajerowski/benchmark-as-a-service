@@ -208,7 +208,10 @@ baas admin image show                          # label, extension, and the JDKs 
 
 #### Adding a JDK with `baas-install-jdk`
 
-The base installs a helper for this. One step adds a JDK that `baas run --jdk <id>` can then select:
+The base installs a helper for this. One step adds a JDK that `baas run --jdk <id>` can then select —
+here Corretto 27, the newest Corretto beside the base's Corretto 25 LTS. The starter `image show
+--extension` prints carries this step commented out, so nothing beyond the base is installed until
+you uncomment it:
 
 ```yaml
 name: runner-extension
@@ -216,12 +219,15 @@ schemaVersion: 1.0
 phases:
   - name: build
     steps:
-      - name: AddTemurin26
+      - name: AddCorretto27
         action: ExecuteBash
         inputs:
           commands:
-            - baas-install-jdk temurin-26 https://github.com/adoptium/temurin26-binaries/releases/download/jdk-26.0.2.1%2B1/OpenJDK26U-jdk_x64_linux_hotspot_26.0.2.1_1.tar.gz 451c12e68747bcfa2fb5a2c16b00483fedb9fa6d77bc962d30957f76ac17044d
+            - baas-install-jdk corretto-27 https://corretto.aws/downloads/resources/27.0.1.0.11/amazon-corretto-27.0.1.0.11-linux-x64.tar.gz 2a8a5a833ec1b2e6e66bcf8a530438f471ebbbc928be90ab153b2985cdeac8e8
 ```
+
+Another vendor is one more line in the same step, e.g. Temurin 26:
+`baas-install-jdk temurin-26 https://github.com/adoptium/temurin26-binaries/releases/download/jdk-26.0.2.1%2B1/OpenJDK26U-jdk_x64_linux_hotspot_26.0.2.1_1.tar.gz 451c12e68747bcfa2fb5a2c16b00483fedb9fa6d77bc962d30957f76ac17044d`.
 
 `baas-install-jdk <id> <url> <sha256>` downloads the archive, checks its SHA-256, unpacks it into
 `/opt/jdks/<id>` and prints its `java -version`. It fails the bake — leaving nothing behind — when the
@@ -239,7 +245,9 @@ Tips for the build:
   `docker run --rm -it --platform linux/amd64 amazonlinux:2023` and running the same `curl`, `sha256sum`
   and `tar` commands catches a wrong URL or archive layout in seconds.
 - **Install under `/opt/jdks` only, and leave `java` on `PATH` and `alternatives` alone.** They run the
-  runner itself, which stays on Corretto; `--jdk` changes only the JVM your benchmark runs on.
+  runner itself, which stays on Corretto 25; `--jdk` changes only the JVM your benchmark runs on. So use
+  the tarball, not the `java-27-amazon-corretto-devel` RPM: installing another Corretto RPM makes it the
+  `alternatives` default, moving the runner's own `java`.
 - **Check before you run.** After the build, `baas admin image show` lists every JDK with its release
   and vendor, as the bake observed them; `baas run --jdk` checks the id against that list before
   anything is uploaded.
