@@ -23,7 +23,7 @@ jobs:
           java-version: 25
           cache: maven
 
-      # JmhWithAsyncProfilerSubcommandServiceIT is
+      # JmhAsyncProfilerIT is
       # @EnabledIfEnvironmentVariable(named = "ASYNC_PATH", matches = ".*") and reads the variable
       # as the path to the shared library. Without it a plain `mvn verify` silently SKIPS the only
       # test exercising async-profiler end to end — so the green tick on every PR has never
@@ -54,7 +54,7 @@ jobs:
       - name: Fail if the async-profiler test was skipped
         if: always()
         run: |
-          report=benchmark-runner/target/failsafe-reports/pl.wsztajerowski.services.JmhWithAsyncProfilerSubcommandServiceIT.txt
+          report=benchmark-runner/target/failsafe-reports/pl.wsztajerowski.services.JmhAsyncProfilerIT.txt
           test -f "$report" || { echo "no report — the async-profiler test did not run"; exit 1; }
           cat "$report"
           grep -qE 'Tests run: [1-9][0-9]*,.*Skipped: 0' "$report" \

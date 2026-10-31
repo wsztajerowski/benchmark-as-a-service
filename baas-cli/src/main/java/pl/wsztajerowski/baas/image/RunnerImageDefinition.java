@@ -107,7 +107,7 @@ public record RunnerImageDefinition(
                 .formatted(version, version);
         }
 
-        /** What {@code JmhWithAsyncProfilerSubcommand}'s {@code --async-path} default resolves to. */
+        /** What {@code JmhSubcommand}'s {@code --async-path} default resolves to. */
         public String libraryPath() {
             return installPath + "/lib/libasyncProfiler.so";
         }

@@ -54,7 +54,7 @@ tools:
   # checks that it runs. Its version is observed per run in environment.json.
 
   # Downloaded from GitHub Releases at BAKE time (not run time). installPath must stay in step
-  # with the --async-path default in JmhWithAsyncProfilerSubcommand, which resolves
+  # with the --async-path default in JmhSubcommand, which resolves
   # <installPath>/lib/libasyncProfiler.so.
   # sha256 is the linux-x64 tarball's, checked before it is unpacked: a release asset can be
   # replaced under its tag, and this is the one input to the image no package signature covers.
