@@ -35,8 +35,9 @@ the job-id index and SHALL NOT cause a `Scan`. The two jobs MAY belong to differ
 The library that produced a measurement SHALL be the measurement's stored kind (JMH or JCStress), not
 its `type` tag. When both jobs have measurements and their kinds differ, the command SHALL be refused
 (exit 1) before any pairing, with a message naming each job's library and saying measurements from
-different libraries are not comparable. Measurements of the JMH benchmark types — `jmh`,
-`jmh-with-async` and `jmh-with-prof` — SHALL be compared with each other.
+different libraries are not comparable. Measurements of JMH jobs SHALL be compared with each other
+whatever their `type` tag, including jobs stored under the former types `jmh-with-async` and
+`jmh-with-prof`.
 
 #### Scenario: JMH against JCStress is refused
 - **WHEN** job A ran `jmh` and job B ran `jcstress`
@@ -44,7 +45,11 @@ different libraries are not comparable. Measurements of the JMH benchmark types 
   row is printed
 
 #### Scenario: Two JMH variants are compared
-- **WHEN** job A ran `jmh` and job B ran `jmh-with-async`
+- **WHEN** job A ran `jmh` and job B ran `jmh` with `-prof async`
+- **THEN** their measurements are paired and compared
+
+#### Scenario: A job stored under a former type is compared
+- **WHEN** job A is stored with `type=jmh-with-async` and job B with `type=jmh`
 - **THEN** their measurements are paired and compared
 
 ### Requirement: Two JCStress jobs are refused
@@ -132,8 +137,8 @@ absent from a job's measurements SHALL be shown as unknown.
 - **THEN** the header shows `c6i.large` and `jmh` for both jobs
 
 #### Scenario: A differing type is visible at first glance
-- **WHEN** job A ran `jmh` and job B ran `jmh-with-async`
-- **THEN** the header shows `jmh` for A and `jmh-with-async` for B, above every row
+- **WHEN** job A is stored with `type=jmh-with-async` and job B with `type=jmh`
+- **THEN** the header shows `jmh-with-async` for A and `jmh` for B, above every row
 
 ### Requirement: Other environment differences are warned about
 When the two jobs' measurements disagree on `imageVersion`, `jdk`, `jvmVendor`, `cpuModel` or
@@ -204,3 +209,24 @@ and exit 2 a usage error.
 #### Scenario: JSON under a comma-decimal locale
 - **WHEN** `--format json` is run under the `pl-PL` locale
 - **THEN** every number is a JSON number with a `.` decimal separator
+
+### Requirement: Different profilers are warned about
+When the two jobs' measurements disagree on the profilers they ran under — a side without the tag
+included — the command SHALL write one warning to standard error naming both values, with an absent tag shown as `none`, and
+saying that a profiler perturbs the measured score. The warning SHALL NOT change any row or the exit
+status, and SHALL be written in addition to any warning about differing `cliParameters`.
+
+#### Scenario: A profiled job against an unprofiled one
+- **WHEN** job A carries no `profilers` tag and job B carries `profilers=async`
+- **THEN** standard error names `profilers: none → async` and says a profiler perturbs the score, and
+  standard output is unchanged by it
+
+#### Scenario: A job of a retired profiled type counts as profiled
+- **WHEN** job A is stored with `type=jmh-with-async` and no `profilers` tag, and job B carries
+  `profilers=async`
+- **THEN** no profilers warning is written; against an unprofiled job B, the warning names `async → none`,
+  and a job stored with `type=jmh-with-prof` is named `unrecorded`
+
+#### Scenario: The same profilers raise no warning
+- **WHEN** both jobs carry `profilers=gc`
+- **THEN** no profilers warning is written
