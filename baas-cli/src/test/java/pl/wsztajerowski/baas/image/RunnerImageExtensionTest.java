@@ -103,6 +103,25 @@ class RunnerImageExtensionTest {
             .isTrue();
     }
 
+    /** The way to add a JDK is the starter's own example, and the example, uncommented, is storable. */
+    @Test
+    void theStarterShowsHowToAddAJdk() {
+        String starter = RunnerImageExtension.withMarker("");
+        String uncommented = starter.lines()
+            .map(line -> line.matches("# (name|schemaVersion|phases).*|#   +- .*|#     +[a-z]+:.*") ? line.substring(2) : line)
+            .collect(java.util.stream.Collectors.joining("\n"));
+
+        assertThat(starter)
+            .contains("baas-install-jdk <id> <url of a .tar.gz JDK> <its sha256, from the vendor>")
+            .contains("Leave java on PATH and `alternatives` alone")
+            .contains("- baas-install-jdk temurin-26 https://");
+        var file = RunnerImageExtension.parse(uncommented);
+        assertThat(file.content()).contains("name: AddTemurin26");
+        Map<String, Object> document = new org.yaml.snakeyaml.Yaml().load(file.content());
+        assertThat(document).containsKeys("name", "schemaVersion", "phases");
+        RunnerImageExtension.requireStorable(file.content());
+    }
+
     // ─── Identity ────────────────────────────────────────────────────────────────
 
     @Test

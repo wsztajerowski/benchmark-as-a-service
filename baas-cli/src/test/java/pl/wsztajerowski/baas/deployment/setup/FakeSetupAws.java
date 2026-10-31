@@ -143,7 +143,7 @@ final class FakeSetupAws implements SetupAws {
     }
 
     @Override
-    public Map<String, String> imageParameters(Map<String, String> deployed) {
+    public Map<String, String> imageParameters(String stack, Map<String, String> deployed) {
         return deployed.isEmpty() ? Map.of("RunnerImageVersion", "1.3.0") : Map.of();
     }
 

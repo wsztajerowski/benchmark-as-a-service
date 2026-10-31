@@ -142,7 +142,7 @@ class SetupCommandTest {
         @Override public void deleteStack(String s) { throw new AssertionError("not reached"); }
         @Override public java.util.Map<String, String> stackParameters(String s) { throw new AssertionError("not reached"); }
         @Override public java.util.Map<String, String> stackOutputs(String s) { throw new AssertionError("not reached"); }
-        @Override public java.util.Map<String, String> imageParameters(java.util.Map<String, String> d) { throw new AssertionError("not reached"); }
+        @Override public java.util.Map<String, String> imageParameters(String s, java.util.Map<String, String> d) { throw new AssertionError("not reached"); }
         @Override public void submitCreate(String s, java.util.Map<String, String> p) { throw new AssertionError("not reached"); }
         @Override public void awaitCreate(String s) { throw new AssertionError("not reached"); }
         @Override public boolean update(String s, java.util.Map<String, String> p) { throw new AssertionError("not reached"); }

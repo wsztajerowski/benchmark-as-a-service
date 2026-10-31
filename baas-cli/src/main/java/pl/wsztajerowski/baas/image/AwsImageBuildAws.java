@@ -2,9 +2,11 @@ package pl.wsztajerowski.baas.image;
 
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
 import pl.wsztajerowski.baas.aws.CloudFormationService;
+import pl.wsztajerowski.baas.aws.S3UploadService;
 import software.amazon.awssdk.services.cloudformation.CloudFormationClient;
 import software.amazon.awssdk.services.ec2.Ec2Client;
 import software.amazon.awssdk.services.imagebuilder.ImagebuilderClient;
+import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.ssm.SsmClient;
 
 import java.io.IOException;
@@ -17,6 +19,7 @@ final class AwsImageBuildAws implements ImageBuildAws {
     private final Ec2Client ec2;
     private final SsmClient ssm;
     private final CloudFormationClient cf;
+    private final S3Client s3;
     private final CloudFormationService cloudFormation;
     private final ImageBuilderService service;
 
@@ -25,6 +28,7 @@ final class AwsImageBuildAws implements ImageBuildAws {
         this.ec2 = factory.ec2();
         this.ssm = factory.ssm();
         this.cf = factory.cloudFormation();
+        this.s3 = factory.s3();
         this.cloudFormation = new CloudFormationService(cf);
         this.service = new ImageBuilderService(imageBuilder, ec2, ssm);
     }
@@ -60,9 +64,11 @@ final class AwsImageBuildAws implements ImageBuildAws {
     }
 
     @Override
-    public String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion)
-            throws InterruptedException {
-        return service.publish(pipelineArn, pointer, label, parentAmiId, recipeVersion);
+    public String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion,
+                          String bucket) throws InterruptedException {
+        var objects = new S3UploadService(s3);
+        return service.publish(pipelineArn, pointer, label, parentAmiId, recipeVersion,
+            imageLabel -> objects.getObjectIfExists(bucket, RunnerImageRenderer.jdkListKey(imageLabel)));
     }
 
     @Override
@@ -71,5 +77,6 @@ final class AwsImageBuildAws implements ImageBuildAws {
         ec2.close();
         ssm.close();
         cf.close();
+        s3.close();
     }
 }

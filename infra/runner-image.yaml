@@ -24,7 +24,7 @@
 # edit below needs this bumped too. `baas admin build-image` preflights that and refuses to start
 # a ~15-minute build it knows will be rejected. The recipe's and the extension's versions are
 # derived by the CLI and never written here.
-imageVersion: "1.4.0"
+imageVersion: "1.5.0"
 
 # Exact parent release, never a "latest" selector. A selector would silently re-base the whole
 # measurement environment on whatever AWS published that morning — the precise drift this
@@ -38,8 +38,11 @@ parentImage:
 tools:
   # AL2023 `core` repo package, from the regional S3 mirror — no external Corretto repo is
   # involved, which is what lets change 3 put the build behind a private subnet.
+  # The full JDK (-devel), not -headless: JMH's -prof jfr runs `jcmd` from the benchmark JVM's own
+  # java.home, and -headless has none. The base links it as /opt/jdks/corretto-25, the JDK a job
+  # runs on without `baas run --jdk`.
   corretto:
-    package: java-25-amazon-corretto-headless
+    package: java-25-amazon-corretto-devel
     version: "25.0.4+7-1.amzn2023.1"
 
   # perf is NOT in the parent AMI (it belongs to no comps group, `ami` included), so JMH's
