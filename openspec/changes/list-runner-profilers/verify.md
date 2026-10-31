@@ -110,3 +110,9 @@ On Xeon 8275CL the spread is 513.02–513.38M (size=1) and 448.70–449.14M (siz
 (< 0.1%). The one outlier, before-2 (−9% on both params), ran the pre-change code on a Skylake host
 (Xeon 8124M) where the rest got Cascade Lake: `c5.2xlarge` spans both, and `cpuModel` tells them apart.
 Not caused by this change; no score moved with it.
+
+## 3.4 `JmhAsyncProfilerIT` on Linux (PR #124, `ci-pr-build` run 41225534093)
+
+`Tests run: 1, Failures: 0, Errors: 0, Skipped: 0 -- in pl.wsztajerowski.services.JmhAsyncProfilerIT`
+on `ubuntu-latest`, with no `libPath` in the command line. Every other check on the PR passed too:
+`build`, both `e2e-cloud-test` jobs (JMH and JCStress on EC2) and `install.sh` on macOS and Ubuntu.
