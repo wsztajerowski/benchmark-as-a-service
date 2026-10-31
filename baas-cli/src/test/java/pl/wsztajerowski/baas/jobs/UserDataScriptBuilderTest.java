@@ -30,10 +30,18 @@ class UserDataScriptBuilderTest {
                                 String resultPath, String createdAt, int timeout, int watchdog,
                                 String imageVersion, String amiId, String runnerJarKey,
                                 List<String> params, Map<String, String> tags) {
+        return build(region, prefix, benchmarkType, jobId, project, resultPath, createdAt, timeout, watchdog,
+            imageVersion, amiId, runnerJarKey, params, tags, null);
+    }
+
+    private static String build(String region, String prefix, String benchmarkType, String jobId, String project,
+                                String resultPath, String createdAt, int timeout, int watchdog,
+                                String imageVersion, String amiId, String runnerJarKey,
+                                List<String> params, Map<String, String> tags, String jdk) {
         var job = new pl.wsztajerowski.baas.model.JobItem(jobId, project, java.time.Instant.parse(createdAt), resultPath,
             "c5.2xlarge", pl.wsztajerowski.baas.model.JobStatus.LAUNCHING, null, null, tags, null);
         var request = new JobLaunch.Request(benchmarkType, params, null, null, "c5.2xlarge", project,
-            timeout, watchdog, tags, false, "7.2.0", "Wiktor-Sztajerowski/benchmark-as-a-service");
+            timeout, watchdog, tags, false, "7.2.0", "Wiktor-Sztajerowski/benchmark-as-a-service", jdk);
         return new UserDataScriptBuilder().build(region, pl.wsztajerowski.baas.session.DeploymentNames.of(prefix), job,
             new pl.wsztajerowski.baas.image.RunnerImage(amiId, imageVersion, null, null), request, runnerJarKey);
     }
@@ -47,6 +55,16 @@ class UserDataScriptBuilderTest {
     }
 
     private static final String JOB_SORT_KEY = "2026-07-24T12:00:00.000Z#20260724T120000000Z-a3f9c21b";
+
+    /** The script of a job that selected {@code jdk} on an image that holds it. */
+    private String script(String jdk) {
+        String encoded = build("eu-central-1", "baas-a1b2c3d4", "jmh",
+            "20260724T120000000Z-a3f9c21b", "lynx-journal",
+            "jobs/lynx-journal/20260724T120000000Z-a3f9c21b", "2026-07-24T12:00:00Z",
+            7200, 7500, "1.0.0", "ami-0123456789abcdef0", null,
+            List.of("MyBenchmark", "-f", "1"), Map.of(), jdk);
+        return new String(Base64.getDecoder().decode(encoded), StandardCharsets.UTF_8);
+    }
 
     private String script(Map<String, String> runnerTags, String resultsTable) {
         String encoded = build("eu-central-1", resultsTable.replaceFirst("-results$", ""), "jmh",
@@ -783,13 +801,16 @@ class UserDataScriptBuilderTest {
         assertThatCode(() -> {
             @SuppressWarnings("unchecked")
             Map<String, Object> parsed = new ObjectMapper().readValue(resolved, Map.class);
-            assertThat(parsed).as("the environment only, in seven groups, and no job identity")
-                .containsOnlyKeys("schemaVersion", "machine", "cpu", "memory", "os", "jvm", "tools", "tunables");
+            assertThat(parsed).as("the environment only, in eight groups, and no job identity")
+                .containsOnlyKeys("schemaVersion", "machine", "cpu", "memory", "os", "jdk", "runnerJdk", "tools",
+                    "tunables");
             assertThat((Map<String, Object>) parsed.get("machine")).containsOnlyKeys("imageVersion", "amiId", "instanceType");
             assertThat((Map<String, Object>) parsed.get("cpu")).containsOnlyKeys("model", "arch", "vcpus", "physicalCores", "threadsPerCore", "maxMhz");
             assertThat((Map<String, Object>) parsed.get("memory")).containsOnlyKeys("totalMib", "swapTotalMib");
             assertThat((Map<String, Object>) parsed.get("os")).containsOnlyKeys("version", "kernelRelease");
-            assertThat((Map<String, Object>) parsed.get("jvm")).containsOnlyKeys("version", "release", "vendor", "vendorVersion", "name");
+            assertThat((Map<String, Object>) parsed.get("jdk"))
+                .containsOnlyKeys("id", "home", "version", "release", "vendor", "vendorVersion", "vmName");
+            assertThat((Map<String, Object>) parsed.get("runnerJdk")).containsOnlyKeys("release", "vendorVersion");
             assertThat((Map<String, Object>) parsed.get("tools")).containsOnlyKeys("perf", "asyncProfiler");
             assertThat((Map<String, Object>) parsed.get("tunables"))
                 .containsOnlyKeys("perfEventParanoid", "kptrRestrict", "transparentHugepages");
@@ -839,16 +860,17 @@ class UserDataScriptBuilderTest {
     //
     // These three tags are captured as shell variables ON the instance, the same rule that
     // already governs imageVersion/instanceType — a result's tags must never be able to disagree
-    // with that same job's environment.json. `jdk` is derived from JVM_VERSION_RAW, the SAME
-    // single `java -version` observation the manifest's escaped jvmVersion is built from, not a
-    // second independent call.
+    // with that same job's environment.json. `jdkVersion` is derived from JDK_VERSION_RAW, the SAME
+    // single `java -version` observation of the selected JDK the manifest's escaped banner is built
+    // from, not a second independent call.
 
     @Test
     void forwardsObservedEnvironmentTagsToTheRunner() {
         String script = script();
 
         assertThat(script)
-            .contains("--tag \"jdk=${JDK_VERSION}\"")
+            .contains("--tag \"jdkVersion=${JDK_RELEASE_RAW}\"")
+            .contains("--tag \"jdkVendor=${JDK_VENDOR_RAW}\"")
             .contains("--tag \"cpuModel=${CPU_MODEL_RAW}\"")
             .contains("--tag \"cpuArch=${CPU_ARCH}\"");
     }
@@ -857,11 +879,11 @@ class UserDataScriptBuilderTest {
     void observedTagsAreCapturedBeforeTheyAreUsed() {
         String script = script();
 
-        assertThat(script.indexOf("JDK_VERSION=$("))
-            .as("jdk is derived from the raw JVM version observation, not a second java -version call")
-            .isGreaterThan(script.indexOf("JVM_VERSION_RAW=$("));
-        assertThat(script.indexOf("--tag \"jdk="))
-            .isGreaterThan(script.indexOf("JDK_VERSION=$("));
+        assertThat(script.indexOf("JDK_RELEASE_RAW=$(banner_release \"$JDK_VERSION_RAW\")"))
+            .as("jdkVersion is derived from the selected JDK's version banner, not a second java -version call")
+            .isGreaterThan(script.indexOf("JDK_VERSION_RAW=$(\"${JDK_JAVA}\" -version"));
+        assertThat(script.indexOf("--tag \"jdkVersion="))
+            .isGreaterThan(script.indexOf("JDK_RELEASE_RAW=$("));
         assertThat(script.indexOf("--tag \"cpuArch="))
             .isGreaterThan(script.indexOf("CPU_ARCH=$("));
         assertThat(script.indexOf("--tag \"cpuModel="))
@@ -883,8 +905,9 @@ class UserDataScriptBuilderTest {
         assertThat(UserDataScriptBuilder.MANIFEST_SCHEMA_VERSION)
             .as("4 added jvmVendor, jvmVendorVersion and jvmName; 5 renamed requestId to jobId; "
                 + "6 grouped the environment and dropped the job's identity, region and AWS CLI version; "
-                + "7 renamed cpu.cores to vcpus, added physicalCores and jvm.release, and recorded memory in MiB")
-            .isEqualTo(7);
+                + "7 renamed cpu.cores to vcpus, added physicalCores and jvm.release, and recorded memory in MiB; "
+                + "8 renamed jvm to jdk (name to vmName), added jdk.id, jdk.home and the runnerJdk group")
+            .isEqualTo(8);
     }
 
     // ─── Schema 7: CPU counts, memory unit, JVM release ─────────────────────────
@@ -926,13 +949,50 @@ class UserDataScriptBuilderTest {
             .doesNotContain("totalKb");
     }
 
-    /** The jdk tag must be checkable against the job's own manifest, so both read one variable. */
+    /** The jdkVersion tag must be checkable against the job's own manifest, so both read one variable. */
     @Test
-    void jvmReleaseIsTheJdkTagsValue() {
+    void jdkReleaseIsTheJdkVersionTagsValue() {
         assertThat(script())
-            .contains("JVM_RELEASE=$(json_escape \"$JDK_VERSION\")")
-            .contains("\"release\": \"${JVM_RELEASE}\"")
-            .contains("--tag \"jdk=${JDK_VERSION}\"");
+            .contains("JDK_RELEASE=$(json_escape \"$JDK_RELEASE_RAW\")")
+            .contains("\"release\": \"${JDK_RELEASE}\"")
+            .contains("--tag \"jdkVersion=${JDK_RELEASE_RAW}\"");
+    }
+
+    // ─── Schema 8: the selected JDK and the runner's ────────────────────────────
+
+    @Test
+    void theSelectedJdkIsExportedAndAnImageWithoutSelectionExportsNone() {
+        assertThat(script("temurin-26")).contains("export JDK_ID='temurin-26'");
+        assertThat(script()).contains("export JDK_ID=''");
+    }
+
+    /** The benchmark's JDK is read from its own java; the runner's from java on PATH, which runs the runner. */
+    @Test
+    void theSelectedJdkIsReadFromItsOwnJavaAndTheRunnersFromPath() {
+        assertThat(script())
+            .contains("JDK_HOME=\"/opt/jdks/${JDK_ID}\" && JDK_JAVA=\"${JDK_HOME}/bin/java\"")
+            .contains("JDK_PROPS=$(\"${JDK_JAVA}\" -XshowSettings:properties -version 2>&1)")
+            .contains("RUNNER_JDK_PROPS=$(java -XshowSettings:properties -version 2>&1)")
+            .contains("\"id\": \"${JDK_ID}\"")
+            .contains("\"home\": \"${JDK_HOME}\"")
+            .contains("\"vmName\": \"${JDK_VM_NAME}\"")
+            .contains("\"release\": \"${RUNNER_JDK_RELEASE}\"");
+    }
+
+    /** With a selection the runner gets --jdk and the result jdkId; without one, neither — absent says unknown. */
+    @Test
+    void theRunnerGetsTheJdkAndItsIdTagOnlyWhenOneWasSelected() throws Exception {
+        String selection = scriptLines("JDK_HOME=", "JDK_JAVA=java")
+            + scriptLines("[[ -n \"${JDK_ID}\" ]] && JDK_HOME=", "[[ -n \"${JDK_ID}\" ]] && JDK_HOME=")
+            + scriptLines("JDK_ARGS=()", "[[ -n \"${JDK_ID}\" ]] && JDK_ARGS=");
+        String print = "echo \"[$JDK_JAVA][$JDK_HOME][${JDK_ARGS[*]}][${JDK_ID_TAG_ARGS[*]}]\"\n";
+
+        assertThat(runBash("JDK_ID=temurin-26\n" + selection + print)).isEqualTo(new BashResult(
+            "[/opt/jdks/temurin-26/bin/java][/opt/jdks/temurin-26][--jdk temurin-26][--tag jdkId=temurin-26]", ""));
+        assertThat(runBash("JDK_ID=\n" + selection + print)).isEqualTo(new BashResult("[java][][][]", ""));
+        assertThat(script())
+            .contains("\"${JDK_ARGS[@]}\"")
+            .contains("\"${JDK_ID_TAG_ARGS[@]}\"");
     }
 
     private record BashResult(String stdout, String stderr) {
@@ -969,33 +1029,33 @@ class UserDataScriptBuilderTest {
         return new BashResult(out, err);
     }
 
-    // ─── JVM vendor ──────────────────────────────────────────────────────────────
+    // ─── JDK vendor ──────────────────────────────────────────────────────────────
     //
     // An image extension may replace Corretto with another vendor's build of the same version, and
     // the `java -version` banner names only the version. The vendor is observed once, recorded in
     // the manifest, and tagged from the same variable.
 
     @Test
-    void theManifestRecordsWhoBuiltTheJvm() {
+    void theManifestRecordsWhoBuiltTheJdk() {
         assertThat(script())
-            .contains("\"vendor\": \"${JVM_VENDOR}\"")
-            .contains("\"vendorVersion\": \"${JVM_VENDOR_VERSION}\"")
-            .contains("\"name\": \"${JVM_NAME}\"")
+            .contains("\"vendor\": \"${JDK_VENDOR}\"")
+            .contains("\"vendorVersion\": \"${JDK_VENDOR_VERSION}\"")
+            .contains("\"vmName\": \"${JDK_VM_NAME}\"")
             .as("a vendor string can contain a double quote or backslash")
-            .contains("JVM_VENDOR=$(json_escape \"$JVM_VENDOR_RAW\")");
+            .contains("JDK_VENDOR=$(json_escape \"$JDK_VENDOR_RAW\")");
     }
 
     @Test
     void theVendorTagIsTheObservedValue() {
         String script = script();
 
-        assertThat(script.indexOf("--tag \"jvmVendor=${JVM_VENDOR_RAW}\""))
+        assertThat(script.indexOf("--tag \"jdkVendor=${JDK_VENDOR_RAW}\""))
             .as("tagged from the same capture the manifest uses, after it is made")
-            .isGreaterThan(script.indexOf("JVM_VENDOR_RAW=$("))
+            .isGreaterThan(script.indexOf("JDK_VENDOR_RAW=$("))
             .isGreaterThan(script.indexOf("java -jar /app/benchmark-runner.jar"));
         assertThat(script.split("-XshowSettings:properties", -1))
-            .as("one JVM call for every property, not one per field")
-            .hasSize(2);
+            .as("one JVM call per JDK for every property, not one per field")
+            .hasSize(3);
     }
 
     @Test
@@ -1011,8 +1071,9 @@ class UserDataScriptBuilderTest {
                 java.vm.name = OpenJDK 64-Bit Server VM
             openjdk version "25.0.4" 2026-07-15
             """;
-        String probe = "JVM_PROPS=$(cat <<'P'\n" + props + "P\n)\n" + function + "\n"
-            + "printf '%s|%s|%s' \"$(jvm_prop java.vendor)\" \"$(jvm_prop java.vendor.version)\" \"$(jvm_prop java.vm.name)\"\n";
+        String probe = "PROPS=$(cat <<'P'\n" + props + "P\n)\n" + function + "\n"
+            + "printf '%s|%s|%s' \"$(jvm_prop \"$PROPS\" java.vendor)\" \"$(jvm_prop \"$PROPS\" java.vendor.version)\" "
+            + "\"$(jvm_prop \"$PROPS\" java.vm.name)\"\n";
 
         var process = new ProcessBuilder("bash", "-c", probe).redirectErrorStream(true).start();
         String output = new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
@@ -1177,11 +1238,11 @@ class UserDataScriptBuilderTest {
 
     @Test
     void observedTagValueWinsOverACollidingCallerTagUnderPicocliParsing() throws Exception {
-        String script = script(Map.of("jdk", "attacker-supplied"));
+        String script = script(Map.of("jdkVersion", "attacker-supplied"));
 
         assertThat(script)
             .as("the caller tag must actually be rendered into RUNNER_TAGS_ARRAY")
-            .contains("'--tag' 'jdk=attacker-supplied'");
+            .contains("'--tag' 'jdkVersion=attacker-supplied'");
 
         String invocation = script.substring(
             script.indexOf("java -jar /app/benchmark-runner.jar"),
@@ -1192,7 +1253,7 @@ class UserDataScriptBuilderTest {
         // array's own content (the literal caller value) lives in the earlier
         // `RUNNER_TAGS_ARRAY=(...)` line, asserted above.
         int callerArrayIndex = invocation.indexOf("RUNNER_TAGS_ARRAY[@]");
-        int observedTagIndex = invocation.indexOf("--tag \"jdk=${JDK_VERSION}\"");
+        int observedTagIndex = invocation.indexOf("--tag \"jdkVersion=${JDK_RELEASE_RAW}\"");
         assertThat(callerArrayIndex).as("caller tags array must be expanded in the invocation").isNotNegative();
         assertThat(observedTagIndex).as("observed jdk tag must be rendered in the invocation").isNotNegative();
 
@@ -1201,11 +1262,11 @@ class UserDataScriptBuilderTest {
         // that textual order with concrete values reproduces picocli's real parsing outcome.
         List<String> argv = new ArrayList<>();
         if (callerArrayIndex < observedTagIndex) {
-            argv.add("--tag"); argv.add("jdk=attacker-supplied");
-            argv.add("--tag"); argv.add("jdk=OBSERVED_ON_INSTANCE");
+            argv.add("--tag"); argv.add("jdkVersion=attacker-supplied");
+            argv.add("--tag"); argv.add("jdkVersion=OBSERVED_ON_INSTANCE");
         } else {
-            argv.add("--tag"); argv.add("jdk=OBSERVED_ON_INSTANCE");
-            argv.add("--tag"); argv.add("jdk=attacker-supplied");
+            argv.add("--tag"); argv.add("jdkVersion=OBSERVED_ON_INSTANCE");
+            argv.add("--tag"); argv.add("jdkVersion=attacker-supplied");
         }
 
         var probe = new TagMapProbe();
@@ -1215,7 +1276,7 @@ class UserDataScriptBuilderTest {
             .as("SCRIPT_BODY must render \"${RUNNER_TAGS_ARRAY[@]}\" BEFORE the five observed "
                 + "--tag lines, so picocli's last-wins Map parsing keeps the observed value even "
                 + "if a reserved key ever slips past RunCommand.buildRunnerTags's own guard")
-            .containsEntry("jdk", "OBSERVED_ON_INSTANCE");
+            .containsEntry("jdkVersion", "OBSERVED_ON_INSTANCE");
     }
 
     /**

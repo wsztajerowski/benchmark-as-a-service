@@ -2,29 +2,29 @@
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 In an `amazonlinux:2023` container, install `java-25-amazon-corretto-devel` at the version
+- [x] 1.1 In an `amazonlinux:2023` container, install `java-25-amazon-corretto-devel` at the version
       `infra/runner-image.yaml` pins and confirm `jcmd` is in the same `bin` as the `java` that
       `alternatives` selects (`$(dirname $(readlink -f $(which java)))/jcmd`); record it in `verify.md`. If it
       is not, stop and revisit "The base installs Corretto's full JDK"
-- [ ] 1.2 In the same container, run the fixture JAR with `-prof jfr` on that Corretto and confirm a
+- [x] 1.2 In the same container, run the fixture JAR with `-prof jfr` on that Corretto and confirm a
       `profile.jfr` is written (no "Cannot find jcmd anywhere"); record it
-- [ ] 1.3 Unpack a Temurin 26 archive under `/opt/jdks/temurin-26` there and run the fixture JAR as
+- [x] 1.3 Unpack a Temurin 26 archive under `/opt/jdks/temurin-26` there and run the fixture JAR as
       `/opt/jdks/temurin-26/bin/java -jar … -f 1`, with Corretto as `java` on `PATH`; confirm from JMH's
       `# VM invoker` that the fork ran on Temurin, and that JCStress (`-m sanity -t <one test>`) does too;
       record both
-- [ ] 1.4 Confirm an EC2 AMI tag value accepts 256 characters including `,` and `.` (AWS documents it;
+- [x] 1.4 Confirm an EC2 AMI tag value accepts 256 characters including `,` and `.` (AWS documents it;
       record the limit with its source)
 
 ## 2. Naming unification (BREAKING)
 
-- [ ] 2.1 `TagKeys`: `JDK` → `JDK_VERSION` (`jdkVersion`), `JVM_VENDOR` → `JDK_VENDOR` (`jdkVendor`), add
+- [x] 2.1 `TagKeys`: `JDK` → `JDK_VERSION` (`jdkVersion`), `JVM_VENDOR` → `JDK_VENDOR` (`jdkVendor`), add
       `JDK_ID` (`jdkId`), all machine-observed and reserved; `TagKeysTest` and `RunCommandTest` cover the
       reserved list
-- [ ] 2.2 `UserDataScriptBuilder`: manifest group `jvm` → `jdk` with `vmName`, `schemaVersion` 8, tag
+- [x] 2.2 `UserDataScriptBuilder`: manifest group `jvm` → `jdk` with `vmName`, `schemaVersion` 8, tag
       placeholders for the new keys; `UserDataScriptBuilderTest` pins the rendered names and the size bound
-- [ ] 2.3 `EnvironmentManifest.GROUPS`, `EnvironmentView` (`jdk.vendorVersion`, `jdk.id`), `jobs show` and
+- [x] 2.3 `EnvironmentManifest.GROUPS`, `EnvironmentView` (`jdk.vendorVersion`, `jdk.id`), `jobs show` and
       `jobs diff` read the new group names; their tests updated
-- [ ] 2.4 `ResultsDiff.WARNED_TAGS` and every other reader of the old tag names (`git grep -e '"jdk"'
+- [x] 2.4 `ResultsDiff.WARNED_TAGS` and every other reader of the old tag names (`git grep -e '"jdk"'
       -e jvmVendor` in `src/main`) use the new keys; a grep finds no old name outside JMH's own fields
 
 ## 3. The base image
@@ -54,26 +54,26 @@
 
 ## 5. Selecting a JDK
 
-- [ ] 5.1 `RunnerArgs`/`baas-model`: a `--jdk` runner option and the default id `corretto-25` defined
+- [x] 5.1 `RunnerArgs`/`baas-model`: a `--jdk` runner option and the default id `corretto-25` defined
       once; `RunnerArgsContractTest` passes
-- [ ] 5.2 `RunCommand`: `--jdk` (before `--`, completion from nothing static), checked against the image's
+- [x] 5.2 `RunCommand`: `--jdk` (before `--`, completion from nothing static), checked against the image's
       `baas-jdks` in the existing lookup; unknown id → exit 2 naming the image and the ids, before upload;
       an image without the tag refuses any `--jdk` and launches without one; unit tests on `JobLaunch` with
       `FakeRunAws` cover all three
-- [ ] 5.3 `UserDataScriptBuilder`: pass the id; read `jdk` from `/opt/jdks/<id>/bin/java` and `runnerJdk`
+- [x] 5.3 `UserDataScriptBuilder`: pass the id; read `jdk` from `/opt/jdks/<id>/bin/java` and `runnerJdk`
       from `java` on `PATH`; tag `jdkId`; on an image without selection, fill `jdk` from `java` on `PATH` with
       `id`/`home` empty and no `jdkId`; tests render both
-- [ ] 5.4 Runner: `JmhSubcommand`/`JCStressSubcommand` take `--jdk`, `BenchmarkProcessBuilder` starts the
+- [x] 5.4 Runner: `JmhSubcommand`/`JCStressSubcommand` take `--jdk`, `BenchmarkProcessBuilder` starts the
       benchmark with `/opt/jdks/<id>/bin/java` (or `java` when no id), refusing an id not found there before
       running; unit tests on the command line, and an IT with a second JDK directory (the CI JDK linked under
       a temporary `/opt/jdks`-like root through a runner option or property used by tests only)
-- [ ] 5.5 `BenchmarkArgs`: `-jvm` managed for JMH in every spelling, the refusal naming `--jdk`; unit tests
+- [x] 5.5 `BenchmarkArgs`: `-jvm` managed for JMH in every spelling, the refusal naming `--jdk`; unit tests
       in `baas-model`, the runner and the CLI; `BenchmarkArgsContractIT` still passes
-- [ ] 5.6 The `-lprof` listing job passes `--jdk` like any job; `RunCommandTest` covers `--jdk x jmh -- -lprof`
+- [x] 5.6 The `-lprof` listing job passes `--jdk` like any job; `RunCommandTest` covers `--jdk x jmh -- -lprof`
 
 ## 6. `results diff` CPU warning
 
-- [ ] 6.1 `ResultsDiff`: a `cpuModel` difference becomes its own warning, before the environment one,
+- [x] 6.1 `ResultsDiff`: a `cpuModel` difference becomes its own warning, before the environment one,
       naming both models; `jdkId` joins `WARNED_TAGS`; `ResultsDiffTest` covers both lines and that stdout is
       unchanged
 

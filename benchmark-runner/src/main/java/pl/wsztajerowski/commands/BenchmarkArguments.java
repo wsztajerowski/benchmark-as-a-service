@@ -21,7 +21,8 @@ final class BenchmarkArguments {
         BenchmarkArgs reading = BenchmarkArgs.of(type);
         reading.firstManaged(arguments).ifPresent(managed -> {
             throw new ParameterException(spec.commandLine(),
-                "%s is managed by BaaS and cannot be set after --".formatted(managed));
+                "%s is managed by BaaS and cannot be set after --%s".formatted(managed,
+                    BenchmarkArgs.choosesTheJdk(managed) ? "; the JDK is chosen with baas run --jdk" : ""));
         });
         if (reading.listsProfilersBesideOthers(arguments)) {
             throw new ParameterException(spec.commandLine(),

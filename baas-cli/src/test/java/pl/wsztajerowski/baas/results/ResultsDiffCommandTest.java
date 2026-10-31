@@ -222,6 +222,24 @@ class ResultsDiffCommandTest {
         assertThat(result.out()).doesNotContain("imageVersion").doesNotContain("jobs diff");
     }
 
+    /** A JDK comparison: the CPU warning comes first and on its own, the intended JDK difference after it. */
+    @Test
+    void aDifferentCpuIsWarnedAboutOnItsOwnBeforeTheJdks() throws Exception {
+        jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.2xlarge", "jdkId", "corretto-25", "cpuModel", "Xeon 8275CL"))));
+        jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
+            Map.of("type", "jmh", "instanceType", "c5.2xlarge", "jdkId", "temurin-26", "cpuModel", "Xeon 8124M"))));
+
+        Captured result = run("results", "diff", A, B);
+
+        assertThat(result.err()).contains("different CPU models (Xeon 8275CL → Xeon 8124M)")
+            .contains("jdkId: corretto-25 → temurin-26");
+        assertThat(result.err().indexOf("CPU models")).isLessThan(result.err().indexOf("jdkId:"));
+        assertThat(result.err().lines().filter(l -> l.contains("CPU models"))).singleElement().asString()
+            .doesNotContain("jdkId");
+        assertThat(result.out()).doesNotContain("8275CL").doesNotContain("CPU models");
+    }
+
     @Test
     void equalEnvironmentsWarnNothing() throws Exception {
         twoJmhJobs();
@@ -294,7 +312,7 @@ class ResultsDiffCommandTest {
     @Test
     void tagsAreComparedOnlyUnderVerbose() throws Exception {
         jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "main", "jdk", "25.0.4"))));
+            Map.of("type", "jmh", "instanceType", "c5.large", "branch", "main", "jdkVersion", "25.0.4"))));
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
             Map.of("type", "jmh", "instanceType", "c5.large", "branch", "feature-x", "commit", "abc"))));
 
@@ -335,9 +353,9 @@ class ResultsDiffCommandTest {
         String longA = "Incrementing_Synchronized -f 1 -wi 1 -i 3 --async-event=cpu -jvmArgs '-Xmx1g -Xms1g -XX:+UseParallelGC'";
         String longB = "Incrementing_Synchronized -f 1 -wi 1 -i 5 --async-event=wall -jvmArgs '-Xmx1g -Xms1g -XX:+UseG1GC -XX:MaxGCPauseMillis=50'";
         jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "cliParameters", longA, "jdk", "25.0.4"))));
+            Map.of("type", "jmh", "cliParameters", longA, "jdkVersion", "25.0.4"))));
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "cliParameters", longB, "jdk", "25.0.4"))));
+            Map.of("type", "jmh", "cliParameters", longB, "jdkVersion", "25.0.4"))));
 
         List<String> lines = run("results", "diff", "-v", A, B).out().lines().toList();
 
@@ -387,9 +405,9 @@ class ResultsDiffCommandTest {
     @Test
     void aDifferingTagIsEmphasisedAndAnEqualOneIsNot() throws Exception {
         jobs.put(A, List.of(jmh(A, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "branch", "main", "jdk", "25.0.4"))));
+            Map.of("type", "jmh", "branch", "main", "jdkVersion", "25.0.4"))));
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "thrpt", 1, 0.1, "ops/s", Map.of(),
-            Map.of("type", "jmh", "branch", "feature-x", "jdk", "25.0.4"))));
+            Map.of("type", "jmh", "branch", "feature-x", "jdkVersion", "25.0.4"))));
         String plain = run("results", "diff", "-v", A, B).out();
         interactive = true;
 

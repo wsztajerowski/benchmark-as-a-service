@@ -1,9 +1,14 @@
 package pl.wsztajerowski.commands;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.model.JobId;
 
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.attribute.PosixFilePermissions;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -122,6 +127,54 @@ class ApiCommonSharedOptionsTest {
         var options = parse("--tag", "project=from-tag", "--project", "explicit");
 
         assertThat(options.getProject()).isEqualTo("explicit");
+    }
+
+    /** An image from before JDK selection: no --jdk, and the benchmark runs on java from PATH. */
+    @Test
+    void noJdkMeansJavaFromPath() {
+        assertThat(parse("--project", "p").javaExecutable()).isEqualTo("java");
+    }
+
+    @Test
+    void aSelectedJdkIsItsJavaUnderTheRoot(@TempDir Path root) throws IOException {
+        Path java = installJdk(root, "temurin-26");
+
+        assertThat(parse("--project", "p", "--jdk", "temurin-26", "--jdks-root", root.toString()).javaExecutable())
+            .isEqualTo(java.toString());
+    }
+
+    @Test
+    void theRootDefaultsToTheImagesJdkDirectory() {
+        assertThat(parse("--project", "p").jdksRoot).isEqualTo(Path.of("/opt/jdks"));
+    }
+
+    /** The CLI checked the image's list; a JDK missing anyway fails before the benchmark, naming what is there. */
+    @Test
+    void aJdkNotOnTheImageIsRefusedNamingTheOnesThatAre(@TempDir Path root) throws IOException {
+        installJdk(root, "corretto-25");
+        installJdk(root, "temurin-26");
+        var options = parse("--project", "p", "--jdk", "temruin-26", "--jdks-root", root.toString());
+
+        assertThatThrownBy(options::javaExecutable)
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("temruin-26")
+            .hasMessageContaining("corretto-25, temurin-26");
+    }
+
+    /** An id is a directory name below the root, never a path out of it. */
+    @Test
+    void anIdThatWouldLeaveTheRootIsRefused(@TempDir Path dir) throws IOException {
+        Path root = Files.createDirectories(dir.resolve("jdks"));
+        installJdk(dir, "outside");
+        var options = parse("--project", "p", "--jdk", "../outside", "--jdks-root", root.toString());
+
+        assertThatThrownBy(options::javaExecutable).isInstanceOf(IllegalStateException.class);
+    }
+
+    private static Path installJdk(Path root, String id) throws IOException {
+        Path java = Files.createDirectories(root.resolve(id).resolve("bin")).resolve("java");
+        Files.createFile(java, PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rwxr-xr-x")));
+        return java;
     }
 
     /** Parses with the options every job must name, unless the arguments name them already. */

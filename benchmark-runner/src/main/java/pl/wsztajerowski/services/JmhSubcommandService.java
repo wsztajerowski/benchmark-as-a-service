@@ -54,7 +54,7 @@ public class JmhSubcommandService {
      * profiler listing alike, which asks for no result file and gets none.
      */
     BenchmarkProcessBuilder jmhProcess() {
-        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.benchmarkPath());
+        BenchmarkProcessBuilder builder = benchmarkProcessBuilder(run.java(), run.benchmarkPath());
         Path asyncDirectory = run.asyncPath().toAbsolutePath().getParent();
         LIBRARY_PATH_VARIABLES.forEach(name -> builder.prependToPathVariable(name, asyncDirectory));
         if (isProfilerListing()) {

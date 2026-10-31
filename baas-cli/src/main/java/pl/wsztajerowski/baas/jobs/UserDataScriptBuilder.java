@@ -2,6 +2,7 @@ package pl.wsztajerowski.baas.jobs;
 
 import pl.wsztajerowski.baas.image.RunnerImage;
 import pl.wsztajerowski.baas.model.BenchmarkType;
+import pl.wsztajerowski.baas.model.Jdks;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobLayout;
 import pl.wsztajerowski.baas.model.JobStatus;
@@ -22,7 +23,7 @@ import java.util.stream.Stream;
 public class UserDataScriptBuilder {
 
     /** Bump when a field is added or renamed, so `baas jobs diff` can tell structure from content. */
-    public static final int MANIFEST_SCHEMA_VERSION = 7;
+    public static final int MANIFEST_SCHEMA_VERSION = 8;
 
     /**
      * EC2 refuses user-data over 16 KB raw, and the launch then fails outright. The comments below
@@ -167,8 +168,9 @@ public class UserDataScriptBuilder {
           || echo "baas-ship-logs.service not started: a termination from outside will not ship the logs"
 
         # Nothing is installed here. Corretto, perf, the AWS CLI and async-profiler are baked
-        # into the AMI by `baas admin image build` from infra/runner-image.yaml — a runner that
-        # installed its own toolchain would measure on a slightly different machine every time.
+        # into the AMI by `baas admin image build` from infra/runner-image.yaml, and every JDK a job
+        # can select by an extension — a runner that installed its own toolchain would measure on a
+        # slightly different machine every time.
 
         mkdir -p /app
         # Run from a real working directory. cloud-init starts us in /, and the runner
@@ -215,21 +217,37 @@ public class UserDataScriptBuilder {
         SWAP_TOTAL_MIB=$(awk '/SwapTotal/ {print int($2/1024)}' /proc/meminfo)
         OS_VERSION=$(json_escape "$(. /etc/os-release && echo "$PRETTY_NAME")")
         KERNEL_RELEASE=$(uname -r)
-        JVM_VERSION_RAW=$(java -version 2>&1 | head -1)
-        JVM_VERSION=$(json_escape "$JVM_VERSION_RAW")
-        # jdk tag and jvm.release: same observation as JVM_VERSION_RAW above, projected to the
-        # version number the banner quotes (e.g. "25.0.4") — not a second `java -version`.
-        JDK_VERSION=$(printf '%s' "$JVM_VERSION_RAW" | sed -n 's/.*"\\(.*\\)".*/\\1/p')
-        JVM_RELEASE=$(json_escape "$JDK_VERSION")
-        # Who built the JVM. The banner above names only the version, so Corretto 25.0.4 and
-        # another vendor's 25.0.4 read the same there — and an image extension may install either.
-        # One JVM call yields every property; each is then picked out by its exact key.
-        JVM_PROPS=$(java -XshowSettings:properties -version 2>&1)
-        jvm_prop() { printf '%s\\n' "$JVM_PROPS" | awk -F' = ' -v key="$1" '{ sub(/^ +/, "", $1) } $1 == key { print $2; exit }'; }
-        JVM_VENDOR_RAW=$(jvm_prop java.vendor)
-        JVM_VENDOR=$(json_escape "$JVM_VENDOR_RAW")
-        JVM_VENDOR_VERSION=$(json_escape "$(jvm_prop java.vendor.version)")
-        JVM_NAME=$(json_escape "$(jvm_prop java.vm.name)")
+        # Two JDKs, possibly the same one. `jdk` is the one the benchmark runs on — the job's
+        # selection, /opt/jdks/<JDK_ID> — and every JDK tag reads it. `runnerJdk` is `java` on PATH,
+        # which runs the runner itself. An image from before JDK selection gets no JDK_ID: the
+        # benchmark runs on `java` on PATH, recorded as `jdk` with no id or home, and tagged no jdkId.
+        JDK_HOME=
+        JDK_JAVA=java
+        [[ -n "${JDK_ID}" ]] && JDK_HOME="@JDKS_ROOT@/${JDK_ID}" && JDK_JAVA="${JDK_HOME}/bin/java"
+        JDK_VERSION_RAW=$("${JDK_JAVA}" -version 2>&1 | head -1)
+        JDK_VERSION_BANNER=$(json_escape "$JDK_VERSION_RAW")
+        # The jdkVersion tag and jdk.release: the same observation as the banner above, projected to
+        # the version number it quotes (e.g. "25.0.4") — not a second `java -version`.
+        banner_release() { printf '%s' "$1" | sed -n 's/.*"\\(.*\\)".*/\\1/p'; }
+        JDK_RELEASE_RAW=$(banner_release "$JDK_VERSION_RAW")
+        JDK_RELEASE=$(json_escape "$JDK_RELEASE_RAW")
+        # Who built the JDK. The banner names only the version, so Corretto 25.0.4 and another
+        # vendor's 25.0.4 read the same there. One JVM call yields every property; each is then
+        # picked out by its exact key.
+        jvm_prop() { printf '%s\\n' "$1" | awk -F' = ' -v key="$2" '{ sub(/^ +/, "", $1) } $1 == key { print $2; exit }'; }
+        JDK_PROPS=$("${JDK_JAVA}" -XshowSettings:properties -version 2>&1)
+        JDK_VENDOR_RAW=$(jvm_prop "$JDK_PROPS" java.vendor)
+        JDK_VENDOR=$(json_escape "$JDK_VENDOR_RAW")
+        JDK_VENDOR_VERSION=$(json_escape "$(jvm_prop "$JDK_PROPS" java.vendor.version)")
+        JDK_VM_NAME=$(json_escape "$(jvm_prop "$JDK_PROPS" java.vm.name)")
+        RUNNER_JDK_PROPS=$(java -XshowSettings:properties -version 2>&1)
+        RUNNER_JDK_RELEASE=$(json_escape "$(jvm_prop "$RUNNER_JDK_PROPS" java.version)")
+        RUNNER_JDK_VENDOR_VERSION=$(json_escape "$(jvm_prop "$RUNNER_JDK_PROPS" java.vendor.version)")
+        # The id travels to the runner and into the tags only when the job selected one, as data in
+        # arrays: an empty array expands to nothing.
+        JDK_ARGS=()
+        JDK_ID_TAG_ARGS=()
+        [[ -n "${JDK_ID}" ]] && JDK_ARGS=(@JDK_FLAG@ "${JDK_ID}") && JDK_ID_TAG_ARGS=(@TAG_FLAG@ "@JDK_ID_TAG@=${JDK_ID}")
         # Capture, then default: `cmd | head -1 || echo absent` never reaches the echo, because a
         # pipeline's status is head's, and head succeeds on empty input. A missing tool then recorded
         # "" — and asprof, through 2>&1, bash's "No such file" as its version. No pipefail: this
@@ -270,12 +288,18 @@ public class UserDataScriptBuilder {
             "version": "${OS_VERSION}",
             "kernelRelease": "${KERNEL_RELEASE}"
           },
-          "jvm": {
-            "version": "${JVM_VERSION}",
-            "release": "${JVM_RELEASE}",
-            "vendor": "${JVM_VENDOR}",
-            "vendorVersion": "${JVM_VENDOR_VERSION}",
-            "name": "${JVM_NAME}"
+          "jdk": {
+            "id": "${JDK_ID}",
+            "home": "${JDK_HOME}",
+            "version": "${JDK_VERSION_BANNER}",
+            "release": "${JDK_RELEASE}",
+            "vendor": "${JDK_VENDOR}",
+            "vendorVersion": "${JDK_VENDOR_VERSION}",
+            "vmName": "${JDK_VM_NAME}"
+          },
+          "runnerJdk": {
+            "release": "${RUNNER_JDK_RELEASE}",
+            "vendorVersion": "${RUNNER_JDK_VENDOR_VERSION}"
           },
           "tools": {
             "perf": "${PERF_VERSION}",
@@ -317,10 +341,10 @@ public class UserDataScriptBuilder {
         # benchmark's arguments follow the runner's --, so none of them can be read as a runner
         # option: they reach the benchmark JAR verbatim.
         # RunCommand.buildRunnerTags already rejects a caller tag whose key is
-        # machine-observed (imageVersion, instanceType, jdk, jvmVendor, cpuModel, cpuArch, type),
-        # so the caller tags should never actually collide with the six observed --tag lines
-        # below.
-        # The six --tag lines below reach the item's tags map, so `baas results query` can filter
+        # machine-observed (imageVersion, instanceType, jdkId, jdkVersion, jdkVendor, cpuModel,
+        # cpuArch, type), so the caller tags should never actually collide with the observed --tag
+        # lines below.
+        # The observed --tag lines below reach the item's tags map, so `baas results query` can filter
         # and group by the environment without fetching anything from S3. They are the values
         # OBSERVED above, not the ones the CLI passed down, so a result's tags cannot
         # disagree with its own environment.json. They are listed AFTER the caller-tags
@@ -335,11 +359,13 @@ public class UserDataScriptBuilder {
           @S3_BUCKET_FLAG@      "${S3_BUCKET}" \\
           @BENCHMARK_PATH_FLAG@ /app/benchmark-under-test.jar \\
           @RESULTS_TABLE_FLAG@  "${RESULTS_TABLE}" \\
+          "${JDK_ARGS[@]}" \\
           "${RUNNER_TAGS_ARRAY[@]}" \\
           @TAG_FLAG@ "@IMAGE_VERSION_TAG@=${IMAGE_VERSION_ACTUAL}" \\
           @TAG_FLAG@ "@INSTANCE_TYPE_TAG@=${INSTANCE_TYPE}" \\
-          @TAG_FLAG@ "@JDK_TAG@=${JDK_VERSION}" \\
-          @TAG_FLAG@ "@JVM_VENDOR_TAG@=${JVM_VENDOR_RAW}" \\
+          "${JDK_ID_TAG_ARGS[@]}" \\
+          @TAG_FLAG@ "@JDK_VERSION_TAG@=${JDK_RELEASE_RAW}" \\
+          @TAG_FLAG@ "@JDK_VENDOR_TAG@=${JDK_VENDOR_RAW}" \\
           @TAG_FLAG@ "@CPU_MODEL_TAG@=${CPU_MODEL_RAW}" \\
           @TAG_FLAG@ "@CPU_ARCH_TAG@=${CPU_ARCH}" \\
           -- "${BENCHMARK_PARAMS_ARRAY[@]}"
@@ -372,7 +398,7 @@ public class UserDataScriptBuilder {
             JobLayout.benchmarkJarKey(job.project(), job.jobId()),
             request.timeoutSeconds(), request.watchdogSeconds(),
             image.imageVersion(), image.amiId(), runnerJarS3Key,
-            deployment.resultsTable(), job.sortKey(), request.benchmarkParams(), request.runnerTags());
+            deployment.resultsTable(), job.sortKey(), request.benchmarkParams(), request.runnerTags(), request.jdk());
     }
 
     private String render(String region, String bucket, String benchmarkType,
@@ -380,7 +406,7 @@ public class UserDataScriptBuilder {
                           String benchmarkJarS3Key, int benchmarkTimeoutSeconds,
                           int wallClockHardKillSeconds, String imageVersion, String amiId,
                           String runnerJarS3Key, String resultsTableName, String jobSortKey,
-                          List<String> benchmarkParams, Map<String, String> runnerTags) {
+                          List<String> benchmarkParams, Map<String, String> runnerTags, String jdkId) {
         List<String> tagArgs = runnerTags.entrySet().stream()
             .flatMap(e -> Stream.of(RunnerArgs.TAG, e.getKey() + "=" + e.getValue()))
             .toList();
@@ -413,6 +439,9 @@ public class UserDataScriptBuilder {
             // pointer has since moved on. /etc/baas-image-version, baked in, wins when present.
             export("IMAGE_VERSION", imageVersion) +
             export("AMI_ID", amiId) +
+            // The JDK the job selected, already checked against the image's list; empty on an image
+            // from before JDK selection.
+            export("JDK_ID", jdkId) +
             export("RUNNER_JAR_S3_KEY", runnerJarS3Key) +
             export("RESULTS_TABLE", resultsTableName) +
             // Built by ResultKeys in the CLI and handed down verbatim. CREATED_AT above is
@@ -457,8 +486,11 @@ public class UserDataScriptBuilder {
         names.put("@TAG_FLAG@", RunnerArgs.TAG);
         names.put("@IMAGE_VERSION_TAG@", TagKeys.IMAGE_VERSION);
         names.put("@INSTANCE_TYPE_TAG@", TagKeys.INSTANCE_TYPE);
-        names.put("@JDK_TAG@", TagKeys.JDK);
-        names.put("@JVM_VENDOR_TAG@", TagKeys.JVM_VENDOR);
+        names.put("@JDK_ID_TAG@", TagKeys.JDK_ID);
+        names.put("@JDK_VERSION_TAG@", TagKeys.JDK_VERSION);
+        names.put("@JDK_VENDOR_TAG@", TagKeys.JDK_VENDOR);
+        names.put("@JDK_FLAG@", RunnerArgs.JDK);
+        names.put("@JDKS_ROOT@", Jdks.ROOT);
         names.put("@CPU_MODEL_TAG@", TagKeys.CPU_MODEL);
         names.put("@CPU_ARCH_TAG@", TagKeys.CPU_ARCH);
         String rendered = body;

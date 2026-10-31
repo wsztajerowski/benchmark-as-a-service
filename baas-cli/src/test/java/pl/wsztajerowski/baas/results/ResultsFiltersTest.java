@@ -16,11 +16,11 @@ class ResultsFiltersTest {
 
     @Test
     void repeatedTagsCombineConjunctively() {
-        var both = row("A.run", Map.of("jdk", "25.0.4", "cpuArch", "aarch64"));
-        var onlyOne = row("B.run", Map.of("jdk", "25.0.4"));
+        var both = row("A.run", Map.of("jdkVersion", "25.0.4", "cpuArch", "aarch64"));
+        var onlyOne = row("B.run", Map.of("jdkVersion", "25.0.4"));
 
         var filtered = ResultsFilters.byTags(List.of(both, onlyOne),
-            Map.of("jdk", "25.0.4", "cpuArch", "aarch64"));
+            Map.of("jdkVersion", "25.0.4", "cpuArch", "aarch64"));
 
         assertThat(filtered).containsExactly(both);
     }
@@ -70,7 +70,7 @@ class ResultsFiltersTest {
 
     @Test
     void staysQuietForAKnownKeyThatSimplyMatchedNothing() {
-        assertThat(ResultsFilters.unknownTagWarning(List.of(), Map.of("jdk", "25.0.9")))
+        assertThat(ResultsFilters.unknownTagWarning(List.of(), Map.of("jdkVersion", "25.0.9")))
             .as("a known key matching nothing is an ordinary empty result")
             .isEmpty();
     }
