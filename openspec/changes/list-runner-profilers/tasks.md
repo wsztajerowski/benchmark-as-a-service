@@ -76,7 +76,7 @@
       <fixture> jmh -- -lprof`: listing printed verbatim on stdout, `async` and `perf` under *Supported*,
       status `completed`, only the `jobs download` hint, `results query --job-id` finds nothing. Repeat
       with `--format json | jq .` and confirm one object. Record the outputs in `verify.md`
-- [ ] 6.2 Run `-- -lprof MyBenchmark` and `-- MyBenchmark -prof async:libP=/x`: both exit 2 and launch
+- [x] 6.2 Run `-- -lprof MyBenchmark` and `-- MyBenchmark -prof async:libP=/x`: both exit 2 and launch
       nothing
 - [ ] 6.3 Run one fixture benchmark with `-prof async:output=flamegraph` and confirm the flame graph is
       under the job's prefix (`jobs download`)

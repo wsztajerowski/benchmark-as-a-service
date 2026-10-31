@@ -47,3 +47,13 @@ So the design's rationale holds: without a refusal, `libP=` would load a user li
 | `-lprof -rf json -rff x.json` | exit 0, no `x.json` |
 
 A listing writes no result file even when asked to, so the runner must not read one.
+
+## 6.2 Refusals with the reactor CLI (2026-10-31, `--deployment baas-development`, no AWS call)
+
+| Arguments after `--` | Result |
+|---|---|
+| `-lprof MyBenchmark` | exit 2, "-lprof lists JMH's profilers on the runner and exits, ignoring everything else, so it must be the only argument after --. Nothing was launched." |
+| `MyBenchmark -prof async:libP=/x` | exit 2, "libPath in -prof async is managed by BaaS and cannot be set after --: … Nothing was launched." |
+
+The managed message said "the runner sets it", untrue for `libPath` now; it also names loading the
+image's async-profiler.
