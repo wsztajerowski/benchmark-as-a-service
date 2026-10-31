@@ -14,7 +14,7 @@ public record StoredMeasurement(
     String project,
     String jobId,
     Instant createdAt,
-    MeasurementKind kind,
+    BenchmarkType kind,
     String benchmarkClass,
     String benchmarkMethod,
     String mode,
@@ -43,7 +43,7 @@ public record StoredMeasurement(
         // clock with finer resolution than the stored form.
         createdAt = createdAt.truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
         if (kind == null) throw new IllegalArgumentException("kind is required");
-        if (kind == MeasurementKind.JMH) {
+        if (kind == BenchmarkType.JMH) {
             require(benchmarkClass, "benchmarkClass");
             require(benchmarkMethod, "benchmarkMethod");
         }

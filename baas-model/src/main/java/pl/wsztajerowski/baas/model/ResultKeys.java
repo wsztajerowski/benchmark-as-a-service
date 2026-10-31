@@ -37,7 +37,7 @@ public final class ResultKeys {
 
     public static String sortKey(StoredMeasurement measurement) {
         String timestamp = formatTimestamp(measurement.createdAt());
-        if (measurement.kind() == MeasurementKind.JCSTRESS) {
+        if (measurement.kind() == BenchmarkType.JCSTRESS) {
             return JCSTRESS_SK_PREFIX + timestamp + SEPARATOR + measurement.jobId();
         }
         String key = measurement.benchmarkClass()
@@ -94,7 +94,7 @@ public final class ResultKeys {
     }
 
     public static String requestIndexSortKey(StoredMeasurement measurement) {
-        if (measurement.kind() == MeasurementKind.JCSTRESS) {
+        if (measurement.kind() == BenchmarkType.JCSTRESS) {
             return JCSTRESS_SK_PREFIX + measurement.jobId();
         }
         return measurement.benchmarkClass()

@@ -7,7 +7,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
@@ -389,7 +389,7 @@ class ResultsQueryServiceIT {
     private static StoredMeasurement measurement(
         String project, String jobId, String method, Map<String, String> tags) {
         return new StoredMeasurement(
-            project, jobId, Instant.parse("2026-08-19T09:00:00.000Z"), MeasurementKind.JMH,
+            project, jobId, Instant.parse("2026-08-19T09:00:00.000Z"), BenchmarkType.JMH,
             "com.example.Bench", method, "thrpt", Map.of(), 1234.5, 1.0, "ops/s",
             Map.of(), null, tags,
             "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json");

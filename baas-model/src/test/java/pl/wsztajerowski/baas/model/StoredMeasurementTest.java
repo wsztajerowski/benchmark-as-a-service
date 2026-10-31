@@ -14,7 +14,7 @@ class StoredMeasurementTest {
     void aJmhMeasurementCarriesItsBenchmarkCoordinates() {
         var m = StoredMeasurementFixtures.jmh();
 
-        assertThat(m.kind()).isEqualTo(MeasurementKind.JMH);
+        assertThat(m.kind()).isEqualTo(BenchmarkType.JMH);
         assertThat(m.benchmarkClass()).isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized");
         assertThat(m.benchmarkMethod()).isEqualTo("incrementUsingSynchronized");
         assertThat(m.jcstress()).isNull();
@@ -24,7 +24,7 @@ class StoredMeasurementTest {
     void aJcstressMeasurementHasNoBenchmarkMethodButCarriesCounts() {
         var m = StoredMeasurementFixtures.jcstress();
 
-        assertThat(m.kind()).isEqualTo(MeasurementKind.JCSTRESS);
+        assertThat(m.kind()).isEqualTo(BenchmarkType.JCSTRESS);
         assertThat(m.benchmarkMethod()).isNull();
         assertThat(m.jcstress().totalTests()).isEqualTo(12);
     }
@@ -59,7 +59,7 @@ class StoredMeasurementTest {
             "lynx-journal",
             "jmh-20260817_220706",
             Instant.parse("2026-08-17T22:07:06.123456789Z"),
-            MeasurementKind.JMH,
+            BenchmarkType.JMH,
             "pl.wsztajerowski.fake.Incrementing_Synchronized",
             "incrementUsingSynchronized",
             "thrpt",

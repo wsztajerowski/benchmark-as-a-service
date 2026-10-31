@@ -1,7 +1,7 @@
 package pl.wsztajerowski.results;
 
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.model.MeasurementKind;
+import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.entities.jcstress.JCStressResult;
 
@@ -17,7 +17,7 @@ class JCStressMeasurementMapperTest {
     void producesOneMeasurementWithNoBenchmarkCoordinates() {
         var measurement = map();
 
-        assertThat(measurement.kind()).isEqualTo(MeasurementKind.JCSTRESS);
+        assertThat(measurement.kind()).isEqualTo(BenchmarkType.JCSTRESS);
         assertThat(measurement.benchmarkClass()).isNull();
         assertThat(measurement.benchmarkMethod()).isNull();
         assertThat(measurement.mode()).isNull();
