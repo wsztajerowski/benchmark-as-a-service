@@ -514,53 +514,15 @@ verify` copies `fake-jmh-benchmarks.jar` and `fake-stress-tests.jar` into
 `mvn -pl benchmark-runner verify` on its own needs the two fixture JARs already installed in your
 local Maven repository (`classifier=shaded`) — run the full reactor first.
 
-Note: JUnit **6** and Testcontainers **2.x**, both of which differ from the versions you may be
-used to.
-
-## Local development
-
-```bash
-docker-compose up
-```
-
-Starts LocalStack (`SERVICES=s3,ssm,dynamodb`). Credentials for LocalStack come from `.env` —
-test values only, never real credentials.
-
-There is **no** init container, so create what you need yourself — the bucket and the results
-table. The runner requires both `--s3-bucket` and `--results-table`; it has no local-disk mode. `docker-compose.yaml` carries the exact
-`create-table` command in a comment, with the key schema that must match `ResultsTable` in
-`infra/cf-template-core.yaml`:
-
-```bash
-aws --endpoint-url=http://localhost:4566 --profile localstack s3 mb s3://baas
-```
-
-Then run the runner directly against LocalStack. Both scripts use the `fake-jmh-benchmarks`
-fixture, so they work straight after a build:
-
-```bash
-./jmh-with-profiler.sh   # jmh -- … -prof gc -prof comp -prof cl -prof jfr
-./jmh-with-async.sh      # jmh -- … -prof 'async:…;output=flamegraph'
-```
-
-Arguments to either script are appended after the runner's `--`, so they are JMH's own.
-`jmh-with-async.sh` additionally needs a local async-profiler library, because `--async-path`
-defaults to the on-instance location, and a `-prof async` job checks it exists:
+`JmhAsyncProfilerIT` runs only when `ASYNC_PATH` points at a local async-profiler library, so
+`mvn verify` covers async profiling only with it set:
 
 ```bash
 export ASYNC_PATH=~/async-profiler/lib/libasyncProfiler.dylib   # .so on Linux
 ```
 
-Both scripts assume an `AWS_PROFILE=localstack` entry in your AWS config, and both write to
-LocalStack S3 and the LocalStack table, which has to exist: the runner treats absent store
-configuration as an error rather than quietly discarding results, and no option discards them.
-
-Setting `ASYNC_PATH` also enables `JmhAsyncProfilerIT`, which is skipped
-without it — so `mvn verify` covers async profiling only when that variable is set.
-
-Endpoints: S3 browser `http://localhost:4566/baas/` · DynamoDB at the same LocalStack endpoint
-(`aws --endpoint-url=http://localhost:4566 dynamodb scan --table-name baas-results`)
-(the SDK/CLI endpoint is `https://s3.localhost.localstack.cloud:4566`).
+Note: JUnit **6** and Testcontainers **2.x**, both of which differ from the versions you may be
+used to.
 
 ## GitHub Actions
 
@@ -606,5 +568,4 @@ paid instance, so it runs on path-filtered pull requests and on demand:
 gh workflow run e2e-cloud-test.yml
 ```
 
-The only no-cost way to exercise the runner is `./jmh-with-profiler.sh` or `./jmh-with-async.sh`
-against LocalStack. The `act` harness and its `/baas/mongo/connection-string` parameter are gone.
+The no-cost way to exercise the runner is its integration tests, against LocalStack. The `act` harness and its `/baas/mongo/connection-string` parameter are gone.
