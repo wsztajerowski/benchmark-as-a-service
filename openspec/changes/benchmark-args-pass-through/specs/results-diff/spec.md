@@ -39,8 +39,8 @@ absent from a job's measurements SHALL be shown as unknown.
 ## ADDED Requirements
 
 ### Requirement: Different profilers are warned about
-When the two jobs' measurements disagree on `profilers`, a side without the tag included, the command
-SHALL write one warning to standard error naming both values, with an absent tag shown as `none`, and
+When the two jobs' measurements disagree on the profilers they ran under — a side without the tag
+included — the command SHALL write one warning to standard error naming both values, with an absent tag shown as `none`, and
 saying that a profiler perturbs the measured score. The warning SHALL NOT change any row or the exit
 status, and SHALL be written in addition to any warning about differing `cliParameters`.
 
@@ -48,6 +48,12 @@ status, and SHALL be written in addition to any warning about differing `cliPara
 - **WHEN** job A carries no `profilers` tag and job B carries `profilers=async`
 - **THEN** standard error names `profilers: none → async` and says a profiler perturbs the score, and
   standard output is unchanged by it
+
+#### Scenario: A job of a retired profiled type counts as profiled
+- **WHEN** job A is stored with `type=jmh-with-async` and no `profilers` tag, and job B carries
+  `profilers=async`
+- **THEN** no profilers warning is written; against an unprofiled job B, the warning names `async → none`,
+  and a job stored with `type=jmh-with-prof` is named `unrecorded`
 
 #### Scenario: The same profilers raise no warning
 - **WHEN** both jobs carry `profilers=gc`

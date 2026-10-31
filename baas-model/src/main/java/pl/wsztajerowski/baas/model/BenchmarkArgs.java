@@ -46,6 +46,15 @@ public final class BenchmarkArgs {
      */
     public record Profiler(String name, String options) {
 
+        /**
+         * The name BaaS knows this profiler by: JMH also accepts a profiler's class name, so the two
+         * profilers the runner points at its directory are recognised by either. Any other name is
+         * kept as given.
+         */
+        public String canonicalName() {
+            return PROFILER_CLASS_NAMES.getOrDefault(name, name);
+        }
+
         static Profiler parse(String value) {
             int colon = value.indexOf(':');
             return colon < 0 ? new Profiler(value, null) : new Profiler(value.substring(0, colon), value.substring(colon + 1));
@@ -92,6 +101,14 @@ public final class BenchmarkArgs {
      */
     public static final Map<String, List<String>> MANAGED_PROFILER_KEYS =
         Map.of("async", List.of("dir", "libPath"), "jfr", List.of("dir"));
+
+    /**
+     * The class names JMH resolves those two profilers by as well ({@code -prof <class>}): written so,
+     * a JFR recording went unpointed and unuploaded, and async-profiler found no library.
+     */
+    static final Map<String, String> PROFILER_CLASS_NAMES = Map.of(
+        "org.openjdk.jmh.profile.AsyncProfiler", "async",
+        "org.openjdk.jmh.profile.JavaFlightRecorderProfiler", "jfr");
 
     private static final BenchmarkArgs JMH = new BenchmarkArgs("JMH",
         Map.ofEntries(
@@ -199,10 +216,10 @@ public final class BenchmarkArgs {
             }
             if (occurrence.name().equals(PROF) && occurrence.value() != null) {
                 Profiler profiler = Profiler.parse(occurrence.value());
-                List<String> keys = MANAGED_PROFILER_KEYS.getOrDefault(profiler.name(), List.of());
+                List<String> keys = MANAGED_PROFILER_KEYS.getOrDefault(profiler.canonicalName(), List.of());
                 for (String key : profiler.keys()) {
                     if (keys.contains(key)) {
-                        return Optional.of(key + " in -prof " + profiler.name());
+                        return Optional.of(key + " in -prof " + profiler.canonicalName());
                     }
                 }
             }
@@ -227,12 +244,13 @@ public final class BenchmarkArgs {
     }
 
     /**
-     * The {@code profilers} tag's value: every profiler's name, sorted, without duplicates, joined by
-     * {@code ,}; empty when nothing is profiled, so the tag is left out rather than set to a stand-in.
+     * The {@code profilers} tag's value: every profiler's {@link Profiler#canonicalName()}, sorted,
+     * without duplicates, joined by {@code ,}; empty when nothing is profiled, so the tag is left out
+     * rather than set to a stand-in.
      */
     public Optional<String> profilersTag(List<String> args) {
         Set<String> names = profilers(args).stream()
-            .map(Profiler::name)
+            .map(Profiler::canonicalName)
             .collect(Collectors.toCollection(TreeSet::new));
         return names.isEmpty() ? Optional.empty() : Optional.of(String.join(",", names));
     }

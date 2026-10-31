@@ -56,7 +56,7 @@ public class JmhSubcommandService {
 
     private String managedProfilerOptions(BenchmarkArgs.Profiler profiler) {
         String dir = "dir=" + run.profilerOutput().toAbsolutePath();
-        return switch (profiler.name()) {
+        return switch (profiler.canonicalName()) {
             case "async" -> dir + ";libPath=" + asyncLibrary();
             case "jfr" -> dir;
             default -> null;
@@ -88,6 +88,11 @@ public class JmhSubcommandService {
             // Covers async-profiler's own logs too: its output directory sits below the working
             // directory, so they land under logs/profiler-output/.
             JobLogs.upload(storageService, outputPath);
+            // Before the exit check: a job that failed after profiling — one benchmark erroring, or
+            // -foe — still has the profiles of what ran, and those are what it most needs. Profilers
+            // write under their dir; the tree lands in the job's result path, each benchmark's
+            // directory under the name JMH gave it. Nothing there (no async or jfr) uploads nothing.
+            ProfilerArtifacts.upload(storageService, run.profilerOutput(), outputPath);
 
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
@@ -97,10 +102,6 @@ public class JmhSubcommandService {
         } catch (InterruptedException | IOException e) {
             throw new JavaWonderlandException(e);
         }
-
-        // Profilers write under their dir; the tree lands in the job's result path, each benchmark's
-        // directory under the name JMH gave it. Nothing there (no async or jfr) uploads nothing.
-        ProfilerArtifacts.upload(storageService, run.profilerOutput(), outputPath);
 
         logger.info("Processing JMH results: {}", run.resultFile());
         Path resultJson = run.resultFile();

@@ -473,7 +473,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         }
         Optional<String> noRun = reading.firstNoRun(benchmarkParams);
         if (noRun.isPresent()) {
-            localCommand = "java -jar " + quoteIfNeeded(String.valueOf(benchmarkJar)) + " " + cliParameters(benchmarkParams);
+            localCommand = "java -jar " + shellWord(String.valueOf(benchmarkJar)) + " "
+                + String.join(" ", benchmarkParams.stream().map(RunCommand::shellWord).toList());
             localCommandCaveat = noRun.get().equals("-lprof")
                 ? "perf and async-profiler are also available there; this lists this machine's profilers"
                 : null;
@@ -481,6 +482,18 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
                 + "measuring, so the job would measure nothing. Run it locally: " + localCommand
                 + "\nNothing was launched.");
         }
+    }
+
+    /**
+     * One argument as a shell reads it back unchanged: as is when it holds only characters no shell
+     * treats specially, single-quoted otherwise — a regex's {@code *} or a profiler's {@code ;} would
+     * glob or split a command meant for copying. Stricter than {@link #cliParameters}, which records.
+     */
+    static String shellWord(String arg) {
+        if (arg.matches("[A-Za-z0-9_./:=,@%+-]+")) {
+            return arg;
+        }
+        return "'" + arg.replace("'", "'\\''") + "'";
     }
 
     /** Set by a no-run refusal: the same arguments, run against the named JAR on this machine. */

@@ -133,9 +133,21 @@ class BenchmarkArgsTest {
     }
 
     @Test
-    void aClassNamedProfilerIsRecordedAsWritten() {
+    void aClassNamedProfilerIsRecordedAsWrittenUnlessBaasManagesIt() {
         assertThat(JMH.profilersTag(args("-prof org.openjdk.jmh.profile.GCProfiler")))
             .contains("org.openjdk.jmh.profile.GCProfiler");
+        assertThat(JMH.profilersTag(args("-prof org.openjdk.jmh.profile.AsyncProfiler -prof jfr")))
+            .contains("async,jfr");
+    }
+
+    /** JMH resolves a profiler by its class name too; written so, its managed keys are still BaaS's. */
+    @Test
+    void aClassNamedAsyncOrJfrIsManagedLikeItsShortName() {
+        assertThat(JMH.firstManaged(args("-prof org.openjdk.jmh.profile.JavaFlightRecorderProfiler:dir=/tmp")))
+            .contains("dir in -prof jfr");
+        var rewritten = JMH.withProfilerOptions(args("-prof org.openjdk.jmh.profile.AsyncProfiler"),
+            profiler -> profiler.canonicalName().equals("async") ? "dir=/d" : null);
+        assertThat(rewritten).containsExactly("-prof", "org.openjdk.jmh.profile.AsyncProfiler:dir=/d");
     }
 
     @Test

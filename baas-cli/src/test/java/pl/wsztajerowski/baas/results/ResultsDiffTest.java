@@ -267,6 +267,18 @@ class ResultsDiffTest {
     }
 
     @Test
+    void aJobOfARetiredProfiledTypeCountsAsProfiled() {
+        var oldAsync = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("type", "jmh-with-async"));
+        var oldProf = jmh(A, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("type", "jmh-with-prof"));
+        var newAsync = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("type", "jmh", "profilers", "async"));
+        var clean = jmh(B, "x", "thrpt", 1, 0.1, "ops/s", Map.of(), Map.of("type", "jmh"));
+
+        assertThat(ResultsDiff.profilerDifference(List.of(oldAsync), List.of(newAsync))).isNull();
+        assertThat(ResultsDiff.profilerDifference(List.of(oldAsync), List.of(clean))).isEqualTo("profilers: async → none");
+        assertThat(ResultsDiff.profilerDifference(List.of(oldProf), List.of(clean))).isEqualTo("profilers: unrecorded → none");
+    }
+
+    @Test
     void wrapBreaksAtSpacesAndSplitsAWordLongerThanTheColumn() {
         assertThat(ResultsDiffSubcommand.wrap("short", 10)).containsExactly("short");
         assertThat(ResultsDiffSubcommand.wrap("one two three four", 9)).containsExactly("one two", "three", "four");

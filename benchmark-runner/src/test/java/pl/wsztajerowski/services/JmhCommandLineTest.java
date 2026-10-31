@@ -50,6 +50,29 @@ class JmhCommandLineTest {
                 "-prof=jfr:dir=" + out);
     }
 
+    /** JMH resolves a profiler by its class name too; written so, a JFR recording must still land where it is uploaded. */
+    @Test
+    void aClassNamedJfrIsPointedAtTheProfilerOutputToo(@TempDir Path dir) {
+        String out = dir.resolve("profiler-output").toAbsolutePath().toString();
+
+        assertThat(commandLine(dir, dir.resolve("none.so"), "MyBenchmark", "-prof", "org.openjdk.jmh.profile.JavaFlightRecorderProfiler"))
+            .endsWith("-prof", "org.openjdk.jmh.profile.JavaFlightRecorderProfiler:dir=" + out);
+    }
+
+    /** A job that failed after profiling still ships the profiles of what ran. */
+    @Test
+    void profilerArtifactsAreUploadedBeforeAFailedExitIsReported(@TempDir Path dir) throws IOException {
+        Files.createDirectories(dir.resolve("profiler-output/Foo-Throughput"));
+        Files.writeString(dir.resolve("profiler-output/Foo-Throughput/profile.jfr"), "jfr");
+        java.util.List<Path> saved = new java.util.ArrayList<>();
+        var run = new JmhRun(dir.resolve("absent.jar"), List.of("Foo"), dir, dir.resolve("none.so"));
+        var sut = new JmhSubcommandService((storagePath, local) -> saved.add(storagePath), m -> { },
+            new CommonSharedOptions(Path.of("r"), "id", Instant.now(), "p", Map.of()), run);
+
+        assertThatThrownBy(sut::executeCommand).hasMessageContaining("non-zero code: 1");
+        assertThat(saved).contains(Path.of("r/Foo-Throughput/profile.jfr"));
+    }
+
     @Test
     void noProfilerAddsNothing(@TempDir Path dir) {
         assertThat(commandLine(dir, dir.resolve("none.so"), "MyBenchmark")).hasSize(8);
