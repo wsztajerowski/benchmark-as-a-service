@@ -101,6 +101,43 @@ No measurement difference is attributable to the change.
   `baas run` failure hint already has: hints are written in `call()`'s `finally`, and the error is
   logged after.
 
+## Code review (2026-10-31, `/code-review high`)
+
+Eight findings, each checked against the code.
+
+**Fixed:**
+- **R1** — A profiler named by its class (`org.openjdk.jmh.profile.JavaFlightRecorderProfiler`) got no
+  `dir=`, so its recording was never uploaded, and the async class got no library. Now
+  `Profiler.canonicalName()` maps both to `async`/`jfr`, for injection, the managed-key check and the
+  tag. Tests: `BenchmarkArgsTest.aClassNamedAsyncOrJfrIsManagedLikeItsShortName`,
+  `JmhCommandLineTest.aClassNamedJfrIsPointedAtTheProfilerOutputToo`.
+- **R2** — Rows stored under `jmh-with-async`/`jmh-with-prof` counted as unprofiled. Now
+  `ResultRow.profilers()` reads the retired types as `async`/`unrecorded`, for both the `*` and the diff
+  warning. Tests: `ResultsFormatTest.aRowOfARetiredProfiledTypeIsMarkedAndJcstressCellsKeepTheirEdge`,
+  `ResultsDiffTest.aJobOfARetiredProfiledTypeCountsAsProfiled`.
+- **R3** — The `java -jar …` hint left `*` and `;` bare. Now `RunCommand.shellWord` quotes anything
+  outside `[A-Za-z0-9_./:=,@%+-]`. Test: `RunCommandTest.theLocalCommandQuotesShellMetacharacters`.
+- **R4** — Profiler artifacts were uploaded only after a successful exit. The upload now precedes the
+  exit check. Test: `JmhCommandLineTest.profilerArtifactsAreUploadedBeforeAFailedExitIsReported`.
+- **R5, in part** — JCStress verdicts are padded like unmarked scores, so a mixed table keeps its right
+  edge (same table test as R2).
+
+The spec deltas `benchmark-arguments`, `benchmark-results-query` and `results-diff` gained the matching
+text and scenarios.
+
+**Declined:**
+- **R6 — Refuse any unresolvable dash token before launch.** The spec decided `-- --mode sanity`
+  reaches JCStress and fails there. The option lists are JMH 1.37's, so a newer JMH in the user's JAR
+  would have real options refused. The cost is one paid failed job per mistyped flag, and the failure
+  names the flag.
+- **R7 — Score overflow above 1e10 with the mark.** A 15-character `%.3f` already overflowed the
+  14-wide column before this change.
+- **R8 — The runner deriving `profilers` for direct invocations.** Only the LocalStack scripts call the
+  runner directly; every `baas run` job, CI included, is tagged by the CLI.
+- **R9 — Merge `workingOutputName`/`processOutputName`.** It is cleanup that touches user-data for no
+  behaviour change.
+
 ## Final assessment
 
-No critical issues. Four warnings, none blocking. Ready for archive once the PR's CI is green.
+No critical issues. Four warnings, none blocking; review findings R1–R5 fixed. Ready for archive once
+the PR's CI is green.

@@ -12,8 +12,9 @@ SHALL be followed by an indented line labelled `params` listing its params, when
 indented line labelled `tags` listing every tag; without `-v`, no such line SHALL be printed. A score or
 score error that the stored item does not carry, or that is not finite, SHALL be reported as unknown and
 never as a number: JSON `null`, an empty CSV cell, and a de-emphasised table cell.
-In the table, a measurement carrying a `profilers` tag SHALL have its score followed by `*`, with the
-scores of unmarked rows aligned as if the mark were there. When at least one printed row is marked, the
+In the table, a measurement carrying a `profilers` tag, or stored under a retired profiled type
+(`jmh-with-async`, `jmh-with-prof`), SHALL have its score followed by `*`, with the scores of unmarked
+rows, JCStress verdicts included, aligned as if the mark were there. When at least one printed row is marked, the
 table SHALL be followed by one line saying that `*` marks a measurement taken under a profiler, which
 `-v` names; when none is marked, that line SHALL NOT be printed. JSON and CSV SHALL carry no mark beyond
 the tag itself.
@@ -46,6 +47,10 @@ the tag itself.
 - **WHEN** the table prints one measurement carrying `profilers=async` and one carrying no `profilers` tag
 - **THEN** the first score is followed by `*`, both scores' decimal points are in the same column, and
   the table is followed by the footnote line
+
+#### Scenario: A row of a retired profiled type is marked
+- **WHEN** the table prints a measurement stored with `type=jmh-with-async` and no `profilers` tag
+- **THEN** its score is followed by `*`, and the footnote line is printed
 
 #### Scenario: No footnote without a profiled row
 - **WHEN** no printed measurement carries a `profilers` tag

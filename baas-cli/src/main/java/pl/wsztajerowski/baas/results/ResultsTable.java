@@ -5,7 +5,6 @@ import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
-import pl.wsztajerowski.baas.model.TagKeys;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -77,7 +76,7 @@ public final class ResultsTable {
             cells.add(new Cell(truncate(r.benchmarkType(), 13), rowStyle));
             cells.add(new Cell(r.mode() != null ? r.mode() : "", rowStyle));
             if (r.jcstress() != null) {
-                cells.add(verdict(console, r, rowStyle));
+                cells.add(verdict(console, r, rowStyle, anyProfiled ? " " : ""));
                 cells.add(new Cell("tests", rowStyle));
             } else {
                 cells.add(number(console, r.score(), rowStyle, anyProfiled ? (profiled(r) ? "*" : " ") : ""));
@@ -109,7 +108,7 @@ public final class ResultsTable {
     static final String PROFILED_FOOTNOTE = "* measured under a profiler; -v names it in the profilers tag";
 
     private static boolean profiled(ResultRow r) {
-        return r.jcstress() == null && r.tags().containsKey(TagKeys.PROFILERS);
+        return r.jcstress() == null && r.profilers() != null;
     }
 
     /** Sorted by key so two rows' lines can be compared by eye. Used for params and tags alike. */
@@ -131,9 +130,9 @@ public final class ResultsTable {
      * A JCStress row's score cell: {@code passed/total}, marked when any test failed or errored.
      * The job's status says only that JCStress ran; this is where its verdict shows.
      */
-    private static Cell verdict(Console console, ResultRow r, UnaryOperator<String> rowStyle) {
+    private static Cell verdict(Console console, ResultRow r, UnaryOperator<String> rowStyle, String pad) {
         String text = r.jcstress().passedTests() + "/" + r.jcstress().totalTests();
-        return r.testsFailed() ? new Cell(text + " ✗", console::red) : new Cell(text, rowStyle);
+        return r.testsFailed() ? new Cell(text + " ✗" + pad, console::red) : new Cell(text + pad, rowStyle);
     }
 
     /** An unknown value is de-emphasised, so it cannot be read as a measurement. */

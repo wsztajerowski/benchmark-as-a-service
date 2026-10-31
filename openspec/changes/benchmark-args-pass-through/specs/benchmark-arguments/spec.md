@@ -127,15 +127,21 @@ different readings.
 ### Requirement: Profilers that write files are pointed at the job's artifacts
 For every `async` profiler argument the runner SHALL add the location of the baked async-profiler library
 and the profiler output directory. For every `jfr` profiler argument it SHALL add the profiler output
-directory. It SHALL do so for any `jmh` job, keeping every key the user gave. Everything the profilers
+directory. A profiler named by the class JMH resolves it to (`org.openjdk.jmh.profile.AsyncProfiler`,
+`org.openjdk.jmh.profile.JavaFlightRecorderProfiler`) SHALL be treated as `async` or `jfr` — injected,
+checked for managed keys and recorded in the `profilers` tag under the short name. It SHALL do so for any `jmh` job, keeping every key the user gave. Everything the profilers
 write there SHALL be uploaded under the job's prefix at the same keys profiler artifacts have had: one
-directory per benchmark, as JMH names it.
+directory per benchmark, as JMH names it — also when the benchmark process exits non-zero.
 
 #### Scenario: Async profiling needs no BaaS-specific flag
 - **WHEN** `baas run jmh … -- MyBenchmark -prof async:event=alloc;output=flamegraph` completes on the
   runner image
 - **THEN** the flame graph is under the job's prefix, in the directory JMH named for the benchmark, and
   `baas jobs download` retrieves it
+
+#### Scenario: A profiler named by its class is pointed at the job's artifacts
+- **WHEN** `baas run jmh … -- MyBenchmark -prof org.openjdk.jmh.profile.JavaFlightRecorderProfiler` completes
+- **THEN** the JFR recording is under the job's prefix, and the job carries `profilers=jfr`
 
 #### Scenario: Two profilers in one job
 - **WHEN** `baas run jmh … -- MyBenchmark -prof gc -prof jfr` completes

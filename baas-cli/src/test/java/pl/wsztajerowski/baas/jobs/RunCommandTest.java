@@ -227,6 +227,19 @@ class RunCommandTest {
         command.refuseManagedOrNoRun();
     }
 
+    /** A regex's * and a profiler's ; must reach the copied command quoted, or the shell globs or splits it. */
+    @Test
+    void theLocalCommandQuotesShellMetacharacters() {
+        var command = new RunCommand();
+        command.benchmarkType = "jmh";
+        command.benchmarkJar = java.nio.file.Path.of("b.jar");
+        command.benchmarkParams.addAll(List.of(".*Foo.*", "-prof", "async:event=wall;output=flamegraph", "-l"));
+
+        assertThatThrownBy(command::refuseManagedOrNoRun);
+        assertThat(command.localCommand)
+            .isEqualTo("java -jar b.jar '.*Foo.*' -prof 'async:event=wall;output=flamegraph' -l");
+    }
+
     @Test
     void aManagedArgumentIsRefusedNamingIt() {
         var command = new RunCommand();
