@@ -167,7 +167,8 @@ bundled copy — it reads no file from disk, so editing a `runner-image.yaml` ne
 bundled base older than the deployment's. What a deployment adds on top is its **extension**,
 an AWSTOE document you pull with `baas admin image show --extension > ext.yaml`, edit, and push with
 `baas admin image build --extension ext.yaml`; teardown saves it beside your config before deleting
-the stack, which holds its only copy. The workflow is in
+the stack, which holds its only copy. [Working with the image extension](#working-with-the-image-extension)
+below covers the everyday use — adding a JDK above all; the full rules are in
 [`infra/README.md`](infra/README.md), the rationale in
 [ADR 0004](docs/adr/0004-runner-image-only-moves-forward.md).
 
@@ -184,6 +185,67 @@ Exactly one image exists at a time. A successful build publishes the new AMI to
 `/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a job launched during
 a build never resolves a deleted AMI. `baas admin image show` reports what is currently published, and
 flags when the definition bundled in the CLI you are running declares a version that isn't built yet.
+
+### Working with the image extension
+
+The base image holds one JDK, Corretto 25, as `corretto-25`. Everything else a deployment wants on its
+runners — another JDK, a tool, a library — goes into its **extension**, an
+[AWSTOE](https://docs.aws.amazon.com/imagebuilder/latest/userguide/toe-use-documents.html) document
+baked after the base. The round trip, with deployer credentials:
+
+```bash
+baas admin image show --extension > ext.yaml   # pull: the deployed extension, or a commented starter
+$EDITOR ext.yaml
+baas admin image build --extension ext.yaml    # push, then bake (~15 minutes)
+baas admin image show                          # label, extension, and the JDKs the image holds
+```
+
+- **Keep the first line.** `# baas-extension-base: <hash|none>` names the extension you pulled; a push
+  from a copy someone has since replaced is refused, because the stack keeps no earlier version.
+- **ASCII only, at most 4096 bytes, comments included.** It travels as a stack parameter.
+- **Never put a credential in it.** Anyone who can describe the stack can read it.
+- Teardown offers to export first; the export keeps the extension beside your configuration.
+
+#### Adding a JDK with `baas-install-jdk`
+
+The base installs a helper for this. One step adds a JDK that `baas run --jdk <id>` can then select:
+
+```yaml
+name: runner-extension
+schemaVersion: 1.0
+phases:
+  - name: build
+    steps:
+      - name: AddTemurin26
+        action: ExecuteBash
+        inputs:
+          commands:
+            - baas-install-jdk temurin-26 https://github.com/adoptium/temurin26-binaries/releases/download/jdk-26.0.2.1%2B1/OpenJDK26U-jdk_x64_linux_hotspot_26.0.2.1_1.tar.gz 451c12e68747bcfa2fb5a2c16b00483fedb9fa6d77bc962d30957f76ac17044d
+```
+
+`baas-install-jdk <id> <url> <sha256>` downloads the archive, checks its SHA-256, unpacks it into
+`/opt/jdks/<id>` and prints its `java -version`. It fails the bake — leaving nothing behind — when the
+digest differs, when `/opt/jdks/<id>` already exists (`corretto-25` included), or when the archive has
+no `bin/jcmd` (a JRE: `-prof jfr` would fail on it). An id is lower-case letters, digits, `.` and `-`,
+starting with a letter or digit, at most 32 characters; every id an image holds, joined by commas,
+must fit in 256 characters. The archive must be a `.tar.gz` (or another `tar` format) with one top
+directory, as JDK vendors ship them for Linux x64.
+
+Tips for the build:
+
+- **Take the digest from the vendor**, from the `.sha256` file published beside the archive, not from
+  a download of your own: that is what makes the check mean something.
+- **Try the step before the 15-minute bake.** The image is Amazon Linux 2023, so
+  `docker run --rm -it --platform linux/amd64 amazonlinux:2023` and running the same `curl`, `sha256sum`
+  and `tar` commands catches a wrong URL or archive layout in seconds.
+- **Install under `/opt/jdks` only, and leave `java` on `PATH` and `alternatives` alone.** They run the
+  runner itself, which stays on Corretto; `--jdk` changes only the JVM your benchmark runs on.
+- **Check before you run.** After the build, `baas admin image show` lists every JDK with its release
+  and vendor, as the bake observed them; `baas run --jdk` checks the id against that list before
+  anything is uploaded.
+- **A JDK the contract rejects fails the build**, and the previous image stays published, so a bad
+  extension never reaches the runners.
+- Each JDK adds about 200 MB to the image's one snapshot, about $0.01 a month.
 
 ### 4. Run a benchmark
 
@@ -226,14 +288,27 @@ baas run --benchmark-jar target/stress-tests.jar jcstress -- -m sanity -t MyTest
 >   jmh -- MyBenchmark -f 1 -wi 1 -i 3
 > ```
 
-Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--instance-type`,
+Useful options: `--benchmark-jar` (required), `--project`, `--jdk`, `--runner-jar`, `--instance-type`,
 `--timeout`, `--watchdog-margin`, `--tag key=value`, `--format json`.
+
+> **`--jdk <id>` runs the benchmark on another JDK the runner image holds** — Corretto 25
+> (`corretto-25`, the default) unless your [extension](#adding-a-jdk-with-baas-install-jdk) added more:
+>
+> ```bash
+> baas admin image show                     # the JDKs the image holds
+> baas run --benchmark-jar target/benchmarks.jar --jdk temurin-26 jmh -- MyBenchmark -f 1
+> ```
+>
+> JMH and its forks — or JCStress and its forks — run on that JDK's `java`; the job records it in the
+> tags `jdkId`, `jdkVersion` and `jdkVendor` and in `environment.json`. An id the image does not hold is
+> refused before anything is uploaded, listing the ones it does.
 
 > **A few benchmark arguments are refused before anything is launched**, in any spelling the
 > benchmark's parser accepts (`--rf=csv`, `-pro`, `-ofile`):
 >
 > - those BaaS sets itself to collect the job — JMH `-rf`, `-rff`, `-o`, the `dir` (and async's
->   `libPath`) of an `async` or `jfr` profiler; JCStress `-r`;
+>   `libPath`) of an `async` or `jfr` profiler; JCStress `-r` — and JMH's `-jvm`, since `--jdk` chooses
+>   the JVM the job records;
 > - those that print and exit without measuring, so the job would measure nothing — JMH `-h`, `-l`,
 >   `-lp`, `-lrf`; JCStress `-h`, `-l`, `-p`. The refusal prints the `java -jar …` command that
 >   answers them locally, for free.
@@ -241,7 +316,7 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > **`-lprof` alone lists the runner's profilers.** Which profilers work depends on the machine and on
 > the JMH version in your JAR, so `baas run --benchmark-jar target/benchmarks.jar jmh -- -lprof` runs
 > it as a job on the runner (a boot of a minute or two) and prints JMH's listing verbatim. Nothing else
-> may follow `--` beside it.
+> may follow `--` beside it; `--jdk` goes before `--`, as for any job.
 >
 > `-prof async` uses async-profiler's own defaults (text output): ask for a graph with
 > `-prof 'async:output=flamegraph'`. Quote the value — `;` ends a shell command.
@@ -255,8 +330,8 @@ Useful options: `--benchmark-jar` (required), `--project`, `--runner-jar`, `--in
 > measurement, not just the EC2 instance. `project`, `type` and `source` are added for you, and so is
 > `cliParameters`: everything after `--`, as typed (`MyBenchmark -f 1 -prof gc`), absent when
 > nothing follows it, and `profilers`: the profilers the job named, sorted (`async,gc`), absent when
-> none. A profiled score is marked `*` in the results table. The instance adds what it observes: `imageVersion`, `instanceType`, `jdk`,
-> `cpuModel`, `cpuArch`. Passing `--tag` for one of those observed keys, `type`, `cliParameters` or
+> none. A profiled score is marked `*` in the results table. The instance adds what it observes: `imageVersion`, `instanceType`, `jdkId`,
+> `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch`. Passing `--tag` for one of those observed keys, `type`, `cliParameters` or
 > `profilers` is rejected — they come from what the job ran on and was asked to run, so they can never disagree with it.
 
 > **A job with nowhere to record itself fails before it costs anything.** If no deployment is
@@ -350,11 +425,12 @@ Measurements pair by benchmark, mode and params. The delta is always shown. The 
 the mode deciding which way is better. It is `~` when they overlap and `?` when an error is unknown
 (a single-iteration run). A pair in different units shows both values and `units differ`, and is
 never converted. The header always names each job's instance type and benchmark type, since those
-most often explain a delta. When another observed tag differs (`imageVersion`, `jdk`, …), a warning
-on stderr points at `baas jobs diff`. A difference in `cliParameters` (forks, iterations, the profiler event) gets its own warning, since it
+most often explain a delta. When another observed tag differs (`imageVersion`, `jdkVersion`, …), a warning
+on stderr points at `baas jobs diff`. A different `cpuModel` gets a warning of its own, first: one
+instance type can land on different CPUs, and that can move a score more than what you are comparing. A difference in `cliParameters` (forks, iterations, the profiler event) gets its own warning, since it
 changes the error interval and so the verdict, and so does one in `profilers`, since a profiler
 perturbs the score it measures. `-v` adds a `TAGS` block comparing every tag of the two jobs
-(`branch`, `commit`, `jdk`, `cliParameters`, …), and under each row its params in full and its secondary metrics
+(`branch`, `commit`, `jdkVersion`, `cliParameters`, …), and under each row its params in full and its secondary metrics
 (`-prof gc`'s `gc.alloc.rate.norm`, …), with raw values only.
 
 Only measurements from the same library are compared. Any two JMH jobs compare, profiled or not —
@@ -366,6 +442,18 @@ command exits 0 whenever it compared the jobs, whatever it found. To fail a buil
 baas results diff "$BASE" "$HEAD" --format json \
   | jq -e '[.rows[] | select(.verdict == "regression")] | length == 0'
 ```
+
+**Comparing JDKs** is one job per JDK, then a diff:
+
+```bash
+A=$(baas run --benchmark-jar target/benchmarks.jar --format json jmh -- MyBenchmark | jq -r .jobId)   # corretto-25
+B=$(baas run --benchmark-jar target/benchmarks.jar --jdk temurin-26 --format json jmh -- MyBenchmark | jq -r .jobId)
+baas results diff "$A" "$B"
+```
+
+The `jdkId`/`jdkVersion`/`jdkVendor` warning is the difference you asked for. Watch for the CPU
+warning: if the two jobs ran on different CPU models, run more jobs until both sides share one, or
+compare with `baas results query --tag cpuModel=… --best-per jdkId`.
 
 ### 7. Fetch everything a job produced
 
@@ -383,13 +471,13 @@ when you need them.
 Every job records the environment it measured on, in two tiers.
 
 **Tier 1 — the results store.** Each result carries the environment it observed as tags —
-`imageVersion`, `instanceType`, `jdk`, `cpuModel`, `cpuArch` — so you can see and slice by it
+`imageVersion`, `instanceType`, `jdkId`, `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch` — so you can see and slice by it
 without fetching anything: `-v` prints them under each row, `--tag imageVersion=1.2.0` keeps one
 image's results, and `--best-per instanceType` keeps the best per instance type.
 
-**Tier 2 — the manifest.** `<result-path>/environment.json` describes what actually ran, in seven
-groups: `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jvm`, `tools` and
-`tunables`. `<result-path>/packages.txt` holds the full `rpm -qa`, kept separate so it doesn't drown
+**Tier 2 — the manifest.** `<result-path>/environment.json` describes what actually ran, in eight
+groups: `machine` (image version, AMI, instance type), `cpu`, `memory`, `os`, `jdk` (the JDK the
+benchmark ran on), `runnerJdk` (the one the runner ran on), `tools` and `tunables`. `<result-path>/packages.txt` holds the full `rpm -qa`, kept separate so it doesn't drown
 the readable file. `baas jobs show <id>` prints a job's status, its environment and its artifacts;
 `baas jobs diff` compares two jobs' environments:
 
@@ -398,11 +486,11 @@ baas jobs diff 20260724T120000000Z-a3f9c21b 20260811T093000000Z-b7e4d0f2
 ```
 
 ```
-Differs in: machine, jvm, packages
+Differs in: machine, jdk, packages
 
 GROUP      FIELD              20260724T120000000Z-a3f9c21b   20260811T093000000Z-b7e4d0f2
 machine    amiId              ami-091ea218d041f91eb          ami-0a89e2bd4bf6f208a
-jvm        version            25.0.4                         25.0.3
+jdk        release            25.0.4                         25.0.3
 
 Packages (AMIs differ): 1 changed · 0 added · 0 removed
   changed  openssl-libs  3.0.8-1.amzn2023.0.14 → 3.0.8-1.amzn2023.0.16
