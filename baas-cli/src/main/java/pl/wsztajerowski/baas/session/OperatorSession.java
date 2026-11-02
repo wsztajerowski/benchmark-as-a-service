@@ -50,10 +50,10 @@ public final class OperatorSession {
         Caller callerIdentity(AwsCredentialsProvider source, String region);
 
         /**
-         * Credentials for {@code roleArn}, assumed from {@code source} and renewed for as long as the
-         * process runs. Throws when the role cannot be assumed now.
+         * Credentials for {@code roleArn}, assumed from {@code source} as {@code sessionName} and renewed
+         * for as long as the process runs. Throws when the role cannot be assumed now.
          */
-        AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn);
+        AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn, String sessionName);
 
         /** The region {@code bucket} lives in, asked from {@code fromRegion}; empty when there is none. */
         Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String fromRegion);
@@ -191,7 +191,7 @@ public final class OperatorSession {
         }
         String roleArn = "arn:aws:iam::" + identity.account() + ":role/" + DeploymentNames.of(name).operatorRole();
         try {
-            return aws.assume(source(), startRegion(), roleArn);
+            return aws.assume(source(), startRegion(), roleArn, sessionName(identity));
         } catch (SdkException e) {
             throw new OperatorRoleException("""
                 Cannot assume %s from %s (%s): %s
@@ -262,6 +262,19 @@ public final class OperatorSession {
         return config != null ? config : new BaasConfig();
     }
 
+    /**
+     * The role-session name: {@code baas-} and the caller's own name, the last segment of its ARN, in
+     * the characters STS allows. It is what CloudTrail shows for every call the operator makes, and
+     * the prefix the session-control grant matches, so one operator is told apart from another (X6).
+     */
+    static String sessionName(Caller caller) {
+        String arn = caller.arn();
+        String own = arn.substring(Math.max(arn.lastIndexOf('/'), arn.lastIndexOf(':')) + 1)
+            .replaceAll("[^\\w+=,.@-]", "-");
+        String name = own.isEmpty() ? "baas-cli" : "baas-" + own;
+        return name.length() > 64 ? name.substring(0, 64) : name;
+    }
+
     static Optional<String> operatorRoleDeployment(Caller caller) {
         var matcher = ASSUMED_ROLE.matcher(caller.arn());
         return matcher.matches() ? DeploymentNames.ofOperatorRole(matcher.group(1)) : Optional.empty();
@@ -284,7 +297,8 @@ public final class OperatorSession {
         }
 
         @Override
-        public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn) {
+        public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn,
+                                             String sessionName) {
             // Lives as long as the process: the provider renews through it. No duration is requested,
             // so STS grants its default hour — the most a chained session (an SSO source) may have,
             // where asking for more fails outright.
@@ -292,7 +306,7 @@ public final class OperatorSession {
             var provider = StsAssumeRoleCredentialsProvider.builder()
                 .stsClient(sts)
                 .asyncCredentialUpdateEnabled(true)
-                .refreshRequest(r -> r.roleArn(roleArn).roleSessionName("baas-cli"))
+                .refreshRequest(r -> r.roleArn(roleArn).roleSessionName(sessionName))
                 .build();
             provider.resolveCredentials();
             return provider;
