@@ -43,7 +43,7 @@ public final class JobSession {
     }
 
     /** How a poll ended. {@code status} is a stored terminal status, or one of the three below. */
-    public record Outcome(String status, int exitCode) {
+    public record Outcome(String status) {
         /** The instance is gone and no terminal status was recorded, nor any measurement stored. */
         public static final String VANISHED = JobStatus.VANISHED;
         /** The instance is gone and no terminal status was recorded, but measurements were stored. */
@@ -51,6 +51,11 @@ public final class JobSession {
 
         public boolean completed() {
             return JobStatus.COMPLETED.equals(status);
+        }
+
+        /** {@code baas run}'s exit code: 0 only for a completed job. */
+        public int exitCode() {
+            return completed() ? 0 : 1;
         }
     }
 
@@ -231,7 +236,7 @@ public final class JobSession {
                 }
                 logger.error("Client-side poll cap exceeded ({}s); recording the job as timed out.", capSeconds);
                 String status = stop(JobStatus.TIMED_OUT);
-                return new Outcome(status, JobStatus.COMPLETED.equals(status) ? 0 : 1);
+                return new Outcome(status);
             }
 
             Optional<JobItem> current = readQuietly();
@@ -259,7 +264,7 @@ public final class JobSession {
                     if (!ended) {
                         end(lost);
                     }
-                    return new Outcome(endStatus, JobStatus.COMPLETED.equals(endStatus) ? 0 : 1);
+                    return new Outcome(endStatus);
                 }
             }
             progress.accept(state.label(), elapsedSeconds);
@@ -277,7 +282,7 @@ public final class JobSession {
      */
     private synchronized Outcome finish(JobItem item) {
         if (ended) {
-            return new Outcome(endStatus, JobStatus.COMPLETED.equals(endStatus) ? 0 : 1);
+            return new Outcome(endStatus);
         }
         String status = item.status();
         end(status);
@@ -287,7 +292,7 @@ public final class JobSession {
                 terminateQuietly(instanceId);
             }
         }
-        return new Outcome(status, JobStatus.COMPLETED.equals(status) ? 0 : 1);
+        return new Outcome(status);
     }
 
     private Optional<JobItem> readQuietly() {

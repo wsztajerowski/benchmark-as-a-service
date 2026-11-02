@@ -326,7 +326,12 @@ class JobSessionTest {
         var cap = new java.util.concurrent.atomic.AtomicReference<String>();
         Thread second = new Thread(() -> cap.set(session.stop(JobStatus.TIMED_OUT)));
         second.start();
-        Thread.sleep(100);
+        // Polled, not slept on: the second thread may need longer than any fixed pause to reach the lock.
+        long deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(5);
+        while (second.getState() != Thread.State.BLOCKED && second.getState() != Thread.State.WAITING
+            && System.nanoTime() < deadline) {
+            Thread.onSpinWait();
+        }
         assertThat(second.getState()).as("the second stop waits for the first").isIn(Thread.State.BLOCKED, Thread.State.WAITING);
         release.countDown();
         first.join(5_000);
@@ -363,7 +368,7 @@ class JobSessionTest {
 
         var outcome = await(600, false, () -> recorder.instanceWrites(JobStatus.COMPLETED));
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED));
         assertThat(instances.terminated).as("the instance terminates itself after its log upload").isEmpty();
         assertThat(session.endStatus()).isEqualTo(JobStatus.COMPLETED);
     }
@@ -374,7 +379,7 @@ class JobSessionTest {
 
         var outcome = await(600, false, () -> recorder.instanceWrites(JobStatus.failed(3)));
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome("failed:3", 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome("failed:3"));
         assertThat(session.endStatus()).isEqualTo("failed:3");
     }
 
@@ -397,7 +402,7 @@ class JobSessionTest {
 
         var outcome = await(60, false, () -> { });
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.TIMED_OUT, 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.TIMED_OUT));
         assertThat(session.endStatus()).isEqualTo(JobStatus.TIMED_OUT);
         assertThat(recorder.status).isEqualTo(JobStatus.TIMED_OUT);
         assertThat(instances.terminated).containsExactly("i-1");
@@ -412,7 +417,7 @@ class JobSessionTest {
             if (clock.get() > 60_000) recorder.instanceWrites(JobStatus.COMPLETED);
         });
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED));
         assertThat(instances.terminated).isEmpty();
     }
 
@@ -424,7 +429,7 @@ class JobSessionTest {
 
         var outcome = await(60, false, () -> { });
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED));
         assertThat(recorder.status).isEqualTo(JobStatus.COMPLETED);
         assertThat(instances.terminated).isEmpty();
     }
@@ -435,7 +440,7 @@ class JobSessionTest {
 
         var outcome = await(600, false, () -> recorder.stop(JOB, JobStatus.CANCELLED));
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.CANCELLED, 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.CANCELLED));
         assertThat(instances.terminated).containsExactly("i-1");
     }
 
@@ -457,7 +462,7 @@ class JobSessionTest {
 
         var outcome = await(600, true, () -> instances.states.put("i-1", "terminated"));
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobSession.Outcome.STATUS_LOST, 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobSession.Outcome.STATUS_LOST));
         assertThat(session.endStatus()).isEqualTo(JobSession.Outcome.STATUS_LOST);
     }
 
@@ -467,7 +472,7 @@ class JobSessionTest {
 
         var outcome = await(600, false, () -> instances.states.put("i-1", "terminated"));
 
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.VANISHED, 1));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.VANISHED));
         assertThat(session.ended()).isTrue();
         assertThat(session.endStatus()).isEqualTo(JobStatus.VANISHED);
     }
@@ -489,7 +494,7 @@ class JobSessionTest {
 
         instances.states.put("i-1", "shutting-down");
         var outcome = await(600, true, () -> { });
-        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED, 0));
+        assertThat(outcome).isEqualTo(new JobSession.Outcome(JobStatus.COMPLETED));
     }
 
     @Test
@@ -499,6 +504,6 @@ class JobSessionTest {
 
         assertThat(session.confirmLaunched("i-1")).isEqualTo(JobSession.Confirmation.CONFIRMED);
         assertThat(instances.terminated).isEmpty();
-        assertThat(await(600, false, () -> { })).isEqualTo(new JobSession.Outcome("failed:7", 1));
+        assertThat(await(600, false, () -> { })).isEqualTo(new JobSession.Outcome("failed:7"));
     }
 }
