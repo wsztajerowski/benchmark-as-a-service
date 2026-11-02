@@ -1,11 +1,11 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.ResultKeys;
@@ -44,8 +44,7 @@ class ResultsQueryServiceIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
-            .withServices(LocalStackContainer.Service.DYNAMODB);
+        LocalStack.with(LocalStackContainer.Service.DYNAMODB);
 
     private DynamoDbClient client;
     private String tableName;

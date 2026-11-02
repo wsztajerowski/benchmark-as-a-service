@@ -1,11 +1,11 @@
 package pl.wsztajerowski.baas.aws;
 
+import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
@@ -23,8 +23,7 @@ class S3UploadServiceIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
-            .withServices(LocalStackContainer.Service.S3);
+        LocalStack.with(LocalStackContainer.Service.S3);
 
     private S3Client s3;
     private String bucket;
