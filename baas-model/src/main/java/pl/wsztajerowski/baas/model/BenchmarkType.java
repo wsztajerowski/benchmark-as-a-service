@@ -12,8 +12,7 @@ import java.util.List;
  *
  * <p>One type per library: profiling is a JMH argument ({@code -prof}), not a type. The profiled
  * types {@code jmh-with-async} and {@code jmh-with-prof} were retired by
- * {@code benchmark-args-pass-through}; their jobs stay in storage under
- * {@link #LEGACY_PROCESS_OUTPUT_NAMES}.
+ * {@code benchmark-args-pass-through}.
  *
  * <p>The type is also what a stored measurement records as its {@code kind}: the constant's
  * {@link #name()} is written to the results table, so the constant names are a storage format and
@@ -25,13 +24,6 @@ public enum BenchmarkType {
 
     public static final String JMH_NAME = "jmh";
     public static final String JCSTRESS_NAME = "jcstress";
-
-    /**
-     * The process-output names the retired profiled types uploaded as. A stored job of either type
-     * still holds one, and a reader grouping a job's artifacts has to recognise it.
-     */
-    public static final List<String> LEGACY_PROCESS_OUTPUT_NAMES =
-        List.of("jmh-with-async-output.txt", "jmh-profiler-output.txt");
 
     private final String commandName;
     private final String processOutputName;
