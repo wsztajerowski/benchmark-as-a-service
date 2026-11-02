@@ -98,7 +98,8 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     @Option(names = "--best-per", paramLabel = "<tag>",
         description = "Keep only the best score per benchmark, mode and value of this tag (e.g. branch): "
-            + "the highest for throughput, the lowest for time per operation.")
+            + "the highest for throughput, the lowest for time per operation. One instance type can run on "
+            + "more than one CPU generation, so compare across instanceType with cpuModel in mind.")
     String bestPer;
 
     @Option(names = "--show-hidden",
