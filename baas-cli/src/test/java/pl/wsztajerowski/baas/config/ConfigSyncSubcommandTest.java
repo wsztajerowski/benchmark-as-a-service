@@ -202,7 +202,7 @@ class ConfigSyncSubcommandTest {
                                     return new OperatorSession.Caller("arn:aws:iam::123456789012:user/someone", "123456789012");
                                 }
 
-                                public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn) {
+                                public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn, String sessionName) {
                                     if (!canAssume) {
                                         throw StsException.builder().message("not authorized to perform sts:AssumeRole").build();
                                     }
