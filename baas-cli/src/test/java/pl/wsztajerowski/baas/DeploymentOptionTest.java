@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 
 import java.io.ByteArrayOutputStream;
@@ -19,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reading the machine's own files, before any AWS call — the test machine's home has no credentials,
  * so a message about deployments, not about AWS, proves the order.
  */
+@ResourceLock(Resources.SYSTEM_ERR)
 class DeploymentOptionTest {
 
     @TempDir

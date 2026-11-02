@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas.image;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
@@ -21,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * unit-tested where they live (RunnerImageExtensionTest, RunnerImageParametersTest); what a command
  * does with AWS is exercised end to end by the change's manual checks.
  */
+@ResourceLock(Resources.SYSTEM_ERR)
 class RunnerImageExtensionCommandsTest {
 
     private static final String EXTENSION = """

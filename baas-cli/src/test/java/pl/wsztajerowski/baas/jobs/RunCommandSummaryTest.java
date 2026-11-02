@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import pl.wsztajerowski.baas.BaasApp;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.console.Console;
 
@@ -23,6 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * that prints it on failure is driven through {@code call()} on a path that fails before any AWS
  * call; {@code RunCommandLaunchTest} drives {@code call()} through whole launches.
  */
+@ResourceLock(Resources.SYSTEM_ERR)
 class RunCommandSummaryTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();

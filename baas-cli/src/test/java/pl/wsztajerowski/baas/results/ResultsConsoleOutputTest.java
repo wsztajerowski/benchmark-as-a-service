@@ -3,6 +3,8 @@ package pl.wsztajerowski.baas.results;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import pl.wsztajerowski.baas.console.Console;
 
 import java.io.ByteArrayOutputStream;
@@ -20,6 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * How {@code baas results query} uses the {@code Console}: machine formats stay plain on any
  * terminal, and {@code --watch} refuses what it cannot redraw and redraws on the alternate screen.
  */
+@ResourceLock(Resources.SYSTEM_ERR)
 class ResultsConsoleOutputTest {
 
     private static final String ESC = "\u001b";

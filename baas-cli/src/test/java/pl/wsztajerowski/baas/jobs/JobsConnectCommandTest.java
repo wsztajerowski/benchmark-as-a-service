@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas.jobs;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
@@ -28,6 +30,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** `jobs connect`: which jobs it reaches, what it refuses before any session, and what it hands the plugin. */
+@ResourceLock(Resources.SYSTEM_ERR)
 class JobsConnectCommandTest {
 
     private static final String ID = "20261022T120000000Z-a3f9c21b";

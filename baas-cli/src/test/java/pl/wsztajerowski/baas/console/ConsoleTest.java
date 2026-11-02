@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.console;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -13,6 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The detection rule every terminal effect hangs on. The environment is passed in, so these job
  * without a terminal; what the JVM reports on a real one is the design's spike, not a unit test.
  */
+@ResourceLock(Resources.LOCALE)
 class ConsoleTest {
 
     private static final String ESC = "\u001b";
