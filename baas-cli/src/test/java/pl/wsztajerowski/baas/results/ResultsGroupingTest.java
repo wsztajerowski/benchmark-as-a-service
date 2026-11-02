@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.results;
 
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.baas.model.TagKeys;
 
 import java.util.List;
 import java.util.Map;
@@ -12,7 +13,7 @@ class ResultsGroupingTest {
     private static ResultRow row(String benchmark, String branch, double score) {
         return new ResultRow("req-" + score, benchmark, "jmh", "thrpt",
             score, 1.0, "ops/s", "2026-08-19T09:00:00Z",
-            branch == null ? Map.of() : Map.of(ResultsFilters.BRANCH, branch));
+            branch == null ? Map.of() : Map.of(TagKeys.BRANCH, branch));
     }
 
     private static ResultRow inMode(String mode, double score, String createdAt) {
@@ -22,7 +23,7 @@ class ResultsGroupingTest {
 
     private static ResultRow variant(String size, String branch, double score) {
         return new ResultRow("req-" + score, "com.acme.MapLookup.get", "jmh", "thrpt",
-            score, 1.0, "ops/s", "2026-08-19T09:00:00Z", Map.of(ResultsFilters.BRANCH, branch), "p",
+            score, 1.0, "ops/s", "2026-08-19T09:00:00Z", Map.of(TagKeys.BRANCH, branch), "p",
             Map.of("size", size));
     }
 
@@ -37,7 +38,7 @@ class ResultsGroupingTest {
             variant("10", "main", 950.0),
             variant("100000", "main", 40.0));
 
-        var best = ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH);
+        var best = ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH);
 
         assertThat(best).extracting(ResultRow::score).containsExactlyInAnyOrder(950.0, 40.0);
     }
@@ -46,7 +47,7 @@ class ResultsGroupingTest {
     void lowerIsBetterForTimePerOperation() {
         var rows = List.of(inMode("avgt", 12.0, "a"), inMode("avgt", 9.0, "b"), inMode("avgt", 15.0, "c"));
 
-        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH))
+        assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH))
             .singleElement().extracting(ResultRow::score).isEqualTo(9.0);
     }
 
@@ -54,7 +55,7 @@ class ResultsGroupingTest {
     void everyTimePerOperationModeKeepsTheLowest() {
         for (String mode : List.of("avgt", "sample", "ss")) {
             var rows = List.of(inMode(mode, 5.0, "a"), inMode(mode, 3.0, "b"));
-            assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH))
+            assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH))
                 .as(mode).singleElement().extracting(ResultRow::score).isEqualTo(3.0);
         }
     }
@@ -63,7 +64,7 @@ class ResultsGroupingTest {
     void twoModesOfOneBenchmarkAreNeverCompared() {
         var rows = List.of(inMode("thrpt", 1000.0, "a"), inMode("avgt", 9.0, "b"));
 
-        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH)).hasSize(2);
+        assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH)).hasSize(2);
     }
 
     @Test
@@ -88,7 +89,7 @@ class ResultsGroupingTest {
 
         assertThat(missing.score()).isNaN();
         assertThat(missing.scoreError()).isNaN();
-        assertThat(ResultsGrouping.bestPerGroup(List.of(missing, inMode("avgt", 9.0, "b")), ResultsFilters.BRANCH))
+        assertThat(ResultsGrouping.bestPerGroup(List.of(missing, inMode("avgt", 9.0, "b")), TagKeys.BRANCH))
             .singleElement().extracting(ResultRow::score).isEqualTo(9.0);
     }
 
@@ -131,7 +132,7 @@ class ResultsGroupingTest {
             row("com.example.Bench.run", "main", 300.0),
             row("com.example.Bench.run", "main", 200.0));
 
-        var best = ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH);
+        var best = ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH);
 
         assertThat(best).singleElement()
             .extracting(ResultRow::score)
@@ -144,10 +145,10 @@ class ResultsGroupingTest {
             row("com.example.Bench.run", "main", 100.0),
             row("com.example.Bench.run", "feature-x", 50.0));
 
-        var best = ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH);
+        var best = ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH);
 
         assertThat(best).hasSize(2);
-        assertThat(best).extracting(row -> row.tag(ResultsFilters.BRANCH))
+        assertThat(best).extracting(row -> row.tag(TagKeys.BRANCH))
             .containsExactlyInAnyOrder("main", "feature-x");
     }
 
@@ -157,7 +158,7 @@ class ResultsGroupingTest {
             row("com.example.Bench.run", null, 10.0),
             row("com.example.Bench.run", null, 20.0));
 
-        var best = ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH);
+        var best = ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH);
 
         assertThat(best)
             .as("untagged history predates the branch tag and must still be reported")
@@ -172,7 +173,7 @@ class ResultsGroupingTest {
             row("com.example.Bench.run", null, 10.0),
             row("com.example.Bench.run", "main", 20.0));
 
-        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH)).hasSize(2);
+        assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH)).hasSize(2);
     }
 
     @Test
@@ -181,7 +182,7 @@ class ResultsGroupingTest {
             row("com.example.A.run", "main", 10.0),
             row("com.example.B.run", "main", 20.0));
 
-        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH)).hasSize(2);
+        assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH)).hasSize(2);
     }
 
     @Test
@@ -193,9 +194,9 @@ class ResultsGroupingTest {
             row("com.example.Bench.run", "main", Double.NaN),
             row("com.example.Bench.run", "main", 100.0));
 
-        assertThat(ResultsGrouping.bestPerGroup(finiteFirst, ResultsFilters.BRANCH))
+        assertThat(ResultsGrouping.bestPerGroup(finiteFirst, TagKeys.BRANCH))
             .singleElement().extracting(ResultRow::score).isEqualTo(100.0);
-        assertThat(ResultsGrouping.bestPerGroup(nanFirst, ResultsFilters.BRANCH))
+        assertThat(ResultsGrouping.bestPerGroup(nanFirst, TagKeys.BRANCH))
             .as("NaN compares false against everything, so a naive > would let scan order decide")
             .singleElement().extracting(ResultRow::score).isEqualTo(100.0);
     }
@@ -216,11 +217,11 @@ class ResultsGroupingTest {
     void twoProjectsNeverShareAGroup() {
         var rows = List.of(
             new ResultRow("r1", "com.example.Bench.run", "jmh", "thrpt", 100.0, 1.0, "ops/s", "t",
-                Map.of(ResultsFilters.BRANCH, "main"), "lynx-journal"),
+                Map.of(TagKeys.BRANCH, "main"), "lynx-journal"),
             new ResultRow("r2", "com.example.Bench.run", "jmh", "thrpt", 300.0, 1.0, "ops/s", "t",
-                Map.of(ResultsFilters.BRANCH, "main"), "other-project"));
+                Map.of(TagKeys.BRANCH, "main"), "other-project"));
 
-        assertThat(ResultsGrouping.bestPerGroup(rows, ResultsFilters.BRANCH))
+        assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH))
             .extracting(ResultRow::project)
             .containsExactlyInAnyOrder("lynx-journal", "other-project");
     }
