@@ -68,8 +68,7 @@ final class SetupWalkthrough {
             if (context.policy == null || !AwsErrors.isAccessDenied(e)) {
                 throw e;
             }
-            logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", e.getMessage());
-            return StackStep.permissionFailure(context);
+            return StackStep.deniedPermission(e, context);
         }
     }
 
