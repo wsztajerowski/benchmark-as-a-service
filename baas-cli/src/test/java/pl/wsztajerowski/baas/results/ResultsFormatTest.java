@@ -196,6 +196,15 @@ class ResultsFormatTest {
         assertThat(parsed.get(0).get("instanceType").isNull()).isTrue();
     }
 
+    /** G17: a JSON row names its project and the library that produced it. */
+    @Test
+    void jsonNamesTheProjectAndTheKind() throws Exception {
+        var parsed = new ObjectMapper().readTree(render("json", List.of(jcstress(0, 0))));
+
+        assertThat(parsed.get(0).get("project").asText()).isEqualTo("p");
+        assertThat(parsed.get(0).get("kind").asText()).isEqualTo("JCSTRESS");
+    }
+
     /** X7: a runner can write tags and names; an escape sequence in one must not reach the terminal. */
     @Test
     void runnerWrittenTextReachesTheTableWithoutControlCharacters() {
