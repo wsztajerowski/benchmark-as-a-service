@@ -156,7 +156,8 @@ public final class AwsSetupAws implements SetupAws {
 
     @Override
     public void assumeRole(String roleArn) {
-        OperatorSession.REAL.assume(AwsClientFactory.profile(profile), region, roleArn);
+        // Setup's one probe that the role can be assumed; no operator works under this session.
+        OperatorSession.REAL.assume(AwsClientFactory.profile(profile), region, roleArn, "baas-setup");
     }
 
     @Override

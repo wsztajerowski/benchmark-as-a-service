@@ -49,8 +49,9 @@ class OperatorSessionTest {
         }
 
         @Override
-        public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn) {
-            calls.add("AssumeRole " + roleArn);
+        public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn,
+                                             String sessionName) {
+            calls.add("AssumeRole " + roleArn + " as " + sessionName);
             sources.add(source);
             if (!canAssume) {
                 throw StsException.builder().message("not authorized to perform sts:AssumeRole")
@@ -86,13 +87,27 @@ class OperatorSessionTest {
 
     // ─── A / B / C ───────────────────────────────────────────────────────────────
 
+    /** X6: CloudTrail and the session-control grant tell operators apart by this name. */
+    @Test
+    void theSessionIsNamedAfterTheCallerInTheCharactersStsAllows() {
+        assertThat(OperatorSession.sessionName(new OperatorSession.Caller(USER, ACCOUNT))).isEqualTo("baas-someone");
+        assertThat(OperatorSession.sessionName(new OperatorSession.Caller(
+            "arn:aws:sts::" + ACCOUNT + ":assumed-role/AWSReservedSSO_Admin_0123/jan.kowalski@example.com", ACCOUNT)))
+            .isEqualTo("baas-jan.kowalski@example.com");
+        assertThat(OperatorSession.sessionName(new OperatorSession.Caller("arn:aws:iam::" + ACCOUNT + ":root", ACCOUNT)))
+            .isEqualTo("baas-root");
+        assertThat(OperatorSession.sessionName(new OperatorSession.Caller(
+            "arn:aws:sts::" + ACCOUNT + ":assumed-role/r/a b#c" + "x".repeat(80), ACCOUNT)))
+            .startsWith("baas-a-b-cxxx").hasSize(64).matches("[\\w+=,.@-]{2,64}");
+    }
+
     @Test
     void pathC_otherCredentialsAssumeTheOperatorRoleInTheCallersAccount() throws Exception {
         TestDeployments.write(dir, "wiktor-dev");
 
         assertThat(credentials(session(Optional.empty()))).isSameAs(aws.assumed);
         assertThat(aws.calls).containsExactly(
-            "GetCallerIdentity", "AssumeRole arn:aws:iam::123456789012:role/wiktor-dev-role-operator");
+            "GetCallerIdentity", "AssumeRole arn:aws:iam::123456789012:role/wiktor-dev-role-operator as baas-someone");
     }
 
     @Test
