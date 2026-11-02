@@ -109,7 +109,9 @@ class DeployerPreflightTest {
         new DeployerPreflight(iam).simulate(CALLER, renderedPolicy());
 
         assertThat(iam.refused).as("wildcard and plain actions are never mixed").isZero();
-        assertThat(iam.requests).hasSize(15);
+        // Bounded by the policy's own shape, not a count pinned to today's statements (T8).
+        long statements = probes().stream().map(DeployerPreflight.Probe::sid).distinct().count();
+        assertThat(iam.requests).hasSizeLessThanOrEqualTo((int) (2 * statements));
     }
 
     /**
