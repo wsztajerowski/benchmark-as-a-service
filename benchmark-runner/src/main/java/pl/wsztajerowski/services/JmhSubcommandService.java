@@ -89,7 +89,7 @@ public class JmhSubcommandService {
     private void requireAsyncLibrary() {
         if (!Files.exists(run.asyncPath())) {
             throw new JavaWonderlandException(
-                "-prof async needs async-profiler, which is not at %s (--async-path, or ASYNC_PATH)".formatted(run.asyncPath()));
+                "-prof async needs async-profiler, which is not at %s (ASYNC_PATH moves it)".formatted(run.asyncPath()));
         }
     }
 
