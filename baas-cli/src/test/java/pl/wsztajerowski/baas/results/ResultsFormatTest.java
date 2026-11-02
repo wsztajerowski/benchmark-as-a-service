@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JcstressSummary;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
@@ -21,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code baas results query --format json | jq} is the documented reason result payloads stay on stdout,
  * so the payload has to be JSON a parser accepts — on any machine.
  */
+@ResourceLock(Resources.LOCALE)
 class ResultsFormatTest {
 
     private final StringWriter captured = new StringWriter();

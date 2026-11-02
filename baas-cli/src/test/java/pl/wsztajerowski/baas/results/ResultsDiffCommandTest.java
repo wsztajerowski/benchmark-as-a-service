@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
@@ -30,6 +32,8 @@ import static pl.wsztajerowski.baas.results.ResultsDiffTest.jcstress;
 import static pl.wsztajerowski.baas.results.ResultsDiffTest.jmh;
 
 /** {@code baas results diff} as a user runs it: arguments, refusals, exit status and both payloads. */
+@ResourceLock(Resources.SYSTEM_ERR)
+@ResourceLock(Resources.LOCALE)
 class ResultsDiffCommandTest {
 
     private static final String A = "20260724T120000000Z-a3f9c21b";

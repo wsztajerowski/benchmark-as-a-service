@@ -2,6 +2,8 @@ package pl.wsztajerowski.baas;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 
 import java.io.ByteArrayOutputStream;
@@ -19,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * command here would reach AWS next, and the test machine has no credentials for it, so an exit
  * code and a message about the option — not about AWS — prove the order.
  */
+@ResourceLock(Resources.SYSTEM_ERR)
 class OptionValidationTest {
 
     @TempDir
