@@ -28,6 +28,6 @@ public record JCStressRun(Path benchmarkPath, List<String> arguments, Path workD
 
     /** Where the process's output is redirected as it runs. */
     public Path processOutput() {
-        return workDir.resolve(BenchmarkType.JCSTRESS.workingOutputName());
+        return workDir.resolve(BenchmarkType.JCSTRESS.processOutputName());
     }
 }
