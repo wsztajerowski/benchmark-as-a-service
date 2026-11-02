@@ -6,7 +6,7 @@ package pl.wsztajerowski.baas.model;
  * presents as an empty download rather than as an error.
  *
  * <p>{@code project} stays in the path even though the id alone is unique: the bucket is genuinely
- * multi-project (its name derives from a hash of the caller ARN), and the segment is the one piece
+ * multi-project (one bucket per deployment, named after it), and the segment is the one piece
  * of identity a job keeps when it dies before writing any tag.
  *
  * <p>{@code releases/}, not {@code runner/} — a prefix one character from {@code jobs/} would need
