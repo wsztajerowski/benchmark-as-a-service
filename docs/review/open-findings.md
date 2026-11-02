@@ -42,10 +42,7 @@ None open.
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
-| S10 | Actions on mutable tags; dependabot covers only Maven | S | Low | open |
-| pr83/W5 | A JCStress row's `mode` is the string `"null"` in CSV and JSON | XS | Low | open |
 | PT2 | A JMH job whose benchmarks failed ends `completed`, with no measurement or only some | S | Med | open |
-| pr83/W3 | `avgt` scores in `s/op` print as `0.000000` in JSON and CSV | S | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
 | G4 | No comparison against a baseline, and no regression gate: `results diff` compares two jobs but exits 0 whatever it finds, so CI still hand-rolls `jq` over its JSON | M | — | users first |
@@ -65,8 +62,7 @@ None open.
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
 | X3 | The runner role can create job items (`UpdateItem` upserts) and malformed `RESULT#` rows, which make every reader throw; the template's comments claiming it cannot are wrong ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
 | X5 | `--github-org`/`--github-repo` and setup's GitHub prompts are not validated, so `*` or `?` widen the OIDC trust silently ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
-| X6 | Every operator session is named `baas-cli`, so CloudTrail cannot tell operators apart without a join ([security](2026-10-13-codebase-review/security.md)). Since `runner-shell-access`, it also makes "own sessions" in the session-control grant mean every operator's of the deployment (accepted in CLAUDE.md) | XS | — | open, when nearby |
-| X7 | Runner-written strings reach the terminal unsanitised in `results query`'s table and the general `Console` text path; `jobs show` filters them and re-serialises its JSON environment since `readable-jobs-show` ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
+| X6 | The CLI names each operator session `baas-<caller>` now; `infra/cf-template-core.yaml`'s comment above the session-control grant still says every session is named `baas-cli`. Fix it with the next infra change, which carries the live check | XS | — | open, with the next infra change |
 | X8 | The CLI and runner-JAR checksums come from the same release as the assets: integrity, not authenticity (CLAUDE.md calls it closed) ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
 | G7 | Exit codes do not separate failure kinds; the runner's exit code is not propagated; unattended setup exits 1 for a failure and for a step awaiting an IAM admin alike ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
@@ -74,23 +70,15 @@ None open.
 | G12 | `config show`, `admin image show`/`build`, unattended setup, `jobs terminate` and `jobs download` have no machine-readable output ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS each | — | open, when nearby |
 | G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| G17 | `results query` JSON lacks `project`, `kind` and `resultJsonKey` (its escaping is fixed; `profilerOutputPath` was removed from the item instead, since a job's artifacts are reached by its id through `jobs download`) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G18 | No non-interactive project listing ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
-| G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), `admin image show` "for this account" — CLAUDE.md's "CI mints its id" is gone, and the user-data comment on the manifest's identity was fixed by `readable-jobs-show` ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
-| G20 | Image-build logs under `image-builds/` are pointed to by neither `admin image build` nor setup's image step ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | K3 | JSON payloads hand-built in four commands, the job object twice ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | K4 | `--format` validated by hand in five commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | K9 | `session()`/`console()` plumbing copied into 6–9 commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | S | — | open, when nearby |
-| K11 | `JobSession.Outcome.exitCode` is derivable from the status; `completed ? 0 : 1` is written four times ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
-| K14 | Setup's AccessDenied catch-and-log is written twice (`SetupWalkthrough`, `StackStep`); the hand-over itself is now shared ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | T5 | No common command-test harness: several seam idioms, `IFactory` boilerplate in eight test classes ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
 | T6 | Positional records (`JobItem`, `StoredMeasurement`) rebuilt by private helpers in every test class ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
-| T7 | `Thread.sleep(100)` then an assertion on thread state in `JobSessionTest` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
-| T8 | `DeployerPreflightTest` pins the call count (14) to today's policy shape ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
-| T9 | Global-state mutation (`System.err`, `Locale`, `TimeZone`) in nine test classes, none under `@ResourceLock` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T10 | Test isolation from `~/.baas`/`~/.aws` exists only in the surefire config ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
-| T11 | The LocalStack pin is repeated in five ITs, one container per class, with a stale `java.wonderland` label ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T11 | Each LocalStack IT class starts its own container (the pin is shared since `testsupport.LocalStack`) ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T12 | Every IT is `disabledWithoutDocker`, so a Docker-less `mvn verify` silently skips every store and S3 test, the contract's only real binding included ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 
 ### Informational
@@ -98,7 +86,6 @@ None open.
 | ID | Finding | Where |
 |---|---|---|
 | U14 | After a teardown and setup, the AWS CLI fails on the operator profile until its cached session is removed (recurred 2026-10-10) | last section |
-| E6 | One instance type can land on different CPU generations, so `instanceType` alone does not make results comparable | last section |
 
 IDs `E<n>` were filed by the live end-to-end test of v7.0.0 on 2026-10-10; its results are in
 [`openspec/changes/pr83-review-fixes/verify.md`](../../openspec/changes/pr83-review-fixes/verify.md),
@@ -111,19 +98,6 @@ Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEU
 below is what the proposal starts from.
 
 ## Open, not scheduled
-
-### pr83/W5 — a JCStress row's `mode` is the string `"null"` · Should · XS
-
-Filed in `openspec/changes/pr83-review-fixes/verify.md`; seen again live on 2026-10-10 (`"mode":"null"`
-in `results query --format json`). A JCStress job has no mode, and the literal text `null` reaches
-CSV and a JSON string. **Proposed:** an empty CSV cell and a JSON `null`, as R9 did for the score.
-
-### pr83/W3 — `avgt` results in `s/op` print as zero · Should · S
-
-Filed in the same `verify.md` (live J2): `avgt` defaults to `s/op`, so a nanosecond-scale score prints
-as `0.000000` at the fixed 6 decimals of JSON and CSV. A real measurement is shown as zero.
-**Proposed:** format JSON and CSV by significant digits (or emit the full double), keeping
-`Locale.ROOT`.
 
 ### S2 — CI's OIDC trust is repo-wide and `pull_request` triggers it · Should · M · reduced
 
@@ -153,13 +127,6 @@ All four services order S3 first, then the store, on purpose: the item points at
 writing it first could publish a row referencing an object never uploaded. Writes are idempotent and
 batched, and a failed write exits non-zero with the S3 artifacts intact (asserted by an IT). What
 remains: the row itself is lost and nothing re-derives it from `jmh-result.json`.
-
-### S10 — supply chain · Should · S · reduced
-
-`.github/dependabot.yml` covers only `maven`, so no action ever gets an update PR, and every action
-is pinned to a mutable tag (`actions/*@v4|v5`, `aws-actions/configure-aws-credentials@v5`). The
-third-party `machulav/ec2-github-runner` that made this sharper is gone. **Proposed:** add the
-`github-actions` ecosystem; SHA-pin the actions in jobs that hold AWS credentials.
 
 ### N3 — a failed reservation strands the uploaded `input/` · Could · S
 
@@ -226,8 +193,6 @@ ADR 0009 adds a port only when a sequence test needs one.
 - **G3, G4, G8 — users first.** Each needs a decision about what BaaS records or offers before it is
   built; the proposals are in [`user-discussion.md`](2026-10-13-codebase-review/user-discussion.md).
 - **G5, G13 — deferred in triage.** Valid and small; not scheduled.
-- **K14** is smaller than filed: `StackStep.permissionFailure` is the one hand-over, and only the
-  catch-and-log around it is duplicated.
 
 ## Informational
 
@@ -242,9 +207,4 @@ Kept for whoever next works in the area; none is a defect worth a change on its 
   `baas`, such as when removing a leftover (backing up data no longer needs it: `baas admin deployment
   export`). A one-line note in teardown's or
   setup's output would save the search.
-- **E6.** One instance type does not pin the CPU. On 2026-10-10, `c5.2xlarge` jobs ran on a
-  Skylake `Platinum 8124M`, and the day before on a Cascade Lake `Platinum 8275CL`: same image, kernel,
-  JDK and packages. `jobs diff` reports it (`cpu.model`), and `cpuModel` is a tag, so
-  `--best-per cpuModel` or `--tag cpuModel=…` separates them. `--best-per instanceType` alone mixes
-  CPU generations. Worth a sentence in the docs of `results query`, not a code change.
 
