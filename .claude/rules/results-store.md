@@ -23,8 +23,8 @@ characters, time-ordered so a listing reads chronologically, entropy-suffixed so
 in the same millisecond cannot collide. Nothing parses it; the format is a readability convention,
 not a contract. Built only by `JobLayout`/`JobId` in `baas-model`, never by hand.
 
-Stdout lands in `jmh-output.txt` or `jcstress-output.txt` (jobs of the retired profiled types hold
-`jmh-with-async-output.txt` or `jmh-profiler-output.txt`, which `jobs show` still groups as output);
+Stdout lands in `jmh-output.txt` or `jcstress-output.txt` (a job of the retired profiled types
+holds `jmh-with-async-output.txt` or `jmh-profiler-output.txt`, which `jobs show` lists as a report);
 profiling artifacts — every `async` and `jfr` profiler is given `dir=/app/profiler-output` — go under the directory JMH names each benchmark's
 profile, `<fully.qualified.BenchmarkName>-<Mode>` plus `-<param>-<value>` per `@Param`
 (`BenchmarkParams.id()`). **The runner never predicts that name:** it uploads the profiler's whole
