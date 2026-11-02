@@ -29,7 +29,7 @@ public record JmhRun(Path benchmarkPath, List<String> arguments, Path workDir, P
 
     /** Where the process's output is redirected as it runs. */
     public Path processOutput() {
-        return workDir.resolve(BenchmarkType.JMH.workingOutputName());
+        return workDir.resolve(BenchmarkType.JMH.processOutputName());
     }
 
     /**

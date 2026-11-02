@@ -45,8 +45,8 @@ Breaking these costs money or silently loses data.
   terminate` and the poll cap all end in `TerminateInstances`, whose default graceful OS shutdown
   runs `baas-ship-logs.service`'s `ExecStop` while the network is still up (billing has already
   stopped). It uploads what `ship_logs` does — boot log, the process output, `/app/**/*.log` at the
-  runner's own keys, every name from `baas-model` (`BenchmarkType` gives both the local file and the
-  key it is uploaded as) — and every exit of the script calls `ship_logs` itself too, so a hook that
+  runner's own keys, every name from `baas-model` (`BenchmarkType` gives one name for the local file and
+  the key it is uploaded as) — and every exit of the script calls `ship_logs` itself too, so a hook that
   never ran loses only the external-stop case. The hook file is `declare -f ship_logs` run by an
   explicit `/bin/bash`: a `#!` line would be stripped with the comments. Never pass
   `--skip-os-shutdown` to a runner's termination; it bypasses the hook.

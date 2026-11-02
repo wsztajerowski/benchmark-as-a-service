@@ -5,10 +5,10 @@ import java.util.List;
 
 /**
  * The benchmark types: what {@code baas run <type>} accepts, the {@code benchmark-runner}
- * subcommand that executes it, the file its process output is written to and the name it is uploaded
- * as. One list, so the CLI
- * cannot accept a type the runner does not have. The names are also compile-time constants, because
- * the runner's picocli {@code @Command(name = ...)} annotations need constants.
+ * subcommand that executes it, and the name of the file its process output is written to and
+ * uploaded as. One list, so the CLI cannot accept a type the runner does not have. The names are also
+ * compile-time constants, because the runner's picocli {@code @Command(name = ...)} annotations need
+ * constants.
  *
  * <p>One type per library: profiling is a JMH argument ({@code -prof}), not a type. The profiled
  * types {@code jmh-with-async} and {@code jmh-with-prof} were retired by
@@ -20,8 +20,8 @@ import java.util.List;
  * must not be renamed.
  */
 public enum BenchmarkType {
-    JMH(BenchmarkType.JMH_NAME, "jmh-output.txt", "jmh-output.txt"),
-    JCSTRESS(BenchmarkType.JCSTRESS_NAME, "jcstress-output.txt", "jcstress-output.txt");
+    JMH(BenchmarkType.JMH_NAME, "jmh-output.txt"),
+    JCSTRESS(BenchmarkType.JCSTRESS_NAME, "jcstress-output.txt");
 
     public static final String JMH_NAME = "jmh";
     public static final String JCSTRESS_NAME = "jcstress";
@@ -34,12 +34,10 @@ public enum BenchmarkType {
         List.of("jmh-with-async-output.txt", "jmh-profiler-output.txt");
 
     private final String commandName;
-    private final String workingOutputName;
     private final String processOutputName;
 
-    BenchmarkType(String commandName, String workingOutputName, String processOutputName) {
+    BenchmarkType(String commandName, String processOutputName) {
         this.commandName = commandName;
-        this.workingOutputName = workingOutputName;
         this.processOutputName = processOutputName;
     }
 
@@ -57,14 +55,11 @@ public enum BenchmarkType {
     }
 
     /**
-     * The file, in the runner's working directory, that the benchmark process's output is written
-     * to as it runs — the runner's default, and what the instance ships when a job is stopped early.
+     * The benchmark process's output file: the name it is written to in the runner's working
+     * directory as it runs, and the name it is uploaded as inside the job's prefix. One name for
+     * both, so the instance's stop hook, which ships the file when a job is stopped early, leaves it
+     * at the key a completed job's runner does.
      */
-    public String workingOutputName() {
-        return workingOutputName;
-    }
-
-    /** The file the runner uploads the benchmark process's output as, inside the job's prefix. */
     public String processOutputName() {
         return processOutputName;
     }
