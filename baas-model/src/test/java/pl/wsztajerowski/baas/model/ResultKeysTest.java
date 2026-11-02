@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.model;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -10,6 +12,7 @@ import java.util.Random;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+@ResourceLock(Resources.TIME_ZONE)
 class ResultKeysTest {
 
     @Test

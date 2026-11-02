@@ -3,6 +3,8 @@ package pl.wsztajerowski.baas.console;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -17,6 +19,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * terminal: stdout and stderr are captured separately here, so the test asserts each stream's
  * sequence and that {@code System.err} is the real one again afterwards.
  */
+@ResourceLock(Resources.SYSTEM_ERR)
 class StatusLineTest {
 
     private static final String CLEAR = "\r\u001b[K";

@@ -1,6 +1,8 @@
 package pl.wsztajerowski.baas.console;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -9,6 +11,7 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /** The one way every command writes a JSON or CSV value. */
+@ResourceLock(Resources.LOCALE)
 class PayloadWritersTest {
 
     @Test
