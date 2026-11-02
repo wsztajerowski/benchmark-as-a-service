@@ -26,8 +26,16 @@ public record Table(Console console, int ruleWidth, List<Column> columns) {
         }
     }
 
-    /** A cell value and the style applied to it after padding. */
+    /**
+     * A cell value and the style applied to it after padding. The value is made {@link Printable}:
+     * table cells carry runner-written tags, names and job fields (X7), and a control character
+     * would also break the padding.
+     */
     public record Cell(String text, UnaryOperator<String> style) {
+        public Cell {
+            text = Printable.of(text);
+        }
+
         public static Cell plain(String text) {
             return new Cell(text, UnaryOperator.identity());
         }

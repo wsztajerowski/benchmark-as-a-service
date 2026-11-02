@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.results;
 
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Printable;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
@@ -84,18 +85,18 @@ public final class ResultsTable {
             }
             table.printRow(cells);
             if (withTags && !r.params().isEmpty()) {
-                console.println("    " + console.faint("params  " + tagLine(r.params())));
+                console.println("    " + console.faint(Printable.of("params  " + tagLine(r.params()))));
             }
             if (withTags && !r.secondaryMetrics().isEmpty()) {
-                console.println("    " + console.faint("metrics " + metricLine(r.secondaryMetrics())));
+                console.println("    " + console.faint(Printable.of("metrics " + metricLine(r.secondaryMetrics()))));
             }
             if (withTags && r.testsFailed()) {
                 var names = new TreeMap<String, String>(r.jcstress().failed());
                 names.putAll(r.jcstress().errors());
-                console.println("    " + console.faint("failed  " + String.join("  ", names.keySet())));
+                console.println("    " + console.faint(Printable.of("failed  " + String.join("  ", names.keySet()))));
             }
             if (withTags && !r.tags().isEmpty()) {
-                console.println("    " + console.faint("tags    " + tagLine(r.tags())));
+                console.println("    " + console.faint(Printable.of("tags    " + tagLine(r.tags()))));
             }
         }
         if (anyProfiled) {

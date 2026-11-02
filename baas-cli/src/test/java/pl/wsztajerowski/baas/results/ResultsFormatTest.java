@@ -196,6 +196,17 @@ class ResultsFormatTest {
         assertThat(parsed.get(0).get("instanceType").isNull()).isTrue();
     }
 
+    /** X7: a runner can write tags and names; an escape sequence in one must not reach the terminal. */
+    @Test
+    void runnerWrittenTextReachesTheTableWithoutControlCharacters() {
+        var hostile = new ResultRow("jmh-1", "com.example.My\u001b]0;pwned\u0007Benchmark.run", "jmh\u001b[2J", "thrpt",
+            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z", Map.of("note", "ok\u001b[31mred\u009b"));
+
+        String out = table(List.of(hostile), true);
+
+        assertThat(out).doesNotContain("\u001b", "\u0007", "\u009b").contains("note=ok[31mred");
+    }
+
     /** W5: a JCStress row has no mode; it is JSON null and an empty CSV cell, never the text "null". */
     @Test
     void aJcstressRowsAbsentModeIsJsonNullAndAnEmptyCsvCell() throws Exception {
