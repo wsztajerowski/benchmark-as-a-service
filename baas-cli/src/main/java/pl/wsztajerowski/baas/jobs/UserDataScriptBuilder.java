@@ -84,8 +84,8 @@ public class UserDataScriptBuilder {
         }
 
         # Ships what the job has produced so far to its prefix: the boot log, the benchmark
-        # process output (the runner redirects it into WORK_DIR/PROCESS_OUTPUT_FILE as it runs, and
-        # uploads it as PROCESS_OUTPUT_NAME) and
+        # process output (the runner redirects it into WORK_DIR/PROCESS_OUTPUT_NAME as it runs, and
+        # uploads it under the same name) and
         # every *.log below WORK_DIR under logs/ — the keys the runner itself uses, so after a
         # completed job this overwrites rather than duplicates. Defined before the watchdog forks,
         # which calls it, and serialised into the shutdown hook below, so the explicit uploads and
@@ -94,8 +94,8 @@ public class UserDataScriptBuilder {
         ship_logs() {
           local dest="s3://${S3_BUCKET}/${RESULT_PATH}"
           aws s3 cp /var/log/cloud-init-output.log "${dest}/@BOOT_LOG@" || true
-          [[ -f "${WORK_DIR}/${PROCESS_OUTPUT_FILE}" ]] \\
-            && { aws s3 cp "${WORK_DIR}/${PROCESS_OUTPUT_FILE}" "${dest}/${PROCESS_OUTPUT_NAME}" || true; }
+          [[ -f "${WORK_DIR}/${PROCESS_OUTPUT_NAME}" ]] \\
+            && { aws s3 cp "${WORK_DIR}/${PROCESS_OUTPUT_NAME}" "${dest}/${PROCESS_OUTPUT_NAME}" || true; }
           [[ -d "${WORK_DIR}" ]] && { aws s3 cp "${WORK_DIR}" "${dest}/@LOGS@" --recursive \\
             --exclude '*' --include '*.log' --only-show-errors || true; }
           return 0
@@ -146,8 +146,7 @@ public class UserDataScriptBuilder {
         ship_logs_hook() {
           printf 'export S3_BUCKET=%q RESULT_PATH=%q WORK_DIR=%q AWS_REGION=%q\\n' \\
             "${S3_BUCKET}" "${RESULT_PATH}" "${WORK_DIR}" "${AWS_REGION}"
-          printf 'export PROCESS_OUTPUT_FILE=%q PROCESS_OUTPUT_NAME=%q\\n' \\
-            "${PROCESS_OUTPUT_FILE}" "${PROCESS_OUTPUT_NAME}"
+          printf 'export PROCESS_OUTPUT_NAME=%q\\n' "${PROCESS_OUTPUT_NAME}"
           declare -f ship_logs
           echo ship_logs
         }
@@ -422,10 +421,9 @@ public class UserDataScriptBuilder {
             // writes `/app` literally where it runs the job; this only lets tests point the upload
             // at a directory of their own.
             export("WORK_DIR", "/app") +
-            // The benchmark process's output: the file the runner writes it to as it runs, and the
-            // name it uploads it as. ship_logs uploads the first as the second, so a job stopped
-            // early leaves it at the same key a completed one does.
-            export("PROCESS_OUTPUT_FILE", BenchmarkType.fromCommandName(benchmarkType).workingOutputName()) +
+            // The benchmark process's output: one name for the file the runner writes it to as it
+            // runs and the key it uploads it as, so a job stopped early, whose output ship_logs
+            // uploads, leaves it at the same key a completed one does.
             export("PROCESS_OUTPUT_NAME", BenchmarkType.fromCommandName(benchmarkType).processOutputName()) +
             // One clock read per job: this instant named the job's prefix and is what the runner
             // stores as createdAt, so the two cannot disagree. The instance's own clock is not

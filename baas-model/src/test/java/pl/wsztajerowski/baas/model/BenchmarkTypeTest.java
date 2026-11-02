@@ -14,9 +14,7 @@ class BenchmarkTypeTest {
 
     @Test
     void eachTypeNamesTheFileItsProcessOutputIsWrittenToAndUploadedAs() {
-        assertThat(BenchmarkType.JMH.workingOutputName()).isEqualTo("jmh-output.txt");
         assertThat(BenchmarkType.JMH.processOutputName()).isEqualTo("jmh-output.txt");
-        assertThat(BenchmarkType.JCSTRESS.workingOutputName()).isEqualTo("jcstress-output.txt");
         assertThat(BenchmarkType.JCSTRESS.processOutputName()).isEqualTo("jcstress-output.txt");
     }
 
