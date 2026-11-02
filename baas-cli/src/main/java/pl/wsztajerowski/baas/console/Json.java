@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.console;
 
+import java.math.BigDecimal;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -51,9 +52,12 @@ public final class Json {
 
     /**
      * JSON has no NaN or Infinity literal, and a single-iteration JMH run reports {@code NaN}
-     * score error routinely — emitting it produces a document {@code jq} refuses outright.
+     * score error routinely — emitting it produces a document {@code jq} refuses outright. A finite
+     * value keeps every significant digit, written without an exponent: a fixed six decimals printed
+     * a nanosecond-scale {@code s/op} score as {@code 0.000000} (W3). {@code BigDecimal} is
+     * locale-independent.
      */
     public static String number(double value) {
-        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "null";
+        return Double.isFinite(value) ? BigDecimal.valueOf(value).stripTrailingZeros().toPlainString() : "null";
     }
 }

@@ -193,6 +193,20 @@ class ResultsFormatTest {
         assertThat(parsed.get(0).get("instanceType").isNull()).isTrue();
     }
 
+    /** W5: a JCStress row has no mode; it is JSON null and an empty CSV cell, never the text "null". */
+    @Test
+    void aJcstressRowsAbsentModeIsJsonNullAndAnEmptyCsvCell() throws Exception {
+        var parsed = new ObjectMapper().readTree(render("json", List.of(jcstress(0, 0))));
+        assertThat(parsed.get(0).get("mode").isNull()).isTrue();
+
+        captured.getBuffer().setLength(0);
+        var lines = render("csv", List.of(jcstress(0, 0))).strip().lines().toList();
+        String[] header = lines.getFirst().split(",", -1);
+        String[] cells = lines.get(1).split(",", -1);
+        assertThat(cells[java.util.Arrays.asList(header).indexOf("mode")]).isEmpty();
+        assertThat(lines.get(1)).doesNotContain("null");
+    }
+
     /** A profiler perturbs the score it measures, so a profiled row is marked and the mark explained. */
     @Test
     void aProfiledScoreIsMarkedAndTheDigitsStayAligned() {
@@ -330,7 +344,7 @@ class ResultsFormatTest {
 
         assertThat(lines.getFirst()).endsWith(",scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags,params");
         assertThat(lines.get(1))
-            .contains("1.500000,0.250000")
+            .contains("1.5,0.25")
             .endsWith(",\"branch=main;note=a,b;\"\"c\"\"\",\"\"");
     }
 
