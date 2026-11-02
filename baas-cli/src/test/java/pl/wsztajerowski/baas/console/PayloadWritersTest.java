@@ -35,13 +35,23 @@ class PayloadWritersTest {
         Locale before = Locale.getDefault();
         try {
             Locale.setDefault(Locale.forLanguageTag("pl-PL"));
-            assertThat(Json.number(1.5)).isEqualTo("1.500000");
-            assertThat(Csv.number(1.5)).isEqualTo("1.500000");
+            assertThat(Json.number(1.5)).isEqualTo("1.5");
+            assertThat(Csv.number(1.5)).isEqualTo("1.5");
         } finally {
             Locale.setDefault(before);
         }
         assertThat(Json.number(Double.NaN)).isEqualTo("null");
         assertThat(Csv.number(Double.POSITIVE_INFINITY)).isEmpty();
+    }
+
+    /** W3: an {@code avgt} score in {@code s/op} is nanosecond-scale; a fixed six decimals printed it as zero. */
+    @Test
+    void numbersKeepEverySignificantDigitWithoutAnExponent() {
+        assertThat(Json.number(2.345e-9)).isEqualTo("0.000000002345");
+        assertThat(Csv.number(2.345e-9)).isEqualTo("0.000000002345");
+        assertThat(Json.number(10632008.341)).isEqualTo("10632008.341");
+        assertThat(Json.number(1e21)).isEqualTo("1000000000000000000000");
+        assertThat(Json.number(0.0)).isEqualTo("0");
     }
 
     @Test
