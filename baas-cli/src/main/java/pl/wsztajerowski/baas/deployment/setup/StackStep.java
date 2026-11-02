@@ -82,8 +82,7 @@ final class StackStep implements SetupStep {
             if (!AwsErrors.isAccessDenied(e)) {
                 throw e;
             }
-            logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", e.getMessage());
-            return permissionFailure(context);
+            return deniedPermission(e, context);
         }
         context.operatorRoleArn = aws.stackOutputs(stack).getOrDefault(CoreStack.OUTPUT_OPERATOR_ROLE_ARN, "");
         return SetupStep.next();
@@ -96,5 +95,11 @@ final class StackStep implements SetupStep {
     static Outcome permissionFailure(SetupContext context) {
         PolicyHandOver.handOver(context);
         return new Outcome.Wait(PolicyHandOver.attachThen(context), PermissionsStep.NAME);
+    }
+
+    /** A call refused with AccessDenied: said as a missing setup permission, then {@link #permissionFailure}. */
+    static Outcome deniedPermission(RuntimeException denial, SetupContext context) {
+        logger.error("{}\n\nThis identity is missing a permission `baas admin deployment setup` needs.", denial.getMessage());
+        return permissionFailure(context);
     }
 }
