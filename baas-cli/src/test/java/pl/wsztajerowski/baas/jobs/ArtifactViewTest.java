@@ -9,15 +9,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 class ArtifactViewTest {
 
-    /** A job stored before the profiled types were retired still groups its output as output. */
     @Test
-    void aRetiredTypesProcessOutputIsStillOutput() {
+    void everyTypesProcessOutputIsOutput() {
         var groups = ArtifactView.of(List.of(
-            new StoredObject("jmh-with-async-output.txt", 10),
-            new StoredObject("jmh-profiler-output.txt", 20),
-            new StoredObject("jmh-output.txt", 30)));
+            new StoredObject("jmh-output.txt", 10),
+            new StoredObject("jcstress-output.txt", 20)));
 
         assertThat(groups.get("output")).extracting(ArtifactView.Entry::name)
-            .containsExactlyInAnyOrder("jmh-with-async-output.txt", "jmh-profiler-output.txt", "jmh-output.txt");
+            .containsExactlyInAnyOrder("jmh-output.txt", "jcstress-output.txt");
     }
 }

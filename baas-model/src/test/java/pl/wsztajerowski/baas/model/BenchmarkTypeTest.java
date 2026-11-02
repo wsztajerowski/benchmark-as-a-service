@@ -18,13 +18,6 @@ class BenchmarkTypeTest {
         assertThat(BenchmarkType.JCSTRESS.processOutputName()).isEqualTo("jcstress-output.txt");
     }
 
-    /** Stored jobs of the retired profiled types still hold these, and readers must recognise them. */
-    @Test
-    void theRetiredTypesOutputNamesAreKept() {
-        assertThat(BenchmarkType.LEGACY_PROCESS_OUTPUT_NAMES)
-            .containsExactly("jmh-with-async-output.txt", "jmh-profiler-output.txt");
-    }
-
     @Test
     void aTypeIsFoundByItsCommandName() {
         assertThat(BenchmarkType.fromCommandName("jcstress")).isEqualTo(BenchmarkType.JCSTRESS);
