@@ -30,7 +30,7 @@ import java.util.concurrent.Callable;
 @Command(
     name = "show",
     mixinStandardHelpOptions = true,
-    description = "Report the runner image currently published for this account, and its extension."
+    description = "Report the runner image currently published for this deployment, and its extension."
 )
 public class ImageShowSubcommand implements Callable<Integer> {
 
