@@ -1,6 +1,5 @@
 package pl.wsztajerowski.baas.console;
 
-import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -27,10 +26,10 @@ public final class Csv {
     }
 
     /**
-     * An unknown value is an empty cell, CSV's form of JSON's {@code null}; never a number. Locale.ROOT,
-     * because a comma decimal separator turns one CSV column into two.
+     * An unknown value is an empty cell, CSV's form of JSON's {@code null}; never a number. Otherwise
+     * written as JSON writes it, with no comma decimal separator to turn one CSV column into two.
      */
     public static String number(double value) {
-        return Double.isFinite(value) ? String.format(Locale.ROOT, "%.6f", value) : "";
+        return Double.isFinite(value) ? Json.number(value) : "";
     }
 }

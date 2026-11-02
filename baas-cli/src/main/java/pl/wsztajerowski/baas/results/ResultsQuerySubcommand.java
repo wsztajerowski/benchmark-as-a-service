@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.Callable;
 import java.util.function.Consumer;
@@ -393,15 +394,14 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             // Null for every job recorded before the prebaked-image change. They stay flat even
             // though `tags` now repeats them: CI and anyone else's `jq '.[0].imageVersion'` reads
             // them there.
-            // The fields up to createdAt have always been quoted, an absent one as the string
-            // "null" (W5): String.valueOf keeps that, while every value is now escaped.
+            // An absent value is JSON null, never the string "null": a JCStress row has no mode.
             out.printf(
                 "  {\"jobId\":%s,\"benchmarkName\":%s,\"benchmarkType\":%s," +
                 "\"mode\":%s,\"score\":%s,\"scoreError\":%s,\"scoreUnit\":%s," +
                 "\"createdAt\":%s,\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s," +
                 "\"jcstress\":%s,\"secondaryMetrics\":%s}%s%n",
-                quoted(r.jobId()), quoted(r.benchmarkName()), quoted(r.benchmarkType()), quoted(r.mode()),
-                Json.number(r.score()), Json.number(r.scoreError()), quoted(r.scoreUnit()), quoted(r.createdAt()),
+                Json.string(r.jobId()), Json.string(r.benchmarkName()), Json.string(r.benchmarkType()), Json.string(r.mode()),
+                Json.number(r.score()), Json.number(r.scoreError()), Json.string(r.scoreUnit()), Json.string(r.createdAt()),
                 Json.string(r.imageVersion()), Json.string(r.instanceType()), Json.object(r.tags()),
                 Json.object(r.params()), jcstressJson(r.jcstress()), metricsJson(r.secondaryMetrics()),
                 i < rows.size() - 1 ? "," : "");
@@ -418,7 +418,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             // Locale.ROOT for the same reason as printJson — a comma decimal separator turns one
             // CSV column into two.
             out.printf("%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s%n",
-                r.jobId(), r.benchmarkName(), r.benchmarkType(), r.mode(),
+                r.jobId(), r.benchmarkName(), Objects.toString(r.benchmarkType(), ""), Objects.toString(r.mode(), ""),
                 Csv.number(r.score()), Csv.number(r.scoreError()), r.scoreUnit(), r.createdAt(),
                 r.imageVersion() != null ? r.imageVersion() : "",
                 r.instanceType() != null ? r.instanceType() : "",
@@ -449,10 +449,5 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             .map(e -> Json.string(e.getKey()) + ":{\"score\":" + Json.number(e.getValue().score())
                 + ",\"unit\":" + Json.string(e.getValue().unit()) + "}")
             .collect(java.util.stream.Collectors.joining(",", "{", "}"));
-    }
-
-    /** A field this payload has always quoted, absent included; see printJson. */
-    private static String quoted(Object value) {
-        return Json.string(String.valueOf(value));
     }
 }

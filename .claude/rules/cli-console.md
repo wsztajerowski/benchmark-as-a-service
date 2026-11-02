@@ -52,7 +52,9 @@ What a redirect of stdout must keep, and when escape sequences are allowed.
   `System.err` that touches only a line whose first word is a level, so the `Next` block and stack
   traces pass through; `run`'s status line wraps on top of it. There is no log file: SimpleLogger has
   one target and one format, and a file appender would mean another backend.
-- **`printJson`/`printCsv` must format with `Locale.ROOT`.** Under a comma-decimal locale (pl-PL
-  among many) a bare `%.6f` emits `8234574,731914`, which is not a JSON number and splits a CSV
-  column in two — silently, and only on some machines. Non-finite values become JSON `null`, since
+- **JSON and CSV numbers go through `console.Json.number`/`Csv.number`, never `String.format`.**
+  Under a comma-decimal locale (pl-PL among many) a bare `%.6f` emits `8234574,731914`, which is not
+  a JSON number and splits a CSV column in two — silently, and only on some machines; and a fixed
+  six decimals printed a nanosecond `s/op` score as `0.000000` (W3). The writers keep every
+  significant digit with no exponent, locale-free. Non-finite values become JSON `null`, since
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
