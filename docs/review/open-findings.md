@@ -48,10 +48,9 @@ None open.
 | pr83/W3 | `avgt` scores in `s/op` print as `0.000000` in JSON and CSV | S | Low | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
-| G4 | No score comparison between jobs or against a baseline; CI regression gates hand-roll `jq` | M | — | users first |
-| G8 | The job record does not say what ran: benchmark arguments, runner version or override, timeout, JCStress mode, JAR digest | S | — | users first |
+| G4 | No comparison against a baseline, and no regression gate: `results diff` compares two jobs but exits 0 whatever it finds, so CI still hand-rolls `jq` over its JSON | M | — | users first |
+| G8 | The job record does not say what ran: runner version or override, timeout, JCStress mode, JAR digest (arguments, profilers and JDK are recorded as tags since `results-diff`, `benchmark-args-pass-through` and `multiple-jdks`) | S | — | users first |
 | G5 | No `jobs wait` (or `terminal` field); CI copies the terminal-status set into bash | S | — | deferred |
-| G10 | The runner cannot pass JMH `-p` overrides or more than one include regex | S | — | deferred |
 | G13 | No way to forget a deployment locally, or reset a preference to its default | XS | — | deferred |
 
 ### Could
@@ -77,14 +76,13 @@ None open.
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
 | G17 | `results query` JSON lacks `project`, `kind` and `resultJsonKey` (its escaping is fixed; `profilerOutputPath` was removed from the item instead, since a job's artifacts are reached by its id through `jobs download`) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G18 | No non-interactive project listing ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
-| G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), CLAUDE.md "CI mints its id", `admin image show` "for this account" — the user-data comment on the manifest's identity was fixed by `readable-jobs-show` ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
+| G19 | Stale contract docs: `JobLayout` javadoc (caller-ARN hash), `admin image show` "for this account" — CLAUDE.md's "CI mints its id" is gone, and the user-data comment on the manifest's identity was fixed by `readable-jobs-show` ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G20 | Image-build logs under `image-builds/` are pointed to by neither `admin image build` nor setup's image step ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | K3 | JSON payloads hand-built in four commands, the job object twice ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | K4 | `--format` validated by hand in five commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | K9 | `session()`/`console()` plumbing copied into 6–9 commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | S | — | open, when nearby |
 | K11 | `JobSession.Outcome.exitCode` is derivable from the status; `completed ? 0 : 1` is written four times ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
-| K12 | A mutable `static` `CommandSpec` in the runner's `ApiJmhOptions`, shared by three subcommands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | K14 | Setup's AccessDenied catch-and-log is written twice (`SetupWalkthrough`, `StackStep`); the hand-over itself is now shared ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | XS | — | open, when nearby |
 | T5 | No common command-test harness: several seam idioms, `IFactory` boilerplate in eight test classes ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
 | T6 | Positional records (`JobItem`, `StoredMeasurement`) rebuilt by private helpers in every test class ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
@@ -167,7 +165,7 @@ third-party `machulav/ec2-github-runner` that made this sharper is gone. **Propo
 
 `baas run` uploads `benchmark.jar` (and a `--runner-jar`) before it reserves the job item, so a
 reservation that cannot be written leaves `jobs/<project>/<jobId>/input/` with no job item: invisible
-to `runs list` and never expired (no lifecycle rule under `jobs/`, by design). U25 removed the other
+to `jobs list` and never expired (no lifecycle rule under `jobs/`, by design). U25 removed the other
 way into this state. Reserving first would instead leave a `launching` item for a failed upload,
 which lists as `vanished` — arguably the better failure.
 
@@ -204,7 +202,7 @@ checked), so an injection could not be tested. **Fix**, once a counter-exposing 
 
 ### E4 — the results table formats scores in the machine's locale · Could · XS
 
-`ResultsTable.java:97` uses `String.format("%.3f", value)` with the default locale, so on pl-PL the
+`ResultsTable` and `ResultsDiffSubcommand` use `String.format("%.3f", value)` with the default locale, so on pl-PL the
 table shows `10632008,341` while JSON and CSV (`Locale.ROOT`, a CLAUDE.md invariant) show
 `10632008.341`. Not wrong for a human-read table, but the same number reads differently between
 views and between machines. **Decide:** keep the locale on purpose (and say so in CLAUDE.md), or use
@@ -227,7 +225,7 @@ ADR 0009 adds a port only when a sequence test needs one.
 
 - **G3, G4, G8 — users first.** Each needs a decision about what BaaS records or offers before it is
   built; the proposals are in [`user-discussion.md`](2026-10-13-codebase-review/user-discussion.md).
-- **G5, G10, G13 — deferred in triage.** Valid and small; not scheduled.
+- **G5, G13 — deferred in triage.** Valid and small; not scheduled.
 - **K14** is smaller than filed: `StackStep.permissionFailure` is the one hand-over, and only the
   catch-and-log around it is duplicated.
 
