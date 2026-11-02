@@ -15,6 +15,7 @@ final class FakeImageBuildAws implements ImageBuildAws {
     final Map<String, String> parameters = new HashMap<>();
     final Map<String, String> outputs = new HashMap<>(Map.of(CoreStack.OUTPUT_RUNNER_IMAGE_PIPELINE_ARN, "arn:pipeline"));
     RuntimeException failPreflight;
+    RuntimeException failPublish;
     Map<String, String> submitted;
     boolean closed;
 
@@ -58,6 +59,7 @@ final class FakeImageBuildAws implements ImageBuildAws {
     public String publish(String pipelineArn, String pointer, String label, String parentAmiId, String recipeVersion,
                           String bucket) {
         calls.add("publish " + pipelineArn + " " + pointer + " " + bucket);
+        if (failPublish != null) throw failPublish;
         return "ami-new";
     }
 

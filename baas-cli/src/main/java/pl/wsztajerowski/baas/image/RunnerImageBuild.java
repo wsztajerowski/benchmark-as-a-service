@@ -87,8 +87,17 @@ public final class RunnerImageBuild {
         }
 
         String parameterName = DeploymentNames.of(prefix).amiPointer();
-        String amiId = aws.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
-            plan.values().get(RunnerImageParameters.RECIPE_VERSION), DeploymentNames.of(prefix).bucket());
+        String bucket = DeploymentNames.of(prefix).bucket();
+        String amiId;
+        try {
+            amiId = aws.publish(pipelineArn, parameterName, plan.label(), parentAmiId,
+                plan.values().get(RunnerImageParameters.RECIPE_VERSION), bucket);
+        } catch (IllegalStateException e) {
+            // Image Builder's reason is one line; its logs, which the stack sends to the bucket, are
+            // the rest (G20). Here, so that admin image build and setup's image step both say it.
+            throw new IllegalStateException(e.getMessage() + "\n  Image Builder's logs: aws s3 ls --recursive s3://"
+                + bucket + "/image-builds/", e);
+        }
         return new Result(amiId, plan.label(), parentAmiId, extension, parameterName);
     }
 

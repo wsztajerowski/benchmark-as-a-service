@@ -76,4 +76,14 @@ class RunnerImageBuildSequenceTest {
         assertThatThrownBy(() -> build(Optional.empty())).hasMessageContaining("RunnerImagePipelineArn");
         assertThat(aws.calls).noneMatch(c -> c.startsWith("publish"));
     }
+
+    /** G20: Image Builder's own logs are the only detail of a failed bake, so the failure names them. */
+    @Test
+    void aFailedBuildNamesWhereItsLogsAre() {
+        aws.failPublish = new IllegalStateException("Image build arn:build/1: FAILED: component exited 1");
+
+        assertThatThrownBy(() -> build(Optional.empty()))
+            .hasMessageStartingWith("Image build arn:build/1: FAILED: component exited 1")
+            .hasMessageContaining("aws s3 ls --recursive s3://" + D + "/image-builds/");
+    }
 }
