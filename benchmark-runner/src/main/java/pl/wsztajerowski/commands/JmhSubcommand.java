@@ -25,6 +25,8 @@ import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
         + "except -rf, -rff and -o, and the dir (and async's libPath) of an async or jfr profiler, "
         + "which the runner sets.")
 public class JmhSubcommand implements Runnable {
+    private static final String DEFAULT_ASYNC_LIBRARY = "/app/async-profiler/lib/libasyncProfiler.so";
+
     @Spec
     CommandSpec spec;
 
@@ -44,11 +46,6 @@ public class JmhSubcommand implements Runnable {
         this.benchmarkPath = path;
     }
 
-    // Checked only when a job names -prof async, so a job without it never needs the library.
-    @Option(names = {"-ap", "--async-path"}, defaultValue = "${ASYNC_PATH:-/app/async-profiler/lib/libasyncProfiler.so}",
-        description = "async-profiler library a -prof async is pointed at (default: ${DEFAULT-VALUE})")
-    Path asyncPath;
-
     @Parameters(paramLabel = "BENCHMARK_ARGS", description = "JMH's own arguments, after --")
     List<String> benchmarkArgs = new ArrayList<>();
 
@@ -58,10 +55,16 @@ public class JmhSubcommand implements Runnable {
         // In the order the builder used to evaluate them: the request options can refuse the run
         // (no project, a JDK not on this image) before any client is built or any storage line is logged.
         var common = apiCommonSharedOptions.getRequestOptions();
-        var run = new JmhRun(benchmarkPath, benchmarkArgs, getWorkingDirectory(), asyncPath,
+        var run = new JmhRun(benchmarkPath, benchmarkArgs, getWorkingDirectory(), asyncLibrary(),
             apiCommonSharedOptions.javaExecutable());
         var store = apiCommonSharedOptions.buildResultsStore();
         var storage = StorageService.of(apiCommonSharedOptions.getS3Options());
         new JmhSubcommandService(storage, store, common, run).executeCommand();
+    }
+
+    /** Where the image installs async-profiler, unless ASYNC_PATH says otherwise on a developer's machine. */
+    private static Path asyncLibrary() {
+        String asyncPath = System.getenv("ASYNC_PATH");
+        return Path.of(asyncPath != null ? asyncPath : DEFAULT_ASYNC_LIBRARY);
     }
 }
