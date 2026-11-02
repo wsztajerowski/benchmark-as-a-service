@@ -1,12 +1,12 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.utility.DockerImageName;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
@@ -63,8 +63,7 @@ class ExportImportRoundTripIT {
 
     @Container
     private static final LocalStackContainer LOCAL_STACK =
-        new LocalStackContainer(DockerImageName.parse("localstack/localstack:4.14.0"))
-            .withServices(LocalStackContainer.Service.DYNAMODB, LocalStackContainer.Service.S3,
+        LocalStack.with(LocalStackContainer.Service.DYNAMODB, LocalStackContainer.Service.S3,
                 LocalStackContainer.Service.STS);
 
     @TempDir
