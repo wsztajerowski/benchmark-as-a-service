@@ -93,6 +93,18 @@ class RunCommandTest {
             .hasMessageContaining("Pass --project <name>.");
     }
 
+    /**
+     * A picocli description must be a constant, so the reserved keys are written out in it; this
+     * keeps them in step with {@code TagKeys.RESERVED} — they had drifted once already.
+     */
+    @Test
+    void theTagHelpNamesEveryReservedKey() throws NoSuchFieldException {
+        String help = String.join(" ", RunCommand.class.getDeclaredField("extraTags")
+            .getAnnotation(picocli.CommandLine.Option.class).description());
+
+        assertThat(RunCommand.RESERVED_TAG_KEYS).allSatisfy(key -> assertThat(help).contains(key));
+    }
+
     @Test
     void aBranchTagIsCallerOverridableRatherThanReserved() {
         assertThat(RunCommand.RESERVED_TAG_KEYS).doesNotContain("branch");

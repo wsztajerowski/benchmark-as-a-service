@@ -14,8 +14,6 @@ import java.util.regex.Pattern;
  */
 public final class ResultsFilters {
 
-    public static final String BRANCH = "branch";
-
     private ResultsFilters() {}
 
     /** Repeated {@code --tag} options combine conjunctively: a row must carry every one. */
@@ -72,7 +70,7 @@ public final class ResultsFilters {
         }
         List<String> suspect = new ArrayList<>();
         for (String key : required.keySet()) {
-            boolean known = TagKeys.KNOWN.contains(key) || BRANCH.equals(key);
+            boolean known = TagKeys.KNOWN.contains(key);
             boolean carriedBySomeRow = rows.stream().anyMatch(row -> row.tag(key) != null);
             if (!known && !carriedBySomeRow) {
                 suspect.add(key);

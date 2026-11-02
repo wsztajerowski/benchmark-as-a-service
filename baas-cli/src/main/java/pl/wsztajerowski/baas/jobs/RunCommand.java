@@ -161,9 +161,10 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     @Option(names = "--tag", description = "Tag recorded on the stored benchmark result (key=value), not just "
         + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
-        + "machine-observed keys (imageVersion, instanceType, jdkId, jdkVersion, jdkVendor, cpuModel, cpuArch, type) — those are "
-        + "captured on the instance so a result's tags can't disagree with its own environment.json — "
-        + "and for project, which --project names.")
+        + "keys BaaS sets itself: those observed on the instance (imageVersion, instanceType, jdkId, "
+        + "jdkVersion, jdkVendor, cpuModel, cpuArch, type) or recorded from the command line (cliParameters, "
+        + "profilers), so a result's tags can't disagree with its own environment.json or arguments — "
+        + "and project, which --project names.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
     @Option(names = "--project", description = "Project name for the results partition. Required unless "
