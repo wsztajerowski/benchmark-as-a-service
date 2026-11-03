@@ -148,9 +148,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws InterruptedException {
-        if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: " + String.join(", ", FORMATS) + ".");
-        }
+        CommandRefusal.requireFormat(format, FORMATS);
         // Before the config is even read: a refused --watch must not reach AWS.
         String watchRefusal = watchRefusal();
         if (watchRefusal != null) {

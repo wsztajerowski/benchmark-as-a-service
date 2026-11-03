@@ -286,9 +286,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     private Integer execute() throws Exception {
         // Anything but json used to mean text, so `--format jsno` silently printed no summary
         // for a pipeline expecting one.
-        if (format != null && !"text".equalsIgnoreCase(format) && !jsonSummary()) {
-            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: text, json.");
-        }
+        CommandRefusal.requireFormat(format, List.of("text", "json"));
         if (!VALID_TYPES.contains(benchmarkType)) {
             throw CommandRefusal.usage("Unknown benchmark type '" + benchmarkType + "'. Valid: " + VALID_TYPES);
         }
