@@ -81,6 +81,96 @@ class RunCommandLaunchTest {
         assertThat(aws.uploads).isEmpty();
     }
 
+    // ─── --dry-run (G9) ─────────────────────────────────────────────────────────
+
+    private final java.util.List<java.util.List<String>> listings = new java.util.ArrayList<>();
+    private final StringWriter err = new StringWriter();
+
+    /**
+     * A dry run with no deployment adopted: were the session opened, it would look for a deployment
+     * under the test home and fail, so exit 0 proves nothing read one.
+     */
+    private int dryRun(LocalListing.Result answer, String... args) {
+        var command = new RunCommand();
+        command.awsFactory = factory -> { throw new AssertionError("a dry run built an AWS client"); };
+        command.context.use(Console.plain(new PrintWriter(out)));
+        command.localListing = listing -> {
+            listings.add(listing);
+            return answer;
+        };
+        return new CommandLine(command).setErr(new PrintWriter(err))
+            .setExecutionExceptionHandler(pl.wsztajerowski.baas.BaasApp::reportFailure).execute(args);
+    }
+
+    private String[] dryRunArgs(String type, String... params) throws Exception {
+        Path jar = Files.writeString(dir.resolve("b.jar"), "jar");
+        var all = new java.util.ArrayList<>(java.util.List.of("--dry-run", "--benchmark-jar", jar.toString(), type, "--"));
+        all.addAll(java.util.List.of(params));
+        return all.toArray(String[]::new);
+    }
+
+    @Test
+    void aDryRunPrintsWhatWouldRunAndTouchesNoDeployment() throws Exception {
+        int exit = dryRun(new LocalListing.Result(0, "Benchmarks: \npl.Summing.sum\n"),
+            dryRunArgs("jmh", "Summing", "-f", "1"));
+
+        assertThat(exit).isZero();
+        assertThat(out.toString()).isEqualTo("pl.Summing.sum" + System.lineSeparator());
+        assertThat(listings).singleElement().satisfies(listing -> assertThat(listing)
+            .endsWith("-jar", dir.resolve("b.jar").toString(), "Summing", "-f", "1", "-l"));
+    }
+
+    @Test
+    void aDryRunThatTheToolRejectsExitsTwo() throws Exception {
+        int exit = dryRun(new LocalListing.Result(1, "Error parsing command line:\n Cannot parse argument 'ii' of option w\n"),
+            dryRunArgs("jmh", "-f", "1", "-wii", "1"));
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(out.toString()).isEmpty();
+    }
+
+    @Test
+    void aDryRunThatMatchesNothingExitsTwo() throws Exception {
+        assertThat(dryRun(new LocalListing.Result(0, "Benchmarks: \n"), dryRunArgs("jmh", "NoSuchBenchmark")))
+            .isEqualTo(2);
+        assertThat(out.toString()).isEmpty();
+    }
+
+    @Test
+    void aDryRunRefusesAManagedArgumentBeforeListing() throws Exception {
+        assertThat(dryRun(new LocalListing.Result(0, "pl.A.b\n"), dryRunArgs("jmh", "-rf", "csv"))).isEqualTo(2);
+        assertThat(listings).isEmpty();
+    }
+
+    @Test
+    void aDryRunOfAProfilerListingRunsNothingHere() throws Exception {
+        assertThat(dryRun(new LocalListing.Result(1, ""), dryRunArgs("jmh", "-lprof"))).isZero();
+        assertThat(listings).isEmpty();
+    }
+
+    @Test
+    void aDryRunTakesNoJsonSummary() throws Exception {
+        Path jar = Files.writeString(dir.resolve("b.jar"), "jar");
+        int exit = dryRun(new LocalListing.Result(0, "pl.A.b\n"),
+            "--dry-run", "--format", "json", "--benchmark-jar", jar.toString(), "jmh", "--", "A");
+
+        assertThat(exit).isEqualTo(2);
+        assertThat(listings).isEmpty();
+        assertThat(out.toString()).as("no summary object").isEmpty();
+    }
+
+    /** A directory passes an existence check and would fail only as the upload of a reserved job. */
+    @Test
+    void aBenchmarkJarThatIsADirectoryIsRefusedBeforeAnyAwsCall() throws Exception {
+        Path notAFile = Files.createDirectory(dir.resolve("b.jar"));
+
+        int exit = run("--benchmark-jar", notAFile.toString(), "--runner-jar", notAFile.toString(),
+            "--project", "lynx-journal", "jmh", "--", "MyBenchmark");
+
+        assertThat(exit).isEqualTo(1);
+        assertThat(aws.events).as("nothing reached AWS").isEmpty();
+    }
+
     @Test
     void aCompletedJobExitsZeroAndPrintsOneSummaryObject() throws Exception {
         aws.instance = FakeRunAws.Instance.COMPLETED_BEFORE_CONFIRM;

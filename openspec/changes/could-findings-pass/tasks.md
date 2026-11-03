@@ -6,54 +6,54 @@ only free AWS reads.
 
 ## 1. Verify blocking assumptions
 
-- [ ] 1.1 Confirm that `infra/deployer-policy.json` grants `cloudformation:DescribeStacks` on the stack,
+- [x] 1.1 Confirm that `infra/deployer-policy.json` grants `cloudformation:DescribeStacks` on the stack,
   `ssm:GetParameter` on the image pointer and `ec2:Describe*`, and that `ImageBuilderService.currentImage`
   calls nothing else. Record the statements in `verify.md`. If anything is missing, stop: the design
   assumes no IAM change.
-- [ ] 1.2 Trace `baas run`'s path from `BaasApp` to `RunCommand.execute`: the CLI version check
+- [x] 1.2 Trace `baas run`'s path from `BaasApp` to `RunCommand.execute`: the CLI version check
   (`CliVersionCheck`, `VersionCheckCoverageTest`) and deployment selection. Confirm that none of it
   makes an AWS call or needs a configured deployment before `context.operator()`. If one does, record
   how `--dry-run` is exempted before writing section 3.
-- [ ] 1.3 Read `JobListing.VANISH_GRACE`, and time a 50 MB upload to the `baas-development` bucket
+- [x] 1.3 Read `JobListing.VANISH_GRACE`, and time a 50 MB upload to the `baas-development` bucket
   (`aws s3 cp`, free). Confirm that a `launching` item stays in flight for the whole upload. Record
   both numbers.
 
 ## 2. N3: reserve before the upload
 
-- [ ] 2.1 In `JobLaunch.run`, move the pinned-runner-JAR resolution before naming the job, and move
+- [x] 2.1 In `JobLaunch.run`, move the pinned-runner-JAR resolution before naming the job, and move
   the reservation and `listener.reserved` to just after naming, before any upload to the job's
   prefix. Update the class comment and `Listener.reserved`'s Javadoc to the new order. Verify with
   `JobLaunchTest`: the recorder's reservation precedes the first upload, and a refused
   reservation uploads nothing.
-- [ ] 2.2 Record an upload failure as `launch-failed`: `recordLaunchFailure` takes the failed step,
+- [x] 2.2 Record an upload failure as `launch-failed`: `recordLaunchFailure` takes the failed step,
   writes it to `launch-error.txt` and the log, launches nothing, and returns 1. Verify with a
   `JobLaunchTest` case where `FakeRunAws.upload` throws: the item reads `launch-failed`,
   `launch-error.txt` names `upload`, and no instance is requested.
-- [ ] 2.3 Verify that an interrupt during the upload cancels the job: in a `JobLaunchTest` /
+- [x] 2.3 Verify that an interrupt during the upload cancels the job: in a `JobLaunchTest` /
   `RunCommandLaunchTest` case, the hook fires while `upload` runs, the item reads `cancelled`, and no
   instance is requested.
-- [ ] 2.4 Make `RunCommand`'s existence check refuse a `--benchmark-jar` that is not a regular file:
+- [x] 2.4 Make `RunCommand`'s existence check refuse a `--benchmark-jar` that is not a regular file:
   a directory passes `exists()` today and then fails as an upload. Verify with a `RunCommandTest`
   case.
 
 ## 3. G9: `baas run --dry-run`
 
-- [ ] 3.1 Add a `LocalListing` in `jobs`: it builds `<java.home>/bin/java -jar <jar> <args…> -l`, runs
+- [x] 3.1 Add a `LocalListing` in `jobs`: it builds `<java.home>/bin/java -jar <jar> <args…> -l`, runs
   it with merged output and a 120 s limit, and returns the exit code, the output and the listed
   names, read by the dotted-identifier rule in design.md. Verify with unit tests over captured JMH
   and JCStress outputs: valid, a parse error, and an empty match.
-- [ ] 3.2 Add `--dry-run` to `RunCommand`. Move the JAR existence check up beside
+- [x] 3.2 Add `--dry-run` to `RunCommand`. Move the JAR existence check up beside
   `refuseManagedOrNoRun()`, then branch before `context.operator()`: refuse `--format json`
   (exit 2), handle `-lprof` alone (say it runs on the runner, exit 0), otherwise run the listing.
   Print the names to standard output, or exit 2 with the tool's output or "nothing matches". End
   every outcome with "Nothing was launched". The process start is injected (a field, like
   `awsFactory`). Verify with `RunCommandTest` cases for each outcome, asserting no AWS client was
   requested.
-- [ ] 3.3 Add `LocalListingIT`, with both fixture JARs copied into `baas-cli/target` at
+- [x] 3.3 Add `LocalListingIT`, with both fixture JARs copied into `baas-cli/target` at
   `pre-integration-test` as `benchmark-runner/pom.xml` does. It runs the real listing for valid
   arguments, a typo and a non-matching pattern in both tools, and pins the name count. Verify:
   `mvn -pl baas-cli -am verify` runs it green.
-- [ ] 3.4 Add `--dry-run` to the help footer, beside the no-run refusals. Verify with
+- [x] 3.4 Add `--dry-run` to the help footer, beside the no-run refusals. Verify with
   `HelpAndHintsTest` or a help-text assertion.
 
 ## 4. G14: `baas admin deployment show`

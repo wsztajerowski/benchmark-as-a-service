@@ -43,6 +43,12 @@ public final class FakeRunAws implements RunAws {
         CoreStack.OUTPUT_SUBNET_ID, "subnet-1", CoreStack.OUTPUT_SECURITY_GROUP_ID, "sg-1"));
     public Instance instance = Instance.COMPLETES;
     public RuntimeException reserveFailure;
+    /** Thrown when the pinned runner release is resolved, as a checksum mismatch would be. */
+    public RuntimeException pinnedRunnerFailure;
+    /** Thrown by every upload, after it is recorded. */
+    public RuntimeException uploadFailure;
+    /** Run while an upload is in flight: where a test interrupts the launch. */
+    public Runnable duringUpload = () -> { };
     public List<ResultRow> rows = List.of();
     public String userData;
     /** The item as the reservation wrote it. */
@@ -70,6 +76,8 @@ public final class FakeRunAws implements RunAws {
     @Override
     public void upload(Path file, String bucket, String key) {
         events.add("upload " + key);
+        duringUpload.run();
+        if (uploadFailure != null) throw uploadFailure;
         uploads.put(key, file.toString());
     }
 
@@ -82,6 +90,7 @@ public final class FakeRunAws implements RunAws {
     @Override
     public String pinnedRunnerJar(String bucket, String version, String sourceRepo) {
         events.add("pinnedRunnerJar " + version);
+        if (pinnedRunnerFailure != null) throw pinnedRunnerFailure;
         return "releases/" + version + "/benchmark-runner.jar";
     }
 

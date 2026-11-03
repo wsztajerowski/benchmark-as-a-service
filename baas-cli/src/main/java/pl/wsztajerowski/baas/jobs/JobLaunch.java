@@ -32,8 +32,9 @@ import java.util.function.LongSupplier;
  * the command owns the two things that outlive this method: the JSON summary and the shutdown hook.
  *
  * <p>The order below is the one CLAUDE.md's invariants describe and nothing may reorder it: every
- * precondition before any upload, the reservation before the launch, the listener's
- * {@link Listener#reserved} (where the hook is registered) before {@code RunInstances}.
+ * precondition before the reservation, the reservation before anything reaches the job's prefix (N3),
+ * and the listener's {@link Listener#reserved} (where the hook is registered) straight after it, so
+ * an interrupt during the upload or while {@code RunInstances} is in flight finds a recorded job.
  */
 public final class JobLaunch {
 
@@ -73,8 +74,8 @@ public final class JobLaunch {
         void named(String jobId, String resultPath);
 
         /**
-         * The reservation is written, and the instance is about to be requested: from here an
-         * interrupt must find and stop the job, so this is where the shutdown hook is armed.
+         * The reservation is written, and nothing is uploaded yet: from here an interrupt must find
+         * and stop the job, so this is where the shutdown hook is armed.
          */
         void reserved(JobSession session);
 
@@ -193,6 +194,18 @@ public final class JobLaunch {
         // its own stack, so this costs one call.
         Map<String, String> networking = resolveNetworking();
 
+        // The instance's only runner-JAR source. A pinned release is seeded and verified here, before
+        // the job exists: it lands under releases/, never in the job's prefix, and a checksum
+        // mismatch is a refusal that must leave no job item behind. A --runner-jar override stays
+        // per-job under the job's own input/, so it is uploaded with the benchmark JAR below.
+        String pinnedRunnerJar = null;
+        if (request.runnerJar() == null) {
+            pinnedRunnerJar = aws.pinnedRunnerJar(deployment.bucket(), request.cliVersion(), request.sourceRepo());
+            // Which runner build a job executed is the first thing anyone comparing two results
+            // asks, so it is reported on every job — not only on the one that seeded the slot.
+            logger.info("Runner JAR: {} (pinned to CLI version {})", pinnedRunnerJar, request.cliVersion());
+        }
+
         // 2. Name the job. One clock read: the instant travels into the identifier, into the S3
         //    prefix and on to the runner as --created-at, so the prefix name and the stored
         //    timestamp are the same value rather than two values that happen to be close.
@@ -203,57 +216,60 @@ public final class JobLaunch {
         logger.info("Job {} — results will land under s3://{}/{}",
             jobId, deployment.bucket(), resultPath);
 
-        // 3. Upload JARs into the job's own prefix, so one prefix holds the whole job.
-        logger.info("Uploading benchmark JAR to S3...");
-        String benchmarkJarKey = JobLayout.benchmarkJarKey(request.project(), jobId);
-        aws.upload(request.benchmarkJar(), deployment.bucket(), benchmarkJarKey);
-
-        // The instance's only runner-JAR source. A --runner-jar override stays per-job under the
-        // job's own input/, so releases/ holds released artifacts only.
-        String runnerJarS3Key;
-        if (request.runnerJar() != null) {
-            logger.info("Uploading runner JAR to S3...");
-            runnerJarS3Key = JobLayout.runnerJarOverrideKey(request.project(), jobId);
-            aws.upload(request.runnerJar(), deployment.bucket(), runnerJarS3Key);
-            logger.info("Runner JAR: {} (local override, not a pinned release)", request.runnerJar());
-        } else {
-            runnerJarS3Key = aws.pinnedRunnerJar(deployment.bucket(), request.cliVersion(), request.sourceRepo());
-            // Which runner build a job executed is the first thing anyone comparing two results
-            // asks, so it is reported on every job — not only on the one that seeded the slot.
-            logger.info("Runner JAR: {} (pinned to CLI version {})", runnerJarS3Key, request.cliVersion());
-        }
-
-        // 4. Build user-data. The job item's sort key is built here, once, by ResultKeys, and
-        //    handed to the instance verbatim; see UserDataScriptBuilder's JOB_SORT_KEY.
         JobItem job = new JobItem(jobId, request.project(), jobInstant, resultPath, request.instanceType(),
             JobStatus.LAUNCHING, null, null, jobTags(request), null, request.watchdogSeconds());
-        String userData = new UserDataScriptBuilder().build(
-            aws.region(), deployment, job, runnerImage, request, runnerJarS3Key);
-        // The script is what actually decides whether a job works; when a runner dies before it
-        // can upload cloud-init-output.log, this is the only place left to look.
-        logger.debug("Generated user-data script:\n{}", userData);
-
         var instances = aws.instances(prefix);
         var current = new JobSession(job, aws.recorder(deployment.resultsTable()),
             aws.stopRecorder(deployment.resultsTable()), instances);
 
-        // 5. Reserve the job before launching it. An instance without a record is exactly the
-        //    invisible job `baas jobs` exists to show, so a reservation that cannot be written
-        //    launches nothing.
+        // 3. Reserve the job before anything reaches its prefix (N3). An upload without a record is
+        //    an input/ no job item names, invisible to `baas jobs` and never expired; an instance
+        //    without one is exactly the invisible job `baas jobs` exists to show. So a reservation
+        //    that cannot be written uploads and launches nothing.
         try {
             current.reserve();
         } catch (RuntimeException e) {
             logger.error("""
-                Could not record run {} in the results table, so nothing was launched: {}
+                Could not record run {} in the results table, so nothing was uploaded or launched: {}
                 If the operator role lacks dynamodb:UpdateItem, the deployment predates run \
                 tracking — update it with `{}`.""", jobId, e.getMessage(),
                 Hints.command(prefix, "admin deployment setup"));
             return 1;
         }
 
-        // 6. The shutdown hook, armed before the launch: an interrupt while RunInstances is in
-        //    flight still finds the instance, by its job-id tag.
+        // 4. The shutdown hook, armed with the reservation: an interrupt during the upload records
+        //    the job cancelled, and one while RunInstances is in flight still finds the instance,
+        //    by its job-id tag.
         listener.reserved(current);
+
+        // 5. Upload the job's inputs into its own prefix, so one prefix holds the whole job. A
+        //    failure here is recorded like a refused launch: the item names the prefix, so the job
+        //    lists as launch-failed rather than leaving an anonymous input/.
+        String runnerJarS3Key;
+        try {
+            logger.info("Uploading benchmark JAR to S3...");
+            aws.upload(request.benchmarkJar(), deployment.bucket(), JobLayout.benchmarkJarKey(request.project(), jobId));
+            if (request.runnerJar() != null) {
+                logger.info("Uploading runner JAR to S3...");
+                runnerJarS3Key = JobLayout.runnerJarOverrideKey(request.project(), jobId);
+                aws.upload(request.runnerJar(), deployment.bucket(), runnerJarS3Key);
+                logger.info("Runner JAR: {} (local override, not a pinned release)", request.runnerJar());
+            } else {
+                runnerJarS3Key = pinnedRunnerJar;
+            }
+        } catch (RuntimeException e) {
+            recordLaunchFailure(current, Step.UPLOAD, e, runnerImage.amiId(), request.instanceType(),
+                networking.get(CoreStack.OUTPUT_SUBNET_ID));
+            return 1;
+        }
+
+        // 6. Build user-data. The job item's sort key is built here, once, by ResultKeys, and
+        //    handed to the instance verbatim; see UserDataScriptBuilder's JOB_SORT_KEY.
+        String userData = new UserDataScriptBuilder().build(
+            aws.region(), deployment, job, runnerImage, request, runnerJarS3Key);
+        // The script is what actually decides whether a job works; when a runner dies before it
+        // can upload cloud-init-output.log, this is the only place left to look.
+        logger.debug("Generated user-data script:\n{}", userData);
 
         // 7. Launch. It carries only the fixed tags (see Ec2ProvisioningService#instanceTags):
         //    every caller --tag, and the observed imageVersion/instanceType, reach the stored
@@ -267,7 +283,7 @@ public final class JobLaunch {
                 subnetId, networking.get(CoreStack.OUTPUT_SECURITY_GROUP_ID),
                 deployment.runnerInstanceProfile(), userData, jobId, deployment.stack());
         } catch (RuntimeException e) {
-            recordLaunchFailure(current, e, runnerImage.amiId(), request.instanceType(), subnetId);
+            recordLaunchFailure(current, Step.LAUNCH, e, runnerImage.amiId(), request.instanceType(), subnetId);
             return 1;
         }
         listener.launched(instanceId);
@@ -336,14 +352,26 @@ public final class JobLaunch {
         return 0;
     }
 
+    /** The reserved job's two steps that can fail before it has an instance. */
+    enum Step {
+        UPLOAD("Uploading the inputs of job %s"), LAUNCH("Launching the instance for job %s");
+
+        private final String what;
+
+        Step(String what) {
+            this.what = what;
+        }
+    }
+
     /**
-     * A launch that failed leaves no instance and so no boot log. What there is to keep is in the
-     * exception and in the request, so both go to the job's prefix, where {@code baas jobs download}
-     * finds them, and the error code goes on the job item, where {@code baas jobs list} shows it.
-     * Both are best effort: the launch error is reported whether or not they land, since a launch
-     * often fails for the same reason they would — the network or the credentials.
+     * A launch that failed — at the upload or at {@code RunInstances} — leaves no instance and so no
+     * boot log. What there is to keep is in the exception and in the request, so both go to the job's
+     * prefix, where {@code baas jobs download} finds them, and the error code goes on the job item,
+     * where {@code baas jobs list} shows it. Both are best effort: the error is reported whether or
+     * not they land, since a launch often fails for the same reason they would — the network or the
+     * credentials.
      */
-    private void recordLaunchFailure(JobSession current, RuntimeException error, String amiId,
+    private void recordLaunchFailure(JobSession current, Step step, RuntimeException error, String amiId,
                                      String instanceType, String subnetId) {
         String errorCode = null;
         String awsRequestId = null;
@@ -354,11 +382,12 @@ public final class JobLaunch {
             }
         }
         JobItem job = current.job();
-        logger.error("Launching the instance for job {} failed{}: {}", job.jobId(),
+        logger.error("{} failed{}: {}", step.what.formatted(job.jobId()),
             errorCode == null ? "" : " (" + errorCode + ")", error.getMessage());
         current.recordLaunchFailed(errorCode);
         String report = String.join("\n",
             "jobId: " + job.jobId(),
+            "step: " + step.name().toLowerCase(java.util.Locale.ROOT),
             "time: " + Instant.now(),
             "errorCode: " + (errorCode == null ? "" : errorCode),
             "awsRequestId: " + (awsRequestId == null ? "" : awsRequestId),
