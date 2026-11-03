@@ -12,13 +12,13 @@ sequenceDiagram
     participant GH as GitHub Releases (laptop only)
 
     User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--jdk id] [--tag k=v] [--format json] [--detach] [--dry-run]
-    Note over RC: execute() -- before any AWS call:<br/>--format text or json, else exit 2. type in BenchmarkType.commandNames(), else exit 2.<br/>Managed or no-run arguments after -- -> exit 2. --benchmark-jar not a regular file -> exit 1.
+    Note over RC: execute() -- before any AWS call:<br/>--format text or json, else exit 2. type in BenchmarkType.commandNames(), else exit 2.<br/>Managed or no-run arguments after -- -> exit 2.
     opt --dry-run (G9) -- before the deployment is read, no AWS call
-        Note over RC: --format json -> exit 2. -lprof alone -> runs on the runner, exit 0.<br/>LocalListing: java.home/bin/java -jar JAR ARGS -l on this machine, 120 s limit.<br/>Non-zero exit -> exit 2 with the tool's output. No listed name -> exit 2.<br/>Otherwise the names go to stdout, exit 0. Nothing is launched.
+        Note over RC: --benchmark-jar not a regular file -> exit 1. --format json -> exit 2.<br/>-lprof alone -> runs on the runner, exit 0.<br/>LocalListing: java.home/bin/java -jar JAR ARGS -l on this machine, 120 s limit.<br/>Non-zero exit -> exit 2 with the tool's output. No listed name -> exit 2.<br/>Otherwise the names go to stdout, exit 0. Nothing is launched.
     end
     Note over RC: An unreleased CLI (BaasVersion.isReleased() false) without --runner-jar -> exit 1. baas run builds nothing.
     RC->>RC: OperatorSession.of(Invocation.configService(spec)).config()
-    Note over RC: resolveProject -- --project, or GitProject.repositoryName of the JAR's directory<br/>when git.resolveProject is on, else IllegalStateException naming --project.<br/>resolveResultsTable, instanceType, resolveTimings -> watchdogBound = timeout + margin (margin >= 60).<br/>buildRunnerTags: project, type, source + every --tag. A machine-observed key or project is REJECTED.
+    Note over RC: resolveProject -- --project, or GitProject.repositoryName of the JAR's directory<br/>when git.resolveProject is on, else IllegalStateException naming --project.<br/>resolveResultsTable, instanceType, resolveTimings -> watchdogBound = timeout + margin (margin >= 60).<br/>buildRunnerTags: project, type, source + every --tag. A machine-observed key or project is REJECTED.<br/>--benchmark-jar not a regular file (missing, or a directory) -> exit 1.
     RC->>JL: new JobLaunch(awsFactory.apply(operatorSession.factory()), config.names(), this).run(Request)
 
     JL->>Port: currentImage(/<prefix>/runner/ami-id)
