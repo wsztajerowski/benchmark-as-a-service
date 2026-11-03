@@ -64,6 +64,10 @@ The runner module, what reaches the benchmark JAR, and how a library is added.
   reactor first.
 - **JCStress writes `jcstress-results-*.bin.gz` to the module root**, not `target/`. `mvn clean`
   removes them via an extra fileset.
+- **Docker gates every IT, and only CI insists on it.** Every Testcontainers IT, in both modules, is
+  `disabledWithoutDocker`, so a Docker-less `mvn verify` skips them all and stays green — the store
+  contract's only real binding (`DynamoDbJobRecorderIT.Contract`) included, while the in-memory
+  recorders still pass it. With `CI` set, `DockerInCiIT` fails instead (T12).
 - **`ASYNC_PATH` gates async coverage.** `JmhAsyncProfilerIT` is annotated
   `@EnabledIfEnvironmentVariable(named = "ASYNC_PATH", ...)`, so a plain `mvn verify` **silently
   skips** the only test exercising async-profiler end to end — on Linux and macOS alike (a `.so` or
