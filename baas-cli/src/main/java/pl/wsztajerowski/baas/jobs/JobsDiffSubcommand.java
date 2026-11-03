@@ -14,6 +14,7 @@ import picocli.CommandLine.Parameters;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
+import pl.wsztajerowski.baas.console.Printable;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
@@ -159,17 +160,30 @@ public class JobsDiffSubcommand implements Callable<Integer> {
         out.println("Differs in: " + String.join(", ", groups));
         if (!differences.isEmpty()) {
             out.println("");
-            var table = new Table(out, 91, List.of(
-                Column.left("GROUP", 10),
-                Column.left("FIELD", 18),
-                Column.left(jobA, 30),
-                Column.left(jobB, 30)));
+            List<List<String>> rows = new java.util.ArrayList<>();
+            differences.forEach((group, fields) -> fields.forEach((field, difference) -> rows.add(List.of(
+                group.isEmpty() ? "(ungrouped)" : group, field,
+                orAbsent(difference.left()), orAbsent(difference.right())))));
+            // Each column grows to its longest value (E5): a CPU model name overflowed its 30 and
+            // pushed the next column out of line, and clipping it could hide where the jobs differ.
+            int[] widths = {10, 18, 30, 30};
+            String[] headers = {"GROUP", "FIELD", jobA, jobB};
+            for (int i = 0; i < widths.length; i++) {
+                int column = i;
+                widths[i] = Math.max(widths[i], Math.max(headers[i].length(), rows.stream()
+                    .mapToInt(row -> Printable.of(row.get(column)).length()).max().orElse(0)));
+            }
+            var table = new Table(out, java.util.Arrays.stream(widths).sum() + widths.length - 1, List.of(
+                Column.left(headers[0], widths[0]),
+                Column.left(headers[1], widths[1]),
+                Column.left(headers[2], widths[2]),
+                Column.left(headers[3], widths[3])));
             table.printHeader();
-            differences.forEach((group, fields) -> fields.forEach((field, difference) -> table.printRow(List.of(
-                Cell.plain(group.isEmpty() ? "(ungrouped)" : group),
-                Cell.plain(field),
-                new Cell(orAbsent(difference.left()), out::red),
-                new Cell(orAbsent(difference.right()), out::green)))));
+            rows.forEach(row -> table.printRow(List.of(
+                Cell.plain(row.get(0)),
+                Cell.plain(row.get(1)),
+                new Cell(row.get(2), out::red),
+                new Cell(row.get(3), out::green))));
         }
         if (packagesDiffer) {
             out.println("");
