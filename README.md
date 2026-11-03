@@ -406,6 +406,7 @@ time, and drops rows tagged `hidden=true`. `baas query` is the same command. Fil
 |---|---|
 | `--project <name>` | Read that project's partition |
 | `--all-projects` | Every project, with a PROJECT column. Reads the whole table |
+| `--list-projects` | The projects holding results, one per line (a JSON array with `--format json`): what the picker offers, for a script or CI with no terminal |
 | `--tag key=value` | Repeatable; repeated tags must **all** match |
 | `--benchmark-name <regex>` | Match on the benchmark name |
 | `--exclude-tag key=value` | Repeatable; a row matching **any** is dropped |

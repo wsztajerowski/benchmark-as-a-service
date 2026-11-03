@@ -64,7 +64,6 @@ None open.
 | G12 | `config show`, `admin image show`/`build`, unattended setup, `jobs terminate` and `jobs download` have no machine-readable output ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS each | — | open, when nearby |
 | G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| G18 | No non-interactive project listing ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | T10 | `~/.baas` isolation is surefire's `user.home` only, so a unit test run from an IDE that builds a command outside `BaasApp` reads the real `~/.baas`. `~/.aws` is covered for every run by `testsupport.NoRealAwsProfile`; ITs keep the real `user.home` for `~/.testcontainers.properties` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T11 | Each LocalStack IT class starts its own container (the pin is shared since `testsupport.LocalStack`) ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
