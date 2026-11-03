@@ -43,7 +43,7 @@ None open.
 |---|---|---|---|---|
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
-| G8 | The job record does not say what ran: runner version or override, timeout, JCStress mode, JAR digest (arguments, profilers and JDK are recorded as tags since `results-diff`, `benchmark-args-pass-through` and `multiple-jdks`) | S | — | users first |
+| G8 | The job record does not say what ran: a `--runner-jar` override, the timeout, the JAR digest (arguments, JCStress mode, profilers, JDK and `baasVersion` are recorded as tags since `results-diff`, `benchmark-args-pass-through`, `multiple-jdks` and `baas-version-tag`) | S | — | users first |
 
 ### Could
 

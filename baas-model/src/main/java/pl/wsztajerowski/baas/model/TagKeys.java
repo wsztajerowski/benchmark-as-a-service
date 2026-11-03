@@ -42,9 +42,16 @@ public final class TagKeys {
      * could claim or deny profiling a score was measured under.
      */
     public static final String PROFILERS = "profilers";
+    /**
+     * The version of the {@code baas} CLI that launched the job — and so of its runner, which is
+     * pinned to the CLI's own release. A reactor build records its placeholder version, and a
+     * {@code --runner-jar} override is not told apart. Reserved like {@link #CLI_PARAMETERS}: it
+     * records what ran.
+     */
+    public static final String BAAS_VERSION = "baasVersion";
 
     public static final Set<String> KNOWN = Set.of(
-        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, PROFILERS, JDK_ID, JDK_VERSION, JDK_VENDOR,
+        PROJECT, TYPE, COMMIT, BRANCH, SOURCE, CLI_PARAMETERS, PROFILERS, BAAS_VERSION, JDK_ID, JDK_VERSION, JDK_VENDOR,
         CPU_MODEL, CPU_ARCH, INSTANCE_TYPE, IMAGE_VERSION);
 
     /**
@@ -61,8 +68,8 @@ public final class TagKeys {
     /**
      * Every key a caller may not set with {@code --tag}. The machine-observed ones — observed on the
      * instance, or derived from the benchmark type — because an override would let a result's tags
-     * disagree with its own environment.json; and {@link #CLI_PARAMETERS} and {@link #PROFILERS},
-     * which record what the job was asked to run, so a caller value could claim settings it never
+     * disagree with its own environment.json; and {@link #CLI_PARAMETERS}, {@link #PROFILERS} and
+     * {@link #BAAS_VERSION}, which record what the job was asked to run, so a caller value could claim settings it never
      * ran with. {@code project} is refused separately, pointing at {@code --project}. {@code commit},
      * {@code branch} and {@code source} are deliberately absent — caller-wins. {@code source} in
      * particular says how a job was triggered, which the instance never observes: a forged value
@@ -71,7 +78,7 @@ public final class TagKeys {
      */
     public static final List<String> RESERVED = List.of(
         IMAGE_VERSION, INSTANCE_TYPE, JDK_ID, JDK_VERSION, JDK_VENDOR, CPU_MODEL, CPU_ARCH, TYPE, CLI_PARAMETERS,
-        PROFILERS);
+        PROFILERS, BAAS_VERSION);
 
     private TagKeys() {}
 

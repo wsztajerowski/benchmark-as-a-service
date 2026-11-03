@@ -120,8 +120,10 @@ SHALL omit the tag when nothing follows `--`.
 profiler's name as given, without its options, sorted alphabetically, without duplicates, joined by `,`.
 It SHALL omit the tag when no profiler is named. The job item and every measurement of the job SHALL
 carry the same value.
+`baas run` SHALL record its own version as the tag `baasVersion` on the job item and every measurement
+of the job. The runner is pinned to the CLI's release, so the one tag names both.
 `imageVersion`, `instanceType`, `jdkId`, `jdkVersion`, `jdkVendor`, `cpuModel`, `cpuArch`, `type`,
-`cliParameters` and `profilers` SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them
+`cliParameters`, `profilers` and `baasVersion` SHALL NOT be settable by the caller: `baas run` SHALL reject a `--tag` naming any of them
 before launching anything.
 Tag keys outside the vocabulary SHALL be permitted, and a query naming an unknown key SHALL produce a
 warning rather than silently returning nothing.
@@ -173,6 +175,14 @@ warning rather than silently returning nothing.
 #### Scenario: A caller cannot claim or deny profiling
 - **WHEN** `baas run --tag profilers=gc jmh -- MyBenchmark` is invoked
 - **THEN** the command exits non-zero naming `profilers` as reserved, and no instance is launched
+
+#### Scenario: The CLI version is recorded as a tag
+- **WHEN** `baas run jmh -- MyBenchmark` completes from an installed 9.1.0 CLI
+- **THEN** the job item and every stored measurement carry `baasVersion=9.1.0`
+
+#### Scenario: A caller cannot set the recorded version
+- **WHEN** `baas run --tag baasVersion=1.0.0 jmh -- MyBenchmark` is invoked
+- **THEN** the command exits non-zero naming `baasVersion` as reserved, and no instance is launched
 
 #### Scenario: Branch is recorded as a tag
 - **WHEN** a job is launched with `--tag branch=main`
