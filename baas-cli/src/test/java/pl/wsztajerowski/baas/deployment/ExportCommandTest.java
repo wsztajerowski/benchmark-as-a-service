@@ -1,12 +1,10 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
 
-import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,23 +23,11 @@ class ExportCommandTest {
 
     private int baas(String... args) throws Exception {
         TestDeployments.write(dir, D);
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == ExportCommand.class) {
-                    var command = new ExportCommand();
-                    command.awsFor = config -> aws;
-                    return (K) command;
-                }
-                return defaults.create(cls);
-            }
-        };
-        return BaasApp.commandLine(new BaasApp(dir), factory)
-            .setOut(new PrintWriter(out))
-            .setErr(new PrintWriter(new StringWriter()))
-            .execute(args);
+        var command = new ExportCommand();
+        command.awsFor = config -> aws;
+        var run = TestCli.at(dir).with(ExportCommand.class, command).run(args);
+        out.write(run.out());
+        return run.exit();
     }
 
     @Test

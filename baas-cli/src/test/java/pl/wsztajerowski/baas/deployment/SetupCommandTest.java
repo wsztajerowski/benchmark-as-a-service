@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.aws.BucketProbe;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -146,54 +147,16 @@ class SetupCommandTest {
 
     // ─── --non-interactive on a terminal, through the real command tree ─────────────
 
-    /** Allows only the calls up to a denied permission check; anything later fails the test. */
-    private static final class DeniedAws implements pl.wsztajerowski.baas.deployment.setup.SetupAws {
-        @Override public Caller callerIdentity() { return new Caller("arn:aws:iam::123456789012:user/alice", "123456789012"); }
-        @Override public BucketProbe bucket(String name) { return new BucketProbe.Absent(); }
-        @Override public Preflight preflight(String callerArn, String policy) {
-            return new Preflight.Denied(java.util.List.of("cloudformation:CreateStack"));
-        }
-        @Override public boolean tableExists(String name) { throw new AssertionError("not reached"); }
-        @Override public StackState stackState(String s) { throw new AssertionError("not reached"); }
-        @Override public StackState awaitSettled(String s) { throw new AssertionError("not reached"); }
-        @Override public void deleteStack(String s) { throw new AssertionError("not reached"); }
-        @Override public java.util.Map<String, String> stackParameters(String s) { throw new AssertionError("not reached"); }
-        @Override public java.util.Map<String, String> stackOutputs(String s) { throw new AssertionError("not reached"); }
-        @Override public java.util.Map<String, String> imageParameters(String s, java.util.Map<String, String> d) { throw new AssertionError("not reached"); }
-        @Override public void submitCreate(String s, java.util.Map<String, String> p) { throw new AssertionError("not reached"); }
-        @Override public void awaitCreate(String s) { throw new AssertionError("not reached"); }
-        @Override public boolean update(String s, java.util.Map<String, String> p) { throw new AssertionError("not reached"); }
-        @Override public void assumeRole(String r) { throw new AssertionError("not reached"); }
-        @Override public OidcProvider oidcProvider(String a) { throw new AssertionError("not reached"); }
-        @Override public void createOidcProvider() { throw new AssertionError("not reached"); }
-        @Override public Image image(String d) { throw new AssertionError("not reached"); }
-        @Override public java.util.Optional<RunningBuild> runningImageBuild(String d) { throw new AssertionError("not reached"); }
-        @Override public String buildImage(String d) { throw new AssertionError("not reached"); }
-    }
-
     /** Runs setup through {@code BaasApp} on a console that says terminal; returns lines read and the exit. */
     private static int[] onATerminal(java.nio.file.Path root, java.io.StringWriter out, String... args) {
         int[] reads = {0};
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == SetupCommand.class) {
-                    var command = new SetupCommand();
-                    command.awsFactory = (region, profile) -> new DeniedAws();
-                    command.consoleFor = writer -> pl.wsztajerowski.baas.console.Console.withFlags(writer, true, false);
-                    command.answerReader = () -> { reads[0]++; return null; };
-                    return (K) command;
-                }
-                return defaults.create(cls);
-            }
-        };
-        int exit = pl.wsztajerowski.baas.BaasApp.commandLine(new pl.wsztajerowski.baas.BaasApp(root), factory)
-            .setOut(new java.io.PrintWriter(out, true))
-            .setErr(new java.io.PrintWriter(new java.io.StringWriter(), true))
-            .execute(args);
-        return new int[]{reads[0], exit};
+        var command = new SetupCommand();
+        command.awsFactory = (region, profile) -> pl.wsztajerowski.baas.deployment.setup.FakeSetupAws.denied("cloudformation:CreateStack");
+        command.consoleFor = writer -> pl.wsztajerowski.baas.console.Console.withFlags(writer, true, false);
+        command.answerReader = () -> { reads[0]++; return null; };
+        var run = TestCli.at(root).with(SetupCommand.class, command).run(args);
+        out.write(run.out());
+        return new int[]{reads[0], run.exit()};
     }
 
     /** Spec: "The option forces unattended on a terminal". */

@@ -79,19 +79,10 @@ class JobsDiffCommandTest {
                 };
             }
         };
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        var cli = BaasApp.commandLine(new BaasApp(dir), new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> type) throws Exception {
-                return type == JobsDiffSubcommand.class ? (K) diff : defaults.create(type);
-            }
-        });
+        var run = pl.wsztajerowski.baas.testsupport.TestCli.at(dir).with(JobsDiffSubcommand.class, diff)
+            .run("jobs", "diff", "20261002T000000000Z-00000000", "20261002T080250645Z-264f5dfb");
 
-        int exit = cli.execute("jobs", "diff",
-            "20261002T000000000Z-00000000", "20261002T080250645Z-264f5dfb");
-
-        assertThat(exit).isEqualTo(1);
+        assertThat(run.exit()).isEqualTo(1);
         assertThat(lookedUp).containsExactly("20261002T000000000Z-00000000");
     }
 }

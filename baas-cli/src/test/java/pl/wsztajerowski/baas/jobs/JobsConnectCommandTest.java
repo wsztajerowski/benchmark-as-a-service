@@ -1,10 +1,10 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.junit.jupiter.api.parallel.Resources;
-import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JobItem;
@@ -13,11 +13,8 @@ import pl.wsztajerowski.baas.session.BaasConfig;
 import software.amazon.awssdk.awscore.exception.AwsErrorDetails;
 import software.amazon.awssdk.awscore.exception.AwsServiceException;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -81,43 +78,21 @@ class JobsConnectCommandTest {
     private Run connect(String searchPath) throws Exception {
         pl.wsztajerowski.baas.TestDeployments.write(dir, pl.wsztajerowski.baas.TestDeployments.DEFAULT);
         var out = new StringWriter();
-        var err = new StringWriter();
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
+        var command = new JobsConnectSubcommand() {
             @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls != JobsConnectSubcommand.class) {
-                    return defaults.create(cls);
-                }
-                var command = new JobsConnectSubcommand() {
-                    @Override
-                    Sources sources(BaasConfig config) {
-                        calls.add("sources");
-                        return fake();
-                    }
-                };
-                command.context.use(Console.plain(new PrintWriter(out, true)));
-                command.searchPath = searchPath;
-                command.runner = runner;
-                command.instanceCheck = java.time.Duration.ofMillis(1);
-                command.pluginGrace = java.time.Duration.ofMillis(1);
-                return (K) command;
+            Sources sources(BaasConfig config) {
+                calls.add("sources");
+                return fake();
             }
         };
+        command.context.use(Console.plain(new PrintWriter(out, true)));
+        command.searchPath = searchPath;
+        command.runner = runner;
+        command.instanceCheck = java.time.Duration.ofMillis(1);
+        command.pluginGrace = java.time.Duration.ofMillis(1);
         // A refusal is logged through BaasApp.reportFailure, which writes to System.err.
-        var logged = new ByteArrayOutputStream();
-        PrintStream original = System.err;
-        int exit;
-        try {
-            System.setErr(new PrintStream(logged, true, StandardCharsets.UTF_8));
-            exit = BaasApp.commandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
-                .setExecutionExceptionHandler(BaasApp::reportFailure)
-                .execute("jobs", "connect", ID);
-        } finally {
-            System.setErr(original);
-        }
-        return new Run(exit, out.toString(), logged.toString(StandardCharsets.UTF_8) + err);
+        var run = TestCli.at(dir).with(JobsConnectSubcommand.class, command).runCapturingLog("jobs", "connect", ID);
+        return new Run(run.exit(), out.toString(), run.err());
     }
 
     private Run connect() throws Exception {
