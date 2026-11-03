@@ -545,7 +545,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
                 + "arguments.\n" + ran + "\nNothing was launched.");
         }
         names.forEach(context.console()::println);
-        logger.info("Dry run: {} would run {} benchmark(s). Nothing was launched.", reading.tool(), names.size());
+        logger.info("Dry run: {} would run {} {}(s). Nothing was launched.", reading.tool(), names.size(),
+            BenchmarkType.fromCommandName(benchmarkType) == BenchmarkType.JCSTRESS ? "test" : "benchmark");
         return 0;
     }
 
