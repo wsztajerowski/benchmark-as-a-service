@@ -60,7 +60,7 @@ None open.
 | X8 | The CLI and runner-JAR checksums come from the same release as the assets: integrity, not authenticity (CLAUDE.md calls it closed) ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
 | G7 | Exit codes do not separate failure kinds; the runner's exit code is not propagated; unattended setup exits 1 for a failure and for a step awaiting an IAM admin alike ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| G11 | `jobs diff` has no JSON and exits 0 whether or not the environments differ ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
+| G11 | `jobs diff` exits 0 whether or not the environments differ, so it cannot gate CI; `--format json` exists since `open-findings-pass`, an `--exit-code` gate was left out ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
 | G12 | `config show`, `admin image show`/`build`, unattended setup, `jobs terminate` and `jobs download` have no machine-readable output ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS each | — | open, when nearby |
 | G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
