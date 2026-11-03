@@ -15,6 +15,9 @@ import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Printable;
+import java.util.stream.Collectors;
+import picocli.CommandLine.Option;
+import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
@@ -37,7 +40,11 @@ import java.util.concurrent.Callable;
         "",
         "Only the environment is compared: machine, cpu, memory, os, jdk, runnerJdk,",
         "tools and tunables. When the two AMIs differ, the installed packages are",
-        "compared too."
+        "compared too.",
+        "",
+        "--format json prints one object: the two job ids and schema versions, every",
+        "differing field by group as {left, right} (null where a job has none), and",
+        "the package changes, or null when they were not compared."
     }
 )
 public class JobsDiffSubcommand implements Callable<Integer> {
@@ -56,6 +63,9 @@ public class JobsDiffSubcommand implements Callable<Integer> {
     @Parameters(index = "1", paramLabel = "<jobB>", description = "Second job's id.")
     String jobB;
 
+    @Option(names = "--format", description = "Output format: table (default), json.", defaultValue = "table")
+    String format = "table";
+
     /** Resolves a job id to its stored result path. Overridden by tests, which have no table. */
     JobPaths jobLookup(BaasConfig config, AwsClientFactory factory) {
         return new JobPaths(factory.dynamoDb(), config.resultsTable());
@@ -63,6 +73,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        CommandRefusal.requireFormat(format, List.of("table", "json"));
         for (String job : new String[]{jobA, jobB}) {
             String notAJobId = JobReference.notAJobId(job);
             if (notAJobId != null) {
@@ -123,7 +134,13 @@ public class JobsDiffSubcommand implements Callable<Integer> {
             }
         }));
 
-        printDiff(context.console(), EnvironmentManifest.diff(a, b), packages);
+        var differences = EnvironmentManifest.diff(a, b);
+        if ("json".equalsIgnoreCase(format)) {
+            context.console().println(diffJson(a.schemaVersion().orElse(null), b.schemaVersion().orElse(null),
+                differences, packages));
+        } else {
+            printDiff(context.console(), differences, packages);
+        }
         return 0;
     }
 
@@ -192,6 +209,36 @@ public class JobsDiffSubcommand implements Callable<Integer> {
             return Optional.empty();
         }
         return Optional.of(EnvironmentManifest.parse(jobId, body.get()));
+    }
+
+    /**
+     * {@code --format json} (G11): groups and fields in the table's order, an absent value as
+     * {@code null}; {@code packages} is null when they were not compared (same AMI, or a list missing).
+     */
+    String diffJson(String schemaA, String schemaB, Map<String, Map<String, EnvironmentManifest.Difference>> differences,
+                    PackagesDiff packages) {
+        String groups = differences.entrySet().stream()
+            .map(group -> Json.string(group.getKey().isEmpty() ? "(ungrouped)" : group.getKey()) + ":"
+                + group.getValue().entrySet().stream()
+                    .map(field -> Json.string(field.getKey()) + ":{\"left\":" + nullIfAbsent(field.getValue().left())
+                        + ",\"right\":" + nullIfAbsent(field.getValue().right()) + "}")
+                    .collect(Collectors.joining(",", "{", "}")))
+            .collect(Collectors.joining(",", "{", "}"));
+        String packagesJson = packages == null ? "null"
+            : "{\"changed\":" + packages.changed().stream()
+                    .map(c -> "{\"name\":" + Json.string(c.name()) + ",\"before\":" + Json.string(c.before())
+                        + ",\"after\":" + Json.string(c.after()) + "}")
+                    .collect(Collectors.joining(",", "[", "]"))
+                + ",\"added\":" + packages.added().stream().map(Json::string).collect(Collectors.joining(",", "[", "]"))
+                + ",\"removed\":" + packages.removed().stream().map(Json::string).collect(Collectors.joining(",", "[", "]"))
+                + "}";
+        return "{\"jobs\":[" + Json.string(jobA) + "," + Json.string(jobB) + "]"
+            + ",\"schemaVersions\":[" + Json.string(schemaA) + "," + Json.string(schemaB) + "]"
+            + ",\"groups\":" + groups + ",\"packages\":" + packagesJson + "}";
+    }
+
+    private static String nullIfAbsent(String value) {
+        return Json.string(value == null || value.isEmpty() ? null : value);
     }
 
     /** A field present in only one manifest reads as blank otherwise, which looks like a bug. */
