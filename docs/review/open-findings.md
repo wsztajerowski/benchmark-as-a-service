@@ -41,13 +41,10 @@ None open.
 
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
-| S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
 | G4 | No comparison against a baseline, and no regression gate: `results diff` compares two jobs but exits 0 whatever it finds, so CI still hand-rolls `jq` over its JSON | M | — | users first |
 | G8 | The job record does not say what ran: runner version or override, timeout, JCStress mode, JAR digest (arguments, profilers and JDK are recorded as tags since `results-diff`, `benchmark-args-pass-through` and `multiple-jdks`) | S | — | users first |
-| G5 | No `jobs wait` (or `terminal` field); CI copies the terminal-status set into bash | S | — | deferred |
-| G13 | No way to forget a deployment locally, or reset a preference to its default | XS | — | deferred |
 
 ### Could
 
@@ -85,17 +82,6 @@ Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEU
 below is what the proposal starts from.
 
 ## Open, not scheduled
-
-### S2 — CI's OIDC trust is repo-wide and `pull_request` triggers it · Should · M · reduced
-
-`OperatorRole`'s federated statement matches `repo:<org>/<repo>:*` — every ref, PR branch and tag —
-and `e2e-cloud-test.yml` runs on `pull_request`, so "can push a branch to the repository" means
-"holds operator credentials". Reduced since filing: the job runs on `ubuntu-latest`, not a
-self-hosted runner, fork PRs cannot obtain an `id-token`, and the operator role is the narrow one.
-**Proposed:** pin `sub` to `repo:<org>/<repo>:ref:refs/heads/main` plus an
-`environment:<name>` entry, put the E2E job behind an environment with required reviewers, and
-replace the bare `pull_request` trigger with a label gate. S16 showed how this compounds with any
-compromised step in a federated job.
 
 ### S7 — a runner can overwrite another job's objects under `jobs/*` · Could · M · reduced
 
@@ -152,7 +138,6 @@ ADR 0009 adds a port only when a sequence test needs one.
 
 - **G3, G4, G8 — users first.** Each needs a decision about what BaaS records or offers before it is
   built; the proposals are in [`user-discussion.md`](2026-10-13-codebase-review/user-discussion.md).
-- **G5, G13 — deferred in triage.** Valid and small; not scheduled.
 
 ## Informational
 

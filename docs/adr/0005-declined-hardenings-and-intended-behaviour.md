@@ -66,6 +66,15 @@ every reader skips an item it cannot parse with a warning (`TableItems`), so a f
 rather than every listing until an account admin deletes it. The trust position is that of *Runners
 can terminate each other* and S7.
 
+## CI's OIDC trust stays repo-wide (S2, 2026-11-03)
+
+`OperatorRole`'s federated statement matches `repo:<org>/<repo>:*` and `e2e-cloud-test.yml` runs on
+`pull_request`, so whoever can push a branch can obtain operator credentials. Pinning `sub` to `main`
+plus an environment with required reviewers, and a label-gated trigger, was declined: every PR's E2E
+run would wait on a manual step, and the two collaborators with push access (2026-11-03) are trusted
+operators already. Fork PRs cannot obtain an `id-token`, and the job runs on `ubuntu-latest`. Revisit
+when push access extends beyond trusted operators, together with *Runners can terminate each other*.
+
 ## The results table formats scores in the JVM's locale (U15, 2026-10-01)
 
 `baas results`' table prints `9702970,774` under pl-PL. That is right for a person reading a table;
@@ -76,3 +85,12 @@ format — do not "fix" it into one.
 
 Recorded in CLAUDE.md (*BaaS targets the commercial `aws` partition only*): making the policy alone
 partition-aware would imply support nothing else has.
+
+## No `jobs wait`, no `config remove` for now (G5, G13, 2026-11-03)
+
+Both were valid and small, and closed as not needed now. Without `jobs wait`, `e2e-cloud-test.yml`
+keeps its own poll loop with a copy of the terminal statuses (`JobStatus.EXACT_TERMINAL` plus the
+computed `vanished`): a new terminal status must be added there too, or the loop spins until its
+deadline. Without `config remove`, a deployment torn down from another machine is forgotten by
+deleting `~/.baas/deployments/<name>.yaml` by hand, and a preference is reset to its default by
+removing its line. The designs are in the 2026-10-13 review's `api-gaps.md`.
