@@ -139,18 +139,7 @@ final class GitHubStep implements SetupStep {
 
     /** The trust the stack declares now, read back from its parameters — the single source of truth. */
     static Optional<SetupContext.Federation> deployed(Map<String, String> parameters) {
-        String org = parameters.getOrDefault(CoreStack.PARAM_GITHUB_ORG, "");
-        String patterns = parameters.getOrDefault(CoreStack.PARAM_GITHUB_REPO, "");
-        if (org.isBlank() || patterns.isBlank()) {
-            return Optional.empty();
-        }
-        String prefix = "repo:" + org + "/";
-        List<String> repos = Arrays.stream(patterns.split(","))
-            .map(String::strip)
-            .filter(pattern -> pattern.startsWith(prefix) && pattern.endsWith(":*"))
-            .map(pattern -> pattern.substring(prefix.length(), pattern.length() - 2))
-            .toList();
-        return repos.isEmpty() ? Optional.empty() : Optional.of(new SetupContext.Federation(org, repos));
+        return GitHubTrust.deployed(parameters).map(trust -> new SetupContext.Federation(trust.org(), trust.repos()));
     }
 
     /**
