@@ -184,7 +184,9 @@ Bump imageVersion in infra/runner-image.yaml.
 Exactly one image exists at a time. A successful build publishes the new AMI to
 `/<prefix>/runner/ami-id` and only then deregisters the one it replaced, so a job launched during
 a build never resolves a deleted AMI. `baas admin image show` reports what is currently published, and
-flags when the definition bundled in the CLI you are running declares a version that isn't built yet.
+flags when the definition bundled in the CLI you are running declares a version that isn't built yet. With
+`--format json` it prints the same as one object (image, extension, JDKs, the CLI's bundled base) for
+a script; `baas config show --format json` does the same for the local deployment settings.
 
 ### Working with the image extension
 
