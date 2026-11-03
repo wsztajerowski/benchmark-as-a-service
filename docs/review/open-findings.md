@@ -43,7 +43,6 @@ None open.
 |---|---|---|---|---|
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
-| G4 | No comparison against a baseline, and no regression gate: `results diff` compares two jobs but exits 0 whatever it finds, so CI still hand-rolls `jq` over its JSON | M | — | users first |
 | G8 | The job record does not say what ran: runner version or override, timeout, JCStress mode, JAR digest (arguments, profilers and JDK are recorded as tags since `results-diff`, `benchmark-args-pass-through` and `multiple-jdks`) | S | — | users first |
 
 ### Could
@@ -87,7 +86,7 @@ recommendation stay in its report, linked from the index. *When nearby* means fi
 that code, not scheduled. B6's remainder (thin read commands building clients inline) is not listed:
 ADR 0009 adds a port only when a sequence test needs one.
 
-- **G3, G4, G8 — users first.** Each needs a decision about what BaaS records or offers before it is
+- **G3, G8 — users first.** Each needs a decision about what BaaS records or offers before it is
   built; the proposals are in [`user-discussion.md`](2026-10-13-codebase-review/user-discussion.md).
 
 ## Informational
