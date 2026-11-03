@@ -512,7 +512,9 @@ Packages (AMIs differ): 1 changed · 0 added · 0 removed
 ```
 
 Packages are compared only when the AMIs differ — one AMI is one package set. Identical
-environments report no differences and exit 0.
+environments report no differences and exit 0. `--format json` prints the same comparison as one object — the job ids,
+their schema versions, each differing field by group as `{left, right}` (`null` where a job has none)
+and the package changes — for a script that wants to read it rather than scrape the table.
 
 Note the split: `infra/runner-image.yaml` is the *declaration* — what was asked for.
 `environment.json` is the *observation* — what was got, including what the image cannot control

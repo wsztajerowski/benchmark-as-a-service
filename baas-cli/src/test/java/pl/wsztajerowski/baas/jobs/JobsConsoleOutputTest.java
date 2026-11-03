@@ -119,6 +119,30 @@ class JobsConsoleOutputTest {
             .contains("added    zstd-libs 1.5.5-1.amzn2023.0.2");
     }
 
+    /** G11: the same comparison as one JSON object; an absent value is null, uncompared packages null. */
+    @Test
+    void theJsonDiffCarriesEveryFieldByGroup() throws Exception {
+        var command = new JobsDiffSubcommand();
+        command.jobA = "20260724T120000000Z-a3f9c21b";
+        command.jobB = "20260811T093000000Z-b7e4d0f2";
+        Map<String, Map<String, Difference>> differences = new LinkedHashMap<>();
+        differences.put("jdk", Map.of("version", new Difference("25.0.3", "25.0.4")));
+        differences.put("tools", Map.of("perf", new Difference("", "6.1")));
+        var packages = PackagesDiff.of("openssl-libs-3.0.8-1.amzn2023.0.14.x86_64\n",
+            "openssl-libs-3.0.8-1.amzn2023.0.16.x86_64\n");
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(command.diffJson("8", "8", differences, packages));
+
+        assertThat(json.at("/jobs/1").asText()).isEqualTo("20260811T093000000Z-b7e4d0f2");
+        assertThat(json.at("/schemaVersions/0").asText()).isEqualTo("8");
+        assertThat(json.at("/groups/jdk/version/right").asText()).isEqualTo("25.0.4");
+        assertThat(json.at("/groups/tools/perf/left").isNull()).isTrue();
+        assertThat(json.at("/packages/changed/0/name").asText()).isEqualTo("openssl-libs");
+        assertThat(new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(command.diffJson("8", "8", differences, null)).get("packages").isNull()).isTrue();
+    }
+
     // --- status line gating ----------------------------------------------------------------
 
     /** CI's path: no terminal, so no status line — the poll loop keeps its "Still running" log line. */
