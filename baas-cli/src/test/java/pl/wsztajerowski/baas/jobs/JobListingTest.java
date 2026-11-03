@@ -103,6 +103,18 @@ class JobListingTest {
             .isTrue();
     }
 
+    /** K3: the one job object jobs list and jobs show both print; the live instance wins over the stored one. */
+    @Test
+    void theJobObjectKeepsItsDocumentedFieldOrder() {
+        var job = new JobItem("j-1", "p", CREATED, "jobs/p/j-1", "c5.large", JobStatus.LAUNCHED, "i-stored", null,
+            Map.of("source", "ci"), null, 900);
+
+        assertThat(new JobListing.Row(job, JobStatus.RUNNING, "i-live").json()).isEqualTo(
+            "{\"jobId\":\"j-1\",\"project\":\"p\",\"status\":\"running\",\"storedStatus\":\"launched\","
+                + "\"instanceId\":\"i-live\",\"instanceType\":\"c5.large\",\"createdAt\":\"2026-10-03T00:00:00Z\","
+                + "\"resultPath\":\"jobs/p/j-1\",\"errorCode\":null,\"watchdogSeconds\":900,\"tags\":{\"source\":\"ci\"}}");
+    }
+
     private static JobListing.Row at(String id, String created, String status, String project) {
         var job = new JobItem(id, project, Instant.parse(created), "jobs/" + project + "/" + id, "c5.2xlarge",
             status, null, null, Map.of("source", "local"), null);

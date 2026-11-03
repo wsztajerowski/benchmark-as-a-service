@@ -384,31 +384,28 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
      * every line. Same reasoning covers {@link #printCsv} and {@link ResultsTable}. Never coloured.
      */
     private void printJson(List<ResultRow> rows) {
-        var out = console();
-        out.println("[");
-        for (int i = 0; i < rows.size(); i++) {
-            ResultRow r = rows.get(i);
-            // imageVersion/instanceType ride along so a machine consumer can tell comparable rows
-            // from incomparable ones — the table says so in prose, and `| jq` cannot read prose.
-            // Null for every job recorded before the prebaked-image change. They stay flat even
-            // though `tags` now repeats them: CI and anyone else's `jq '.[0].imageVersion'` reads
-            // them there.
-            // An absent value is JSON null, never the string "null": a JCStress row has no mode.
-            // project and kind come last (G17): the partition a row was read from, and the library
-            // that produced it, which the free-form benchmarkType tag does not reliably name.
-            out.printf(
-                "  {\"jobId\":%s,\"benchmarkName\":%s,\"benchmarkType\":%s," +
-                "\"mode\":%s,\"score\":%s,\"scoreError\":%s,\"scoreUnit\":%s," +
-                "\"createdAt\":%s,\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s," +
-                "\"jcstress\":%s,\"secondaryMetrics\":%s,\"project\":%s,\"kind\":%s}%s%n",
-                Json.string(r.jobId()), Json.string(r.benchmarkName()), Json.string(r.benchmarkType()), Json.string(r.mode()),
-                Json.number(r.score()), Json.number(r.scoreError()), Json.string(r.scoreUnit()), Json.string(r.createdAt()),
-                Json.string(r.imageVersion()), Json.string(r.instanceType()), Json.object(r.tags()),
-                Json.object(r.params()), jcstressJson(r.jcstress()), metricsJson(r.secondaryMetrics()),
-                Json.string(r.project()), Json.string(r.kind().name()),
-                i < rows.size() - 1 ? "," : "");
-        }
-        out.println("]");
+        console().println(Json.array(rows.stream().map(ResultsQuerySubcommand::rowJson).toList()));
+    }
+
+    private static String rowJson(ResultRow r) {
+        // imageVersion/instanceType ride along so a machine consumer can tell comparable rows
+        // from incomparable ones — the table says so in prose, and `| jq` cannot read prose.
+        // Null for every job recorded before the prebaked-image change. They stay flat even
+        // though `tags` now repeats them: CI and anyone else's `jq '.[0].imageVersion'` reads
+        // them there.
+        // An absent value is JSON null, never the string "null": a JCStress row has no mode.
+        // project and kind come last (G17): the partition a row was read from, and the library
+        // that produced it, which the free-form benchmarkType tag does not reliably name.
+        return String.format(Locale.ROOT,
+            "{\"jobId\":%s,\"benchmarkName\":%s,\"benchmarkType\":%s," +
+            "\"mode\":%s,\"score\":%s,\"scoreError\":%s,\"scoreUnit\":%s," +
+            "\"createdAt\":%s,\"imageVersion\":%s,\"instanceType\":%s,\"tags\":%s,\"params\":%s," +
+            "\"jcstress\":%s,\"secondaryMetrics\":%s,\"project\":%s,\"kind\":%s}",
+            Json.string(r.jobId()), Json.string(r.benchmarkName()), Json.string(r.benchmarkType()), Json.string(r.mode()),
+            Json.number(r.score()), Json.number(r.scoreError()), Json.string(r.scoreUnit()), Json.string(r.createdAt()),
+            Json.string(r.imageVersion()), Json.string(r.instanceType()), Json.object(r.tags()),
+            Json.object(r.params()), jcstressJson(r.jcstress()), metricsJson(r.secondaryMetrics()),
+            Json.string(r.project()), Json.string(r.kind().name()));
     }
 
     private void printCsv(List<ResultRow> rows) {

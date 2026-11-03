@@ -33,6 +33,15 @@ class PayloadWritersTest {
         assertThat(Json.object(tags)).isEqualTo("{\"branch\":\"main\",\"source\":\"ci\"}");
     }
 
+    /** K3: the layout every list command prints, one element per line. */
+    @Test
+    void anArrayPutsOneElementOnEachLine() {
+        String nl = System.lineSeparator();
+        assertThat(Json.array(java.util.List.of())).isEqualTo("[" + nl + "]");
+        assertThat(Json.array(java.util.List.of("{\"a\":1}", "{\"b\":2}")))
+            .isEqualTo("[" + nl + "  {\"a\":1}," + nl + "  {\"b\":2}" + nl + "]");
+    }
+
     @Test
     void numbersIgnoreTheLocaleAndHaveNoNonFiniteForm() {
         Locale before = Locale.getDefault();

@@ -1,6 +1,7 @@
 package pl.wsztajerowski.baas.console;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
@@ -48,6 +49,16 @@ public final class Json {
         return new TreeMap<>(entries).entrySet().stream()
             .map(e -> string(e.getKey()) + ":" + string(e.getValue()))
             .collect(Collectors.joining(",", "{", "}"));
+    }
+
+    /**
+     * A JSON array of already-serialised elements, one per line and indented — the layout every
+     * list command prints, so a {@code jq}-less reader still sees one row per line.
+     */
+    public static String array(List<String> elements) {
+        String nl = System.lineSeparator();
+        return elements.isEmpty() ? "[" + nl + "]"
+            : elements.stream().collect(Collectors.joining("," + nl + "  ", "[" + nl + "  ", nl + "]"));
     }
 
     /**
