@@ -50,11 +50,7 @@ None open.
 
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
-| N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | to build: reserve first |
-| G9 | Benchmark arguments are first parsed by JMH or JCStress on the paid instance: a typo fails the job after boot. Managed and list-only options are refused locally since `benchmark-args-pass-through`; the rest is checked locally by `java -jar <benchmark.jar> <args> -l` ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | to build: `baas run --dry-run` |
-| G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | to build: `admin deployment show` |
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| T10 | `~/.baas` isolation is surefire's `user.home` only, so a unit test run from an IDE that builds a command outside `BaasApp` reads the real `~/.baas`. `~/.aws` is covered for every run by `testsupport.NoRealAwsProfile`; ITs keep the real `user.home` for `~/.testcontainers.properties` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | to build |
 | T11 | Each LocalStack IT class starts its own container (the pin is shared since `testsupport.LocalStack`) ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 
 ### Informational
@@ -74,14 +70,6 @@ Order and state are in [`openspec/changes/QUEUE.md`](../../openspec/changes/QUEU
 below is what the proposal starts from.
 
 ## Open, not scheduled
-
-### N3 — a failed reservation strands the uploaded `input/` · Could · S
-
-`baas run` uploads `benchmark.jar` (and a `--runner-jar`) before it reserves the job item, so a
-reservation that cannot be written leaves `jobs/<project>/<jobId>/input/` with no job item: invisible
-to `jobs list` and never expired (no lifecycle rule under `jobs/`, by design). U25 removed the other
-way into this state. Reserving first would instead leave a `launching` item for a failed upload,
-which lists as `vanished` — arguably the better failure.
 
 ### N2 — the August deployment's operator role is still in the account · Should · XS
 

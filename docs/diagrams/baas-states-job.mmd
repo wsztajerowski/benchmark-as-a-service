@@ -20,16 +20,13 @@ stateDiagram-v2
     state "launch-failed" as LaunchFailed
 
     [*] --> Preflight
-    Preflight --> Refused: format, type, unreleased build without --runner-jar,<br/>no prefix, project, tags, timeout under 1 s, margin under 60 s,<br/>JAR missing, no image, stack outputs missing
+    Preflight --> Refused: format, type, managed arguments, JAR not a file,<br/>unreleased build without --runner-jar, no prefix, project, tags,<br/>timeout under 1 s, margin under 60 s, no image, stack outputs missing,<br/>pinned runner release unverifiable · or a --dry-run, which launches nothing
     Refused: Refused — nothing uploaded, no item
-    Preflight --> Uploaded: C uploads benchmark.jar<br/>(+ runner.jar, or seeds releases/)
-    Uploaded --> Stranded: reservation write fails (N3)
-    Stranded: Stranded — input/ in S3, no job item
-    Uploaded --> Launching: C reserves the item
-    Launching --> Launched: C, after RunInstances (only while still launching)
-    Launching --> LaunchFailed: C, RunInstances error (+ launch-error.txt)
+    Preflight --> Launching: C reserves the item, before any upload (N3)<br/>— a failed reservation uploads nothing
+    Launching --> Launched: C, after the upload and RunInstances (only while still launching)
+    Launching --> LaunchFailed: C, upload or RunInstances error (+ launch-error.txt)
     Launching --> Running: I, when C's launched write was lost or late
-    Launching --> Cancelled: H Ctrl+C mid-launch · T
+    Launching --> Cancelled: H Ctrl+C during the upload or mid-launch · T
     Launched --> Running: I, after the watchdog starts
     Launched --> Cancelled: H · T
     Launched --> TimedOut: C poll cap · W

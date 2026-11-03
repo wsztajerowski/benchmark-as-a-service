@@ -79,14 +79,14 @@ only free AWS reads.
 
 ## 6. Documentation
 
-- [ ] 6.1 Update `.claude/rules/user-data.md`, *Three termination layers*, item 3: the hook is armed
+- [x] 6.1 Update `.claude/rules/user-data.md`, *Three termination layers*, item 3: the hook is armed
   after the reservation and before the upload. Update `docs/diagrams/baas-run.mmd`,
   `baas-states-job.mmd` and `baas-lifecycle.mmd` wherever they show the upload before the
   reservation. Render each edited `.mmd` with `mmdc` into the scratchpad and look at the PNG before
   committing.
-- [ ] 6.2 Add `admin deployment show` to `.claude/rules/deployment-config.md`. Mention `--dry-run`
+- [x] 6.2 Add `admin deployment show` to `.claude/rules/deployment-config.md`. Mention `--dry-run`
   in `.claude/rules/benchmark-runner.md` beside the no-run refusals.
-- [ ] 6.3 Delete N3, G9, G14 and T10 from `docs/review/open-findings.md`. Verify with
+- [x] 6.3 Delete N3, G9, G14 and T10 from `docs/review/open-findings.md`. Verify with
   `grep -nE '\b(N3|G9|G14|T10)\b' docs/review/open-findings.md`, which should print nothing.
 - [ ] 6.4 After `/opsx:archive`, rename the scenario "The deployment noun lists its four verbs" to "…five
   verbs" in `openspec/specs/cli-command-structure/spec.md` by hand. `openspec validate` refuses a
