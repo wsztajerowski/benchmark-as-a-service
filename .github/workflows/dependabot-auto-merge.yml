@@ -1,0 +1,36 @@
+# Arms auto-merge on Dependabot's minor and patch PRs; GitHub merges once the checks the target
+# branch's ruleset requires have passed. Without that ruleset `--auto` merges at once, so the ruleset
+# on next-release is what makes "after the whole suite succeeds" true — this file only asks.
+#
+# Majors are left for a human. No id-token: OperatorRole trusts any workflow of this repository.
+# github.actor, not the PR's author: a human pushing onto a Dependabot branch must not arm it.
+
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  auto-merge:
+    name: Arm auto-merge
+    if: github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Read the update's metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # For a grouped PR update-type is the highest change in it.
+      - name: Arm auto-merge for minor and patch updates
+        if: >-
+          steps.metadata.outputs.update-type == 'version-update:semver-minor' ||
+          steps.metadata.outputs.update-type == 'version-update:semver-patch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --rebase "$PR_URL"

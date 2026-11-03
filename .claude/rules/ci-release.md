@@ -19,8 +19,10 @@ Only `e2e-cloud-test.yml` and `install-test.yml` exercise real behaviour; nothin
   nondeterministically. It is path-filtered on `pull_request` plus `workflow_dispatch` because it
   provisions a paid instance per CI job per triggering event, and it tags
   itself `hidden=true` — which is why `queryByJobId` carries no hidden
-  filter. **The path filter bounds it per PR, not per push:** GitHub evaluates a `pull_request`
-  path filter against the PR's cumulative diff, so once a PR touches `baas-cli/**` *every*
+  filter. **The filter is its `changes` job, never `on: paths`:** both EC2 jobs are required checks
+  on `next-release`, and a check whose workflow a trigger filter never started stays "Expected"
+  forever, blocking the PR; a job skipped by `if:` counts as passed. **The path filter bounds it
+  per PR, not per push:** `changes` reads the PR's files, its cumulative diff, so once a PR touches `baas-cli/**` *every*
   subsequent push to it launches another instance, including one that only edits an unrelated
   workflow. Accepted (2026-09-20) — cents per push, and a measurement per revision is worth
   having. `cancel-in-progress` stays `false` deliberately: cancelling mid-`baas run` can kill the
@@ -49,6 +51,14 @@ Only `e2e-cloud-test.yml` and `install-test.yml` exercise real behaviour; nothin
   installing version X is always version X's own. `--uninstall` still deletes a stored
   `install.sh` an earlier release left; that copy's `--update` keeps working, because it hands off
   to the newest installer in plain install mode.
+
+- **Dependabot auto-merges into `next-release`, gated by a ruleset, not by the workflow.**
+  `dependabot-auto-merge.yml` only arms `gh pr merge --auto` on minor and patch PRs; what holds the
+  merge until the suite passes is the `next-release` ruleset requiring `build`, both `install.sh`
+  legs and both EC2 jobs. Delete the ruleset, or rename one of those jobs, and the merge goes through
+  with nothing run, or waits forever on a check that no longer exists. Version updates are grouped
+  per ecosystem on different weekdays because each one that touches `pom.xml` launches two
+  instances: three PRs opened together on 2026-11-02 hit `VcpuLimitExceeded`.
 
 GHA values whose origin isn't obvious from the workflow files. All are plain `vars.`, no secrets:
 a role ARN is not sensitive, and nothing else is left to hold.

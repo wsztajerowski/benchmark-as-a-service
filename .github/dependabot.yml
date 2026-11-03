@@ -1,14 +1,30 @@
 # Please see the documentation for all configuration options:
 # https://docs.github.com/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
 
+# Version updates go to next-release, so a human release merge stands between an auto-merged bump
+# and a published runner JAR; security updates still target main. Minor and patch updates arrive as
+# one grouped PR per ecosystem, which dependabot-auto-merge.yml merges once every check passes;
+# majors stay single PRs for a human. The weekdays differ because every PR touching pom.xml or the
+# e2e workflow launches two paid instances, and three ungrouped PRs at once already hit the
+# account's vCPU limit (VcpuLimitExceeded on #127).
 version: 2
 updates:
   - package-ecosystem: "maven"
     directory: "/"
+    target-branch: "next-release"
     schedule:
       interval: "weekly"
+      day: "monday"
+    groups:
+      maven-minor-and-patch:
+        update-types: ["minor", "patch"]
   # The workflow that holds AWS credentials pins its actions by commit; this keeps the pins moving.
   - package-ecosystem: "github-actions"
     directory: "/"
+    target-branch: "next-release"
     schedule:
       interval: "weekly"
+      day: "wednesday"
+    groups:
+      actions-minor-and-patch:
+        update-types: ["minor", "patch"]
