@@ -101,4 +101,16 @@ class HelpAndHintsTest {
             .contains("required with two or more")
             .contains("Printed hints always include it");
     }
+
+    /** G9: the free check sits beside the refusals it complements. */
+    @Test
+    void runsHelpOffersTheDryRun() {
+        String help = BaasApp.commandLine(new BaasApp()).getSubcommands().get("run")
+            .getUsageMessage(CommandLine.Help.Ansi.OFF);
+
+        assertThat(help).contains("--dry-run");
+        assertThat(help.replaceAll("\\s+", " "))
+            .contains("--dry-run checks the arguments on this machine for free")
+            .contains("No deployment or AWS credentials are needed.");
+    }
 }

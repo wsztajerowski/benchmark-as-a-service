@@ -131,10 +131,11 @@ class JobLaunchTest {
         assertThat(aws.events).startsWith(
             "currentImage /dev/runner/ami-id",
             "stackOutputs dev");
-        assertThat(indexOf("upload ")).isGreaterThan(indexOf("stackOutputs"));
+        assertThat(indexOf("pinnedRunnerJar")).isGreaterThan(indexOf("stackOutputs"));
         assertThat(indexOf("reserve")).isGreaterThan(indexOf("pinnedRunnerJar"));
         assertThat(indexOf("hook armed")).isGreaterThan(indexOf("reserve"));
-        assertThat(indexOf("runInstance")).isGreaterThan(indexOf("hook armed"));
+        assertThat(indexOf("upload ")).isGreaterThan(indexOf("hook armed"));
+        assertThat(indexOf("runInstance")).isGreaterThan(indexOf("upload "));
         assertThat(aws.events).contains("runInstance ami-1 c5.2xlarge subnet-1 sg-1 dev-profile-runner");
         assertThat(aws.events.getLast()).startsWith("jobRows ");
         assertThat(listener.printed).isNotNull();
@@ -267,7 +268,45 @@ class JobLaunchTest {
 
         assertThat(launch().run(request(null, false))).isEqualTo(1);
         assertThat(aws.events).noneMatch(e -> e.startsWith("runInstance"));
+        assertThat(aws.events).noneMatch(e -> e.startsWith("upload "));
         assertThat(aws.events).doesNotContain("hook armed");
+    }
+
+    /** N3: an upload that fails leaves a job item naming its prefix, never an anonymous input/. */
+    @Test
+    void aFailedUploadIsRecordedAsALaunchFailureAndLaunchesNothing() throws Exception {
+        aws.uploadFailure = new IllegalStateException("Connection reset");
+
+        assertThat(launch().run(request(null, false))).isEqualTo(1);
+        assertThat(indexOf("upload ")).isGreaterThan(indexOf("reserve"));
+        assertThat(aws.events).noneMatch(e -> e.startsWith("runInstance"));
+        assertThat(aws.status).isEqualTo(JobStatus.LAUNCH_FAILED);
+        String report = aws.texts.get("jobs/lynx-journal/" + listener.jobId + "/launch-error.txt");
+        assertThat(report).contains("step: upload").contains("message: Connection reset");
+    }
+
+    /** A refused runner release is a precondition: it leaves no job item, as before N3. */
+    @Test
+    void aRunnerReleaseThatCannotBeResolvedLeavesNoItem() {
+        aws.pinnedRunnerFailure = new IllegalStateException("checksum mismatch");
+
+        assertThatThrownBy(() -> launch().run(request(null, false))).hasMessageContaining("checksum mismatch");
+        assertThat(aws.events).noneMatch(e -> e.equals("reserve") || e.startsWith("upload "));
+        assertThat(listener.jobId).isNull();
+    }
+
+    /** The hook is armed before the upload, so an interrupt there cancels a recorded job. */
+    @Test
+    void anInterruptDuringTheUploadCancelsTheJob() throws Exception {
+        aws.duringUpload = () -> {
+            if (listener.session != null && !listener.session.ended()) {
+                listener.session.stop(JobStatus.CANCELLED);
+            }
+        };
+
+        assertThat(launch().run(request(null, false))).isEqualTo(1);
+        assertThat(aws.events).contains("stop " + JobStatus.CANCELLED);
+        assertThat(aws.status).isEqualTo(JobStatus.CANCELLED);
     }
 
     @Test
@@ -278,7 +317,7 @@ class JobLaunchTest {
         assertThat(aws.events).contains("hook armed").anyMatch(e -> e.startsWith("launchFailed"));
         assertThat(aws.status).isEqualTo(JobStatus.LAUNCH_FAILED);
         String report = aws.texts.get("jobs/lynx-journal/" + listener.jobId + "/launch-error.txt");
-        assertThat(report).contains("jobId: " + listener.jobId).contains("amiId: ami-1")
+        assertThat(report).contains("jobId: " + listener.jobId).contains("step: launch").contains("amiId: ami-1")
             .contains("subnetId: subnet-1").contains("message: InsufficientInstanceCapacity");
     }
 
