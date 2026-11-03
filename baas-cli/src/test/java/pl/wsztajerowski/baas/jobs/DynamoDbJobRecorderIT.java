@@ -183,6 +183,24 @@ class DynamoDbJobRecorderIT {
         assertThat(olderProject.getFirst().jobId()).isEqualTo("run-029");
     }
 
+    /**
+     * X3: an unconditional UpdateItem from a runner creates a bare job item. {@code ~} sorts after
+     * every job id, so it is the first row the listing reads; it is skipped, not fatal.
+     */
+    @Test
+    void theListingSkipsAJobItemItCannotRead() {
+        recorder.reserve(job);
+        client.updateItem(r -> r
+            .tableName(tableName)
+            .key(Map.of(MeasurementItemMapper.PK, AttributeValue.fromS(ResultKeys.JOB_PARTITION_KEY),
+                MeasurementItemMapper.SK, AttributeValue.fromS("~")))
+            .updateExpression("SET #status = :status")
+            .expressionAttributeNames(Map.of("#status", JobItemMapper.STATUS))
+            .expressionAttributeValues(Map.of(":status", AttributeValue.fromS("running"))));
+
+        assertThat(recorder.newestFirst(r -> true, 20)).extracting(JobItem::jobId).containsExactly(job.jobId());
+    }
+
     /** What user-data's job_status does: status and instance id only, on an existing item. */
     private void instanceWrites(JobItem target, String status) {
         client.updateItem(r -> r

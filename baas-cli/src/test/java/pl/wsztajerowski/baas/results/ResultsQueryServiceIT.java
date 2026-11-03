@@ -24,6 +24,7 @@ import software.amazon.awssdk.services.dynamodb.model.KeySchemaElement;
 import software.amazon.awssdk.services.dynamodb.model.KeyType;
 import software.amazon.awssdk.services.dynamodb.model.Projection;
 import software.amazon.awssdk.services.dynamodb.model.ProjectionType;
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
@@ -283,6 +284,21 @@ class ResultsQueryServiceIT {
     @Test
     void anEmptyPartitionReturnsNothing() {
         assertThat(service.queryProject("project-with-no-runs")).isEmpty();
+    }
+
+    /** X3: a runner can put a RESULT# row in any shape; one without kind or createdAt is skipped. */
+    @Test
+    void aRowThatCannotBeReadIsSkippedByEveryReader() {
+        put(measurement("lynx-journal", "req-1", "methodOne", Map.of()));
+        client.putItem(PutItemRequest.builder().tableName(tableName).item(Map.of(
+            MeasurementItemMapper.PK, AttributeValue.fromS("RESULT#lynx-journal"),
+            MeasurementItemMapper.SK, AttributeValue.fromS("~"),
+            MeasurementItemMapper.GSI1PK, AttributeValue.fromS(ResultKeys.jobIndexPartitionKey("req-1")),
+            MeasurementItemMapper.GSI1SK, AttributeValue.fromS("~"))).build());
+
+        assertThat(service.queryProject("lynx-journal")).hasSize(1);
+        assertThat(service.scanAllProjects(false)).hasSize(1);
+        assertThat(service.queryByJobId("req-1")).hasSize(1);
     }
 
     // ─── Job items share the table (run-status-in-dynamodb) ───────────────────────
