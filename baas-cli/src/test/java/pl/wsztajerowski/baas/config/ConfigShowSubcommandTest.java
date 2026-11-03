@@ -24,6 +24,24 @@ class ConfigShowSubcommandTest {
             .doesNotContain("  profile:");
     }
 
+    /** G12: the raw values, null for unset and for names with no deployment to derive them from. */
+    @Test
+    void theJsonFormHasTheRawValues() throws Exception {
+        BaasConfig config = new BaasConfig();
+        config.getAws().setDeployerProfile("baas-admin");
+        config.getEc2().setWatchdogMarginSeconds(120);
+
+        var json = new com.fasterxml.jackson.databind.ObjectMapper()
+            .readTree(ConfigShowSubcommand.json(config, Path.of("c.yaml")));
+
+        assertThat(json.get("configFile").asText()).isEqualTo("c.yaml");
+        assertThat(json.at("/aws/deployerProfile").asText()).isEqualTo("baas-admin");
+        assertThat(json.at("/aws/operatorProfile").isNull()).isTrue();
+        assertThat(json.at("/derived/bucket").isNull()).isTrue();
+        assertThat(json.at("/ec2/watchdogMarginSeconds").asInt()).isEqualTo(120);
+        assertThat(json.at("/git/resolveProject").asBoolean()).isFalse();
+    }
+
     @Test
     void reportsTheFileAndTheGitAndWatchdogPreferences() {
         BaasConfig config = new BaasConfig();

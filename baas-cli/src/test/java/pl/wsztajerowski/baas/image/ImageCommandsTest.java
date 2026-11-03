@@ -143,6 +143,27 @@ class ImageCommandsTest {
             "               temurin-26");
     }
 
+    /** G12: what the text shows, as one object; no image and no extension are null. */
+    @Test
+    void imageShowAsJsonCarriesTheImageItsJdksAndTheExtension() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var json = mapper.readTree(ImageShowSubcommand.json("dev", "/dev/runner/ami-id", SELECTING, "",
+            java.util.Optional.empty(), "1.5.0"));
+
+        assertThat(json.at("/image/amiId").asText()).isEqualTo("ami-1");
+        assertThat(json.at("/image/version").asText()).isEqualTo("1.5.0+ext.3f9a1c2e");
+        assertThat(json.at("/jdks/0/id").asText()).isEqualTo("corretto-25");
+        assertThat(json.at("/jdks/0/default").asBoolean()).isTrue();
+        assertThat(json.at("/jdks/1/default").asBoolean()).isFalse();
+        assertThat(json.get("extension").isNull()).isTrue();
+        assertThat(json.at("/bundledBase").asText()).isEqualTo("1.5.0");
+
+        var none = mapper.readTree(ImageShowSubcommand.json("dev", "/dev/runner/ami-id", null, "",
+            java.util.Optional.empty(), "1.5.0"));
+        assertThat(none.get("image").isNull()).isTrue();
+        assertThat(none.get("jdks").isEmpty()).isTrue();
+    }
+
     @Test
     void anImageFromBeforeJdkSelectionSaysSo() {
         assertThat(jdks(new RunnerImage("ami-1", "1.4.0", "ami-p", "2026-10-01"), java.util.Optional.empty()))
