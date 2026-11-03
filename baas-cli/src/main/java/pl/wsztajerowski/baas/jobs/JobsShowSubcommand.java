@@ -114,10 +114,8 @@ public class JobsShowSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
+        CommandRefusal.requireFormat(this.format, List.of("table", "json"));
         String format = this.format.toLowerCase(Locale.ROOT);
-        if (!List.of("table", "json").contains(format)) {
-            throw CommandRefusal.usage("Unknown --format '" + this.format + "'. Valid: table, json.");
-        }
         String notAJobId = JobReference.notAJobId(jobId);
         if (notAJobId != null) {
             throw CommandRefusal.usage(notAJobId);

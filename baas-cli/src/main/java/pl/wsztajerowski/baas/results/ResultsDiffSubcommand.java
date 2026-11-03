@@ -57,7 +57,7 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
 
     private static final Logger logger = LoggerFactory.getLogger(ResultsDiffSubcommand.class);
 
-    private static final Set<String> FORMATS = Set.of("table", "json");
+    private static final List<String> FORMATS = List.of("table", "json");
 
     @Mixin LoggingMixin loggingMixin;
 
@@ -101,9 +101,7 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
         if (jobA.equals(jobB)) {
             throw CommandRefusal.usage("Both arguments name job " + jobA + "; name two different jobs.");
         }
-        if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: table, json.");
-        }
+        CommandRefusal.requireFormat(format, FORMATS);
         BaasConfig config = session().config();
         String tableName;
         try {

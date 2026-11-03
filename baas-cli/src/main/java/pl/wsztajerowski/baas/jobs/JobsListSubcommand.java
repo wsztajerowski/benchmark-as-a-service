@@ -127,9 +127,7 @@ public class JobsListSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() throws InterruptedException {
-        if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: " + String.join(", ", FORMATS) + ".");
-        }
+        CommandRefusal.requireFormat(format, FORMATS);
         if (effectiveLimit() < 0 || offset < 0) {
             throw CommandRefusal.usage("--limit and --offset must not be negative; got " + effectiveLimit() + " and " + offset + ".");
         }
