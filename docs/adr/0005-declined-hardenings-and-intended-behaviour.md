@@ -110,6 +110,9 @@ review's `api-gaps.md`.
 - **No `jobs wait` (G5).** `e2e-cloud-test.yml` keeps its own poll loop with a copy of the terminal
   statuses (`JobStatus.EXACT_TERMINAL` plus the computed `vanished`): a new terminal status must be
   added there too, or the loop spins until its deadline.
+- **No score comparison or regression gate (G4).** `results diff` compares two jobs' measurements
+  and exits 0 whatever it finds; a CI gate reads its `--format json`. The `results compare
+  --threshold` proposal and its open questions are in the review's `user-discussion.md`.
 - **One exit code for every failure (G7).** Any outcome other than `completed`, and any config,
   credential or launch error, exits 1; unattended setup exits 1 both for a step awaiting an IAM admin
   and for a failure. `run --format json`'s `jobStatus` is how a caller tells them apart.
