@@ -250,19 +250,7 @@ public class JobsListSubcommand implements Callable<Integer> {
     }
 
     private void printJson(List<JobListing.Row> rows) {
-        var out = console();
-        out.println("[");
-        for (int i = 0; i < rows.size(); i++) {
-            var row = rows.get(i);
-            var job = row.job();
-            out.printf("  {\"jobId\":%s,\"project\":%s,\"status\":%s,\"storedStatus\":%s,\"instanceId\":%s,"
-                    + "\"instanceType\":%s,\"createdAt\":%s,\"resultPath\":%s,\"errorCode\":%s,\"tags\":%s}%s%n",
-                json(job.jobId()), json(job.project()), json(row.status()), json(job.status()),
-                json(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()),
-                json(job.instanceType()), json(job.createdAt().toString()), json(job.resultPath()),
-                json(job.errorCode()), Json.object(job.tags()), i < rows.size() - 1 ? "," : "");
-        }
-        out.println("]");
+        console().println(Json.array(rows.stream().map(JobListing.Row::json).toList()));
     }
 
     private void printCsv(List<JobListing.Row> rows) {
@@ -281,10 +269,6 @@ public class JobsListSubcommand implements Callable<Integer> {
     static String elapsed(Duration duration) {
         long seconds = Math.max(0, duration.getSeconds());
         return Elapsed.format(seconds);
-    }
-
-    private static String json(String value) {
-        return Json.string(value);
     }
 
     private static String orDash(String value) {
