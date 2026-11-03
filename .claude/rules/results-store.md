@@ -170,8 +170,11 @@ deployment-wide), `sk = <createdAt>#<jobId>`, `gsi1pk = <jobId>`, `gsi1sk = JOB`
   the id and checked it against the image. The other observed tags (`imageVersion`, `jdkVersion`,
   `cpuModel`, …) reach only the measurements — nothing writes tags to the item after the reservation —
   so `jobs list --tag jdkId=…` works, `--tag cpuModel=…` does not, and a profiler listing, which stores no
-  measurement, is still found by its JDK. It is written before `RunInstances`, and a reservation that cannot be written
-  launches nothing. Every later write — `launched`, `running`, `completed`/`failed:<n>`,
+  measurement, is still found by its JDK. It is written before anything reaches the job's prefix and
+  before `RunInstances`, and a reservation that cannot be written uploads and launches nothing (N3); a
+  failed upload after it is recorded `launch-failed`, so no `input/` exists without an item naming it.
+  The pinned runner release is seeded before the reservation: it lives under `releases/`, and a
+  checksum mismatch is a refusal that leaves no item. Every later write — `launched`, `running`, `completed`/`failed:<n>`,
   `timed-out`, `cancelled`, `launch-failed` — is a conditional `UpdateItem` requiring
   `attribute_exists(pk)` and refusing to replace a terminal status: the first outcome wins.
 - **The instance writes only `status` and `instanceId`, and no timestamp**, with the key the CLI

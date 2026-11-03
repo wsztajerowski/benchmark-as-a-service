@@ -11,10 +11,14 @@ sequenceDiagram
     participant DDB as DynamoDB results table
     participant GH as GitHub Releases (laptop only)
 
-    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--jdk id] [--tag k=v] [--format json] [--detach]
-    Note over RC: execute() -- before any AWS call:<br/>--format text or json, else exit 2. type in BenchmarkType.commandNames(), else exit 2.<br/>An unreleased CLI (BaasVersion.isReleased() false) without --runner-jar -> exit 1. baas run builds nothing.
+    User->>RC: baas run <type> [params] --benchmark-jar <path> [--project] [--instance-type] [--timeout]<br/>[--watchdog-margin] [--runner-jar] [--jdk id] [--tag k=v] [--format json] [--detach] [--dry-run]
+    Note over RC: execute() -- before any AWS call:<br/>--format text or json, else exit 2. type in BenchmarkType.commandNames(), else exit 2.<br/>Managed or no-run arguments after -- -> exit 2. --benchmark-jar not a regular file -> exit 1.
+    opt --dry-run (G9) -- before the deployment is read, no AWS call
+        Note over RC: --format json -> exit 2. -lprof alone -> runs on the runner, exit 0.<br/>LocalListing: java.home/bin/java -jar JAR ARGS -l on this machine, 120 s limit.<br/>Non-zero exit -> exit 2 with the tool's output. No listed name -> exit 2.<br/>Otherwise the names go to stdout, exit 0. Nothing is launched.
+    end
+    Note over RC: An unreleased CLI (BaasVersion.isReleased() false) without --runner-jar -> exit 1. baas run builds nothing.
     RC->>RC: OperatorSession.of(Invocation.configService(spec)).config()
-    Note over RC: resolveProject -- --project, or GitProject.repositoryName of the JAR's directory<br/>when git.resolveProject is on, else IllegalStateException naming --project.<br/>resolveResultsTable, instanceType, resolveTimings -> watchdogBound = timeout + margin (margin >= 60).<br/>buildRunnerTags: project, type, source + every --tag. A machine-observed key or project is REJECTED.<br/>--benchmark-jar missing on disk -> exit 1.
+    Note over RC: resolveProject -- --project, or GitProject.repositoryName of the JAR's directory<br/>when git.resolveProject is on, else IllegalStateException naming --project.<br/>resolveResultsTable, instanceType, resolveTimings -> watchdogBound = timeout + margin (margin >= 60).<br/>buildRunnerTags: project, type, source + every --tag. A machine-observed key or project is REJECTED.
     RC->>JL: new JobLaunch(awsFactory.apply(operatorSession.factory()), config.names(), this).run(Request)
 
     JL->>Port: currentImage(/<prefix>/runner/ami-id)
@@ -27,37 +31,44 @@ sequenceDiagram
     JL->>Port: stackOutputs(<prefix>)
     Port->>CF: describeStacks -- SubnetId, SecurityGroupId
     Note over JL: resolveNetworking: a missing output throws, before any upload
-    Note over JL: ONE clock read: jobInstant = Instant.now()<br/>jobId = JobId.generate(jobInstant), resultPath = JobLayout.jobPrefix(project, jobId)
-    JL->>RC: Listener.named(jobId, resultPath)
-    JL->>Port: upload(benchmark JAR, JobLayout.benchmarkJarKey)
-    Port->>S3: putObject jobs/<project>/<jobId>/input/benchmark.jar
-    alt --runner-jar given
-        JL->>Port: upload(runner JAR, JobLayout.runnerJarOverrideKey)
-        Port->>S3: putObject jobs/<project>/<jobId>/input/runner.jar
-    else pinned to this CLI's version
+    opt no --runner-jar: pinned to this CLI's version, a precondition -- before the job exists
         JL->>Port: pinnedRunnerJar(bucket, version, sourceRepo)
         Port->>S3: RunnerJarResolver.resolve -- head releases/<version>/benchmark-runner.jar
         opt absent
             Port->>GH: fetch benchmark-runner.jar + .sha256
-            Note over Port: verify -- a mismatch throws, nothing launched
+            Note over Port: verify -- a mismatch throws: no item, nothing uploaded or launched
             Port->>S3: putObject If-None-Match * (412/409 = another launch seeded it)
         end
     end
-    Note over JL: new UserDataScriptBuilder().build(...) with job.sortKey() from ResultKeys and JDK_ID --<br/>installs nothing. The runner gets --jdk, which starts the benchmark on /opt/jdks/id/bin/java
+    Note over JL: ONE clock read: jobInstant = Instant.now()<br/>jobId = JobId.generate(jobInstant), resultPath = JobLayout.jobPrefix(project, jobId)
+    JL->>RC: Listener.named(jobId, resultPath)
     JL->>JS: new JobSession(job, recorder, stopRecorder (5 s client), instances)
-    JL->>JS: reserve()
+    JL->>JS: reserve() -- before anything reaches the job's prefix (N3)
     JS->>DDB: UpdateItem status launching + identity, condition attribute_not_exists(pk)
     alt reservation fails
-        JL-->>RC: 1 -- NOTHING is launched
+        JL-->>RC: 1 -- NOTHING is uploaded or launched
     end
     JL->>RC: Listener.reserved(session)
-    Note over RC: shutdownHooks.accept(new Thread(onShutdown)) -- armed BEFORE RunInstances:<br/>on any JVM exit, a session not ended and not detached gets stop(cancelled)
+    Note over RC: shutdownHooks.accept(new Thread(onShutdown)) -- armed BEFORE the upload and RunInstances:<br/>on any JVM exit, a session not ended and not detached gets stop(cancelled)
+    JL->>Port: upload(benchmark JAR, JobLayout.benchmarkJarKey)
+    Port->>S3: putObject jobs/<project>/<jobId>/input/benchmark.jar
+    opt --runner-jar given
+        JL->>Port: upload(runner JAR, JobLayout.runnerJarOverrideKey)
+        Port->>S3: putObject jobs/<project>/<jobId>/input/runner.jar
+    end
+    alt an upload throws
+        JL->>JS: recordLaunchFailed(errorCode)
+        JS->>DDB: UpdateItem launch-failed, never over a terminal status (best effort)
+        JL->>Port: putText(JobLayout.launchErrorKey) -- launch-error.txt, step upload (best effort)
+        JL-->>RC: 1 -- nothing launched
+    end
+    Note over JL: new UserDataScriptBuilder().build(...) with job.sortKey() from ResultKeys and JDK_ID --<br/>installs nothing. The runner gets --jdk, which starts the benchmark on /opt/jdks/id/bin/java
     JL->>Port: instances.runInstance(ami, type, subnet, sg, profile, userData, jobId, prefix)
     Port->>EC2: RunInstances -- Ec2ProvisioningService: clientToken = jobId, IMDSv2 required,<br/>tags only project=baas, baas-role, baas-job-id, baas-deployment
     alt RunInstances throws
         JL->>JS: recordLaunchFailed(errorCode)
         JS->>DDB: UpdateItem launch-failed + errorCode, never over a terminal status (best effort)
-        JL->>Port: putText(JobLayout.launchErrorKey) -- launch-error.txt (best effort)
+        JL->>Port: putText(JobLayout.launchErrorKey) -- launch-error.txt, step launch (best effort)
         JL-->>RC: 1
     end
     EC2-->>JL: instanceId
