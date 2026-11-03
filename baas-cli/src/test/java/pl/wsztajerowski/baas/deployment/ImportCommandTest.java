@@ -1,10 +1,9 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.image.RunnerImageExtension;
@@ -57,24 +56,12 @@ class ImportCommandTest {
 
     private int baas(String... args) throws Exception {
         TestDeployments.write(dir, TARGET);
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == ImportCommand.class) {
-                    var command = new ImportCommand();
-                    command.awsFor = config -> target;
-                    command.context.use(Console.withFlags(new PrintWriter(out, true), interactive, false));
-                    return (K) command;
-                }
-                return defaults.create(cls);
-            }
-        };
-        return BaasApp.commandLine(new BaasApp(dir), factory)
-            .setOut(new PrintWriter(out))
-            .setErr(new PrintWriter(new StringWriter()))
-            .execute(args);
+        var command = new ImportCommand();
+        command.awsFor = config -> target;
+        command.context.use(Console.withFlags(new PrintWriter(out, true), interactive, false));
+        var run = TestCli.at(dir).with(ImportCommand.class, command).run(args);
+        out.write(run.out());
+        return run.exit();
     }
 
     private int importAll(String... extra) throws Exception {

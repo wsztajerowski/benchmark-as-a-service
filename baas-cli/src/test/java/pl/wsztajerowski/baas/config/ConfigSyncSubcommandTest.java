@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.session.ConfigService;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
@@ -15,8 +16,6 @@ import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.services.sts.model.StsException;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
@@ -154,19 +153,16 @@ class ConfigSyncSubcommandTest {
         assertThat(service().fileOf("baas-123456789012")).doesNotExist();
     }
 
-    private int sync(CommandLine.IFactory factory, String... options) {
+    private int sync(ConfigSyncSubcommand command, String... options) {
         String[] args = new String[options.length + 2];
         System.arraycopy(options, 0, args, 0, options.length);
         args[options.length] = "config";
         args[options.length + 1] = "sync";
-        return run(factory, args);
+        return run(command, args);
     }
 
-    private int run(CommandLine.IFactory factory, String... args) {
-        return BaasApp.commandLine(new BaasApp(dir), factory)
-            .setOut(new PrintWriter(new StringWriter()))
-            .setErr(new PrintWriter(new StringWriter()))
-            .execute(args);
+    private int run(ConfigSyncSubcommand command, String... args) {
+        return TestCli.at(dir).with(ConfigSyncSubcommand.class, command).run(args).exit();
     }
 
     private ConfigService service() {
@@ -178,7 +174,7 @@ class ConfigSyncSubcommandTest {
     }
 
     /** A bucket in {@code bucketRegion} (none when null) and a stack there with {@code outputs}. */
-    private static CommandLine.IFactory deployment(String bucketRegion, Map<String, String> outputs) {
+    private static ConfigSyncSubcommand deployment(String bucketRegion, Map<String, String> outputs) {
         return deployment(bucketRegion, outputs, true);
     }
 
@@ -186,46 +182,36 @@ class ConfigSyncSubcommandTest {
      * As above, with credentials that may ({@code canAssume}) or may not assume the operator role.
      * The caller is an IAM user, so every sync takes path C.
      */
-    private static CommandLine.IFactory deployment(String bucketRegion, Map<String, String> outputs,
+    private static ConfigSyncSubcommand deployment(String bucketRegion, Map<String, String> outputs,
                                                    boolean canAssume) {
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        return new CommandLine.IFactory() {
+        return new ConfigSyncSubcommand() {
             @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == ConfigSyncSubcommand.class) {
-                    return (K) new ConfigSyncSubcommand() {
-                        @Override
-                        OperatorSession.Aws aws() {
-                            return new OperatorSession.Aws() {
-                                public OperatorSession.Caller callerIdentity(AwsCredentialsProvider source, String region) {
-                                    return new OperatorSession.Caller("arn:aws:iam::123456789012:user/someone", "123456789012");
-                                }
+            OperatorSession.Aws aws() {
+                return new OperatorSession.Aws() {
+                    public OperatorSession.Caller callerIdentity(AwsCredentialsProvider source, String region) {
+                        return new OperatorSession.Caller("arn:aws:iam::123456789012:user/someone", "123456789012");
+                    }
 
-                                public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn, String sessionName) {
-                                    if (!canAssume) {
-                                        throw StsException.builder().message("not authorized to perform sts:AssumeRole").build();
-                                    }
-                                    return StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIA", "secret"));
-                                }
-
-                                public Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String from) {
-                                    return Optional.ofNullable(bucketRegion);
-                                }
-
-                                public Optional<String> recordedCliVersion(AwsCredentialsProvider credentials, String region, String stack) {
-                                    return Optional.empty();
-                                }
-                            };
+                    public AwsCredentialsProvider assume(AwsCredentialsProvider source, String region, String roleArn, String sessionName) {
+                        if (!canAssume) {
+                            throw StsException.builder().message("not authorized to perform sts:AssumeRole").build();
                         }
+                        return StaticCredentialsProvider.create(AwsBasicCredentials.create("AKIA", "secret"));
+                    }
 
-                        @Override
-                        Map<String, String> stackOutputs(AwsClientFactory factory, String stack) {
-                            return factory.region().equals(bucketRegion) ? outputs : Map.of();
-                        }
-                    };
-                }
-                return defaults.create(cls);
+                    public Optional<String> bucketRegion(AwsCredentialsProvider credentials, String bucket, String from) {
+                        return Optional.ofNullable(bucketRegion);
+                    }
+
+                    public Optional<String> recordedCliVersion(AwsCredentialsProvider credentials, String region, String stack) {
+                        return Optional.empty();
+                    }
+                };
+            }
+
+            @Override
+            Map<String, String> stackOutputs(AwsClientFactory factory, String stack) {
+                return factory.region().equals(bucketRegion) ? outputs : Map.of();
             }
         };
     }

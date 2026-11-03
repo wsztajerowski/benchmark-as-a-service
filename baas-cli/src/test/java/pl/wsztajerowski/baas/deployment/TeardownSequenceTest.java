@@ -2,9 +2,8 @@ package pl.wsztajerowski.baas.deployment;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.image.RunnerImageParameters;
 import pl.wsztajerowski.baas.jobs.Ec2ProvisioningService.LiveRunner;
@@ -45,29 +44,15 @@ class TeardownSequenceTest {
 
     private int teardown(String... extra) throws Exception {
         TestDeployments.write(dir, D);
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == TeardownCommand.class) {
-                    var command = new TeardownCommand();
-                    command.awsFor = config -> aws;
-                    command.exportAwsFor = config -> exportAws;
-                    command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), interactive, false));
-                    command.answerReader = answers;
-                    return (K) command;
-                }
-                return defaults.create(cls);
-            }
-        };
+        var command = new TeardownCommand();
+        command.awsFor = config -> aws;
+        command.exportAwsFor = config -> exportAws;
+        command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), interactive, false));
+        command.answerReader = answers;
         String[] args = new String[3 + extra.length];
         System.arraycopy(new String[]{"admin", "deployment", "teardown"}, 0, args, 0, 3);
         System.arraycopy(extra, 0, args, 3, extra.length);
-        return BaasApp.commandLine(new BaasApp(dir), factory)
-            .setOut(new PrintWriter(new StringWriter()))
-            .setErr(new PrintWriter(new StringWriter()))
-            .execute(args);
+        return TestCli.at(dir).with(TeardownCommand.class, command).run(args).exit();
     }
 
     @Test

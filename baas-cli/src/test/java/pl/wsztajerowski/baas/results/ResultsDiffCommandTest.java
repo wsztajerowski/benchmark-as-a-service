@@ -9,16 +9,14 @@ import org.junit.jupiter.api.parallel.Resources;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.session.BaasConfig;
 
-import java.io.ByteArrayOutputStream;
-import java.io.PrintStream;
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -86,23 +84,8 @@ class ResultsDiffCommandTest {
             }
         };
         diff.context.use(Console.withFlags(new PrintWriter(out, true), interactive, interactive));
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        var cli = BaasApp.commandLine(new BaasApp(dir), new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> type) throws Exception {
-                return type == ResultsDiffSubcommand.class ? (K) diff : defaults.create(type);
-            }
-        });
-        var err = new ByteArrayOutputStream();
-        PrintStream originalErr = System.err;
-        try {
-            System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
-            int code = cli.execute(args);
-            return new Captured(out.toString(), err.toString(StandardCharsets.UTF_8), code);
-        } finally {
-            System.setErr(originalErr);
-        }
+        var run = TestCli.at(dir).with(ResultsDiffSubcommand.class, diff).runCapturingLog(args);
+        return new Captured(out.toString(), run.err(), run.exit());
     }
 
     private static Map<String, String> tags(String type, String instanceType, String imageVersion) {

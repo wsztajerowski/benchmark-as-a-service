@@ -19,7 +19,7 @@ import java.util.Set;
  * In-memory AWS for the walkthrough, written by hand as the module's fakes are. Every call is
  * recorded in order, so a test can say what was — and was not — asked of AWS.
  */
-final class FakeSetupAws implements SetupAws {
+public final class FakeSetupAws implements SetupAws {
 
     static final String ACCOUNT = "123456789012";
     static final String USER = "arn:aws:iam::" + ACCOUNT + ":user/alice";
@@ -48,6 +48,14 @@ final class FakeSetupAws implements SetupAws {
     Optional<RunningBuild> runningBuild = Optional.empty();
     IllegalStateException buildFailure;
     RuntimeException imageFailure;
+
+    /** A caller the deployer permission check denies {@code actions}, for tests outside this package. */
+    public static SetupAws denied(String... actions) {
+        var aws = new FakeSetupAws();
+        aws.preflights.clear();
+        aws.preflights.add(new Preflight.Denied(List.of(actions)));
+        return aws;
+    }
 
     /** A factory handing out this one fake, recording each region and profile asked for. */
     java.util.function.BiFunction<String, String, SetupAws> factory() {
