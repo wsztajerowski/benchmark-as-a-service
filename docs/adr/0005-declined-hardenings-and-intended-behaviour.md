@@ -55,6 +55,17 @@ was declined on its failure mode: a subtly wrong condition denies the runner its
 disabling both the normal path and the watchdog, and shows up only when a paid run hangs. The risk
 itself is in *Accepted risks*.
 
+## The runner's table writes are not narrowed by attribute (X3, 2026-11-03)
+
+A runner can create or rewrite any job item (`UpdateItem` creates a missing item, and IAM cannot
+require the `attribute_exists(pk)` that user-data sends) and put a `RESULT#` row of any shape. BaaS
+itself never does: `baas run` creates the job item before launch. Narrowing `UpdateItem` with
+`dynamodb:Attributes` to `pk`, `sk`, `status` and `instanceId` was declined: a bare item can still be
+created, so it closes only part of the gap, and it is an IAM change carrying the live check. Instead
+every reader skips an item it cannot parse with a warning (`TableItems`), so a forged row costs a line
+rather than every listing until an account admin deletes it. The trust position is that of *Runners
+can terminate each other* and S7.
+
 ## The results table formats scores in the JVM's locale (U15, 2026-10-01)
 
 `baas results`' table prints `9702970,774` under pl-PL. That is right for a person reading a table;

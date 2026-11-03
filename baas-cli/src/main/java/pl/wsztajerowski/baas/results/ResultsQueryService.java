@@ -39,7 +39,8 @@ public class ResultsQueryService implements AutoCloseable {
     /**
      * The table holds job items too, at {@code pk = JOB}. A {@code Scan} sees every partition, so
      * each one restricts itself to measurements; {@link MeasurementItemMapper#fromItem} refuses
-     * anything else, so a reader that forgets fails loudly.
+     * anything else, so a reader that forgets warns about every job item it meets
+     * ({@link TableItems}).
      */
     private static final String MEASUREMENTS_ONLY = "begins_with(#pk, :resultPrefix)";
 
@@ -98,7 +99,7 @@ public class ResultsQueryService implements AutoCloseable {
         List<ResultRow> rows = new ArrayList<>();
         for (var page : client.scanPaginator(request.build())) {
             for (Map<String, AttributeValue> item : page.items()) {
-                rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+                TableItems.read(item, ResultsQueryService::row).ifPresent(rows::add);
             }
         }
         return rows;
@@ -204,7 +205,7 @@ public class ResultsQueryService implements AutoCloseable {
         for (var page : client.queryPaginator(request)) {
             for (Map<String, AttributeValue> item : page.items()) {
                 if (item.containsKey(MeasurementItemMapper.KIND)) {
-                    rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+                    TableItems.read(item, ResultsQueryService::row).ifPresent(rows::add);
                 } else {
                     jobItemSeen = true;
                 }
@@ -222,10 +223,14 @@ public class ResultsQueryService implements AutoCloseable {
         List<ResultRow> rows = new ArrayList<>();
         for (var page : client.queryPaginator(request)) {
             for (Map<String, AttributeValue> item : page.items()) {
-                rows.add(ResultRow.from(MeasurementItemMapper.fromItem(item)));
+                TableItems.read(item, ResultsQueryService::row).ifPresent(rows::add);
             }
         }
         return rows;
+    }
+
+    private static ResultRow row(Map<String, AttributeValue> item) {
+        return ResultRow.from(MeasurementItemMapper.fromItem(item));
     }
 
     @Override

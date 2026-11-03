@@ -389,8 +389,8 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              # Measurements only: a runner can put items in RESULT#<project> partitions and
-              # nowhere else, so it cannot forge a job item.
+              # Measurements: a runner can put items in RESULT#<project> partitions, any project's,
+              # in any shape. Readers skip an item they cannot parse (X3).
               - Effect: Allow
                 Action:
                   - dynamodb:PutItem
@@ -400,9 +400,10 @@ Resources:
                   ForAllValues:StringLike:
                     dynamodb:LeadingKeys:
                       - "RESULT#*"
-              # Its own job's status, written by user-data's job_status. UpdateItem only, and
-              # only in the single JOB partition — no Put, so it can never create a job item
-              # (user-data's writes are also conditioned on attribute_exists(pk)).
+              # Its own job's status, written by user-data's job_status, in the single JOB partition.
+              # BaaS never creates a job item here: baas run does, before launch, and job_status
+              # sends attribute_exists(pk). IAM cannot require that condition, and UpdateItem
+              # creates a missing item, so code on a runner can create or rewrite any job item (X3).
               - Effect: Allow
                 Action: dynamodb:UpdateItem
                 Resource: !GetAtt ResultsTable.Arn
