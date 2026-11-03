@@ -54,7 +54,6 @@ None open.
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
 | PT3 | perfasm's `savePerfTo`, `savePerfBinTo`, `saveLogTo` (and `…ToFile`) write outside the uploaded tree | S | Low | open, untestable today |
-| E5 | `jobs diff` columns shift when a value is wider than its column (CPU model names) | XS | Info | open |
 | A4 | A store failure after the upload loses the measurement row | M | Med → reduced | open |
 | S7 | A runner can overwrite another job's objects under `jobs/*` | M | Med → reduced | open |
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
@@ -148,12 +147,6 @@ perfasm cannot run on the image today: no instance type the operator policy allo
 m6i, m7i, within the 33-vCPU quota) exposes the hardware counters it needs (c5.2xlarge and c5.4xlarge
 checked), so an injection could not be tested. **Fix**, once a counter-exposing type is allowed: inject
 `savePerfTo`/`savePerfBinTo`/`saveLogTo` under `profiler-output` like `dir`, and manage the keys.
-
-### E5 — `jobs diff` columns shift on a long value · Could · XS
-
-`JobsDiffSubcommand` builds a fixed-width `Table` (91 columns). A value wider than its column, such as
-`Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz`, pushes the next column right instead of being
-clipped or wrapping, so that row no longer lines up with the header. Seen 2026-10-10 on c5 vs c6i.
 
 ### Codebase review 2026-10-13 — X, G, K, T, B
 

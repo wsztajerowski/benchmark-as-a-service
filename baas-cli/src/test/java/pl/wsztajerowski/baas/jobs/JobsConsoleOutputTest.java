@@ -66,6 +66,29 @@ class JobsConsoleOutputTest {
         assertThat(diff(false)).isEqualTo(expected);
     }
 
+    /** E5: a value wider than its column widens the column, so every row still lines up. */
+    @Test
+    void aLongValueWidensItsColumnInsteadOfShiftingTheNext() {
+        var command = new JobsDiffSubcommand();
+        command.jobA = "20260724T120000000Z-a3f9c21b";
+        command.jobB = "20260811T093000000Z-b7e4d0f2";
+        Map<String, Map<String, Difference>> differences = new LinkedHashMap<>();
+        Map<String, Difference> cpu = new LinkedHashMap<>();
+        cpu.put("model", new Difference("Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz", "Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz"));
+        cpu.put("vcpus", new Difference("2", "4"));
+        differences.put("cpu", cpu);
+        var out = new StringWriter();
+        command.printDiff(Console.plain(new PrintWriter(out, true)), differences, null);
+
+        String fmt = "%-10s %-18s %-45s %-45s%n";
+        assertThat(out.toString()).endsWith(
+            String.format(fmt, "GROUP", "FIELD", command.jobA, command.jobB)
+            + "-".repeat(121) + System.lineSeparator()
+            + String.format(fmt, "cpu", "model", "Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz",
+                "Intel(R) Xeon(R) Platinum 8375C CPU @ 2.90GHz")
+            + String.format(fmt, "cpu", "vcpus", "2", "4"));
+    }
+
     @Test
     void theColouredDiffDistinguishesTheSidesWithoutMovingThem() {
         String coloured = diff(true);
