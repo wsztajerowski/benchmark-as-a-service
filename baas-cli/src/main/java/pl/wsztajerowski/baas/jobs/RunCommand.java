@@ -63,6 +63,10 @@ import java.util.regex.Pattern;
         "profiler and async's libPath; -h, -l, -lp and -lrf (JCStress: -h, -l, -p)",
         "measure nothing. Both are refused before anything is launched.",
         "",
+        "--dry-run checks the arguments on this machine for free: it runs the JAR's",
+        "own listing with them (java -jar <jar> <args> -l), prints what would run,",
+        "and launches nothing. No deployment or AWS credentials are needed.",
+        "",
         "JMH runs with -foe true unless you pass -foe: one failed benchmark fails the",
         "job and stores no measurement (JMH's own default, false, would end the job",
         "completed with only the benchmarks that succeeded). To keep those, add",
@@ -96,6 +100,9 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     /** Replaced in tests, so a test JVM does not exit with a hook per launch it drove. */
     Consumer<Thread> shutdownHooks = Runtime.getRuntime()::addShutdownHook;
+
+    /** Replaced in tests: how {@code --dry-run} starts the benchmark JAR's listing. */
+    LocalListing.Runner localListing = LocalListing::run;
 
     /** Replaced in tests: the AWS a launch talks to, given the operator session's clients. */
     Function<AwsClientFactory, RunAws> awsFactory = AwsRunAws::new;
@@ -172,6 +179,12 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             + "needed — while diagnostics stay on standard error.")
     String format;
 
+    @Option(names = "--dry-run",
+        description = "Check the benchmark arguments on this machine and launch nothing: runs the benchmark "
+            + "JAR's own listing with them (java -jar <jar> <args> -l), prints what would run, and fails "
+            + "when JMH or JCStress rejects them or nothing matches. Makes no AWS call.")
+    boolean dryRun;
+
     @Option(names = "--detach",
         description = "Return once the instance is launched instead of waiting for the job to end. "
             + "The job then ends on its instance alone, bounded by its watchdog: follow it with "
@@ -211,7 +224,8 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             // resolveResultsTable() both do. Those fail before a job exists, so the object
             // carries nulls; a consumer still gets one parseable object saying it failed rather
             // than empty output it has to special-case.
-            if (jsonSummary()) {
+            // A dry run has no job to summarise; its --format json is refused.
+            if (jsonSummary() && !dryRun) {
                 recordEndStatus();
                 printJobSummary(exitCode);
             }
@@ -277,6 +291,19 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         }
         refuseManagedOrNoRun();
 
+        // The JAR is named, never derived. Checked before anything reads the deployment, so a dry run
+        // reports it too, and before the image lookup and any upload. A regular file: a directory
+        // passed exists() and then failed as the upload of a job already reserved.
+        if (!Files.isRegularFile(benchmarkJar)) {
+            throw CommandRefusal.refused((Files.exists(benchmarkJar) ? "Benchmark JAR is not a file: "
+                : "Benchmark JAR not found: ") + benchmarkJar + "\nBuild it first, then pass --benchmark-jar.");
+        }
+
+        // Before the deployment is read: a dry run needs no configured deployment and no credentials.
+        if (dryRun) {
+            return dryRun();
+        }
+
         // Checked first, before resolving the project, the results table, the runner image or
         // anything else: a job that cannot name the runner JAR it will execute is going to fail
         // anyway, and there is deliberately no fallback — two provisioning paths produce silently
@@ -312,13 +339,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         int resolvedWallClock = timings.watchdogSeconds();
         logger.debug("Resolved job parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedProject, benchmarkParams);
-
-        // The JAR is named, never derived. Checked before the image lookup and before any upload,
-        // like every other precondition this command has.
-        if (!benchmarkJar.toFile().exists()) {
-            throw CommandRefusal.refused("Benchmark JAR not found: " + benchmarkJar
-                + "\nBuild it first, then pass --benchmark-jar.");
-        }
 
         summaryDeployment = config.getPrefix();
         var request = new JobLaunch.Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar,
@@ -479,6 +499,46 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
                 + "measuring, so the job would measure nothing. Run it locally: " + localCommand
                 + "\nNothing was launched.");
         }
+    }
+
+    /**
+     * {@code --dry-run} (G9): the benchmark JAR's own listing, on this machine, with the job's
+     * arguments. JMH and JCStress parse every option before they list, so a typo fails here; a
+     * pattern that matches nothing still exits 0 in both, so the names are counted too. Runs after
+     * every check {@code baas run} makes on the arguments and the JAR's path, and before anything
+     * reads the deployment.
+     */
+    int dryRun() throws java.io.IOException, InterruptedException {
+        if (jsonSummary()) {
+            throw CommandRefusal.usage("--dry-run has no job to summarise, so it takes no --format json; its "
+                + "exit code says whether the arguments passed.\nNothing was launched.");
+        }
+        BenchmarkArgs reading = BenchmarkArgs.of(BenchmarkType.fromCommandName(benchmarkType));
+        if (reading.isProfilerListing(benchmarkParams)) {
+            logger.info("-lprof lists the runner's profilers, so it runs as a job on the runner; there is "
+                + "nothing to check on this machine. Nothing was launched.");
+            return 0;
+        }
+        var command = LocalListing.command(Path.of(System.getProperty("java.home")), benchmarkJar, benchmarkParams);
+        LocalListing.Result listing = localListing.run(command);
+        String ran = String.join(" ", command.stream().map(RunCommand::shellWord).toList());
+        if (listing.timedOut()) {
+            throw CommandRefusal.usage(ran + " did not finish in " + LocalListing.LIMIT_SECONDS
+                + " s.\nNothing was launched.");
+        }
+        if (listing.exitCode() != 0) {
+            throw CommandRefusal.usage(reading.tool() + " rejected the arguments on this machine (Java "
+                + System.getProperty("java.version") + ", exit " + listing.exitCode() + "):\n"
+                + listing.output().stripTrailing() + "\n" + ran + "\nNothing was launched.");
+        }
+        List<String> names = listing.names();
+        if (names.isEmpty()) {
+            throw CommandRefusal.usage("Nothing matches: " + reading.tool() + " lists nothing for these "
+                + "arguments.\n" + ran + "\nNothing was launched.");
+        }
+        names.forEach(context.console()::println);
+        logger.info("Dry run: {} would run {} benchmark(s). Nothing was launched.", reading.tool(), names.size());
+        return 0;
     }
 
     /**
