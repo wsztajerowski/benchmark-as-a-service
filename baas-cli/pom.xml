@@ -178,9 +178,9 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- A command built outside a BaasApp tree reads ~/.baas, so unit tests get a home
-                         of their own. Not ~/.aws: the SDK finds it through HOME first, so
-                         testsupport.NoRealAwsProfile points it away for every test, IDE runs included.
+                    <!-- Unit tests get a home of their own. ~/.baas is covered for every run, IDE runs
+                         included, by testsupport.NoRealBaasHome (the baas.home property), and ~/.aws by
+                         testsupport.NoRealAwsProfile, since the SDK finds it through HOME first.
                          ITs keep the real user.home, where ~/.testcontainers.properties lives. -->
                     <systemPropertyVariables>
                         <user.home>${project.build.directory}/test-home</user.home>

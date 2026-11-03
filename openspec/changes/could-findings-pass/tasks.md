@@ -58,19 +58,19 @@ only free AWS reads.
 
 ## 4. G14: `baas admin deployment show`
 
-- [ ] 4.1 Make `GitHubStep.deployed` reachable from `deployment`, public or moved beside `CoreStack`,
+- [x] 4.1 Make `GitHubStep.deployed` reachable from `deployment`, public or moved beside `CoreStack`,
   without crossing a slice rule. Verify: `SliceBoundaryTest` stays green.
-- [ ] 4.2 Add `DeploymentShowSubcommand` (`show`, `--format text|json`) under `DeploymentCommand`. It
+- [x] 4.2 Add `DeploymentShowSubcommand` (`show`, `--format text|json`) under `DeploymentCommand`. It
   reads the stack, its parameters and outputs, the federation and the image under
   `DeployerSession.factory(config)`, and refuses a missing stack with exit 1 naming setup. The
   rendering is a static function of a `Report` record. Verify with unit tests of both renderings,
   including with and without GitHub trust and image, and JSON escaping through `Json.string`.
-- [ ] 4.3 Update `CommandTreeTest` (or the test covering `admin deployment`'s usage) to the five verbs,
+- [x] 4.3 Update `CommandTreeTest` (or the test covering `admin deployment`'s usage) to the five verbs,
   and the shell-completion expectations if they enumerate verbs. Verify that the suite is green.
 
 ## 5. T10: no test reads the real `~/.baas`
 
-- [ ] 5.1 Make `ConfigService.defaultRoot()` honour the `baas.home` system property. Add
+- [x] 5.1 Make `ConfigService.defaultRoot()` honour the `baas.home` system property. Add
   `testsupport.NoRealBaasHome`, registered in
   `META-INF/services/org.junit.platform.launcher.LauncherSessionListener` beside
   `NoRealAwsProfile`. Update surefire's `user.home` comment. Verify with a `NoRealBaasHomeTest`:
