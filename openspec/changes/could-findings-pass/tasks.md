@@ -96,19 +96,19 @@ only free AWS reads.
 
 Uses the reactor JAR via the `baas-dev` alias (`--deployment baas-development`, `--runner-jar`).
 
-- [ ] 7.1 Dry runs, free: valid JMH arguments, a typo, a non-matching pattern, JCStress `-t NoSuchTest`,
+- [x] 7.1 Dry runs, free: valid JMH arguments, a typo, a non-matching pattern, JCStress `-t NoSuchTest`,
   `-lprof`, and `--format json`, with exit codes as specified. Run one with
   `AWS_CONFIG_FILE=/dev/null AWS_SHARED_CREDENTIALS_FILE=/dev/null` and a `baas.home` pointing at
   an empty directory, to prove that no deployment or credentials are needed. Record the outputs.
-- [ ] 7.2 `admin deployment show` against `baas-development`, text and `--format json | jq .`, free.
+- [x] 7.2 `admin deployment show` against `baas-development`, text and `--format json | jq .`, free.
   Compare it with `aws cloudformation describe-stacks` and `admin image show`.
-- [ ] 7.3 A failed upload, free (no instance): pass a `--benchmark-jar` that cannot be read
+- [x] 7.3 A failed upload, free (no instance): pass a `--benchmark-jar` that cannot be read
   (`chmod 000`). Expect exit 1, a `launch-failed` item in `jobs list`, and `launch-error.txt` naming
   `upload` via `jobs download`. If 2.4's regular-file check or the local read refuses it first,
   record that and instead revoke the upload with a deny-only session policy on the operator profile.
-- [ ] 7.4 One attached `baas run` of `fake-jmh-benchmarks` on `baas-development` (paid launch 1):
+- [x] 7.4 One attached `baas run` of `fake-jmh-benchmarks` on `baas-development` (paid launch 1):
   completed, measurements printed, and the log order shows the reservation before the upload.
-- [ ] 7.5 One `baas run` interrupted with Ctrl+C during the upload, using a large JAR, in the
+- [x] 7.5 One `baas run` interrupted with Ctrl+C during the upload, using a large JAR, in the
   foreground (no paid launch if the interrupt lands before `RunInstances`). Expect the item to read
   `cancelled` and no instance. Skip if the upload is too fast to interrupt reliably, and say so in
   `verify.md`.
