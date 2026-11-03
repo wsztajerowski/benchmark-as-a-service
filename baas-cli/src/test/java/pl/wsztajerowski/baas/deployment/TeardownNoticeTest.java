@@ -80,8 +80,8 @@ class TeardownNoticeTest {
     private TeardownCommand teardown(boolean interactive, String... args) {
         var command = new TeardownCommand();
         new picocli.CommandLine(command).parseArgs(args);
-        command.console = pl.wsztajerowski.baas.console.Console.withFlags(
-            new java.io.PrintWriter(new java.io.StringWriter()), interactive, false);
+        command.context.use(pl.wsztajerowski.baas.console.Console.withFlags(
+            new java.io.PrintWriter(new java.io.StringWriter()), interactive, false));
         return command;
     }
 

@@ -39,9 +39,9 @@ class RunCommandLaunchTest {
         config.setPrefix("dev");
         config.getAws().setRegion("eu-central-1");
         var command = new RunCommand();
-        command.operatorSession = OperatorSession.adopting(config, null, Map.of());
+        command.context.use(OperatorSession.adopting(config, null, Map.of()));
         command.awsFactory = factory -> aws;
-        command.console = Console.plain(new PrintWriter(out));
+        command.context.use(Console.plain(new PrintWriter(out)));
         command.shutdownHooks = hook -> armedHooks++;
         return new CommandLine(command).setExecutionExceptionHandler(pl.wsztajerowski.baas.BaasApp::reportFailure).execute(args);
     }

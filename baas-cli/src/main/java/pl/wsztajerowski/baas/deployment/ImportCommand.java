@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
@@ -9,7 +10,6 @@ import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
-import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.image.RunnerImageExtension;
 import pl.wsztajerowski.baas.image.RunnerImageParameters;
@@ -49,6 +49,8 @@ public class ImportCommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    @Mixin CommandContext context = new CommandContext();
+
     @Parameters(index = "0", paramLabel = "<bundle>", description = "The directory `admin deployment export` wrote.")
     Path bundleDirectory;
 
@@ -59,9 +61,6 @@ public class ImportCommand implements Callable<Integer> {
 
     /** The deployer's AWS calls. Replaced by tests with a hand-written fake. */
     Function<BaasConfig, ExportAws> awsFor = config -> new AwsExportAws(DeployerSession.factory(config));
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
 
     @Override
     public Integer call() throws Exception {
@@ -104,11 +103,11 @@ public class ImportCommand implements Callable<Integer> {
 
             if (selected.contains(Part.RESULTS)) {
                 long[] written = load.results(aws, names.resultsTable(), target);
-                console().printf("  results     %d written, %d already present%n", written[0], written[1]);
+                context.console().printf("  results     %d written, %d already present%n", written[0], written[1]);
             }
             if (selected.contains(Part.RECORDINGS)) {
                 long[] written = load.recordings(aws, names.bucket(), target);
-                console().printf("  recordings  %d written, %d already present%n", written[0], written[1]);
+                context.console().printf("  recordings  %d written, %d already present%n", written[0], written[1]);
             }
             if (selected.contains(Part.EXTENSION)) {
                 handOffExtension(aws, bundle, manifest, target);
@@ -118,20 +117,20 @@ public class ImportCommand implements Callable<Integer> {
     }
 
     private void describe(Bundle.Manifest m, Set<Part> selected, String target, String account, String region) {
-        console().println("Import " + bundleDirectory.toAbsolutePath().normalize());
-        console().println("  from  " + m.deployment() + " (account " + m.account() + ", " + m.region()
+        context.console().println("Import " + bundleDirectory.toAbsolutePath().normalize());
+        context.console().println("  from  " + m.deployment() + " (account " + m.account() + ", " + m.region()
             + "), exported " + m.exportedAt());
-        console().println("  into  " + target + " (account " + account + ", " + region + ")");
+        context.console().println("  into  " + target + " (account " + account + ", " + region + ")");
         if (selected.contains(Part.RESULTS)) {
-            console().printf("  results     %d items: %d measurements, %d jobs%n", m.items(), m.measurementItems(), m.jobItems());
+            context.console().printf("  results     %d items: %d measurements, %d jobs%n", m.items(), m.measurementItems(), m.jobItems());
         }
         if (selected.contains(Part.RECORDINGS)) {
-            console().printf("  recordings  %d objects, %d bytes%n", m.objects(), m.bytes());
+            context.console().printf("  recordings  %d objects, %d bytes%n", m.objects(), m.bytes());
         }
         if (selected.contains(Part.EXTENSION)) {
-            console().println("  extension   " + (m.extensionHash() == null ? "none in the bundle" : m.extensionHash()));
+            context.console().println("  extension   " + (m.extensionHash() == null ? "none in the bundle" : m.extensionHash()));
         }
-        console().println("Nothing the deployment already holds is overwritten.");
+        context.console().println("Nothing the deployment already holds is overwritten.");
     }
 
     /**
@@ -141,18 +140,18 @@ public class ImportCommand implements Callable<Integer> {
      */
     private void handOffExtension(ExportAws aws, Bundle bundle, Bundle.Manifest manifest, String target) {
         if (manifest.extensionHash() == null) {
-            console().println("  extension   " + manifest.deployment() + " held none; nothing to push.");
+            context.console().println("  extension   " + manifest.deployment() + " held none; nothing to push.");
             return;
         }
         String deployed = RunnerImageExtension.parse(call(target, "cloudformation:DescribeStacks",
             () -> aws.stackParameters(target)).getOrDefault(RunnerImageParameters.EXTENSION_DATA, "")).content();
         if (manifest.extensionHash().equals(RunnerImageExtension.identity(deployed))) {
-            console().println("  extension   " + manifest.extensionHash() + " is already deployed on " + target + ".");
+            context.console().println("  extension   " + manifest.extensionHash() + " is already deployed on " + target + ".");
             return;
         }
-        console().println("  extension   " + manifest.extensionHash() + " is in " + bundle.extension()
+        context.console().println("  extension   " + manifest.extensionHash() + " is in " + bundle.extension()
             + ". Push it, which rebuilds the image, with:");
-        console().println("                " + Hints.command(target, "admin image build --extension " + bundle.extension()));
+        context.console().println("                " + Hints.command(target, "admin image build --extension " + bundle.extension()));
     }
 
     private static <T> T call(String deployment, String action, Supplier<T> step) {
@@ -163,10 +162,4 @@ public class ImportCommand implements Callable<Integer> {
         }
     }
 
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
 }

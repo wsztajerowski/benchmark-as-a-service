@@ -52,7 +52,7 @@ class ResultsConsoleOutputTest {
         for (String method : List.of("printJson", "printCsv")) {
             var out = new StringWriter();
             var command = new ResultsQuerySubcommand();
-            command.console = Console.withFlags(new PrintWriter(out), true, true);
+            command.context.use(Console.withFlags(new PrintWriter(out), true, true));
             Method print = ResultsQuerySubcommand.class.getDeclaredMethod(method, List.class);
             print.setAccessible(true);
             print.invoke(command, List.of(row("r1", "1.0.0")));
@@ -87,7 +87,7 @@ class ResultsConsoleOutputTest {
         var out = new StringWriter();
         var err = new ByteArrayOutputStream();
         var command = new ResultsQuerySubcommand();
-        command.console = Console.withFlags(new PrintWriter(out), true, false);
+        command.context.use(Console.withFlags(new PrintWriter(out), true, false));
         PrintStream originalErr = System.err;
         try {
             System.setErr(new PrintStream(err, true, StandardCharsets.UTF_8));
@@ -113,7 +113,7 @@ class ResultsConsoleOutputTest {
     void watchDrawsOnTheAlternateScreenAndLeavesTheLastFrameBehind() {
         var out = new StringWriter();
         var command = new ResultsQuerySubcommand();
-        command.console = Console.withFlags(new PrintWriter(out), true, false);
+        command.context.use(Console.withFlags(new PrintWriter(out), true, false));
 
         command.enterWatch();
         command.printFrame(List.of(row("r1", "1.0.0")), List.of(), "12:00:00");

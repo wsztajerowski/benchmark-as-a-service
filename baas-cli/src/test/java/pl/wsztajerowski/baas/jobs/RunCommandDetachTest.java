@@ -54,7 +54,7 @@ class RunCommandDetachTest {
         var command = new RunCommand();
         command.detach = detach;
         command.format = "json";
-        command.console = Console.plain(new PrintWriter(new StringWriter()));
+        command.context.use(Console.plain(new PrintWriter(new StringWriter())));
         command.session = session;
         return command;
     }
@@ -161,7 +161,7 @@ class RunCommandDetachTest {
 
     private static JsonNode summary(RunCommand command, int exitCode) throws Exception {
         var out = new StringWriter();
-        command.console = Console.plain(new PrintWriter(out));
+        command.context.use(Console.plain(new PrintWriter(out)));
         command.printJobSummary(exitCode);
         return JSON.readTree(out.toString());
     }
@@ -210,7 +210,7 @@ class RunCommandDetachTest {
         command.summaryJobId = JOB.jobId();
         command.summaryDeployment = "dev";
         launch(command).afterLaunch(session, session.confirmLaunched("i-1"), command.detach);
-        command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
+        command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), true, false));
         List<String> lines = new ArrayList<>();
 
         command.hints(0, lines::add);
@@ -228,7 +228,7 @@ class RunCommandDetachTest {
         command.benchmarkParams.add("-lprof");
         command.summaryJobId = JOB.jobId();
         command.summaryDeployment = "dev";
-        command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
+        command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), true, false));
         List<String> lines = new ArrayList<>();
 
         command.hints(0, lines::add);
@@ -242,7 +242,7 @@ class RunCommandDetachTest {
         var command = command(false);
         command.summaryJobId = JOB.jobId();
         command.summaryDeployment = "dev";
-        command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, false);
+        command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), true, false));
         List<String> lines = new ArrayList<>();
 
         command.hints(0, lines::add);

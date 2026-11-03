@@ -27,7 +27,7 @@ class JobsCommandTest {
 
     private static String render(JobsListSubcommand list, List<JobListing.Row> rows) {
         var out = new StringWriter();
-        list.console = Console.plain(new PrintWriter(out, true));
+        list.context.use(Console.plain(new PrintWriter(out, true)));
         list.print(rows, NOW);
         return out.toString();
     }
@@ -103,7 +103,7 @@ class JobsCommandTest {
     void terminateRefusesWithoutATerminalOrYes() {
         var terminate = new JobsTerminateSubcommand();
         new CommandLine(terminate).parseArgs("r1");
-        terminate.console = Console.plain(new PrintWriter(new StringWriter(), true));
+        terminate.context.use(Console.plain(new PrintWriter(new StringWriter(), true)));
 
         assertThat(terminate.confirmation().getAsBoolean()).isFalse();
     }
@@ -121,7 +121,7 @@ class JobsCommandTest {
     void terminatePromptsOnATerminal() {
         var terminate = new JobsTerminateSubcommand();
         new CommandLine(terminate).parseArgs("r1");
-        terminate.console = Console.withFlags(new PrintWriter(new StringWriter(), true), true, false);
+        terminate.context.use(Console.withFlags(new PrintWriter(new StringWriter(), true), true, false));
         terminate.answerReader = () -> "y";
 
         assertThat(terminate.confirmation().getAsBoolean()).isTrue();

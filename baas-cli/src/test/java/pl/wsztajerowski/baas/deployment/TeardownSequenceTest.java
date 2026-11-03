@@ -54,7 +54,7 @@ class TeardownSequenceTest {
                     var command = new TeardownCommand();
                     command.awsFor = config -> aws;
                     command.exportAwsFor = config -> exportAws;
-                    command.console = Console.withFlags(new PrintWriter(new StringWriter()), interactive, false);
+                    command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), interactive, false));
                     command.answerReader = answers;
                     return (K) command;
                 }

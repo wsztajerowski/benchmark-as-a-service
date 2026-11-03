@@ -55,7 +55,7 @@ class RunCommandSummaryTest {
 
     private static String printSummary(RunCommand command, int exitCode) {
         var out = new StringWriter();
-        command.console = Console.plain(new PrintWriter(out));
+        command.context.use(Console.plain(new PrintWriter(out)));
         command.printJobSummary(exitCode);
         return out.toString();
     }
@@ -180,7 +180,7 @@ class RunCommandSummaryTest {
 
         var printed = new java.util.concurrent.atomic.AtomicBoolean(false);
         var out = new StringWriter();
-        command.console = Console.plain(new PrintWriter(out));
+        command.context.use(Console.plain(new PrintWriter(out)));
         command.reportJobResults(java.util.List.of(), "20260920T161636923Z-08785de7",
             rows -> printed.set(true));
         command.printJobSummary(0);
@@ -209,7 +209,7 @@ class RunCommandSummaryTest {
     void aListingIsPrintedVerbatim() {
         var command = new RunCommand();
         var out = new StringWriter();
-        command.console = Console.plain(new PrintWriter(out));
+        command.context.use(Console.plain(new PrintWriter(out)));
         String listing = "WARNING: A restricted method in java.lang.System has been called\n\n"
             + "Supported profilers:\n       async: async-profiler profiler provider. \n";
 
@@ -227,7 +227,7 @@ class RunCommandSummaryTest {
         command.summaryResultPath = "jobs/benchmark-as-a-service/20260920T161636923Z-08785de7/";
         command.summaryInstanceId = "i-03c3ad558f45b388c";
         var out = new StringWriter();
-        command.console = Console.plain(new PrintWriter(out));
+        command.context.use(Console.plain(new PrintWriter(out)));
 
         command.printListing("Supported profilers:\n", "20260920T161636923Z-08785de7");
         command.printJobSummary(0);

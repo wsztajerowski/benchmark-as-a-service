@@ -26,7 +26,7 @@ class JobsConsoleOutputTest {
         var out = new StringWriter();
         var command = new RunCommand();
         command.format = "json";
-        command.console = Console.withFlags(new PrintWriter(out), true, true);
+        command.context.use(Console.withFlags(new PrintWriter(out), true, true));
 
         command.printJobSummary(0);
 
@@ -125,7 +125,7 @@ class JobsConsoleOutputTest {
     @Test
     void noStatusLineWithoutATerminal() {
         var command = new RunCommand();
-        command.console = Console.plain(new PrintWriter(new StringWriter()));
+        command.context.use(Console.plain(new PrintWriter(new StringWriter())));
 
         assertThat(command.openStatusLine()).isNull();
     }
@@ -135,7 +135,7 @@ class JobsConsoleOutputTest {
     void noStatusLineUnderJsonEvenOnATerminal() {
         var command = new RunCommand();
         command.format = "json";
-        command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, true);
+        command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), true, true));
 
         assertThat(command.openStatusLine()).isNull();
     }
@@ -143,7 +143,7 @@ class JobsConsoleOutputTest {
     @Test
     void aStatusLineOnATerminalWithoutJson() {
         var command = new RunCommand();
-        command.console = Console.withFlags(new PrintWriter(new StringWriter()), true, true);
+        command.context.use(Console.withFlags(new PrintWriter(new StringWriter()), true, true));
         PrintStream originalErr = System.err;
 
         try (var line = command.openStatusLine()) {

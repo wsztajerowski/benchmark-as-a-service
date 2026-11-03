@@ -91,8 +91,8 @@ class JobsShowCommandTest {
                         };
                     }
                 };
-                command.console = interactive ? Console.withFlags(new PrintWriter(out, true), true, false)
-                    : Console.plain(new PrintWriter(out, true));
+                command.context.use(interactive ? Console.withFlags(new PrintWriter(out, true), true, false)
+                    : Console.plain(new PrintWriter(out, true)));
                 return (K) command;
             }
         };

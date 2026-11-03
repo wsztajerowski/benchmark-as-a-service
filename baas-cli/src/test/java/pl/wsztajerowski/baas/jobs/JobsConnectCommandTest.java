@@ -97,7 +97,7 @@ class JobsConnectCommandTest {
                         return fake();
                     }
                 };
-                command.console = Console.plain(new PrintWriter(out, true));
+                command.context.use(Console.plain(new PrintWriter(out, true)));
                 command.searchPath = searchPath;
                 command.runner = runner;
                 command.instanceCheck = java.time.Duration.ofMillis(1);

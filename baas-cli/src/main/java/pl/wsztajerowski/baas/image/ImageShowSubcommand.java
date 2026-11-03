@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.image;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.session.BaasVersion;
@@ -45,6 +46,8 @@ public class ImageShowSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    @Mixin CommandContext context = new CommandContext();
+
 
 
     @Override
@@ -55,7 +58,7 @@ public class ImageShowSubcommand implements Callable<Integer> {
         // Deployer credentials, consistent with every other `baas admin` subcommand.
         var factory = DeployerSession.factory(config);
         String parameterName = config.amiParameterPath();
-        var console = Console.of(spec.commandLine().getOut());
+        var console = context.console();
 
         String extension;
         try (var cf = factory.cloudFormation()) {
