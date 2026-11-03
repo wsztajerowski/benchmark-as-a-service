@@ -105,8 +105,9 @@ it is the most likely typo.
 
 ### A dry run stops before anything reads the deployment
 
-`--dry-run` branches in `RunCommand.execute` right after `refuseManagedOrNoRun()` and the JAR's
-existence check, which moves up to join them. It returns before `context.operator()`, so it needs no
+`--dry-run` branches in `RunCommand.execute` right after `refuseManagedOrNoRun()` and checks the
+JAR's path itself. A real run keeps that check where it was, after the tag and timeout refusals that
+`OptionValidationTest` pins. It returns before `context.operator()`, so it needs no
 configured deployment and no credentials. It skips the unreleased-build runner-JAR refusal, since
 nothing will be launched. Task 1.2 confirms that nothing earlier on the path (the version check,
 deployment selection) touches AWS.
