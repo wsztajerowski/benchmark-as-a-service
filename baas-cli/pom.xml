@@ -74,6 +74,11 @@
             <scope>test</scope>
         </dependency>
         <dependency>
+            <groupId>org.junit.platform</groupId>
+            <artifactId>junit-platform-launcher</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-core</artifactId>
             <scope>test</scope>
@@ -141,7 +146,9 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <!-- A command built outside a BaasApp tree reads ~/.baas, so unit tests get a home
-                         of their own, which also keeps ~/.aws credentials out of them. -->
+                         of their own. Not ~/.aws: the SDK finds it through HOME first, so
+                         testsupport.NoRealAwsProfile points it away for every test, IDE runs included.
+                         ITs keep the real user.home, where ~/.testcontainers.properties lives. -->
                     <systemPropertyVariables>
                         <user.home>${project.build.directory}/test-home</user.home>
                     </systemPropertyVariables>
