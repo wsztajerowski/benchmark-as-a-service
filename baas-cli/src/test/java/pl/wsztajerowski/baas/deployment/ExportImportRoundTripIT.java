@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,8 +8,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JobItem;
@@ -148,23 +147,13 @@ class ExportImportRoundTripIT {
 
     private int importInto(Path bundle) throws Exception {
         TestDeployments.write(dir, TARGET);
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == ImportCommand.class) {
-                    var command = new ImportCommand();
-                    command.awsFor = config -> aws();
-                    command.context.use(Console.withFlags(new PrintWriter(out, true), false, false));
-                    return (K) command;
-                }
-                return defaults.create(cls);
-            }
-        };
-        return BaasApp.commandLine(new BaasApp(dir), factory)
-            .setOut(new PrintWriter(out)).setErr(new PrintWriter(new StringWriter()))
-            .execute("--deployment", TARGET, "admin", "deployment", "import", bundle.toString());
+        var command = new ImportCommand();
+        command.awsFor = config -> aws();
+        command.context.use(Console.withFlags(new PrintWriter(out, true), false, false));
+        var run = TestCli.at(dir).with(ImportCommand.class, command)
+            .run("--deployment", TARGET, "admin", "deployment", "import", bundle.toString());
+        out.write(run.out());
+        return run.exit();
     }
 
     private Set<Map<String, AttributeValue>> items(String deployment) {

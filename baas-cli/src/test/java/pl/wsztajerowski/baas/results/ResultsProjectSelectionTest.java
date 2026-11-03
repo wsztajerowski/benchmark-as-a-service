@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.BaasApp;
 import org.junit.jupiter.api.io.TempDir;
 import org.junit.jupiter.api.Test;
@@ -154,39 +155,26 @@ class ResultsProjectSelectionTest {
         pl.wsztajerowski.baas.TestDeployments.save(dir, stored);
 
         var screen = new StringWriter();
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
+        var command = new ResultsQuerySubcommand() {
             @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls != ResultsQuerySubcommand.class) {
-                    return defaults.create(cls);
-                }
-                var command = new ResultsQuerySubcommand() {
+            ResultsQueryService openResults(BaasConfig c, String table) {
+                return new ResultsQueryService(null, table) {
                     @Override
-                    ResultsQueryService openResults(BaasConfig c, String table) {
-                        return new ResultsQueryService(null, table) {
-                            @Override
-                            public List<String> listVisibleProjects() {
-                                return List.of("lynx-journal");
-                            }
+                    public List<String> listVisibleProjects() {
+                        return List.of("lynx-journal");
+                    }
 
-                            @Override
-                            public List<pl.wsztajerowski.baas.results.ResultRow> queryProject(String p, boolean all) {
-                                throw new IllegalStateException("first refresh reached");
-                            }
-                        };
+                    @Override
+                    public List<pl.wsztajerowski.baas.results.ResultRow> queryProject(String p, boolean all) {
+                        throw new IllegalStateException("first refresh reached");
                     }
                 };
-                command.context.use(Console.withFlags(new PrintWriter(screen, true), true, false));
-                command.answerReader = () -> "1";
-                return (K) command;
             }
         };
+        command.context.use(Console.withFlags(new PrintWriter(screen, true), true, false));
+        command.answerReader = () -> "1";
 
-        BaasApp.commandLine(new BaasApp(dir), factory)
-            .setErr(new PrintWriter(new StringWriter()))
-            .execute("query", "--watch");
+        TestCli.at(dir).with(ResultsQuerySubcommand.class, command).run("query", "--watch");
 
         String out = screen.toString();
         assertThat(out).contains("Choose a project").contains("\u001b[?1049h");

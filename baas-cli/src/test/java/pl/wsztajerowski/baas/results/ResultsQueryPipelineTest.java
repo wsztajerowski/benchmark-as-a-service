@@ -1,9 +1,8 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 
@@ -57,42 +56,29 @@ class ResultsQueryPipelineTest {
         pl.wsztajerowski.baas.TestDeployments.save(dir, stored);
 
         var out = new StringWriter();
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
+        var command = new ResultsQuerySubcommand() {
             @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls != ResultsQuerySubcommand.class) {
-                    return defaults.create(cls);
-                }
-                var command = new ResultsQuerySubcommand() {
+            ResultsQueryService openResults(BaasConfig c, String table) {
+                return new ResultsQueryService(null, table) {
                     @Override
-                    ResultsQueryService openResults(BaasConfig c, String table) {
-                        return new ResultsQueryService(null, table) {
-                            @Override
-                            public List<ResultRow> queryProject(String p, boolean all) {
-                                return thirtyDays();
-                            }
+                    public List<ResultRow> queryProject(String p, boolean all) {
+                        return thirtyDays();
+                    }
 
-                            @Override
-                            public List<ResultRow> queryByJobId(String id) {
-                                return thirtyDays();
-                            }
+                    @Override
+                    public List<ResultRow> queryByJobId(String id) {
+                        return thirtyDays();
+                    }
 
-                            @Override
-                            public void close() {
-                            }
-                        };
+                    @Override
+                    public void close() {
                     }
                 };
-                command.context.use(Console.plain(new PrintWriter(out, true)));
-                return (K) command;
             }
         };
-        var err = new StringWriter();
-        int exit = BaasApp.commandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
-            .execute(line.toArray(String[]::new));
-        return new Run(exit, out.toString(), err.toString());
+        command.context.use(Console.plain(new PrintWriter(out, true)));
+        var run = TestCli.at(dir).with(ResultsQuerySubcommand.class, command).run(line.toArray(String[]::new));
+        return new Run(run.exit(), out.toString(), run.err());
     }
 
     private static List<String> jobIds(String json) {

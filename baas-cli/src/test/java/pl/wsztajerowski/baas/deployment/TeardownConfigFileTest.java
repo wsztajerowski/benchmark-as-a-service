@@ -2,9 +2,8 @@ package pl.wsztajerowski.baas.deployment;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.TestDeployments;
+import pl.wsztajerowski.baas.testsupport.TestCli;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -56,29 +55,15 @@ class TeardownConfigFileTest {
         if (awsExit != 0) {
             aws.live = java.util.List.of(new pl.wsztajerowski.baas.jobs.Ec2ProvisioningService.LiveRunner("i-1", "running", null));
         }
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls == TeardownCommand.class) {
-                    var command = new TeardownCommand();
-                    command.awsFor = config -> aws;
-                    command.context.use(pl.wsztajerowski.baas.console.Console.withFlags(
-                        new PrintWriter(new StringWriter()), true, false));
-                    // Decline the export, then type the deployment's name.
-                    command.answerReader = new ScriptedAnswers("n", deployment);
-                    return (K) command;
-                }
-                return defaults.create(cls);
-            }
-        };
+        var command = new TeardownCommand();
+        command.awsFor = config -> aws;
+        command.context.use(pl.wsztajerowski.baas.console.Console.withFlags(
+            new PrintWriter(new StringWriter()), true, false));
+        // Decline the export, then type the deployment's name.
+        command.answerReader = new ScriptedAnswers("n", deployment);
         String[] args = new String[global.length + 3];
         System.arraycopy(global, 0, args, 0, global.length);
         System.arraycopy(new String[]{"admin", "deployment", "teardown"}, 0, args, global.length, 3);
-        return BaasApp.commandLine(new BaasApp(dir), factory)
-            .setOut(new PrintWriter(new StringWriter()))
-            .setErr(new PrintWriter(new StringWriter()))
-            .execute(args);
+        return TestCli.at(dir).with(TeardownCommand.class, command).run(args).exit();
     }
 }

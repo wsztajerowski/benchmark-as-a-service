@@ -3,13 +3,12 @@ package pl.wsztajerowski.baas.jobs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import picocli.CommandLine;
-import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.aws.S3UploadService.StoredObject;
 import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
+import pl.wsztajerowski.baas.testsupport.TestCli;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
@@ -69,39 +68,26 @@ class JobsShowCommandTest {
         throws Exception {
         pl.wsztajerowski.baas.TestDeployments.write(dir, pl.wsztajerowski.baas.TestDeployments.DEFAULT);
         var out = new StringWriter();
-        CommandLine.IFactory defaults = CommandLine.defaultFactory();
-        CommandLine.IFactory factory = new CommandLine.IFactory() {
+        var command = new JobsShowSubcommand() {
             @Override
-            @SuppressWarnings("unchecked")
-            public <K> K create(Class<K> cls) throws Exception {
-                if (cls != JobsShowSubcommand.class) {
-                    return defaults.create(cls);
-                }
-                var command = new JobsShowSubcommand() {
-                    @Override
-                    Sources sources(BaasConfig config) {
-                        return new Sources() {
-                            public Optional<JobItem> job(String id) { return Optional.ofNullable(job); }
-                            public Optional<Ec2ProvisioningService.LiveInstance> liveInstance(String id) {
-                                return Optional.ofNullable(live).map(i -> new Ec2ProvisioningService.LiveInstance(i, LAUNCHED));
-                            }
-                            public Optional<String> manifest(String path) { reads.add(path); return Optional.ofNullable(manifest); }
-                            public List<StoredObject> objects(String path) { reads.add(path); return objects; }
-                            public void close() { }
-                        };
+            Sources sources(BaasConfig config) {
+                return new Sources() {
+                    public Optional<JobItem> job(String id) { return Optional.ofNullable(job); }
+                    public Optional<Ec2ProvisioningService.LiveInstance> liveInstance(String id) {
+                        return Optional.ofNullable(live).map(i -> new Ec2ProvisioningService.LiveInstance(i, LAUNCHED));
                     }
+                    public Optional<String> manifest(String path) { reads.add(path); return Optional.ofNullable(manifest); }
+                    public List<StoredObject> objects(String path) { reads.add(path); return objects; }
+                    public void close() { }
                 };
-                command.context.use(interactive ? Console.withFlags(new PrintWriter(out, true), true, false)
-                    : Console.plain(new PrintWriter(out, true)));
-                return (K) command;
             }
         };
+        command.context.use(interactive ? Console.withFlags(new PrintWriter(out, true), true, false)
+            : Console.plain(new PrintWriter(out, true)));
         List<String> line = new ArrayList<>(List.of("jobs", "show", ID));
         line.addAll(List.of(extra));
-        var err = new StringWriter();
-        int exit = BaasApp.commandLine(new BaasApp(dir), factory).setErr(new PrintWriter(err, true))
-            .execute(line.toArray(String[]::new));
-        return new Run(exit, out.toString(), err.toString());
+        var run = TestCli.at(dir).with(JobsShowSubcommand.class, command).run(line.toArray(String[]::new));
+        return new Run(run.exit(), out.toString(), run.err());
     }
 
     private static JobItem job(String status, String errorCode) {
