@@ -1,14 +1,16 @@
 package pl.wsztajerowski.baas.config;
 
 import pl.wsztajerowski.baas.cli.CommandContext;
+import pl.wsztajerowski.baas.cli.CommandRefusal;
+import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.cli.Invocation;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
+import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.console.Console;
 
 import java.util.concurrent.Callable;
 
@@ -25,11 +27,19 @@ public class ConfigShowSubcommand implements Callable<Integer> {
 
     @Mixin CommandContext context = new CommandContext();
 
+    @Option(names = "--format", description = "Output format: text (default), json.", defaultValue = "text")
+    String format = "text";
 
     @Override
     public Integer call() {
+        CommandRefusal.requireFormat(format, java.util.List.of("text", "json"));
         BaasConfig config = Invocation.configService(spec).load();
-        String dump = render(config, Invocation.configService(spec).fileOf(config.requirePrefix()));
+        var file = Invocation.configService(spec).fileOf(config.requirePrefix());
+        if ("json".equalsIgnoreCase(format)) {
+            context.console().println(json(config, file));
+            return 0;
+        }
+        String dump = render(config, file);
 
         // Every value above is local. `config show` makes no AWS call at all now that the masked
         // Mongo connection string — the one field that had to be read from SSM — is gone, so it
@@ -83,6 +93,38 @@ public class ConfigShowSubcommand implements Callable<Integer> {
             .append("  resolveProject:           ").append(config.getGit().isResolveProject())
             .append(defaultMark(config.getGit().isResolveProjectSet())).append('\n')
             .toString();
+    }
+
+    /**
+     * {@code --format json} (G12): the same values, raw — {@code null} for unset, and for a derived
+     * name when there is no deployment to derive it from — without the prose the text adds.
+     */
+    static String json(BaasConfig config, java.nio.file.Path configFile) {
+        BaasConfig.AwsConfig aws = config.getAws();
+        BaasConfig.Ec2Config ec2 = config.getEc2();
+        return "{\"configFile\":" + Json.string(configFile.toString())
+            + ",\"deployment\":" + Json.string(config.getPrefix())
+            + ",\"aws\":{\"deployerProfile\":" + Json.string(aws.getDeployerProfile())
+            + ",\"operatorProfile\":" + Json.string(aws.getOperatorProfile())
+            + ",\"region\":" + Json.string(aws.hasRegion() ? aws.getRegion() : null) + "}"
+            + ",\"derived\":{\"stack\":" + Json.string(derived(config, BaasConfig::stackName))
+            + ",\"bucket\":" + Json.string(derived(config, BaasConfig::bucket))
+            + ",\"resultsTable\":" + Json.string(derived(config, BaasConfig::resultsTable))
+            + ",\"runnerInstanceProfile\":" + Json.string(derived(config, BaasConfig::runnerInstanceProfile))
+            + ",\"amiPointer\":" + Json.string(derived(config, BaasConfig::amiParameterPath))
+            + ",\"operatorRole\":" + Json.string(derived(config, c -> c.names().operatorRole())) + "}"
+            + ",\"ec2\":{\"defaultInstanceType\":" + Json.string(ec2.getDefaultInstanceType())
+            + ",\"benchmarkTimeoutSeconds\":" + ec2.getBenchmarkTimeoutSeconds()
+            + ",\"watchdogMarginSeconds\":" + ec2.getWatchdogMarginSeconds() + "}"
+            + ",\"git\":{\"resolveProject\":" + config.getGit().isResolveProject() + "}}";
+    }
+
+    private static String derived(BaasConfig config, java.util.function.Function<BaasConfig, String> name) {
+        try {
+            return name.apply(config);
+        } catch (IllegalStateException noDeployment) {
+            return null;
+        }
     }
 
     /** Defaults are not in the file, so a later release's default reaches this machine. */

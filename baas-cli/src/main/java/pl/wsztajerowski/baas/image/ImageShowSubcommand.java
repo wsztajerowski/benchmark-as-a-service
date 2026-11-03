@@ -21,12 +21,14 @@ import pl.wsztajerowski.baas.aws.CloudFormationService;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import pl.wsztajerowski.baas.aws.S3UploadService;
+import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.console.Printable;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.Callable;
+import java.util.stream.Collectors;
 
 @Command(
     name = "show",
@@ -44,14 +46,20 @@ public class ImageShowSubcommand implements Callable<Integer> {
             + "`baas admin image build --extension`. Prints the starter when there is none.")
     boolean printExtension;
 
+    @Option(names = "--format", description = "Output format: text (default), json.", defaultValue = "text")
+    String format = "text";
+
     @Spec CommandSpec spec;
 
     @Mixin CommandContext context = new CommandContext();
 
-
-
     @Override
     public Integer call() {
+        CommandRefusal.requireFormat(format, List.of("text", "json"));
+        boolean json = "json".equalsIgnoreCase(format);
+        if (json && printExtension) {
+            throw CommandRefusal.usage("--extension prints the extension document itself; it has no JSON form.");
+        }
         BaasConfig config = Invocation.configService(spec).load();
         String prefix = config.requirePrefix();
 
@@ -81,6 +89,9 @@ public class ImageShowSubcommand implements Callable<Integer> {
             var current = new ImageBuilderService(imageBuilder, ec2, ssm).currentImage(parameterName);
 
             if (current.isEmpty()) {
+                if (json) {
+                    console.println(json(prefix, parameterName, null, extension, Optional.empty(), bundledBase()));
+                }
                 // Warn, not payload: an absent image means every `baas run` fails until one is
                 // built. Exit 0 still — the command answered the question it was asked.
                 logger.warn("""
@@ -92,6 +103,17 @@ public class ImageShowSubcommand implements Callable<Integer> {
             }
 
             var image = current.get();
+            Optional<String> jdkList = Optional.empty();
+            if (image.selectsJdks() && image.imageVersion() != null) {
+                try (var s3 = factory.s3()) {
+                    jdkList = new S3UploadService(s3).getObjectIfExists(config.names().bucket(),
+                        RunnerImageRenderer.jdkListKey(image.imageVersion()));
+                }
+            }
+            if (json) {
+                console.println(json(prefix, parameterName, image, extension, jdkList, bundledBase()));
+                return 0;
+            }
             console.printf("""
                 Runner image
                   Version:     %s
@@ -103,24 +125,70 @@ public class ImageShowSubcommand implements Callable<Integer> {
                 orUnknown(image.imageVersion()), image.amiId(), orUnknown(image.parentAmiId()),
                 orUnknown(image.createdAt()), parameterName);
             printExtension(console, extension, image.imageVersion());
-            Optional<String> jdkList = Optional.empty();
-            if (image.selectsJdks() && image.imageVersion() != null) {
-                try (var s3 = factory.s3()) {
-                    jdkList = new S3UploadService(s3).getObjectIfExists(config.names().bucket(),
-                        RunnerImageRenderer.jdkListKey(image.imageVersion()));
-                }
-            }
             printJdks(console, image, jdkList);
 
             // The base this CLI bundles is not necessarily the one deployed, and a difference
             // between them is the usual reason a result carries an unexpected imageVersion tag.
-            String bundled = new RunnerImageRenderer().definition().imageVersion();
+            String bundled = bundledBase();
             String warning = driftWarning(prefix, bundled, baseOf(image.imageVersion()));
             if (warning != null) {
                 logger.warn("{}", warning);
             }
             return 0;
         }
+    }
+
+    private static String bundledBase() {
+        return new RunnerImageRenderer().definition().imageVersion();
+    }
+
+    /**
+     * {@code --format json} (G12): what the text shows, for an admin script. {@code image} is null
+     * when none is published, {@code extension} null when the stack holds none; {@code jdks} comes
+     * from the image's recorded list, or its tag alone when the list is gone.
+     */
+    static String json(String deployment, String pointer, RunnerImage image, String extension,
+                       Optional<String> jdkList, String bundledBase) {
+        String imageJson = image == null ? "null"
+            : "{\"version\":" + Json.string(image.imageVersion()) + ",\"amiId\":" + Json.string(image.amiId())
+                + ",\"parentAmiId\":" + Json.string(image.parentAmiId())
+                + ",\"createdAt\":" + Json.string(image.createdAt()) + "}";
+        String extensionJson = "null";
+        if (!extension.isEmpty()) {
+            String hash = RunnerImageExtension.hash(extension);
+            boolean published = image != null && image.imageVersion() != null
+                && image.imageVersion().endsWith("+ext." + hash);
+            extensionJson = "{\"hash\":" + Json.string(hash)
+                + ",\"bytes\":" + extension.getBytes(java.nio.charset.StandardCharsets.UTF_8).length
+                + ",\"published\":" + published
+                + ",\"steps\":" + RunnerImageExtension.stepsByPhase(extension).entrySet().stream()
+                    .map(e -> Json.string(e.getKey()) + ":" + e.getValue().stream().map(Json::string)
+                        .collect(Collectors.joining(",", "[", "]")))
+                    .collect(Collectors.joining(",", "{", "}")) + "}";
+        }
+        List<String> jdks = new ArrayList<>();
+        if (image != null) {
+            jdkList.ifPresent(list -> {
+                try {
+                    for (var entry : new ObjectMapper().readTree(list)) {
+                        jdks.add("{\"id\":" + Json.string(entry.path("id").asText())
+                            + ",\"release\":" + Json.string(entry.path("release").asText(null))
+                            + ",\"vendor\":" + Json.string(entry.path("vendor").asText(null))
+                            + ",\"default\":" + entry.path("default").asBoolean() + "}");
+                    }
+                } catch (java.io.IOException e) {
+                    jdks.clear();
+                }
+            });
+            if (jdks.isEmpty()) {
+                image.jdkIds().forEach(id -> jdks.add("{\"id\":" + Json.string(id) + ",\"release\":null,\"vendor\":null"
+                    + ",\"default\":" + id.equals(image.defaultJdk()) + "}"));
+            }
+        }
+        return "{\"deployment\":" + Json.string(deployment) + ",\"pointer\":" + Json.string(pointer)
+            + ",\"image\":" + imageJson + ",\"extension\":" + extensionJson
+            + ",\"jdks\":" + jdks.stream().collect(Collectors.joining(",", "[", "]"))
+            + ",\"bundledBase\":" + Json.string(bundledBase) + "}";
     }
 
     /**
