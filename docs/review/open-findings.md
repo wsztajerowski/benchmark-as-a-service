@@ -61,7 +61,6 @@ None open.
 | N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
 | X3 | The runner role can create job items (`UpdateItem` upserts) and malformed `RESULT#` rows, which make every reader throw; the template's comments claiming it cannot are wrong ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
 | X5 | `--github-org`/`--github-repo` and setup's GitHub prompts are not validated, so `*` or `?` widen the OIDC trust silently ([security](2026-10-13-codebase-review/security.md)) | XS | — | open, when nearby |
-| X6 | The CLI names each operator session `baas-<caller>` now; `infra/cf-template-core.yaml`'s comment above the session-control grant still says every session is named `baas-cli`. Fix it with the next infra change, which carries the live check | XS | — | open, with the next infra change |
 | X8 | The CLI and runner-JAR checksums come from the same release as the assets: integrity, not authenticity (CLAUDE.md calls it closed) ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
 | G7 | Exit codes do not separate failure kinds; the runner's exit code is not propagated; unattended setup exits 1 for a failure and for a step awaiting an IAM admin alike ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
 | G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
