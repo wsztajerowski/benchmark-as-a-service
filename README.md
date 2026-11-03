@@ -326,6 +326,12 @@ Useful options: `--benchmark-jar` (required), `--project`, `--jdk`, `--runner-ja
 > it as a job on the runner (a boot of a minute or two) and prints JMH's listing verbatim. Nothing else
 > may follow `--` beside it; `--jdk` goes before `--`, as for any job.
 >
+> **JMH runs with `-foe true` unless you pass `-foe`.** JMH's own default, `false`, skips a benchmark
+> that fails and still exits 0, so the job would end `completed` with only the benchmarks that
+> succeeded. Under BaaS's default one failed benchmark fails the job and stores no measurement; the
+> process output and profiles are uploaded all the same. To keep what succeeded, add `-foe false`
+> after `--`. A job that stores no measurement at all fails either way.
+>
 > `-prof async` uses async-profiler's own defaults (text output): ask for a graph with
 > `-prof 'async:output=flamegraph'`. Quote the value — `;` ends a shell command.
 

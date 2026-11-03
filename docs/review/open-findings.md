@@ -42,7 +42,6 @@ None open.
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
 | S2 | CI's OIDC trust is repo-wide and `pull_request` triggers it | M | High → reduced | open |
-| PT2 | A JMH job whose benchmarks failed ends `completed`, with no measurement or only some | S | Med | open |
 | N2 | `3q7i7s65-operator-role` from the August deployment still exists | XS | Low | open, by hand |
 | G3 | No way to exclude, re-tag or delete a measurement after the run | M | — | users first |
 | G4 | No comparison against a baseline, and no regression gate: `results diff` compares two jobs but exits 0 whatever it finds, so CI still hand-rolls `jq` over its JSON | M | — | users first |
@@ -140,19 +139,6 @@ which lists as `vanished` — arguably the better failure.
 replaced, still exists: the `baas-operator` profile in `~/.aws/config` assumes it successfully
 (2026-10-05). The deployer cannot remove it (outside its prefix). Delete it, and the profile, with an
 identity above the deployer.
-
-### PT2 — a JMH job whose benchmarks failed ends `completed`, with no measurement or only some · Should · S
-
-Found 2026-10-31 on job `20261031T000741257Z-275d3e35` (`baas-development`), whose `-prof jfr` failed every
-iteration for want of `jcmd` (since fixed by `multiple-jdks`): without `-foe`, JMH reports each failed
-iteration and exits 0 with an empty result (`[ ]`), so the runner stores nothing and the job item says
-`completed`. `baas run` then exits 0, and only an empty `results query --job-id` reveals it. **Wider than
-that** (checked locally 2026-10-31 with the fixture JAR): when only *some* benchmarks fail, `-foe false`
-(JMH's default) still exits 0 with a result file holding only the variants that succeeded, so the job
-stores a partial set under `completed`; `-foe true` exits 1 with no result file, so the job fails and
-stores nothing. It predates both changes. **Fix options:** compare what JMH ran with what it wrote and
-fail (or flag) a job with missing variants in `JmhSubcommandService`, or keep JMH's semantics and say so
-in `baas run`'s summary. `-foe true` is the user's per-job alternative today.
 
 ### PT3 — perfasm's save locations write outside the uploaded tree · Could · S
 
