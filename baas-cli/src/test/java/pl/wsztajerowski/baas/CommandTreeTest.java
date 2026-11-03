@@ -41,7 +41,7 @@ class CommandTreeTest {
         var admin = root.getSubcommands().get("admin").getSubcommands();
         assertThat(admin.keySet()).containsExactlyInAnyOrder("deployment", "image");
         assertThat(admin.get("deployment").getSubcommands().keySet())
-            .containsExactlyInAnyOrder("setup", "teardown", "export", "import");
+            .containsExactlyInAnyOrder("setup", "teardown", "show", "export", "import");
         assertThat(admin.get("image").getSubcommands().keySet()).contains("build", "show");
     }
 

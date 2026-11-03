@@ -24,3 +24,16 @@ Budget: 5, CI's e2e jobs included.
   random file uploaded to `s3://baas-development/jobs/…` as `baas-operator-baas-dev` took 15.9 s,
   from home broadband. The deployer deleted the object afterwards (`head-object` returns 404). A
   `launching` item stays in flight for the whole upload.
+
+## Implementation notes
+
+- **2.4** `RunCommand` refuses a `--benchmark-jar` that is not a regular file. The check moved up beside
+  `refuseManagedOrNoRun()`, so it now precedes the unreleased-build refusal as well;
+  `RunCommandTest.refusesToLaunchFromAnUnreleasedBuildWithoutARunnerJar` gives it a real file.
+- **4.1** The federation read-back moved into a new public `deployment.setup.GitHubTrust` record.
+  `GitHubStep.deployed` delegates to it, so `SetupContext` and `GitHubStep` stay package-private.
+  `CloudFormationService.view` returns a plain `StackView`, so the command imports no SDK type.
+- **5.1 (deviation)** The IDE check ran through the JUnit 6 launcher API from a single-file program,
+  on the module's test classpath, without surefire, instead of through IntelliJ: the worktree is not
+  an open IntelliJ project. `user.home` was the real `/Users/wiktor` and `baas.home` a temporary
+  `baas-test-home…`; `NoRealBaasHomeTest` passed (1/1).

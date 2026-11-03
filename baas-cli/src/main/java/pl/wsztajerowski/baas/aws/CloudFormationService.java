@@ -314,6 +314,23 @@ public class CloudFormationService {
             .orElseGet(Map::of);
     }
 
+    /** One read of a stack, in plain types: what {@code admin deployment show} reports. */
+    public record StackView(String status, String lastUpdated, Map<String, String> parameters,
+                            Map<String, String> outputs) {
+    }
+
+    /** The stack as one {@code DescribeStacks} answers it, or empty when there is no such stack. */
+    public Optional<StackView> view(String stackName) {
+        return describeStack(stackName).map(stack -> new StackView(
+            stack.stackStatusAsString(),
+            String.valueOf(stack.lastUpdatedTime() != null ? stack.lastUpdatedTime() : stack.creationTime()),
+            stack.parameters().stream().collect(Collectors.toMap(
+                software.amazon.awssdk.services.cloudformation.model.Parameter::parameterKey,
+                p -> p.parameterValue() == null ? "" : p.parameterValue(), (a, b) -> b, java.util.TreeMap::new)),
+            stack.outputs().stream().collect(Collectors.toMap(
+                Output::outputKey, Output::outputValue, (a, b) -> b, java.util.TreeMap::new))));
+    }
+
     /** The stack's status, or empty when there is no such stack. */
     public Optional<StackStatus> stackStatus(String stackName) {
         return describeStack(stackName).map(Stack::stackStatus);

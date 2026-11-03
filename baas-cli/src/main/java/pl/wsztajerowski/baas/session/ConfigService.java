@@ -63,9 +63,14 @@ public class ConfigService {
         this.named = named;
     }
 
-    /** {@code ~/.baas}, read when asked rather than at class load, so a test's {@code user.home} holds. */
+    /**
+     * {@code ~/.baas}, read when asked rather than at class load, so a test's {@code user.home} holds —
+     * or the {@code baas.home} system property, which {@code testsupport.NoRealBaasHome} sets for every
+     * test run, IDE runs included (T10). A test seam, not a user setting.
+     */
     public static Path defaultRoot() {
-        return Path.of(System.getProperty("user.home"), ".baas");
+        String override = System.getProperty("baas.home");
+        return override != null && !override.isBlank() ? Path.of(override) : Path.of(System.getProperty("user.home"), ".baas");
     }
 
     public Path root() {
