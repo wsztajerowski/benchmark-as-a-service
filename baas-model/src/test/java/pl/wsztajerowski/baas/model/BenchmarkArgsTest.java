@@ -219,4 +219,24 @@ class BenchmarkArgsTest {
         assertThat(BenchmarkArgs.Profiler.parse("async:event=wall;").withOptions("dir=d"))
             .isEqualTo("async:event=wall;dir=d");
     }
+
+    /** PT2: the runner adds -foe true to a JMH run that does not set -foe, in any spelling. */
+    @ParameterizedTest
+    @CsvSource({
+        "MyBenchmark, true",
+        "MyBenchmark -f 1 -prof gc, true",
+        "MyBenchmark -foe false, false",
+        "MyBenchmark -foe true, false",
+        "MyBenchmark --foe=false, false",
+        "MyBenchmark -fo false, false",
+        "-lprof, false",
+    })
+    void jmhDefaultsFailOnErrorUnlessTheArgumentsSetIt(String line, boolean expected) {
+        assertThat(JMH.defaultsFailOnError(args(line))).isEqualTo(expected);
+    }
+
+    @Test
+    void jcstressHasNoFailOnErrorDefault() {
+        assertThat(JCSTRESS.defaultsFailOnError(args("-m sanity"))).isFalse();
+    }
 }

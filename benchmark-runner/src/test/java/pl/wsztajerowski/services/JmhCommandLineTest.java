@@ -40,8 +40,21 @@ class JmhCommandLineTest {
         assertThat(commandLine(dir, dir.resolve("none.so"),
             "MyBenchmark", "-f", "1", "-v", "EXTRA", "-p", "size=10", "-jvmArgs", "-Xmx2g -XX:+UseZGC", "-prof", "gc"))
             .containsExactly("java", "-jar", dir.resolve("b.jar").toString(),
-                "-rf", "json", "-rff", dir.resolve("jmh-results.json").toString(),
+                "-rf", "json", "-rff", dir.resolve("jmh-results.json").toString(), "-foe", "true",
                 "MyBenchmark", "-f", "1", "-v", "EXTRA", "-p", "size=10", "-jvmArgs", "-Xmx2g -XX:+UseZGC", "-prof", "gc");
+    }
+
+    /** PT2: BaaS defaults -foe to true; a -foe of the user's, in any spelling, is passed and nothing added. */
+    @Test
+    void theUsersFoeReplacesTheDefault(@TempDir Path dir) {
+        for (String[] args : List.of(new String[] {"MyBenchmark", "-foe", "false"},
+                new String[] {"MyBenchmark", "--foe=false"}, new String[] {"MyBenchmark", "-fo", "true"})) {
+            List<String> commands = commandLine(dir, dir.resolve("none.so"), args);
+
+            assertThat(commands).as(String.join(" ", args)).endsWith(args);
+            assertThat(commands.stream().filter(token -> token.contains("foe") || token.equals("-fo")))
+                .as(String.join(" ", args)).hasSize(1);
+        }
     }
 
     /** The selected JDK starts JMH, whose forks then follow its java.home; a listing job is no exception. */
@@ -116,7 +129,7 @@ class JmhCommandLineTest {
 
     @Test
     void noProfilerAddsNothing(@TempDir Path dir) {
-        assertThat(commandLine(dir, dir.resolve("none.so"), "MyBenchmark")).hasSize(8);
+        assertThat(commandLine(dir, dir.resolve("none.so"), "MyBenchmark", "-foe", "false")).hasSize(10);
     }
 
     @Test

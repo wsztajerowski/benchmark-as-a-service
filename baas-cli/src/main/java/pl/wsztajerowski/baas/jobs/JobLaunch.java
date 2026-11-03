@@ -279,9 +279,10 @@ public final class JobLaunch {
         }
 
         // 8. Poll, then report.
-        boolean listing = BenchmarkArgs.of(BenchmarkType.fromCommandName(request.benchmarkType()))
-            .isProfilerListing(request.benchmarkParams());
-        return poll(current, deployment.resultsTable(), request.watchdogSeconds(), listing);
+        BenchmarkArgs args = BenchmarkArgs.of(BenchmarkType.fromCommandName(request.benchmarkType()));
+        boolean listing = args.isProfilerListing(request.benchmarkParams());
+        boolean failOnError = args.defaultsFailOnError(request.benchmarkParams());
+        return poll(current, deployment.resultsTable(), request.watchdogSeconds(), listing, failOnError);
     }
 
     /**
@@ -374,7 +375,8 @@ public final class JobLaunch {
         }
     }
 
-    private int poll(JobSession current, String resultsTable, int capSeconds, boolean listing)
+    private int poll(JobSession current, String resultsTable, int capSeconds, boolean listing,
+                     boolean failOnError)
             throws InterruptedException {
         JobItem job = current.job();
         String logPath = "s3://" + deployment.bucket() + "/" + JobLayout.artifactKey(job.resultPath(), JobLayout.BOOT_LOG_NAME);
@@ -397,7 +399,7 @@ public final class JobLaunch {
                 line.close();
             }
         }
-        return report(outcome, resultsTable, job, current.instanceId(), logPath, listing);
+        return report(outcome, resultsTable, job, current.instanceId(), logPath, listing, failOnError);
     }
 
     /** Short enough never to wrap an 80-column terminal, so a redraw stays on one row. */
@@ -408,7 +410,7 @@ public final class JobLaunch {
 
     /** Says what the outcome was, shows the results of a completed job, and returns its exit code. */
     private int report(JobSession.Outcome outcome, String resultsTable, JobItem job, String instanceId,
-                       String logPath, boolean listing) {
+                       String logPath, boolean listing, boolean failOnError) {
         String jobId = job.jobId();
         String status = outcome.status();
         logger.info("Job status: {}", status);
@@ -418,6 +420,11 @@ public final class JobLaunch {
             showResults(resultsTable, jobId);
         } else if (status.startsWith(JobStatus.FAILED_PREFIX)) {
             logger.error("Benchmark failed. Runner log: {}", logPath);
+            if (failOnError) {
+                // The runner added it (PT2); JMH's own default is false, so say whose it was.
+                logger.error("JMH ran with -foe true, BaaS's default: one failed benchmark fails the job "
+                    + "and stores nothing. To keep the ones that succeeded, add -foe false after --.");
+            }
         } else if (JobStatus.TIMED_OUT.equals(status)) {
             logger.error("Job {} timed out. Runner log (if the instance got far enough to upload "
                 + "it): {}", jobId, logPath);
