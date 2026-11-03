@@ -830,8 +830,8 @@ Resources:
                 Condition:
                   BoolIfExists:
                     ssm:SessionDocumentAccessCheck: "true"
-              # Only sessions this role session started. Every operator session is named baas-cli
-              # (finding X6), so in practice that is every operator of this deployment.
+              # Only sessions this role session started. The CLI names each operator session
+              # baas-<caller name>, so that is the caller's own; CI's runs share one name.
               - Effect: Allow
                 Action:
                   - ssm:TerminateSession
