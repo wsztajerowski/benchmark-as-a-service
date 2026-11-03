@@ -58,3 +58,6 @@ What a redirect of stdout must keep, and when escape sequences are allowed.
   six decimals printed a nanosecond `s/op` score as `0.000000` (W3). The writers keep every
   significant digit with no exponent, locale-free. Non-finite values become JSON `null`, since
   JSON has no `NaN` literal and JMH reports one for any single-iteration run.
+- **Human-read tables keep the machine's locale on purpose** (`ResultsTable`, `results diff`): on
+  pl-PL a score reads `10632008,341` there and `10632008.341` in JSON and CSV. Decided 2026-11-03
+  (finding E4) — a table is read by a person, never parsed. Don't "fix" it to `Locale.ROOT`.
