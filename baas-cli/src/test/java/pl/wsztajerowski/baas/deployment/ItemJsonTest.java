@@ -1,15 +1,13 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.model.TestMeasurements;
+import pl.wsztajerowski.baas.model.TestJobs;
 import org.junit.jupiter.api.Test;
-import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.BenchmarkType;
-import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import software.amazon.awssdk.core.SdkBytes;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,12 +44,18 @@ class ItemJsonTest {
 
     @Test
     void aMeasurementItemRoundTrips() {
-        var measurement = new StoredMeasurement(
-            "p", "20261023T090642860Z-5165200d", Instant.parse("2026-10-23T09:06:42.860Z"), BenchmarkType.JMH,
-            "com.example.Bench", "m", "thrpt", Map.of("size", "10"), 1234.5, null, "ops/s",
-            Map.of(), null, Map.of("imageVersion", "1.4.0"),
-            "jobs/p/20261023T090642860Z-5165200d", "jobs/p/20261023T090642860Z-5165200d/jmh-result.json",
-            "jobs/p/20261023T090642860Z-5165200d/environment.json");
+        var measurement = TestMeasurements.jmh()
+            .project("p")
+            .jobId("20261023T090642860Z-5165200d")
+            .createdAt("2026-10-23T09:06:42.860Z")
+            .benchmarkMethod("m")
+            .params(Map.of("size", "10"))
+            .scoreError(null)
+            .tags(Map.of("imageVersion", "1.4.0"))
+            .resultPath("jobs/p/20261023T090642860Z-5165200d")
+            .resultJsonKey("jobs/p/20261023T090642860Z-5165200d/jmh-result.json")
+            .environmentJsonKey("jobs/p/20261023T090642860Z-5165200d/environment.json")
+            .build();
         var item = MeasurementItemMapper.toItem(measurement);
 
         assertThat(ItemJson.decode(ItemJson.encode(item))).isEqualTo(item);
@@ -59,9 +63,9 @@ class ItemJsonTest {
 
     @Test
     void aJobItemRoundTrips() {
-        var job = new JobItem("20261022T142436535Z-8133679f", "p", Instant.parse("2026-10-22T14:24:36.535Z"),
-            "jobs/p/20261022T142436535Z-8133679f", "c5.large", "completed", "i-0abc", null,
-            Map.of("source", "local"), null, 7500);
+        var job = TestJobs.job("20261022T142436535Z-8133679f").createdAt("2026-10-22T14:24:36.535Z")
+            .instanceType("c5.large").status("completed").instanceId("i-0abc").tags(Map.of("source", "local"))
+            .watchdogSeconds(7500).build();
         Map<String, AttributeValue> item = new LinkedHashMap<>(JobItemMapper.key(job));
         item.putAll(JobItemMapper.identityAttributes(job));
         item.put(JobItemMapper.STATUS, AttributeValue.fromS(job.status()));

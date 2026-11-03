@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.model.dynamodb;
 
+import pl.wsztajerowski.baas.model.TestMeasurements;
 import pl.wsztajerowski.baas.model.StoredMeasurementFixtures;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
@@ -120,13 +121,10 @@ class MeasurementItemMapperTest {
     @Test
     void aNaNScoreErrorIsNormalizedToAbsentRatherThanRejectedByDynamoDb() {
         var original = StoredMeasurementFixtures.jmh();
-        var withNaNScoreError = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
-            Map.of(),
-            original.score(), Double.NaN, original.scoreUnit(),
-            original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+        var withNaNScoreError = TestMeasurements.copy(original)
+            .params(Map.of())
+            .scoreError(Double.NaN)
+            .build();
 
         var item = MeasurementItemMapper.toItem(withNaNScoreError);
 
@@ -141,13 +139,10 @@ class MeasurementItemMapperTest {
     @Test
     void aPositiveInfinityScoreIsNormalizedToAbsentRatherThanRejectedByDynamoDb() {
         var original = StoredMeasurementFixtures.jmh();
-        var withInfiniteScore = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
-            Map.of(),
-            Double.POSITIVE_INFINITY, original.scoreError(), original.scoreUnit(),
-            original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+        var withInfiniteScore = TestMeasurements.copy(original)
+            .params(Map.of())
+            .score(Double.POSITIVE_INFINITY)
+            .build();
 
         var item = MeasurementItemMapper.toItem(withInfiniteScore);
 
@@ -165,16 +160,12 @@ class MeasurementItemMapperTest {
     @Test
     void aSecondaryMetricWithANonFiniteScoreIsDroppedRatherThanRejectedByDynamoDb() {
         var original = StoredMeasurementFixtures.jmh();
-        var withBadSecondaryMetric = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
-            Map.of(),
-            original.score(), original.scoreError(), original.scoreUnit(),
-            Map.of(
+        var withBadSecondaryMetric = TestMeasurements.copy(original)
+            .params(Map.of())
+            .secondaryMetrics(Map.of(
                 "gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec"),
-                "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")),
-            original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+                "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")))
+            .build();
 
         var item = MeasurementItemMapper.toItem(withBadSecondaryMetric);
 
@@ -194,16 +185,12 @@ class MeasurementItemMapperTest {
     @Test
     void aSecondaryMetricWithANullUnitIsDroppedRatherThanStoredEmpty() {
         var original = StoredMeasurementFixtures.jmh();
-        var withNullUnit = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
-            Map.of(),
-            original.score(), original.scoreError(), original.scoreUnit(),
-            Map.of(
+        var withNullUnit = TestMeasurements.copy(original)
+            .params(Map.of())
+            .secondaryMetrics(Map.of(
                 "gc.alloc.rate", new SecondaryMetric(1234.5, null),
-                "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")),
-            original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+                "gc.alloc.rate.norm", new SecondaryMetric(42.0, "B/op")))
+            .build();
 
         var item = MeasurementItemMapper.toItem(withNullUnit);
 
@@ -220,14 +207,10 @@ class MeasurementItemMapperTest {
     @Test
     void secondaryMetricsIsOmittedEntirelyWhenEveryEntryIsUnusable() {
         var original = StoredMeasurementFixtures.jmh();
-        var allBad = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
-            Map.of(),
-            original.score(), original.scoreError(), original.scoreUnit(),
-            Map.of("gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec")),
-            original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+        var allBad = TestMeasurements.copy(original)
+            .params(Map.of())
+            .secondaryMetrics(Map.of("gc.alloc.rate", new SecondaryMetric(Double.NaN, "MB/sec")))
+            .build();
 
         var item = MeasurementItemMapper.toItem(allBad);
 
@@ -244,14 +227,10 @@ class MeasurementItemMapperTest {
     @Test
     void aMeasurementBuiltFromANanosecondPrecisionClockStillRoundTrips() {
         var original = StoredMeasurementFixtures.jmh();
-        var withNanosecondPrecisionClock = new StoredMeasurement(
-            original.project(), original.jobId(),
-            Instant.parse("2026-08-17T22:07:06.123456789Z"), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), original.mode(),
-            Map.of(),
-            original.score(), original.scoreError(), original.scoreUnit(),
-            original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+        var withNanosecondPrecisionClock = TestMeasurements.copy(original)
+            .createdAt("2026-08-17T22:07:06.123456789Z")
+            .params(Map.of())
+            .build();
 
         assertThat(MeasurementItemMapper.fromItem(MeasurementItemMapper.toItem(withNanosecondPrecisionClock)))
             .isEqualTo(withNanosecondPrecisionClock);

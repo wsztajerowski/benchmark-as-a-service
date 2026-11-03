@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JcstressSummary;
 import pl.wsztajerowski.baas.model.BenchmarkType;
@@ -19,8 +20,10 @@ class ResultsDiffTest {
 
     static ResultRow jmh(String job, String benchmark, String mode, double score, double error, String unit,
                          Map<String, String> params, Map<String, String> tags) {
-        return new ResultRow(job, benchmark, tags.getOrDefault("type", "jmh"), mode, score, error, unit,
-            "2026-08-20T17:44:32.812Z", tags, "p", params, null, Map.of(), BenchmarkType.JMH);
+        return TestRows.row().jobId(job).benchmarkName(benchmark).benchmarkType(tags.getOrDefault("type", "jmh"))
+            .mode(mode).score(score).scoreError(error).scoreUnit(unit)
+            .createdAt("2026-08-20T17:44:32.812Z").tags(tags).project("p").params(params)
+            .kind(BenchmarkType.JMH).build();
     }
 
     static ResultRow jmh(String job, String benchmark, String mode, double score, double error) {
@@ -28,10 +31,11 @@ class ResultsDiffTest {
     }
 
     static ResultRow jcstress(String job) {
-        return new ResultRow(job, "(jcstress) " + job, "jcstress", null, Double.NaN, Double.NaN, "",
-            "2026-08-20T17:44:32.812Z", Map.of("type", "jcstress"), "p", Map.of(),
-            new JcstressSummary(42, 41, 1, 0, Map.of("T", "FORBIDDEN"), Map.of(), Map.of()), Map.of(),
-            BenchmarkType.JCSTRESS);
+        return TestRows.row().jobId(job).benchmarkName("(jcstress) " + job).benchmarkType("jcstress").mode(null)
+            .score(Double.NaN).scoreError(Double.NaN).scoreUnit("")
+            .createdAt("2026-08-20T17:44:32.812Z").tags(Map.of("type", "jcstress")).project("p")
+            .jcstress(new JcstressSummary(42, 41, 1, 0, Map.of("T", "FORBIDDEN"), Map.of(), Map.of()))
+            .kind(BenchmarkType.JCSTRESS).build();
     }
 
     // --- the library guard ---

@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.model.dynamodb;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import pl.wsztajerowski.baas.model.ResultKeys;
 import pl.wsztajerowski.baas.model.StoredMeasurementFixtures;
 import pl.wsztajerowski.baas.model.JobStatus;
@@ -7,7 +8,6 @@ import pl.wsztajerowski.baas.model.JobItem;
 import org.junit.jupiter.api.Test;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -17,10 +17,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class JobItemMapperTest {
 
     static JobItem run() {
-        return new JobItem("20261003T000000000Z-a3f9c21b", "lynx-journal",
-            Instant.parse("2026-10-03T00:00:00Z"), "jobs/lynx-journal/20261003T000000000Z-a3f9c21b",
-            "c5.2xlarge", JobStatus.LAUNCHING, null, null,
-            Map.of("project", "lynx-journal", "source", "local", "type", "jmh", "branch", "main"), null);
+        return TestJobs.job("20261003T000000000Z-a3f9c21b").project("lynx-journal")
+            .tags(Map.of("project", "lynx-journal", "source", "local", "type", "jmh", "branch", "main")).build();
     }
 
     /** What a stored item looks like once the CLI and the instance have each written to it. */
@@ -75,8 +73,7 @@ class JobItemMapperTest {
 
     @Test
     void anItemWithNoTagsReadsAsEmptyTags() {
-        var bare = new JobItem("r", "p", Instant.parse("2026-10-03T00:00:00Z"), null, null,
-            JobStatus.LAUNCHING, null, null, Map.of(), null);
+        var bare = TestJobs.job("r").resultPath(null).instanceType(null).build();
 
         assertThat(JobItemMapper.identityAttributes(bare)).doesNotContainKey(JobItemMapper.TAGS);
         assertThat(JobItemMapper.fromItem(stored(bare, JobStatus.LAUNCHING, null)).tags()).isEmpty();
@@ -84,8 +81,7 @@ class JobItemMapperTest {
 
     @Test
     void theWatchdogBoundIsAnIdentityAttributeAndRoundTrips() {
-        var bounded = new JobItem("r", "p", Instant.parse("2026-10-03T00:00:00Z"), null, null,
-            JobStatus.LAUNCHING, null, null, Map.of(), null, 900);
+        var bounded = TestJobs.job("r").resultPath(null).instanceType(null).watchdogSeconds(900).build();
 
         assertThat(JobItemMapper.identityAttributes(bounded).get(JobItemMapper.WATCHDOG_SECONDS).n())
             .isEqualTo("900");

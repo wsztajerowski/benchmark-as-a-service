@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
-import picocli.CommandLine;
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import pl.wsztajerowski.baas.BaasApp;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
@@ -43,8 +43,8 @@ class ResultsConsoleOutputTest {
     }
 
     private static ResultRow row(String jobId, String imageVersion) {
-        return new ResultRow(jobId, "com.example.B.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
-            "2026-08-20T17:44:32.812Z", Map.of("imageVersion", imageVersion, "instanceType", "c5.2xlarge"));
+        return TestRows.row().jobId(jobId).benchmarkName("com.example.B.run").createdAt("2026-08-20T17:44:32.812Z")
+            .tags(Map.of("imageVersion", imageVersion, "instanceType", "c5.2xlarge")).build();
     }
 
     @Test

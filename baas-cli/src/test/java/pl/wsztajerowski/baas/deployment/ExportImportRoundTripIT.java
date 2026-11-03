@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.model.TestMeasurements;
+import pl.wsztajerowski.baas.model.TestJobs;
 import pl.wsztajerowski.baas.testsupport.TestCli;
 import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
@@ -10,10 +12,7 @@ import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import pl.wsztajerowski.baas.TestDeployments;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.model.JobItem;
-import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.baas.model.StoredMeasurement;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -105,13 +104,22 @@ class ExportImportRoundTripIT {
 
     @Test
     void aBundleRestoresItemByItemAndObjectByObject() throws Exception {
-        var measurement = MeasurementItemMapper.toItem(new StoredMeasurement(
-            "p", JOB_ID, Instant.parse("2026-10-23T09:06:42.860Z"), BenchmarkType.JMH,
-            "com.example.Bench", "m", "thrpt", Map.of("size", "10"), 8234574.731914, 12.5, "ops/s",
-            Map.of(), null, Map.of("imageVersion", "1.4.0", "source", "local"),
-            JOB.substring(0, JOB.length() - 1), JOB + "jmh-result.json", JOB + "environment.json"));
-        var job = new JobItem(JOB_ID, "p", Instant.parse("2026-10-23T09:06:42.860Z"), JOB.substring(0, JOB.length() - 1),
-            "c5.large", "completed", "i-0abc", null, Map.of("source", "local"), null, 7500);
+        var measurement = MeasurementItemMapper.toItem(TestMeasurements.jmh()
+            .project("p")
+            .jobId(JOB_ID)
+            .createdAt("2026-10-23T09:06:42.860Z")
+            .benchmarkMethod("m")
+            .params(Map.of("size", "10"))
+            .score(8234574.731914)
+            .scoreError(12.5)
+            .tags(Map.of("imageVersion", "1.4.0", "source", "local"))
+            .resultPath(JOB.substring(0, JOB.length() - 1))
+            .resultJsonKey(JOB + "jmh-result.json")
+            .environmentJsonKey(JOB + "environment.json")
+            .build());
+        var job = TestJobs.job(JOB_ID).createdAt("2026-10-23T09:06:42.860Z").resultPath(JOB.substring(0, JOB.length() - 1))
+            .instanceType("c5.large").status("completed").instanceId("i-0abc").tags(Map.of("source", "local"))
+            .watchdogSeconds(7500).build();
         Map<String, AttributeValue> jobItem = new LinkedHashMap<>(JobItemMapper.key(job));
         jobItem.putAll(JobItemMapper.identityAttributes(job));
         jobItem.put(JobItemMapper.STATUS, AttributeValue.fromS("completed"));

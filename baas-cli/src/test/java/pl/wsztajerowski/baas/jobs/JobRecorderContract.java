@@ -1,10 +1,10 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 
-import java.time.Instant;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -19,9 +19,8 @@ public abstract class JobRecorderContract {
 
     protected abstract JobRecorder recorder();
 
-    private static final JobItem JOB = new JobItem("20261003T000000000Z-c0ffee00", "p",
-        Instant.parse("2026-10-03T00:00:00Z"), "jobs/p/20261003T000000000Z-c0ffee00", "c5.2xlarge",
-        JobStatus.LAUNCHING, null, null, Map.of("project", "p"), null, 900);
+    private static final JobItem JOB = TestJobs.job("20261003T000000000Z-c0ffee00")
+        .tags(Map.of("project", "p")).watchdogSeconds(900).build();
 
     private String status() {
         return recorder().read(JOB).map(JobItem::status).orElse(null);

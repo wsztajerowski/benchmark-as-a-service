@@ -1,10 +1,10 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -18,9 +18,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JobSessionTest {
 
-    private static final JobItem JOB = new JobItem("20261003T000000000Z-a3f9c21b", "p",
-        Instant.parse("2026-10-03T00:00:00Z"), "jobs/p/20261003T000000000Z-a3f9c21b", "c5.2xlarge",
-        JobStatus.LAUNCHING, null, null, Map.of(), null);
+    private static final JobItem JOB = TestJobs.job("20261003T000000000Z-a3f9c21b").build();
 
     /** The job item in memory, applying the same rules the DynamoDB conditions enforce. */
     static final class FakeRecorder implements JobRecorder {
@@ -78,8 +76,8 @@ class JobSessionTest {
 
         @Override
         public Optional<JobItem> read(JobItem job) {
-            return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
-                job.createdAt(), job.resultPath(), job.instanceType(), status, instanceId, null, Map.of(), null, job.watchdogSeconds()));
+            return status == null ? Optional.empty() : Optional.of(TestJobs.copy(job)
+                .status(status).instanceId(instanceId).errorCode(null).tags(Map.of()).updatedAt(null).build());
         }
 
         @Override

@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
@@ -76,8 +77,8 @@ class DynamoDbJobRecorderIT {
     }
 
     private static JobItem run(String jobId, String createdAt, String project) {
-        return new JobItem(jobId, project, Instant.parse(createdAt), "jobs/" + project + "/" + jobId,
-            "c5.2xlarge", JobStatus.LAUNCHING, null, null, Map.of("project", project, "source", "local"), null);
+        return TestJobs.job(jobId).project(project).createdAt(createdAt)
+            .tags(Map.of("project", project, "source", "local")).build();
     }
 
     private final JobItem job = run("20261003T000000000Z-a3f9c21b", "2026-10-03T00:00:00Z", "p");

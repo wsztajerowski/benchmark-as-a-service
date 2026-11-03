@@ -1,5 +1,7 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.model.TestMeasurements;
+import pl.wsztajerowski.baas.model.TestJobs;
 import pl.wsztajerowski.baas.testsupport.LocalStack;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -7,11 +9,8 @@ import org.testcontainers.containers.localstack.LocalStackContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
 import pl.wsztajerowski.baas.model.dynamodb.MeasurementItemMapper;
-import pl.wsztajerowski.baas.model.BenchmarkType;
 import pl.wsztajerowski.baas.model.ResultKeys;
-import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
-import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.StoredMeasurement;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -28,7 +27,6 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.PutItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.ScalarAttributeType;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -385,9 +383,7 @@ class ResultsQueryServiceIT {
     }
 
     private void putJob(String project, String jobId) {
-        var job = new JobItem(jobId, project, Instant.parse("2026-10-03T00:00:00Z"),
-            "jobs/" + project + "/" + jobId, "c5.2xlarge", JobStatus.LAUNCHING, null, null,
-            Map.of("project", project), null);
+        var job = TestJobs.job(jobId).project(project).tags(Map.of("project", project)).build();
         var item = new java.util.HashMap<>(JobItemMapper.key(job));
         item.putAll(JobItemMapper.identityAttributes(job));
         item.put(JobItemMapper.STATUS, software.amazon.awssdk.services.dynamodb.model.AttributeValue.fromS(job.status()));
@@ -403,11 +399,12 @@ class ResultsQueryServiceIT {
 
     private static StoredMeasurement measurement(
         String project, String jobId, String method, Map<String, String> tags) {
-        return new StoredMeasurement(
-            project, jobId, Instant.parse("2026-08-19T09:00:00.000Z"), BenchmarkType.JMH,
-            "com.example.Bench", method, "thrpt", Map.of(), 1234.5, 1.0, "ops/s",
-            Map.of(), null, tags,
-            "main/jmh/ts", "main/jmh/ts/jmh-result.json", "main/jmh/ts/environment.json");
+        return TestMeasurements.jmh()
+            .project(project)
+            .jobId(jobId)
+            .benchmarkMethod(method)
+            .tags(tags)
+            .build();
     }
 
     private static AttributeDefinition stringAttribute(String name) {

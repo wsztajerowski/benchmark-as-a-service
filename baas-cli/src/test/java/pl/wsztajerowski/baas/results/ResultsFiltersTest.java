@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -10,8 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ResultsFiltersTest {
 
     private static ResultRow row(String benchmark, Map<String, String> tags) {
-        return new ResultRow("req-1", benchmark, "jmh", "thrpt",
-            1.0, 0.1, "ops/s", "2026-08-19T09:00:00Z", tags);
+        return TestRows.row().jobId("req-1").benchmarkName(benchmark).createdAt("2026-08-19T09:00:00Z").tags(tags).build();
     }
 
     @Test
