@@ -126,7 +126,7 @@ Every check passed:
 
 | Dimension | Status |
 |---|---|
-| Completeness | 25/26 tasks. 6.4 is open by design: it can only run after `/opsx:archive`. 5 requirements, all implemented |
+| Completeness | 26/26 tasks (6.4 done after the archive). 5 requirements, all implemented |
 | Correctness | 5/5 requirements covered; 24 scenarios, each covered by a test, a live check or an unchanged existing test |
 | Coherence | Design followed, with two recorded deviations (2.4 placement, 5.1 method) |
 
@@ -157,7 +157,9 @@ T10 has no delta spec. It is covered by `NoRealBaasHomeTest`, run under Maven an
   `admin image show`'s, which is the same `stackExists` read.
 - **W3:** the delta keeps the scenario name "The deployment noun lists its four verbs" while its
   body names five, because `openspec validate` refuses a MODIFIED block that drops a scenario
-  name. Task 6.4 renames it in the main spec after archive.
+  name. Task 6.4 renames it in the main spec after archive. **Closed 2026-11-03:** renamed to "The
+  deployment noun lists its five verbs" in `openspec/specs/cli-command-structure/spec.md` after the
+  archive.
 - **W4:** 5.1's IDE check used the JUnit 6 launcher outside surefire, not IntelliJ (see
   Implementation notes). It proves the same thing: with the real `user.home`, `~/.baas` is
   redirected.
