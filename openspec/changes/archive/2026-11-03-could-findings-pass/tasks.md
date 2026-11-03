@@ -88,7 +88,7 @@ only free AWS reads.
   in `.claude/rules/benchmark-runner.md` beside the no-run refusals.
 - [x] 6.3 Delete N3, G9, G14 and T10 from `docs/review/open-findings.md`. Verify with
   `grep -nE '\b(N3|G9|G14|T10)\b' docs/review/open-findings.md`, which should print nothing.
-- [ ] 6.4 After `/opsx:archive`, rename the scenario "The deployment noun lists its four verbs" to "…five
+- [x] 6.4 After `/opsx:archive`, rename the scenario "The deployment noun lists its four verbs" to "…five
   verbs" in `openspec/specs/cli-command-structure/spec.md` by hand. `openspec validate` refuses a
   MODIFIED block that drops a scenario name, so the delta keeps the old name with the new body.
 
