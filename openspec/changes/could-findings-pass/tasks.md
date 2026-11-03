@@ -112,12 +112,12 @@ Uses the reactor JAR via the `baas-dev` alias (`--deployment baas-development`, 
   foreground (no paid launch if the interrupt lands before `RunInstances`). Expect the item to read
   `cancelled` and no instance. Skip if the upload is too fast to interrupt reliably, and say so in
   `verify.md`.
-- [ ] 7.6 Open the PR into `next-release`. CI's `e2e-cloud-test.yml` runs two launches (paid launches
+- [x] 7.6 Open the PR into `next-release`. CI's `e2e-cloud-test.yml` runs two launches (paid launches
   2–3). Record their outcome. One paid launch is held in reserve for a re-run.
 
 ## 8. Verify
 
-- [ ] 8.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory:
+- [x] 8.1 Run `/opsx:verify` and record the result in `verify.md` in the change directory:
   - a requirement → code → test → gap table;
   - open warnings under stable IDs (W1, W2…);
   - the paid-launch count;

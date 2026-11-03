@@ -7,6 +7,10 @@ Budget: 5, CI's e2e jobs included.
 | # | When | What | Outcome |
 |---|---|---|---|
 | 1 | 2026-11-03 20:29 | 7.4 attached `fake-jmh-benchmarks` run on `baas-development` | completed, exit 0, 47 s from launch to results |
+| 2 | 2026-11-03 | 7.6 PR #133 e2e: "Benchmark on EC2 via baas run" (run 41703926347) | pass, 2m31s |
+| 3 | 2026-11-03 | 7.6 PR #133 e2e: "JCStress on EC2 via baas run" (run 41703926347) | pass, 1m59s |
+
+Total 3 of 5. Two are left unused.
 
 ## 1. Blocking assumptions (2026-11-03)
 
@@ -110,3 +114,64 @@ watcher sent SIGINT to its JVM 5 s after "Uploading benchmark JAR to S3...". Job
 - `jobs list` shows it `cancelled`, with no instance;
 - `describe-instances` by its `baas-job-id` tag finds nothing;
 - `head-object` on its `input/benchmark.jar` returns 404, so the interrupted upload left no object.
+
+### 7.6 PR #133 CI
+
+Every check passed:
+- `build` (8m2s);
+- both EC2 e2e jobs (paid launches 2 and 3);
+- `install.sh` on ubuntu-latest and macos-latest.
+
+## 8. Verification report (`/opsx:verify`, 2026-11-03)
+
+| Dimension | Status |
+|---|---|
+| Completeness | 25/26 tasks. 6.4 is open by design: it can only run after `/opsx:archive`. 5 requirements, all implemented |
+| Correctness | 5/5 requirements covered; 24 scenarios, each covered by a test, a live check or an unchanged existing test |
+| Coherence | Design followed, with two recorded deviations (2.4 placement, 5.1 method) |
+
+### Requirement → code → test → gap
+
+| Requirement (delta) | Code | Tests / live | Gap |
+|---|---|---|---|
+| job-tracking: The job is reserved before the instance is launched | `JobLaunch.run` steps 3–5 (`JobLaunch.java:209-264`); pinned release before naming | `JobLaunchTest`: `aCompletedJobRunsEveryStepInOrder…` (reserve → hook → upload → runInstance), `aReservationThatCannotBeWrittenLaunchesNothing` (no upload), `aRunnerReleaseThatCannotBeResolvedLeavesNoItem`, `anInterruptDuringTheUploadCancelsTheJob`; live 7.4, 7.5 | W1 |
+| job-tracking: A failed launch is recorded and diagnosable | `JobLaunch.recordLaunchFailure(…, Step, …)` (`:261`, `:286`), `step:` line in the report | `aFailedUploadIsRecordedAsALaunchFailureAndLaunchesNothing`, `aRefusedLaunchIsRecorded…` (`step: launch`); live 7.3 | — |
+| benchmark-arguments: `baas run --dry-run` checks the arguments on this machine and launches nothing | `RunCommand.dryRun` (branch before `context.operator()`, `RunCommand.java:294-297`), `LocalListing` | `RunCommandLaunchTest` dry-run cases (6), `LocalListingTest` (6), `LocalListingIT` (8, real fixture JARs), `HelpAndHintsTest.runsHelpOffersTheDryRun`; live 7.1 incl. isolated home and no credentials | — |
+| cli-command-structure: Deployer-privileged commands are grouped under `admin` | `DeploymentCommand` subcommands | `CommandTreeTest` (five verbs; noun alone prints usage), `HelpAndHintsTest` top-level help | W3 |
+| cli-command-structure: `baas admin deployment show` reports the deployment's server-side state | `DeploymentShowSubcommand`, `CloudFormationService.view`, `GitHubTrust` | `DeploymentShowSubcommandTest` (6: text, absent values, JSON, nulls, escaping, trust read-back); live 7.2 cross-checked with `describe-stacks` and `admin image show` | W2 |
+
+T10 has no delta spec. It is covered by `NoRealBaasHomeTest`, run under Maven and outside surefire
+(5.1).
+
+### Warnings
+
+- **W1:** `anInterruptDuringTheUploadCancelsTheJob` stops the session from inside the upload, as the
+  hook does. The fake then lets `run` continue, so the test proves that the item reads `cancelled`.
+  It does not prove the scenario's "no instance is requested", which follows from the JVM exiting.
+  That half is shown only live, in 7.5: no instance by tag and exit 130. Acceptable: a JVM exit
+  cannot be simulated in-process.
+- **W2:** `admin deployment show`'s missing-stack refusal (exit 1, naming setup;
+  `DeploymentShowSubcommand.java:65-66`) has no test and was not run live. The command builds its
+  clients inline, with no port (ADR 0009). A live run would need a torn-down stack: a deployer
+  policy scoped to another prefix answers `AccessDenied`, not "does not exist". The wording mirrors
+  `admin image show`'s, which is the same `stackExists` read.
+- **W3:** the delta keeps the scenario name "The deployment noun lists its four verbs" while its
+  body names five, because `openspec validate` refuses a MODIFIED block that drops a scenario
+  name. Task 6.4 renames it in the main spec after archive.
+- **W4:** 5.1's IDE check used the JUnit 6 launcher outside surefire, not IntelliJ (see
+  Implementation notes). It proves the same thing: with the real `user.home`, `~/.baas` is
+  redirected.
+
+### Deviations from design and tasks
+
+- **2.4:** design.md said the JAR existence check "moves up to join" `refuseManagedOrNoRun()`.
+  `OptionValidationTest` pins that tag and timeout refusals come before the JAR check, so a real run
+  keeps the check in its old place and only the dry run checks the JAR before its listing. design.md's
+  sentence is stale on this point. The behaviour each spec states is unchanged.
+- **4.1:** rather than exposing `GitHubStep.deployed`, the read-back moved into a new public
+  `deployment.setup.GitHubTrust` record, which `GitHubStep` delegates to.
+
+### Assessment
+
+No critical issues. Task 6.4 is open by design. Four warnings, none blocking. Paid launches: 3 of
+5. Ready for archive once PR #133 is merged.
