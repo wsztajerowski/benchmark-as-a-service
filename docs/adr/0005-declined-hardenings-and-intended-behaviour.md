@@ -86,11 +86,39 @@ format — do not "fix" it into one.
 Recorded in CLAUDE.md (*BaaS targets the commercial `aws` partition only*): making the policy alone
 partition-aware would imply support nothing else has.
 
-## No `jobs wait`, no `config remove` for now (G5, G13, 2026-11-03)
+## A failed table write is not re-derived from S3 (A4, 2026-11-03)
 
-Both were valid and small, and closed as not needed now. Without `jobs wait`, `e2e-cloud-test.yml`
-keeps its own poll loop with a copy of the terminal statuses (`JobStatus.EXACT_TERMINAL` plus the
-computed `vanished`): a new terminal status must be added there too, or the loop spins until its
-deadline. Without `config remove`, a deployment torn down from another machine is forgotten by
-deleting `~/.baas/deployments/<name>.yaml` by hand, and a preference is reset to its default by
-removing its line. The designs are in the 2026-10-13 review's `api-gaps.md`.
+The runner uploads to S3 before it writes the measurement rows, on purpose: a row points at
+`resultJsonKey`, so writing it first could publish a row referencing an object never uploaded. When
+the table write then fails, the job exits non-zero with `jmh-result.json` intact, but the rows are
+lost and nothing re-derives them. Accepted: the failure is loud and the data is in S3. A re-ingest
+command would be its own change, built when a lost row is actually missed.
+
+## perfasm's save locations are not managed (PT3, 2026-11-03)
+
+`-prof perfasm:savePerfTo=…`, `savePerfBinTo`, `saveLogTo` and their `…ToFile` forms write outside the
+job's `profiler-output` directory, so their files are lost with the instance. Not managed because no
+instance type the operator policy allows exposes the hardware counters perfasm needs, so an
+injection could not be tested. When one is allowed: inject the keys under `profiler-output` as the
+runner does `dir` for async and jfr, and refuse them in `BenchmarkArgs`.
+
+## Closed as not needed now (2026-11-03)
+
+Each was valid and small, and closed because nothing needs it yet. The designs are in the 2026-10-13
+review's `api-gaps.md`.
+
+- **No `jobs wait` (G5).** `e2e-cloud-test.yml` keeps its own poll loop with a copy of the terminal
+  statuses (`JobStatus.EXACT_TERMINAL` plus the computed `vanished`): a new terminal status must be
+  added there too, or the loop spins until its deadline.
+- **One exit code for every failure (G7).** Any outcome other than `completed`, and any config,
+  credential or launch error, exits 1; unattended setup exits 1 both for a step awaiting an IAM admin
+  and for a failure. `run --format json`'s `jobStatus` is how a caller tells them apart.
+- **`jobs diff` does not gate (G11).** It exits 0 whether or not the environments differ; a gate reads
+  `--format json`.
+- **No machine-readable output from `admin image build`, unattended setup, `jobs terminate` or `jobs
+  download` (G12).**
+- **No `config remove`, no `config set --unset` (G13).** A deployment torn down from another machine
+  is forgotten by deleting `~/.baas/deployments/<name>.yaml` by hand, and a preference is reset to its
+  default by removing its line.
+- **No idempotency key on `baas run` (G21).** A retried CI step launches a second instance and job;
+  CI runs one job per push.

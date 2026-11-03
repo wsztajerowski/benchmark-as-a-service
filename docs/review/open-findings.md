@@ -50,19 +50,11 @@ None open.
 
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
-| PT3 | perfasm's `savePerfTo`, `savePerfBinTo`, `saveLogTo` (and `…ToFile`) write outside the uploaded tree | S | Low | open, untestable today |
-| A4 | A store failure after the upload loses the measurement row | M | Med → reduced | open |
-| S7 | A runner can overwrite another job's objects under `jobs/*` | M | Med → reduced | open |
-| N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | open |
-| X8 | The CLI and runner-JAR checksums come from the same release as the assets: integrity, not authenticity (CLAUDE.md says so since `open-findings-pass`); immutable releases and build-provenance attestation remain ([security](2026-10-13-codebase-review/security.md)) | S | — | open, when nearby |
-| G7 | Exit codes do not separate failure kinds; the runner's exit code is not propagated; unattended setup exits 1 for a failure and for a step awaiting an IAM admin alike ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
-| G9 | Runner PARAMS are first validated on the paid instance (`failed:2` after boot) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| G11 | `jobs diff` exits 0 whether or not the environments differ, so it cannot gate CI; `--format json` exists since `open-findings-pass`, an `--exit-code` gate was left out ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS | — | open, when nearby |
-| G12 | `admin image build`, unattended setup, `jobs terminate` and `jobs download` have no machine-readable output (`config show` and `admin image show` have `--format json` since `open-findings-pass`) ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | XS each | — | open, when nearby |
-| G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
+| N3 | A failed run-item reservation strands the uploaded `input/` | S | Low | to build: reserve first |
+| G9 | Benchmark arguments are first parsed by JMH or JCStress on the paid instance: a typo fails the job after boot. Managed and list-only options are refused locally since `benchmark-args-pass-through`; the rest is checked locally by `java -jar <benchmark.jar> <args> -l` ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | to build: `baas run --dry-run` |
+| G14 | No read-only, machine-readable view of the deployment's server-side state; unattended `--github-repo` replaces the list ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | to build: `admin deployment show` |
 | G15 | No prune or retention: `jobs/` (every `input/benchmark.jar` included) and items grow until teardown ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | M | — | open, when nearby |
-| G21 | `baas run` has no caller idempotency key; a retried CI step launches a second paid instance ([api-gaps](2026-10-13-codebase-review/api-gaps.md)) | S | — | open, when nearby |
-| T10 | `~/.baas` isolation is surefire's `user.home` only, so a unit test run from an IDE that builds a command outside `BaasApp` reads the real `~/.baas`. `~/.aws` is covered for every run by `testsupport.NoRealAwsProfile`; ITs keep the real `user.home` for `~/.testcontainers.properties` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T10 | `~/.baas` isolation is surefire's `user.home` only, so a unit test run from an IDE that builds a command outside `BaasApp` reads the real `~/.baas`. `~/.aws` is covered for every run by `testsupport.NoRealAwsProfile`; ITs keep the real `user.home` for `~/.testcontainers.properties` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | to build |
 | T11 | Each LocalStack IT class starts its own container (the pin is shared since `testsupport.LocalStack`) ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 
 ### Informational
@@ -83,24 +75,6 @@ below is what the proposal starts from.
 
 ## Open, not scheduled
 
-### S7 — a runner can overwrite another job's objects under `jobs/*` · Could · M · reduced
-
-Reduced by `narrow-bucket-grants` (2026-10-13): `RunnerRole` holds `PutObject`/`GetObject` on
-`jobs/*` and `GetObject` on `releases/*` only — no delete, no listing, no write to the pinned runner.
-What remains is that benchmark code can overwrite any job's objects under `jobs/*`, including its
-`jmh-result.json`, since IAM has no per-job scope for an instance profile. Versioning is `Suspended`,
-so an overwrite is unrecoverable. The same trust position as *Runners can terminate each other*
-(CLAUDE.md, Accepted risks): only an operator supplies a benchmark JAR. **Would need:** per-job
-credentials — e.g. the CLI vending a session-tagged role session to the instance — which is its own
-change.
-
-### A4 — a store failure after the upload loses the measurement row · Could · M · reduced
-
-All four services order S3 first, then the store, on purpose: the item points at `resultJsonKey`, so
-writing it first could publish a row referencing an object never uploaded. Writes are idempotent and
-batched, and a failed write exits non-zero with the S3 artifacts intact (asserted by an IT). What
-remains: the row itself is lost and nothing re-derives it from `jmh-result.json`.
-
 ### N3 — a failed reservation strands the uploaded `input/` · Could · S
 
 `baas run` uploads `benchmark.jar` (and a `--runner-jar`) before it reserves the job item, so a
@@ -113,19 +87,8 @@ which lists as `vanished` — arguably the better failure.
 
 `3q7i7s65-operator-role`, from the caller-ARN naming that `account-derived-deployment-naming`
 replaced, still exists: the `baas-operator` profile in `~/.aws/config` assumes it successfully
-(2026-10-05). The deployer cannot remove it (outside its prefix). Delete it, and the profile, with an
-identity above the deployer.
-
-### PT3 — perfasm's save locations write outside the uploaded tree · Could · S
-
-Found 2026-10-31 by `multiple-jdks`' review of every JMH option (would a user value break BaaS?). `-prof
-perfasm:savePerfTo=…`, `savePerfBinTo`, `saveLogTo` and their `…ToFile` forms name where perfasm writes its
-files; the runner neither points them at the job's `profiler-output` directory, as it does `dir` for async
-and jfr, nor uploads anything outside it, so those files are lost with the instance. Not managed, because
-perfasm cannot run on the image today: no instance type the operator policy allows (c5, c6i, c7i, m5,
-m6i, m7i, within the 33-vCPU quota) exposes the hardware counters it needs (c5.2xlarge and c5.4xlarge
-checked), so an injection could not be tested. **Fix**, once a counter-exposing type is allowed: inject
-`savePerfTo`/`savePerfBinTo`/`saveLogTo` under `profiler-output` like `dir`, and manage the keys.
+(2026-10-05). The deployer cannot remove it (outside its prefix). Delete it with an identity above
+the deployer. The profile is already gone from `~/.aws/config` (2026-11-03).
 
 ### Codebase review 2026-10-13 — X, G, K, T, B
 
