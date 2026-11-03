@@ -70,6 +70,10 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         + "Reads the whole table.")
     boolean allProjects;
 
+    @Option(names = "--list-projects", description = "List the projects that hold results (one per line; "
+        + "a JSON array with --format json) instead of querying one. What the picker offers, without a terminal.")
+    boolean listProjects;
+
     @Option(names = "--job-id", description = "Only this job's measurements, read through the job-ID index. "
         + "Combines with every filter except --project and --all-projects.")
     String jobId;
@@ -162,6 +166,10 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         if (conflict != null) {
             throw CommandRefusal.usage("--job-id reads one job through its own index, so it cannot be combined with " + conflict + ".");
         }
+        if (listProjects && (project != null || allProjects || jobId != null || watch)) {
+            throw CommandRefusal.usage("--list-projects lists the projects; it cannot be combined with "
+                + "--project, --all-projects, --job-id or --watch.");
+        }
         if (project != null && allProjects) {
             throw CommandRefusal.usage("--project and --all-projects cannot be combined: name one project, or ask for all.");
         }
@@ -176,6 +184,10 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         }
 
         try (var results = openResults(config, tableName)) {
+            if (listProjects) {
+                printProjects(results.listVisibleProjects());
+                return 0;
+            }
             // Once, before --watch enters the alternate screen: a prompt cannot be answered there.
             if (jobId == null && !allProjects) {
                 Optional<String> chosen = resolveProject(config, results);
@@ -330,10 +342,24 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         }
         if (!context.console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {
             logger.error("No project named, and there is no terminal to choose one on. "
-                + "Pass --project <name> or --all-projects. Projects: {}", String.join(", ", projects));
+                + "Pass --project <name> or --all-projects (--list-projects lists them). Projects: {}",
+                String.join(", ", projects));
             return Optional.empty();
         }
         return pickProject(projects);
+    }
+
+    /**
+     * {@code --list-projects} (G18): the projects the picker would offer — those with a measurement
+     * not tagged hidden — one per line, or a JSON array. The same list for CSV as for the table.
+     */
+    private void printProjects(List<String> projects) {
+        if ("json".equalsIgnoreCase(format)) {
+            context.console().println(projects.stream().map(Json::string)
+                .collect(java.util.stream.Collectors.joining(",", "[", "]")));
+        } else {
+            projects.forEach(context.console()::println);
+        }
     }
 
     /** A numbered list and one line of input. Anything but a listed number is refused, not retried. */

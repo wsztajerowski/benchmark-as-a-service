@@ -131,7 +131,7 @@ and between them any JMH secondary metrics (`metrics`) and a JCStress job's fail
 A JCStress row's SCORE is `passed/total`, marked `✗` when a test failed or errored, and JSON carries
 `jcstress {total, passed, failed, errors, failedTests}`: the job itself ends `completed` and `baas run`
 exits 0 whatever its tests found — the status says JCStress ran, not what it measured (decided 2026-10-20).
-`--all-projects` and the project picker are the only `Scan`s; a named project is one `Query`.
+`--all-projects`, the project picker and `--list-projects` are the only `Scan`s; a named project is one `Query`.
 
 - **`commit` and `branch` are absent unless the caller tags them, never `"unknown"`.** A placeholder
   value is indistinguishable from a real one at query time — the same non-answer wearing a value's
