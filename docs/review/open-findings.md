@@ -55,7 +55,6 @@ None open.
 | ID | Finding | Effort | Sev | Where it goes |
 |---|---|---|---|---|
 | PT3 | perfasm's `savePerfTo`, `savePerfBinTo`, `saveLogTo` (and `…ToFile`) write outside the uploaded tree | S | Low | open, untestable today |
-| E4 | The results table formats scores in the machine's locale (`10632008,341`) while JSON and CSV use `Locale.ROOT` | XS | Info | open |
 | E5 | `jobs diff` columns shift when a value is wider than its column (CPU model names) | XS | Info | open |
 | A4 | A store failure after the upload loses the measurement row | M | Med → reduced | open |
 | S7 | A runner can overwrite another job's objects under `jobs/*` | M | Med → reduced | open |
@@ -166,14 +165,6 @@ perfasm cannot run on the image today: no instance type the operator policy allo
 m6i, m7i, within the 33-vCPU quota) exposes the hardware counters it needs (c5.2xlarge and c5.4xlarge
 checked), so an injection could not be tested. **Fix**, once a counter-exposing type is allowed: inject
 `savePerfTo`/`savePerfBinTo`/`saveLogTo` under `profiler-output` like `dir`, and manage the keys.
-
-### E4 — the results table formats scores in the machine's locale · Could · XS
-
-`ResultsTable` and `ResultsDiffSubcommand` use `String.format("%.3f", value)` with the default locale, so on pl-PL the
-table shows `10632008,341` while JSON and CSV (`Locale.ROOT`, a CLAUDE.md invariant) show
-`10632008.341`. Not wrong for a human-read table, but the same number reads differently between
-views and between machines. **Decide:** keep the locale on purpose (and say so in CLAUDE.md), or use
-`Locale.ROOT` everywhere.
 
 ### E5 — `jobs diff` columns shift on a long value · Could · XS
 
