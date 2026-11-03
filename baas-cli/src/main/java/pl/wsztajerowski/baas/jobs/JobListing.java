@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
@@ -23,6 +24,24 @@ public final class JobListing {
     public record Row(JobItem job, String status, String liveInstanceId) {
         public boolean inFlight() {
             return JobStatus.isInFlight(status);
+        }
+
+        /**
+         * The job object {@code jobs list} and {@code jobs show} both print, from one template so the
+         * two cannot drift (K3). Field order is part of the documented output.
+         */
+        public String json() {
+            return "{\"jobId\":" + Json.string(job.jobId())
+                + ",\"project\":" + Json.string(job.project())
+                + ",\"status\":" + Json.string(status)
+                + ",\"storedStatus\":" + Json.string(job.status())
+                + ",\"instanceId\":" + Json.string(liveInstanceId != null ? liveInstanceId : job.instanceId())
+                + ",\"instanceType\":" + Json.string(job.instanceType())
+                + ",\"createdAt\":" + Json.string(job.createdAt().toString())
+                + ",\"resultPath\":" + Json.string(job.resultPath())
+                + ",\"errorCode\":" + Json.string(job.errorCode())
+                + ",\"watchdogSeconds\":" + (job.watchdogSeconds() == null ? "null" : job.watchdogSeconds().toString())
+                + ",\"tags\":" + Json.object(job.tags()) + "}";
         }
     }
 

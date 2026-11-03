@@ -77,20 +77,13 @@ public class ConfigListSubcommand implements Callable<Integer> {
     }
 
     private void printJson(List<BaasConfig> deployments) {
-        var out = console();
-        out.println("[");
-        for (int i = 0; i < deployments.size(); i++) {
-            var deployment = deployments.get(i);
+        console().println(Json.array(deployments.stream().map(deployment -> {
             var aws = deployment.getAws();
-            out.printf("  {\"deployment\":%s,\"region\":%s,\"operatorProfile\":%s,\"deployerProfile\":%s}%s%n",
-                json(deployment.getPrefix()), json(aws.getRegion()), json(aws.getOperatorProfile()),
-                json(aws.getDeployerProfile()), i < deployments.size() - 1 ? "," : "");
-        }
-        out.println("]");
-    }
-
-    private static String json(String value) {
-        return Json.string(value);
+            return "{\"deployment\":" + Json.string(deployment.getPrefix())
+                + ",\"region\":" + Json.string(aws.getRegion())
+                + ",\"operatorProfile\":" + Json.string(aws.getOperatorProfile())
+                + ",\"deployerProfile\":" + Json.string(aws.getDeployerProfile()) + "}";
+        }).toList()));
     }
 
     private static String orDash(String value) {

@@ -211,18 +211,10 @@ public class JobsShowSubcommand implements Callable<Integer> {
     }
 
     private void printJson(JobListing.Row row, String environmentJson, List<String> artifacts) {
-        JobItem job = row.job();
         var out = console();
-        String jobJson = "{\"jobId\":%s,\"project\":%s,\"status\":%s,\"storedStatus\":%s,\"instanceId\":%s,"
-            .formatted(json(job.jobId()), json(job.project()), json(row.status()), json(job.status()),
-                json(row.liveInstanceId() != null ? row.liveInstanceId() : job.instanceId()))
-            + "\"instanceType\":%s,\"createdAt\":%s,\"resultPath\":%s,\"errorCode\":%s,\"watchdogSeconds\":%s,\"tags\":%s}"
-            .formatted(json(job.instanceType()), json(job.createdAt().toString()), json(job.resultPath()),
-                json(job.errorCode()), job.watchdogSeconds() == null ? "null" : job.watchdogSeconds().toString(),
-                Json.object(job.tags()));
-        String artifactsJson = artifacts.stream().map(JobsShowSubcommand::json)
+        String artifactsJson = artifacts.stream().map(Json::string)
             .collect(java.util.stream.Collectors.joining(",", "[", "]"));
-        out.println("{\"job\":" + jobJson + ",\"environment\":" + environmentJson.strip()
+        out.println("{\"job\":" + row.json() + ",\"environment\":" + environmentJson.strip()
             + ",\"artifacts\":" + artifactsJson + "}");
     }
 
@@ -266,10 +258,6 @@ public class JobsShowSubcommand implements Callable<Integer> {
 
     private static String orDash(String value) {
         return value == null || value.isBlank() ? "—" : value;
-    }
-
-    private static String json(String value) {
-        return Json.string(value);
     }
 
     private Console console() {
