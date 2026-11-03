@@ -70,7 +70,7 @@ None open.
 | K9 | `session()`/`console()` plumbing copied into 6–9 commands ([code-complexity](2026-10-13-codebase-review/code-complexity.md)) | S | — | open, when nearby |
 | T5 | No common command-test harness: several seam idioms, `IFactory` boilerplate in eight test classes ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
 | T6 | Positional records (`JobItem`, `StoredMeasurement`) rebuilt by private helpers in every test class ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | S | — | open, when nearby |
-| T10 | Test isolation from `~/.baas`/`~/.aws` exists only in the surefire config ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
+| T10 | `~/.baas` isolation is surefire's `user.home` only, so a unit test run from an IDE that builds a command outside `BaasApp` reads the real `~/.baas`. `~/.aws` is covered for every run by `testsupport.NoRealAwsProfile`; ITs keep the real `user.home` for `~/.testcontainers.properties` ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T11 | Each LocalStack IT class starts its own container (the pin is shared since `testsupport.LocalStack`) ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 | T12 | Every IT is `disabledWithoutDocker`, so a Docker-less `mvn verify` silently skips every store and S3 test, the contract's only real binding included ([test-complexity](2026-10-13-codebase-review/test-complexity.md)) | XS | — | open, when nearby |
 
