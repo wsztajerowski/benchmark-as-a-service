@@ -15,7 +15,6 @@ import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Column;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.concurrent.Callable;
 
 /**
@@ -51,9 +50,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        if (!FORMATS.contains(format.toLowerCase(Locale.ROOT))) {
-            throw CommandRefusal.usage("Unknown --format '" + format + "'. Valid: " + String.join(", ", FORMATS) + ".");
-        }
+        CommandRefusal.requireFormat(format, FORMATS);
         List<BaasConfig> deployments = Invocation.configService(spec).all();
         if (format.equalsIgnoreCase("json")) {
             printJson(deployments);
