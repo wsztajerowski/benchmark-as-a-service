@@ -6,7 +6,7 @@ Budget: 5, CI's e2e jobs included.
 
 | # | When | What | Outcome |
 |---|---|---|---|
-| 1 | 2026-11-03 20:29 | 7.4 attached `fake-jmh-benchmarks` run on `baas-development` | (running) |
+| 1 | 2026-11-03 20:29 | 7.4 attached `fake-jmh-benchmarks` run on `baas-development` | completed, exit 0, 47 s from launch to results |
 
 ## 1. Blocking assumptions (2026-11-03)
 
@@ -88,3 +88,25 @@ the read then fails. Job `20261103T192837463Z-c8326a47`:
 - `jobs download` fetched `launch-error.txt` with `step: upload`, an empty `errorCode` (not an AWS
   error), the AMI, the subnet and the message;
 - no `RunInstances` was sent.
+
+### 7.4 One attached run (paid launch 1)
+
+Job `20261103T192903031Z-d1f8e85d`, `jmh -- Summing -f 1 -wi 1 -i 2 -w 1 -r 1`, c5.2xlarge, image
+`1.5.0+ext.e383db2d`:
+- the log runs: named → "Uploading benchmark JAR" → "Uploading runner JAR" → launched
+  `i-020e1aca8bb0f5955` → `completed` after 45 s of polling;
+- two `Summing_Array.sum` rows were printed;
+- exit 0.
+
+The reservation writes no log line. Its place before the upload is pinned by `JobLaunchTest`, and
+shown live by 7.3 and 7.5, where an upload that failed or was interrupted left an item.
+
+### 7.5 Ctrl+C during the upload (free, no instance)
+
+A 50 MB random file passed as `--benchmark-jar`. The CLI ran in the foreground of a script, and a
+watcher sent SIGINT to its JVM 5 s after "Uploading benchmark JAR to S3...". Job
+`20261103T192931661Z-4bbcde48`:
+- the CLI logged "no instance to terminate" and exited 130;
+- `jobs list` shows it `cancelled`, with no instance;
+- `describe-instances` by its `baas-job-id` tag finds nothing;
+- `head-object` on its `input/benchmark.jar` returns 404, so the interrupted upload left no object.
