@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.session.GitProject;
-import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.model.BenchmarkArgs;
 import pl.wsztajerowski.baas.model.BenchmarkType;
@@ -21,7 +21,6 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.StatusLine;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
-import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.model.JobStatus;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultRow;
@@ -93,24 +92,13 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    OperatorSession operatorSession;
-
-    OperatorSession operatorSession() {
-        if (operatorSession == null) {
-            operatorSession = OperatorSession.of(Invocation.configService(spec));
-        }
-        return operatorSession;
-    }
+    @Mixin CommandContext context = new CommandContext();
 
     /** Replaced in tests, so a test JVM does not exit with a hook per launch it drove. */
     Consumer<Thread> shutdownHooks = Runtime.getRuntime()::addShutdownHook;
 
     /** Replaced in tests: the AWS a launch talks to, given the operator session's clients. */
     Function<AwsClientFactory, RunAws> awsFactory = AwsRunAws::new;
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
 
     /**
      * The poll loop's status line while one is shown. Volatile because the shutdown hook reads it
@@ -190,7 +178,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             + "baas jobs show <jobId>, stop it with baas jobs terminate <jobId>.")
     boolean detach;
 
-
     /**
      * What the JSON summary reports. Populated as the job reaches each fact rather than assembled
      * at the end, because the failure path has to be able to print whatever is known so far: a job
@@ -208,7 +195,6 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
     boolean jsonSummary() {
         return "json".equalsIgnoreCase(format);
     }
-
 
     @Override
     public Integer call() throws Exception {
@@ -251,16 +237,15 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         }
     }
 
-
     /** Where to look next, once a job exists; interactive terminals only (see {@link Hints}). */
     void hints(int exitCode, Consumer<String> sink) {
         // In the finally: a command built outside picocli (a unit test) has no spec to print through,
         // and a hint must never replace the outcome being reported.
-        if (console == null && spec == null) {
+        if (!context.hasConsole()) {
             return;
         }
         if (localCommand != null) {
-            Hints.show(console(), sink, "run it here", localCommand, null, null);
+            Hints.show(context.console(), sink, "run it here", localCommand, null, null);
             return;
         }
         if (summaryJobId == null) {
@@ -269,16 +254,16 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         String d = summaryDeployment;
         if (exitCode == 0 && detached) {
             // Nothing has been measured yet: the job is followed, not queried.
-            Hints.show(console(), sink, "follow it", Hints.command(d, "jobs show " + summaryJobId),
+            Hints.show(context.console(), sink, "follow it", Hints.command(d, "jobs show " + summaryJobId),
                 "stop it", Hints.command(d, "jobs terminate " + summaryJobId));
         } else if (exitCode == 0 && isProfilerListing()) {
             // A listing measured nothing: its answer is the process output, already printed.
-            Hints.show(console(), sink, "artifacts", Hints.command(d, "jobs download " + summaryJobId), null, null);
+            Hints.show(context.console(), sink, "artifacts", Hints.command(d, "jobs download " + summaryJobId), null, null);
         } else if (exitCode == 0) {
-            Hints.show(console(), sink, "measurements", Hints.command(d, "query --job-id " + summaryJobId),
+            Hints.show(context.console(), sink, "measurements", Hints.command(d, "query --job-id " + summaryJobId),
                 "artifacts", Hints.command(d, "jobs download " + summaryJobId));
         } else {
-            Hints.show(console(), sink, "what happened", Hints.command(d, "jobs show " + summaryJobId),
+            Hints.show(context.console(), sink, "what happened", Hints.command(d, "jobs show " + summaryJobId),
                 "boot log", Hints.command(d, "jobs download " + summaryJobId));
         }
     }
@@ -303,7 +288,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
                 Nothing was built or launched.""".formatted(BaasVersion.current()));
         }
 
-        BaasConfig config = operatorSession().config();
+        BaasConfig config = context.operator().config();
 
         // Resolved before any AWS call — the runner-image lookup and the S3 upload both come later
         // in this method, and neither should run for a request that is going to fail anyway because
@@ -339,7 +324,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         var request = new JobLaunch.Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar,
             resolvedInstanceType, resolvedProject, resolvedTimeout, resolvedWallClock,
             runnerTags, detach, BaasVersion.current(), BaasVersion.sourceRepo(), jdk);
-        return new JobLaunch(awsFactory.apply(operatorSession().factory()), config.names(), this).run(request);
+        return new JobLaunch(awsFactory.apply(context.operator().factory()), config.names(), this).run(request);
     }
 
     /**
@@ -376,19 +361,9 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         if (jsonSummary()) {
             return null;
         }
-        statusLine = console().openStatusLine();
+        statusLine = context.console().openStatusLine();
         return statusLine;
     }
-
-
-
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
-
 
     /**
      * {@code --project}, else — only when the operator enabled {@code git.resolveProject} — the
@@ -657,7 +632,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
 
     @Override
     public void printResults(List<ResultRow> rows, String jobId) {
-        reportJobResults(rows, jobId, r -> ResultsTable.print(console(), r));
+        reportJobResults(rows, jobId, r -> ResultsTable.print(context.console(), r));
     }
 
     /**
@@ -673,7 +648,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             return;
         }
         logger.info("Profilers on the runner, job {} (baas jobs download {}):", jobId, jobId);
-        console().print(listing);
+        context.console().print(listing);
     }
 
     /** Asked by the hints too, which must never throw: an unknown type is no listing. */
@@ -729,7 +704,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
      * comma-decimal locale would emit text that is not JSON, silently and only on some machines.
      */
     void printJobSummary(int exitCode) {
-        console().printf(
+        context.console().printf(
             "{\"jobId\":%s,\"project\":%s,\"resultPath\":%s,\"status\":\"%s\","
                 + "\"jobStatus\":%s,\"exitCode\":%d,\"instanceId\":%s}%n",
             Json.string(summaryJobId), Json.string(summaryProject), Json.string(summaryResultPath),

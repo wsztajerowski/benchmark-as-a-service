@@ -39,7 +39,7 @@ class ResultsProjectSelectionTest {
     private ResultsQuerySubcommand command(boolean interactive, String answer, String... args) {
         var command = new ResultsQuerySubcommand();
         new CommandLine(command).parseArgs(args);
-        command.console = Console.withFlags(new PrintWriter(screen), interactive, false);
+        command.context.use(Console.withFlags(new PrintWriter(screen), interactive, false));
         command.answerReader = () -> answer;
         return command;
     }
@@ -178,7 +178,7 @@ class ResultsProjectSelectionTest {
                         };
                     }
                 };
-                command.console = Console.withFlags(new PrintWriter(screen, true), true, false);
+                command.context.use(Console.withFlags(new PrintWriter(screen, true), true, false));
                 command.answerReader = () -> "1";
                 return (K) command;
             }

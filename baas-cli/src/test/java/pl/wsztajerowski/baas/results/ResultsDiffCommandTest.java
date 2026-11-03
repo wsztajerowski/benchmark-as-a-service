@@ -85,7 +85,7 @@ class ResultsDiffCommandTest {
                 };
             }
         };
-        diff.console = Console.withFlags(new PrintWriter(out, true), interactive, interactive);
+        diff.context.use(Console.withFlags(new PrintWriter(out, true), interactive, interactive));
         CommandLine.IFactory defaults = CommandLine.defaultFactory();
         var cli = BaasApp.commandLine(new BaasApp(dir), new CommandLine.IFactory() {
             @Override

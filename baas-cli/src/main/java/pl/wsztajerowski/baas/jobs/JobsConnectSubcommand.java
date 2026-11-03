@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.JobReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -10,12 +11,9 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.aws.AwsErrors;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
-import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
-import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.OperatorSession;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -46,18 +44,7 @@ public class JobsConnectSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     /** Where the plugin is looked for; tests point it elsewhere. */
     String searchPath = System.getenv("PATH");
@@ -104,7 +91,7 @@ public class JobsConnectSubcommand implements Callable<Integer> {
     }
 
     Sources sources(BaasConfig config) {
-        return new AwsConnectSources(session().factory(), config);
+        return new AwsConnectSources(context.operator().factory(), config);
     }
 
     @Override
@@ -117,7 +104,7 @@ public class JobsConnectSubcommand implements Callable<Integer> {
         // nothing to attach to, and a session started anyway would linger until its idle timeout.
         Path plugin = SessionPlugin.find(searchPath)
             .orElseThrow(() -> CommandRefusal.refused(SessionPlugin.missing(System.getProperty("os.name"))));
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
         String document = config.names().sessionDocument();
 
         try (var sources = sources(config)) {
@@ -130,7 +117,7 @@ public class JobsConnectSubcommand implements Callable<Integer> {
                     + " is not reachable yet: its Session Manager agent registers about a minute after boot. "
                     + "Retry shortly.");
             }
-            console().println(lifetime(job, instance, Instant.now()));
+            context.console().println(lifetime(job, instance, Instant.now()));
             return attach(sources, plugin, instance.instanceId(), document);
         } catch (Sources.Refused e) {
             throw outdated(e);
@@ -171,7 +158,7 @@ public class JobsConnectSubcommand implements Callable<Integer> {
             while (!process.waitFor(instanceCheck)) {
                 if (!sources.instanceLive(instanceId)) {
                     // The plugin owns the terminal in raw mode: a bare newline would not return the carriage.
-                    console().print("\r\nInstance " + instanceId + " has terminated; ending the session.\r\n");
+                    context.console().print("\r\nInstance " + instanceId + " has terminated; ending the session.\r\n");
                     endQuietly(sources, started);
                     if (!process.waitFor(pluginGrace)) {
                         process.destroy();
@@ -208,10 +195,4 @@ public class JobsConnectSubcommand implements Callable<Integer> {
             + "`baas admin deployment setup` to add the session document and its grants.");
     }
 
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
 }

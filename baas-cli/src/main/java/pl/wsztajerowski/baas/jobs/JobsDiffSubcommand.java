@@ -1,8 +1,8 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.JobReference;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
-import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.model.JobLayout;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -19,7 +19,6 @@ import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Cell;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
-import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
 
 import java.util.List;
@@ -49,18 +48,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     @Parameters(index = "0", paramLabel = "<jobA>", description = "First job's id.")
     String jobA;
@@ -73,7 +61,6 @@ public class JobsDiffSubcommand implements Callable<Integer> {
         return new JobPaths(factory.dynamoDb(), config.resultsTable());
     }
 
-
     @Override
     public Integer call() {
         for (String job : new String[]{jobA, jobB}) {
@@ -82,10 +69,10 @@ public class JobsDiffSubcommand implements Callable<Integer> {
                 throw CommandRefusal.usage(notAJobId);
             }
         }
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
 
         // Read-only, day-to-day: operator credentials, like `run` and `results`.
-        var factory = session().factory();
+        var factory = context.operator().factory();
         String bucket = config.bucket();
 
         String pathA;
@@ -136,7 +123,7 @@ public class JobsDiffSubcommand implements Callable<Integer> {
             }
         }));
 
-        printDiff(console(), EnvironmentManifest.diff(a, b), packages);
+        printDiff(context.console(), EnvironmentManifest.diff(a, b), packages);
         return 0;
     }
 
@@ -194,13 +181,6 @@ public class JobsDiffSubcommand implements Callable<Integer> {
             packages.added().forEach(line -> out.println("  added    " + line));
             packages.removed().forEach(line -> out.println("  removed  " + line));
         }
-    }
-
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
     }
 
     private Optional<EnvironmentManifest> fetch(S3UploadService storage, String bucket, String jobId, String resultPath) {

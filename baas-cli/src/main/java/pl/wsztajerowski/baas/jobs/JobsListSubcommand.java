@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
-import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Elapsed;
 import pl.wsztajerowski.baas.console.Csv;
@@ -20,7 +20,6 @@ import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Column;
 import pl.wsztajerowski.baas.aws.AwsClientFactory;
-import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.model.TagKeys;
 
 import java.time.Duration;
@@ -64,18 +63,7 @@ public class JobsListSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     @Option(names = "--limit", paramLabel = "<n>",
         description = "Show at most this many jobs (default 20 in a table; no limit for json or csv; 0 for no limit).")
@@ -142,16 +130,16 @@ public class JobsListSubcommand implements Callable<Integer> {
             throw CommandRefusal.usage("--exclude-tag: " + bad.getMessage());
         }
         // Before the config is even read: a refused --watch must not reach AWS.
-        String watchRefusal = watch ? Watch.refusal(format, console()) : null;
+        String watchRefusal = watch ? Watch.refusal(format, context.console()) : null;
         if (watchRefusal != null) {
             throw CommandRefusal.usage(watchRefusal);
         }
-        BaasConfig config = session().config();
-        var factory = session().factory();
+        BaasConfig config = context.operator().config();
+        var factory = context.operator().factory();
 
         if (watch) {
             // Notes go into the frame: logged, they would repeat every refresh and scroll it away.
-            new Watch(console()).run(out -> {
+            new Watch(context.console()).run(out -> {
                 var notes = new java.util.ArrayList<String>();
                 printTable(out, fetch(config, factory, notes::add), Instant.now());
                 notes.forEach(note -> {
@@ -164,7 +152,7 @@ public class JobsListSubcommand implements Callable<Integer> {
         List<JobListing.Row> rows = fetch(config, factory, logger::info);
         print(rows, Instant.now());
         rows.stream().filter(JobListing.Row::inFlight).findFirst().ifPresent(row ->
-            Hints.show(console(), spec.commandLine().getErr(), "stop one", Hints.command(config.getPrefix(), "jobs terminate " + row.job().jobId())));
+            Hints.show(context.console(), spec.commandLine().getErr(), "stop one", Hints.command(config.getPrefix(), "jobs terminate " + row.job().jobId())));
         return 0;
     }
 
@@ -220,7 +208,7 @@ public class JobsListSubcommand implements Callable<Integer> {
 
     /** Command payload, so it goes to the {@link Console}; an empty answer is payload too. */
     private void printTable(List<JobListing.Row> rows, Instant now) {
-        printTable(console(), rows, now);
+        printTable(context.console(), rows, now);
     }
 
     private void printTable(Console out, List<JobListing.Row> rows, Instant now) {
@@ -250,11 +238,11 @@ public class JobsListSubcommand implements Callable<Integer> {
     }
 
     private void printJson(List<JobListing.Row> rows) {
-        console().println(Json.array(rows.stream().map(JobListing.Row::json).toList()));
+        context.console().println(Json.array(rows.stream().map(JobListing.Row::json).toList()));
     }
 
     private void printCsv(List<JobListing.Row> rows) {
-        var out = console();
+        var out = context.console();
         out.println("jobId,project,status,storedStatus,instanceId,instanceType,createdAt,resultPath,errorCode,tags");
         for (var row : rows) {
             var job = row.job();
@@ -279,10 +267,4 @@ public class JobsListSubcommand implements Callable<Integer> {
         return value == null ? "" : value;
     }
 
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
 }

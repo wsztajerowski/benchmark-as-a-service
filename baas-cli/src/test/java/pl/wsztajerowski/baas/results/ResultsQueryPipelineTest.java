@@ -85,7 +85,7 @@ class ResultsQueryPipelineTest {
                         };
                     }
                 };
-                command.console = Console.plain(new PrintWriter(out, true));
+                command.context.use(Console.plain(new PrintWriter(out, true)));
                 return (K) command;
             }
         };

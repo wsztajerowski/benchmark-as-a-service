@@ -1,11 +1,11 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.model.JcstressSummary;
 import pl.wsztajerowski.baas.model.SecondaryMetric;
 import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.session.GitProject;
-import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.console.Csv;
 import pl.wsztajerowski.baas.console.Json;
 import org.slf4j.Logger;
@@ -20,7 +20,6 @@ import pl.wsztajerowski.baas.session.BaasConfig;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Watch;
 import pl.wsztajerowski.baas.console.Hints;
-import pl.wsztajerowski.baas.session.OperatorSession;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -53,18 +52,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     private Watch watcher;
 
@@ -142,7 +130,6 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
         + "Needs an interactive terminal and the table format.")
     boolean watch;
 
-
     /** Every other value used to fall through to the table, so a typo looked like a success. */
     static final List<String> FORMATS = List.of("table", "json", "csv");
 
@@ -179,7 +166,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             throw CommandRefusal.usage("--project and --all-projects cannot be combined: name one project, or ask for all.");
         }
 
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
 
         String tableName;
         try {
@@ -205,10 +192,10 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
             switch (format.toLowerCase(Locale.ROOT)) {
                 case "json" -> printJson(rows);
                 case "csv" -> printCsv(rows);
-                default -> printTable(console(), rows);
+                default -> printTable(context.console(), rows);
             }
             if (rows.isEmpty() && !allProjects) {
-                Hints.show(console(), spec.commandLine().getErr(), "which projects have results",
+                Hints.show(context.console(), spec.commandLine().getErr(), "which projects have results",
                     Hints.command(config.getPrefix(), "query --all-projects"));
             }
         }
@@ -217,7 +204,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     /** The query service for the configured table. Overridden by tests, which have no table. */
     ResultsQueryService openResults(BaasConfig config, String tableName) {
-        var factory = session().factory();
+        var factory = context.operator().factory();
         return new ResultsQueryService(factory.dynamoDb(), tableName);
     }
 
@@ -259,7 +246,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     }
 
     String watchRefusal() {
-        return watch ? Watch.refusal(format, console()) : null;
+        return watch ? Watch.refusal(format, context.console()) : null;
     }
 
     private void watch(ResultsQueryService results) throws InterruptedException {
@@ -282,7 +269,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     private Watch watcher() {
         if (watcher == null) {
-            watcher = new Watch(console());
+            watcher = new Watch(context.console());
         }
         return watcher;
     }
@@ -297,13 +284,6 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     void printFrame(List<ResultRow> rows, List<String> notes, String refreshedAt) {
         watcher().show(out -> renderRows(out, rows, notes), refreshedAt);
-    }
-
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
     }
 
     /**
@@ -348,7 +328,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
                 + "To see everything: {}", Hints.command(config.getPrefix(), "results query --all-projects --show-hidden"));
             return Optional.empty();
         }
-        if (!console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {
+        if (!context.console().interactive() || !"table".equals(format.toLowerCase(Locale.ROOT))) {
             logger.error("No project named, and there is no terminal to choose one on. "
                 + "Pass --project <name> or --all-projects. Projects: {}", String.join(", ", projects));
             return Optional.empty();
@@ -358,7 +338,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
 
     /** A numbered list and one line of input. Anything but a listed number is refused, not retried. */
     Optional<String> pickProject(List<String> projects) {
-        var out = console();
+        var out = context.console();
         out.println("Projects with results:");
         for (int i = 0; i < projects.size(); i++) {
             out.println(String.format(Locale.ROOT, "  %2d) %s", i + 1, projects.get(i)));
@@ -384,7 +364,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
      * every line. Same reasoning covers {@link #printCsv} and {@link ResultsTable}. Never coloured.
      */
     private void printJson(List<ResultRow> rows) {
-        console().println(Json.array(rows.stream().map(ResultsQuerySubcommand::rowJson).toList()));
+        context.console().println(Json.array(rows.stream().map(ResultsQuerySubcommand::rowJson).toList()));
     }
 
     private static String rowJson(ResultRow r) {
@@ -409,7 +389,7 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
     }
 
     private void printCsv(List<ResultRow> rows) {
-        var out = console();
+        var out = context.console();
         out.println(
             // params last, so a consumer reading columns by position is not shifted.
             "jobId,benchmarkName,benchmarkType,mode,score,scoreError,scoreUnit,createdAt,imageVersion,instanceType,tags,params");
@@ -424,7 +404,6 @@ public class ResultsQuerySubcommand implements Callable<Integer> {
                 Csv.field(Csv.tags(r.tags())), Csv.field(Csv.tags(r.params())));
         }
     }
-
 
     /**
      * A JCStress job's verdict, or {@code null} for JMH: the counts, and the tests that failed or
