@@ -9,7 +9,7 @@ becomes an OpenSpec change; one they do not is deleted here, and its finding clo
 ## G3 — Correcting a measurement after its run
 
 **The problem.** A result can be hidden from `baas results query` and `--best-per` only by tagging
-it `exclude_from_results=true` when it is launched. Once a job has run, its measurements cannot be
+it `hidden=true` when it is launched. Once a job has run, its measurements cannot be
 re-tagged or hidden. A job run with a wrong flag, on a noisy host, or before a fix landed, stays in
 every default listing and every "best" for as long as the deployment exists. The only way out today
 is a raw `aws dynamodb update-item` under credentials an operator does not have.
@@ -17,7 +17,7 @@ is a raw `aws dynamodb update-item` under credentials an operator does not have.
 **The proposal.**
 
 ```
-baas results tag --job-id <jobId> --set exclude_from_results=true
+baas results tag --job-id <jobId> --set hidden=true
 baas results tag --job-id <jobId> --set branch=main
 baas results tag --job-id <jobId> --unset branch
 ```
