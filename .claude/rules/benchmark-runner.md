@@ -38,7 +38,7 @@ The runner module, what reaches the benchmark JAR, and how a library is added.
   break BaaS".** The known gap: perfasm's `savePerfTo`, `savePerfBinTo`, `saveLogTo` and their
   `…ToFile` forms write outside the uploaded tree, so their files are lost. Not managed, because no
   allowed instance type exposes the hardware counters perfasm needs and the injection could not be
-  tested (PT3).
+  tested (PT3, closed in ADR 0005).
 - **`-foe` defaults to `true`, and an empty JMH result fails the job** (PT2). JMH's own default,
   `false`, reports a failed benchmark and exits 0 — with every benchmark failed, an empty `[ ]` — so
   a job ended `completed` with some measurements or none. The runner adds `-foe true` unless the
