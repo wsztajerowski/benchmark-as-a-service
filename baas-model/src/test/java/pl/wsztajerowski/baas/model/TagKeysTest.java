@@ -8,9 +8,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class TagKeysTest {
 
     @Test
-    void theKnownVocabularyIsExactlyTheFourteenDocumentedKeys() {
+    void theKnownVocabularyIsExactlyTheFifteenDocumentedKeys() {
         assertThat(TagKeys.KNOWN).containsExactlyInAnyOrder(
-            "project", "type", "commit", "branch", "source", "cliParameters", "profilers",
+            "project", "type", "commit", "branch", "source", "cliParameters", "profilers", "baasVersion",
             "jdkId", "jdkVersion", "jdkVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion");
     }
 
@@ -18,7 +18,7 @@ class TagKeysTest {
     void reservedKeysAreTheObservedOnesAndTheRecordedArguments() {
         assertThat(TagKeys.RESERVED).containsExactlyInAnyOrder(
             "type", "jdkId", "jdkVersion", "jdkVendor", "cpuModel", "cpuArch", "instanceType", "imageVersion",
-            "cliParameters", "profilers");
+            "cliParameters", "profilers", "baasVersion");
     }
 
     @Test

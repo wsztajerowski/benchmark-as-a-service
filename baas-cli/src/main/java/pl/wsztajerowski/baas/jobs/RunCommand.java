@@ -163,7 +163,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         + "the EC2 instance — including branch and commit, which are never derived. Rejected for "
         + "keys BaaS sets itself: those observed on the instance (imageVersion, instanceType, jdkId, "
         + "jdkVersion, jdkVendor, cpuModel, cpuArch, type) or recorded from the command line (cliParameters, "
-        + "profilers), so a result's tags can't disagree with its own environment.json or arguments — "
+        + "profilers), or the CLI's own version (baasVersion), so a result's tags can't disagree with its own environment.json or arguments — "
         + "and project, which --project names.")
     Map<String, String> extraTags = new LinkedHashMap<>();
 
@@ -621,6 +621,7 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         // is how RESULT#unknown grew.
         tags.put(TagKeys.TYPE, benchmarkType);
         tags.put(TagKeys.SOURCE, deriveSource(environment));
+        tags.put(TagKeys.BAAS_VERSION, BaasVersion.current());
         // Absent when nothing is profiled; read as JMH reads -prof, abbreviations included, so the
         // tag names what the instance's injection and JMH itself act on.
         BenchmarkArgs.of(BenchmarkType.fromCommandName(benchmarkType)).profilersTag(benchmarkParams)

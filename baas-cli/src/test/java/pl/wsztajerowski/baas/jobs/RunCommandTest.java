@@ -4,6 +4,7 @@ import pl.wsztajerowski.baas.session.GitProject;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import pl.wsztajerowski.baas.session.BaasConfig;
+import pl.wsztajerowski.baas.session.BaasVersion;
 
 import java.nio.file.Path;
 import java.util.List;
@@ -167,6 +168,21 @@ class RunCommandTest {
             .containsEntry("branch", "main")
             .containsEntry("type", "jmh")
             .containsEntry("experiment", "gc-tuning");
+    }
+
+    @Test
+    void recordsTheCliVersion() {
+        assertThat(new RunCommand().buildRunnerTags("jmh", "lynx-journal"))
+            .containsEntry("baasVersion", BaasVersion.current());
+    }
+
+    @Test
+    void aCallerCannotClaimAnotherVersion() {
+        var command = new RunCommand();
+        command.extraTags.put("baasVersion", "1.0.0");
+
+        assertThatThrownBy(() -> command.buildRunnerTags("jmh", "lynx-journal"))
+            .hasMessageContaining("baasVersion");
     }
 
     @Test
