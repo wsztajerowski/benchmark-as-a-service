@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.TagKeys;
 
@@ -11,20 +12,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ResultsGroupingTest {
 
     private static ResultRow row(String benchmark, String branch, double score) {
-        return new ResultRow("req-" + score, benchmark, "jmh", "thrpt",
-            score, 1.0, "ops/s", "2026-08-19T09:00:00Z",
-            branch == null ? Map.of() : Map.of(TagKeys.BRANCH, branch));
+        return TestRows.row().jobId("req-" + score).benchmarkName(benchmark).score(score).scoreError(1.0)
+            .createdAt("2026-08-19T09:00:00Z")
+            .tags(branch == null ? Map.of() : Map.of(TagKeys.BRANCH, branch)).build();
     }
 
     private static ResultRow inMode(String mode, double score, String createdAt) {
-        return new ResultRow("job-" + createdAt, "com.example.Bench.run", "jmh", mode, score, 0.0,
-            "avgt".equals(mode) ? "ns/op" : "ops/s", createdAt, Map.of("branch", "main"), "p");
+        return TestRows.row().jobId("job-" + createdAt).benchmarkName("com.example.Bench.run").mode(mode)
+            .score(score).scoreError(0.0).scoreUnit("avgt".equals(mode) ? "ns/op" : "ops/s")
+            .createdAt(createdAt).tags(Map.of("branch", "main")).project("p").build();
     }
 
     private static ResultRow variant(String size, String branch, double score) {
-        return new ResultRow("req-" + score, "com.acme.MapLookup.get", "jmh", "thrpt",
-            score, 1.0, "ops/s", "2026-08-19T09:00:00Z", Map.of(TagKeys.BRANCH, branch), "p",
-            Map.of("size", size));
+        return TestRows.row().jobId("req-" + score).benchmarkName("com.acme.MapLookup.get").score(score)
+            .scoreError(1.0).createdAt("2026-08-19T09:00:00Z").tags(Map.of(TagKeys.BRANCH, branch))
+            .project("p").params(Map.of("size", size)).build();
     }
 
     /**
@@ -204,10 +206,10 @@ class ResultsGroupingTest {
     @Test
     void groupsByAnyTagNotJustBranch() {
         var rows = List.of(
-            new ResultRow("r1", "com.example.Bench.run", "jmh", "thrpt", 10.0, 1.0, "ops/s", "t",
-                Map.of("jdkVersion", "25.0.3")),
-            new ResultRow("r2", "com.example.Bench.run", "jmh", "thrpt", 20.0, 1.0, "ops/s", "t",
-                Map.of("jdkVersion", "25.0.4")));
+            TestRows.row().jobId("r1").benchmarkName("com.example.Bench.run").score(10.0).scoreError(1.0)
+                .createdAt("t").tags(Map.of("jdkVersion", "25.0.3")).build(),
+            TestRows.row().jobId("r2").benchmarkName("com.example.Bench.run").score(20.0).scoreError(1.0)
+                .createdAt("t").tags(Map.of("jdkVersion", "25.0.4")).build());
 
         assertThat(ResultsGrouping.bestPerGroup(rows, "jdkVersion")).hasSize(2);
     }
@@ -216,10 +218,10 @@ class ResultsGroupingTest {
     @Test
     void twoProjectsNeverShareAGroup() {
         var rows = List.of(
-            new ResultRow("r1", "com.example.Bench.run", "jmh", "thrpt", 100.0, 1.0, "ops/s", "t",
-                Map.of(TagKeys.BRANCH, "main"), "lynx-journal"),
-            new ResultRow("r2", "com.example.Bench.run", "jmh", "thrpt", 300.0, 1.0, "ops/s", "t",
-                Map.of(TagKeys.BRANCH, "main"), "other-project"));
+            TestRows.row().jobId("r1").benchmarkName("com.example.Bench.run").score(100.0).scoreError(1.0)
+                .createdAt("t").tags(Map.of(TagKeys.BRANCH, "main")).project("lynx-journal").build(),
+            TestRows.row().jobId("r2").benchmarkName("com.example.Bench.run").score(300.0).scoreError(1.0)
+                .createdAt("t").tags(Map.of(TagKeys.BRANCH, "main")).project("other-project").build());
 
         assertThat(ResultsGrouping.bestPerGroup(rows, TagKeys.BRANCH))
             .extracting(ResultRow::project)
@@ -229,8 +231,8 @@ class ResultsGroupingTest {
     @Test
     void sortingByProjectOrdersProjectsAlphabetically() {
         var rows = List.of(
-            new ResultRow("r1", "a.A.run", "jmh", "thrpt", 1.0, 1.0, "ops/s", "t", Map.of(), "zeta"),
-            new ResultRow("r2", "z.Z.run", "jmh", "thrpt", 1.0, 1.0, "ops/s", "t", Map.of(), "alpha"));
+            TestRows.row().jobId("r1").benchmarkName("a.A.run").scoreError(1.0).createdAt("t").project("zeta").build(),
+            TestRows.row().jobId("r2").benchmarkName("z.Z.run").scoreError(1.0).createdAt("t").project("alpha").build());
 
         assertThat(ResultsGrouping.sorted(rows, "project", true))
             .extracting(ResultRow::project)

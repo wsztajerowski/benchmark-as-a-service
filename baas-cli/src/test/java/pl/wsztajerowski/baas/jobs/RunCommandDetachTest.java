@@ -1,9 +1,9 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import picocli.CommandLine;
 import pl.wsztajerowski.baas.BaasApp;
 import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.session.DeploymentNames;
@@ -12,10 +12,8 @@ import pl.wsztajerowski.baas.model.JobStatus;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,9 +27,7 @@ class RunCommandDetachTest {
 
     private static final ObjectMapper JSON = new ObjectMapper();
 
-    private static final JobItem JOB = new JobItem("20261012T120000000Z-a3f9c21b", "p",
-        Instant.parse("2026-10-12T12:00:00Z"), "jobs/p/20261012T120000000Z-a3f9c21b", "c5.2xlarge",
-        JobStatus.LAUNCHING, null, null, Map.of(), null);
+    private static final JobItem JOB = TestJobs.job("20261012T120000000Z-a3f9c21b").createdAt("2026-10-12T12:00:00Z").build();
 
     // JobSessionTest's fakes, which JobSessionFakeRecorderTest binds to JobRecorderContract (review T4).
     private final JobSessionTest.FakeRecorder recorder = reserved();

@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -99,8 +100,9 @@ class JobsShowCommandTest {
     }
 
     private static JobItem job(String status, String errorCode, Integer watchdogSeconds, Map<String, String> tags) {
-        return new JobItem(ID, "baas-e2e", Instant.parse("2026-10-06T16:52:41.024Z"), PATH, "c5.2xlarge",
-            status, "i-0a5605864eb16d146", errorCode, tags, null, watchdogSeconds);
+        return TestJobs.job(ID).project("baas-e2e").createdAt("2026-10-06T16:52:41.024Z").resultPath(PATH)
+            .status(status).instanceId("i-0a5605864eb16d146").errorCode(errorCode).tags(tags)
+            .watchdogSeconds(watchdogSeconds).build();
     }
 
     @Test

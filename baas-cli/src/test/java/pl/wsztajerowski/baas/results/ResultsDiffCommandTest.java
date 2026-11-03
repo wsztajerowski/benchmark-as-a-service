@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -270,10 +271,12 @@ class ResultsDiffCommandTest {
     void secondaryMetricsAppearRawOnlyUnderVerbose() throws Exception {
         var metricA = Map.of("gc.alloc.rate.norm", new SecondaryMetric(48.0, "B/op"));
         var metricB = Map.of("gc.alloc.rate.norm", new SecondaryMetric(96.0, "B/op"));
-        jobs.put(A, List.of(new ResultRow(A, "com.example.Foo.bar", "jmh-with-prof", "avgt", 10, 0.1, "ns/op",
-            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metricA, BenchmarkType.JMH)));
-        jobs.put(B, List.of(new ResultRow(B, "com.example.Foo.bar", "jmh-with-prof", "avgt", 10, 0.1, "ns/op",
-            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metricB, BenchmarkType.JMH)));
+        jobs.put(A, List.of(TestRows.row().jobId(A).benchmarkName("com.example.Foo.bar").benchmarkType("jmh-with-prof")
+            .mode("avgt").score(10).scoreUnit("ns/op").createdAt("2026-08-20T17:44:32.812Z")
+            .project("p").secondaryMetrics(metricA).kind(BenchmarkType.JMH).build()));
+        jobs.put(B, List.of(TestRows.row().jobId(B).benchmarkName("com.example.Foo.bar").benchmarkType("jmh-with-prof")
+            .mode("avgt").score(10).scoreUnit("ns/op").createdAt("2026-08-20T17:44:32.812Z")
+            .project("p").secondaryMetrics(metricB).kind(BenchmarkType.JMH).build()));
 
         String plain = run("results", "diff", A, B).out();
         String verbose = run("results", "diff", "-v", A, B).out();
@@ -286,8 +289,9 @@ class ResultsDiffCommandTest {
     @Test
     void aMetricOnOneSideOnlyShowsTheOtherAsUnknown() throws Exception {
         var metric = Map.of("gc.count", new SecondaryMetric(3.0, "counts"));
-        jobs.put(A, List.of(new ResultRow(A, "com.example.Foo.bar", "jmh-with-prof", "avgt", 10, 0.1, "ns/op",
-            "2026-08-20T17:44:32.812Z", Map.of(), "p", Map.of(), null, metric, BenchmarkType.JMH)));
+        jobs.put(A, List.of(TestRows.row().jobId(A).benchmarkName("com.example.Foo.bar").benchmarkType("jmh-with-prof")
+            .mode("avgt").score(10).scoreUnit("ns/op").createdAt("2026-08-20T17:44:32.812Z")
+            .project("p").secondaryMetrics(metric).kind(BenchmarkType.JMH).build()));
         jobs.put(B, List.of(jmh(B, "com.example.Foo.bar", "avgt", 10, 0.1, "ns/op", Map.of(), Map.of())));
 
         String metricLine = run("results", "diff", "-v", A, B).out().lines()

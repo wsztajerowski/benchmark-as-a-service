@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import pl.wsztajerowski.baas.testsupport.TestCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,8 +30,10 @@ class ResultsQueryPipelineTest {
         List<ResultRow> rows = new ArrayList<>();
         for (int day = 1; day <= 30; day++) {
             String created = "2026-09-%02dT00:00:00.000Z".formatted(day);
-            rows.add(new ResultRow("job-" + day, "com.example.Bench.run", "jmh", "thrpt", day, 0.0, "ops/s",
-                created, Map.of("branch", day % 2 == 0 ? "main" : "feature", "project", "p"), "p"));
+            rows.add(TestRows.row().jobId("job-" + day).benchmarkName("com.example.Bench.run").score(day).scoreError(0.0)
+                .createdAt(created)
+                .tags(Map.of("branch", day % 2 == 0 ? "main" : "feature", "project", "p"))
+                .project("p").build());
         }
         return rows;
     }

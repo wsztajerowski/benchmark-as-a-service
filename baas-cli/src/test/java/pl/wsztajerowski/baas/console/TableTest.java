@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.console;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.results.ResultRow;
 import pl.wsztajerowski.baas.results.ResultsTable;
@@ -22,11 +23,13 @@ class TableTest {
     private static final String OLD_RESULTS_FORMAT = "%-45s %-28s %-14s %-8s %14s %-10s%n";
 
     private static final List<ResultRow> ROWS = List.of(
-        new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.MyBenchmark.measure", "jmh",
-            "thrpt", 8234.123456, 12.3456, "ops/s", "2026-08-20T17:44:32.812Z", Map.of()),
-        new ResultRow("20260820T174432812Z-b7e4d0f2",
-            "com.example.AVeryLongBenchmarkClassName.aMethodNameThatWillNotFitTheColumn", "jmh-with-async-profiler",
-            null, Double.NaN, Double.NaN, null, "2026-08-20T17:44:32.812Z", Map.of()));
+        TestRows.row().jobId("20260820T174432812Z-a3f9c21b")
+            .benchmarkName("com.example.MyBenchmark.measure").score(8234.123456).scoreError(12.3456)
+            .createdAt("2026-08-20T17:44:32.812Z").build(),
+        TestRows.row().jobId("20260820T174432812Z-b7e4d0f2")
+            .benchmarkName("com.example.AVeryLongBenchmarkClassName.aMethodNameThatWillNotFitTheColumn")
+            .benchmarkType("jmh-with-async-profiler").mode(null).score(Double.NaN)
+            .scoreError(Double.NaN).scoreUnit(null).createdAt("2026-08-20T17:44:32.812Z").build());
 
     private static String render(boolean colour) {
         var out = new StringWriter();
@@ -87,9 +90,9 @@ class TableTest {
      */
     @Test
     void aSweepVariantShowsALabelledParamsLineAboveItsTags() {
-        var variant = new ResultRow("20260820T174432812Z-a3f9c21b", "com.acme.MapLookup.get", "jmh", "thrpt",
-            1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of("branch", "main"), "p",
-            Map.of("size", "10", "impl", "hash"));
+        var variant = TestRows.row().jobId("20260820T174432812Z-a3f9c21b").benchmarkName("com.acme.MapLookup.get")
+            .createdAt("2026-08-20T17:44:32.812Z").tags(Map.of("branch", "main")).project("p")
+            .params(Map.of("size", "10", "impl", "hash")).build();
         var verbose = new StringWriter();
         var plain = new StringWriter();
         ResultsTable.print(Console.plain(new PrintWriter(verbose)), List.of(variant), false, true);
@@ -117,8 +120,8 @@ class TableTest {
     }
 
     private static ResultRow row(String project, Map<String, String> tags) {
-        return new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.Bench.run", "jmh", "thrpt",
-            1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", tags, project);
+        return TestRows.row().jobId("20260820T174432812Z-a3f9c21b").benchmarkName("com.example.Bench.run")
+            .createdAt("2026-08-20T17:44:32.812Z").tags(tags).project(project).build();
     }
 
     @Test
