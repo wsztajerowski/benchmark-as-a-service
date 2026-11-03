@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
 import picocli.CommandLine.Model.CommandSpec;
@@ -43,6 +44,8 @@ public class ExportCommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    @Mixin CommandContext context = new CommandContext();
+
     @Option(names = "--parts", paramLabel = "<part>[,<part>...]",
         description = "Which parts to export: results, recordings, extension. Default: all three.")
     String parts;
@@ -72,7 +75,7 @@ public class ExportCommand implements Callable<Integer> {
             outcome = new DeploymentExport(aws, deployment, config.getAws().resolveRegion(), () -> now)
                 .run(directory, selected, withoutInputs);
         }
-        report(Console.of(spec.commandLine().getOut()), deployment, outcome);
+        report(context.console(), deployment, outcome);
         return 0;
     }
 

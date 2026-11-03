@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.config;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Json;
@@ -10,7 +11,6 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Table;
 import pl.wsztajerowski.baas.console.Table.Column;
 
@@ -42,8 +42,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     @Option(names = "--format", defaultValue = "table", description = "Output format: table (default), json.")
     String format;
@@ -62,7 +61,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
 
     /** Payload, including the empty answer: a redirect of stdout should keep it. */
     private void printTable(List<BaasConfig> deployments) {
-        var out = console();
+        var out = context.console();
         if (deployments.isEmpty()) {
             out.println("No deployment is configured on this machine.");
             return;
@@ -77,7 +76,7 @@ public class ConfigListSubcommand implements Callable<Integer> {
     }
 
     private void printJson(List<BaasConfig> deployments) {
-        console().println(Json.array(deployments.stream().map(deployment -> {
+        context.console().println(Json.array(deployments.stream().map(deployment -> {
             var aws = deployment.getAws();
             return "{\"deployment\":" + Json.string(deployment.getPrefix())
                 + ",\"region\":" + Json.string(aws.getRegion())
@@ -90,10 +89,4 @@ public class ConfigListSubcommand implements Callable<Integer> {
         return value == null || value.isBlank() ? "—" : value;
     }
 
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
 }

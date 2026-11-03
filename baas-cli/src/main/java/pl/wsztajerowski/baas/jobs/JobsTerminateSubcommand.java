@@ -1,6 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
-import pl.wsztajerowski.baas.cli.Invocation;
+import pl.wsztajerowski.baas.cli.CommandContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -11,8 +11,6 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.session.OperatorSession;
 
 import java.util.concurrent.Callable;
 import java.util.function.BooleanSupplier;
@@ -33,18 +31,7 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     /** Replaced in tests; reads one answer from the terminal. */
     Supplier<String> answerReader = () -> System.console().readLine();
@@ -57,10 +44,10 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
 
     @Override
     public Integer call() {
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
         // Unchecked against the deployment's recorded release: stopping a paid instance never
         // waits on an install, and an older CLI's stop step does no harm.
-        var factory = session().uncheckedFactory();
+        var factory = context.operator().uncheckedFactory();
         try (var dynamoDb = factory.dynamoDb();
              var quickDynamoDb = factory.dynamoDb(pl.wsztajerowski.baas.jobs.JobSession.STOP_WRITE_TIMEOUT);
              var ec2 = factory.ec2()) {
@@ -82,22 +69,16 @@ public class JobsTerminateSubcommand implements Callable<Integer> {
             if (yes) {
                 return true;
             }
-            if (!console().interactive()) {
+            if (!context.console().interactive()) {
                 logger.error("Refusing to terminate job {} without confirmation: no terminal to ask on. "
                     + "Pass --yes.", jobId);
                 return false;
             }
             // Stays on stdout: the prompt has to sit on the cursor's line; see TeardownCommand.
-            console().print("Terminate job " + jobId + "? [y/N] ");
+            context.console().print("Terminate job " + jobId + "? [y/N] ");
             String answer = answerReader.get();
             return answer != null && ("y".equalsIgnoreCase(answer.strip()) || "yes".equalsIgnoreCase(answer.strip()));
         };
     }
 
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
 }

@@ -64,8 +64,8 @@ class TeardownConfigFileTest {
                 if (cls == TeardownCommand.class) {
                     var command = new TeardownCommand();
                     command.awsFor = config -> aws;
-                    command.console = pl.wsztajerowski.baas.console.Console.withFlags(
-                        new PrintWriter(new StringWriter()), true, false);
+                    command.context.use(pl.wsztajerowski.baas.console.Console.withFlags(
+                        new PrintWriter(new StringWriter()), true, false));
                     // Decline the export, then type the deployment's name.
                     command.answerReader = new ScriptedAnswers("n", deployment);
                     return (K) command;

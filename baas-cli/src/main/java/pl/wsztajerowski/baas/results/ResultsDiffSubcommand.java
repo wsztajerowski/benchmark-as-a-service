@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -9,7 +10,6 @@ import picocli.CommandLine.Option;
 import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
-import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.cli.JobReference;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.console.Console;
@@ -22,7 +22,6 @@ import pl.wsztajerowski.baas.model.TagKeys;
 import pl.wsztajerowski.baas.results.ResultsDiff.Row;
 import pl.wsztajerowski.baas.results.ResultsDiff.Verdict;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.OperatorSession;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -63,18 +62,7 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     @Parameters(index = "0", paramLabel = "<jobA>", description = "The job compared against (the baseline).")
     String jobA;
@@ -87,7 +75,7 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
 
     /** The query service for the configured table. Overridden by tests, which have no table. */
     ResultsQueryService openResults(BaasConfig config, String tableName) {
-        return new ResultsQueryService(session().factory().dynamoDb(), tableName);
+        return new ResultsQueryService(context.operator().factory().dynamoDb(), tableName);
     }
 
     @Override
@@ -102,7 +90,7 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
             throw CommandRefusal.usage("Both arguments name job " + jobA + "; name two different jobs.");
         }
         CommandRefusal.requireFormat(format, FORMATS);
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
         String tableName;
         try {
             tableName = config.resultsTable();
@@ -150,9 +138,9 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
 
         List<Row> rows = ResultsDiff.compare(a, b);
         if ("json".equalsIgnoreCase(format)) {
-            printJson(console(), a, b, rows);
+            printJson(context.console(), a, b, rows);
         } else {
-            printTable(console(), a, b, rows, loggingMixin != null && loggingMixin.verbose());
+            printTable(context.console(), a, b, rows, loggingMixin != null && loggingMixin.verbose());
         }
         return 0;
     }
@@ -408,13 +396,6 @@ public class ResultsDiffSubcommand implements Callable<Integer> {
             + ",\"error\":" + Json.number(row.scoreError())
             + ",\"unit\":" + Json.string(row.scoreUnit())
             + ",\"secondaryMetrics\":" + ResultsQuerySubcommand.metricsJson(row.secondaryMetrics()) + "}";
-    }
-
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
     }
 
     private static String truncate(String s, int max) {

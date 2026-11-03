@@ -156,7 +156,7 @@ class ExportImportRoundTripIT {
                 if (cls == ImportCommand.class) {
                     var command = new ImportCommand();
                     command.awsFor = config -> aws();
-                    command.console = Console.withFlags(new PrintWriter(out, true), false, false);
+                    command.context.use(Console.withFlags(new PrintWriter(out, true), false, false));
                     return (K) command;
                 }
                 return defaults.create(cls);

@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.config;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.Invocation;
 import picocli.CommandLine.Command;
 import picocli.CommandLine.Mixin;
@@ -22,6 +23,8 @@ public class ConfigShowSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    @Mixin CommandContext context = new CommandContext();
+
 
     @Override
     public Integer call() {
@@ -34,7 +37,7 @@ public class ConfigShowSubcommand implements Callable<Integer> {
         //
         // Payload, so the Console: `baas config show > config.txt` has to keep it. It used to be
         // one logger event, which landed on stderr behind a timestamp and left the file empty.
-        Console.of(spec.commandLine().getOut()).print(dump);
+        context.console().print(dump);
         return 0;
     }
 

@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.deployment;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.session.DeployerSession;
@@ -44,6 +45,8 @@ public class TeardownCommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
+    @Mixin CommandContext context = new CommandContext();
+
     @Option(names = "--yes",
         description = "Skip the export offer and the confirmation, so teardown runs without a terminal. "
             + "Nothing is exported: run `admin deployment export` first to keep the deployment's data.")
@@ -84,7 +87,7 @@ public class TeardownCommand implements Callable<Integer> {
     int removeDeployment(BaasConfig config, String resolvedStack) {
         // A terminal first, unless --yes: the export offer and the confirmation are both asked there,
         // and reading a closed stdin used to crash with "No line found".
-        if (!yes && !console().interactive()) {
+        if (!yes && !context.console().interactive()) {
             logger.error("Refusing to tear down {}: teardown asks for confirmation on a terminal, and there is "
                 + "none here. Pass --yes to tear down without asking, after `{}` if the data is to be kept. "
                 + "Nothing was deleted.", resolvedStack, Hints.command(resolvedStack, "admin deployment export"));
@@ -163,20 +166,20 @@ public class TeardownCommand implements Callable<Integer> {
      * names. Teardown writes nothing locally except through this. A failed export stops the teardown.
      */
     void offerExport(BaasConfig config, String deployment) {
-        console().print("Export " + deployment + " first, into a local bundle? [Y/n]: ");
+        context.console().print("Export " + deployment + " first, into a local bundle? [Y/n]: ");
         String answer = answerReader.get();
         if (answer == null || answer.strip().toLowerCase(java.util.Locale.ROOT).startsWith("n")) {
             return;
         }
         Instant now = Instant.now();
         Path defaultDirectory = DeploymentExport.defaultDirectory(deployment, now);
-        console().print("Bundle directory [" + defaultDirectory + "]: ");
+        context.console().print("Bundle directory [" + defaultDirectory + "]: ");
         String chosen = answerReader.get();
         Path directory = chosen == null || chosen.isBlank() ? defaultDirectory : Path.of(chosen.strip());
         try (ExportAws exportAws = exportAwsFor.apply(config)) {
             var outcome = new DeploymentExport(exportAws, deployment, config.getAws().resolveRegion(), () -> now)
                 .run(directory, EnumSet.allOf(Part.class), false);
-            ExportCommand.report(console(), deployment, outcome);
+            ExportCommand.report(context.console(), deployment, outcome);
         } catch (IOException | RuntimeException e) {
             throw CommandRefusal.refused("The export of " + deployment + " failed: " + e.getMessage()
                 + "\n  Nothing was deleted. Re-run teardown and decline the export, or fix the cause and export again.");
@@ -194,9 +197,6 @@ public class TeardownCommand implements Callable<Integer> {
             + " no longer trusts it, since its operator role is gone.";
     }
 
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
-
     /** Replaced in tests; reads one answer from the terminal. */
     Supplier<String> answerReader = () -> System.console().readLine();
 
@@ -207,20 +207,13 @@ public class TeardownCommand implements Callable<Integer> {
     boolean confirmed(String stack) {
         // Stays on stdout: the prompt has to sit on the cursor's line, and every logger line
         // comes with a timestamp prefix and a newline. The Console flushes it.
-        console().print("Type the deployment name to confirm deletion [" + stack + "]: ");
+        context.console().print("Type the deployment name to confirm deletion [" + stack + "]: ");
         String answer = answerReader.get();
         if (answer == null || !stack.equals(answer.strip())) {
             logger.info("Aborted. Nothing was deleted.");
             return false;
         }
         return true;
-    }
-
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
     }
 
     /** The deployment being torn down: the one {@code --deployment} named, or the only one configured. */

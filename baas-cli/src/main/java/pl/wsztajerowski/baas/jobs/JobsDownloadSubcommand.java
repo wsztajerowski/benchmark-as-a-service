@@ -1,8 +1,8 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.JobReference;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
-import pl.wsztajerowski.baas.cli.Invocation;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import picocli.CommandLine.Command;
@@ -13,7 +13,6 @@ import picocli.CommandLine.Parameters;
 import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.session.BaasConfig;
-import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
 
 import java.util.Optional;
@@ -50,16 +49,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
+    @Mixin CommandContext context = new CommandContext();
 
     @Override
     public Integer call() {
@@ -67,7 +57,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
         if (notAJobId != null) {
             throw CommandRefusal.usage(notAJobId + " Nothing was downloaded.");
         }
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
 
         String bucket;
         try {
@@ -76,7 +66,7 @@ public class JobsDownloadSubcommand implements Callable<Integer> {
             throw CommandRefusal.refused(noDeployment.getMessage());
         }
 
-        var factory = session().factory();
+        var factory = context.operator().factory();
 
         // No separate table check: config.bucket() above has already required the deployment,
         // which is the only thing config.resultsTable() could fail on.

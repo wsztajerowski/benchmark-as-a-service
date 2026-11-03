@@ -1,7 +1,7 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.cli.CommandContext;
 import pl.wsztajerowski.baas.cli.JobReference;
-import pl.wsztajerowski.baas.cli.Invocation;
 import pl.wsztajerowski.baas.cli.CommandRefusal;
 import pl.wsztajerowski.baas.console.Json;
 import pl.wsztajerowski.baas.model.JobLayout;
@@ -19,7 +19,6 @@ import pl.wsztajerowski.baas.console.Console;
 import pl.wsztajerowski.baas.console.Hints;
 import pl.wsztajerowski.baas.console.Printable;
 import pl.wsztajerowski.baas.model.TagKeys;
-import pl.wsztajerowski.baas.session.OperatorSession;
 import pl.wsztajerowski.baas.aws.S3UploadService;
 import pl.wsztajerowski.baas.aws.S3UploadService.StoredObject;
 import pl.wsztajerowski.baas.model.JobItem;
@@ -56,18 +55,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
 
     @Spec CommandSpec spec;
 
-    /** Which deployment, as its operator role; opened by {@link #call()}. */
-    private OperatorSession session;
-
-    OperatorSession session() {
-        if (session == null) {
-            session = OperatorSession.of(Invocation.configService(spec));
-        }
-        return session;
-    }
-
-    /** Set by tests; otherwise built from picocli's {@code getOut()} on first use. */
-    Console console;
+    @Mixin CommandContext context = new CommandContext();
 
     @Parameters(index = "0", paramLabel = "<jobId>",
         description = "The job identifier `baas run` printed and `baas jobs list` shows.")
@@ -91,7 +79,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
     }
 
     Sources sources(BaasConfig config) {
-        var factory = session().factory();
+        var factory = context.operator().factory();
         var dynamoDb = factory.dynamoDb();
         var ec2 = factory.ec2();
         var s3 = factory.s3();
@@ -120,7 +108,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
         if (notAJobId != null) {
             throw CommandRefusal.usage(notAJobId);
         }
-        BaasConfig config = session().config();
+        BaasConfig config = context.operator().config();
 
         try (var sources = sources(config)) {
             Optional<JobItem> found = sources.job(jobId);
@@ -156,11 +144,11 @@ public class JobsShowSubcommand implements Callable<Integer> {
                 printJson(row, manifest.map(EnvironmentManifest::toJson).orElse("null"),
                     artifacts.stream().map(StoredObject::key).toList());
             } else {
-                printView(console(), row, deadline.map(d -> WatchdogDeadline.describe(d, now)), manifest,
+                printView(context.console(), row, deadline.map(d -> WatchdogDeadline.describe(d, now)), manifest,
                     unreadable, artifacts);
             }
         }
-        Hints.show(console(), spec.commandLine().getErr(), "measurements", Hints.command(config.getPrefix(), "query --job-id " + jobId),
+        Hints.show(context.console(), spec.commandLine().getErr(), "measurements", Hints.command(config.getPrefix(), "query --job-id " + jobId),
             "files", Hints.command(config.getPrefix(), "jobs download " + jobId));
         return 0;
     }
@@ -211,7 +199,7 @@ public class JobsShowSubcommand implements Callable<Integer> {
     }
 
     private void printJson(JobListing.Row row, String environmentJson, List<String> artifacts) {
-        var out = console();
+        var out = context.console();
         String artifactsJson = artifacts.stream().map(Json::string)
             .collect(java.util.stream.Collectors.joining(",", "[", "]"));
         out.println("{\"job\":" + row.json() + ",\"environment\":" + environmentJson.strip()
@@ -260,10 +248,4 @@ public class JobsShowSubcommand implements Callable<Integer> {
         return value == null || value.isBlank() ? "—" : value;
     }
 
-    private Console console() {
-        if (console == null) {
-            console = Console.of(spec.commandLine().getOut());
-        }
-        return console;
-    }
 }
