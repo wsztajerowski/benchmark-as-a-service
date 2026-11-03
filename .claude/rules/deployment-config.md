@@ -33,6 +33,12 @@ How a deployment is created, named, selected, reached and removed.
   under an identity that may not simulate "succeeds" while proving nothing. All of setup's AWS calls
   go through `SetupAws`, faked by hand in tests.
 
+- **`baas admin deployment show` is the read-only view of what is deployed** (G14): stack status and
+  last update, the `BaasCliVersion` parameter, every output, the GitHub trust (`GitHubTrust`, the same
+  read-back setup edits) and the published image. Deployer credentials, three reads, no port (ADR
+  0009). It is what an unattended `--github-repo` caller reads first, since that option submits
+  exactly the list given.
+
 ## Credentials
 
 - **Day-to-day commands always run as `<name>-role-operator`; any credentials, the deployer's

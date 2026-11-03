@@ -95,7 +95,8 @@ The watchdog is the only one that survives a deadlocked JVM.
    `ShutdownBehavior=TERMINATE`, and needs no API call, permission or instance id
 2. Process `timeout` around `java -jar benchmark-runner.jar`
 3. CLI JVM shutdown hook (`RunCommand`, armed from `JobLaunch`'s `Listener.reserved` — after the
-   reservation, before the launch) for Ctrl+C, registered *before* `RunInstances` so an
+   reservation, before the upload and the launch, so Ctrl+C during the upload records `cancelled`)
+   for Ctrl+C, registered *before* `RunInstances` so an
    interrupt mid-launch can look the instance up by its `baas-job-id` tag. That lookup can
    miss — the instance may not exist yet, and `DescribeInstances` lags — so the instance covers it:
    its `running` write is refused over the recorded `cancelled`, and a refused `running` means it

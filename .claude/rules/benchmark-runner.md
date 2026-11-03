@@ -26,6 +26,13 @@ The runner module, what reaches the benchmark JAR, and how a library is added.
   JCStress bump fails there until they follow. A managed profiler key is refused in **every prefix**
   (`l`…`libPath`, `d`…`dir`), ambiguous ones included: JMH parses profiler options with jopt-simple
   too, and `libP=/x` really loaded `/x` (`list-runner-profilers`).
+- **`baas run --dry-run` checks the arguments with the JAR's own parser, on the laptop** (G9). After the
+  refusals above it runs `<java.home>/bin/java -jar <jar> <args> -l` and stops before the deployment is
+  read: a non-zero exit, or a listing with no name, exits 2. Both tools exit 0 when nothing matches,
+  so the names are counted (`LocalListing.NAME`, a dotted identifier alone on a line); `LocalListingIT`
+  pins that reading against both fixture JARs, so a JMH or JCStress bump that changes the listing's
+  shape fails there. JCStress ignores a positional pattern (`-t` selects), and the CLI's JVM may be
+  older than the JAR's bytecode: both are reported as the tool reports them.
 - **The JDK is chosen with `baas run --jdk <id>`, never with JMH's `-jvm`** (`multiple-jdks`). The
   runner takes `--jdk` and starts the benchmark as `/opt/jdks/<id>/bin/java -jar …` instead of `java
   -jar …`; JMH's forks (and `-f 0`) and JCStress's follow the started JVM's `java.home`, so one
