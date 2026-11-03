@@ -27,9 +27,10 @@ Budget: 5, CI's e2e jobs included.
 
 ## Implementation notes
 
-- **2.4** `RunCommand` refuses a `--benchmark-jar` that is not a regular file. The check moved up beside
-  `refuseManagedOrNoRun()`, so it now precedes the unreleased-build refusal as well;
-  `RunCommandTest.refusesToLaunchFromAnUnreleasedBuildWithoutARunnerJar` gives it a real file.
+- **2.4** `RunCommand.requireBenchmarkJarFile` refuses a `--benchmark-jar` that is not a regular file.
+  A real run checks it where the existence check was, after the tag and timeout refusals, which
+  `OptionValidationTest` pins. A dry run checks it right before the listing. Moving it up for both
+  was tried first, and failed three `OptionValidationTest` cases.
 - **4.1** The federation read-back moved into a new public `deployment.setup.GitHubTrust` record.
   `GitHubStep.deployed` delegates to it, so `SetupContext` and `GitHubStep` stay package-private.
   `CloudFormationService.view` returns a plain `StackView`, so the command imports no SDK type.

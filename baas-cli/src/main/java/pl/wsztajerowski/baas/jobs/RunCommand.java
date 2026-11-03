@@ -291,16 +291,9 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         }
         refuseManagedOrNoRun();
 
-        // The JAR is named, never derived. Checked before anything reads the deployment, so a dry run
-        // reports it too, and before the image lookup and any upload. A regular file: a directory
-        // passed exists() and then failed as the upload of a job already reserved.
-        if (!Files.isRegularFile(benchmarkJar)) {
-            throw CommandRefusal.refused((Files.exists(benchmarkJar) ? "Benchmark JAR is not a file: "
-                : "Benchmark JAR not found: ") + benchmarkJar + "\nBuild it first, then pass --benchmark-jar.");
-        }
-
         // Before the deployment is read: a dry run needs no configured deployment and no credentials.
         if (dryRun) {
+            requireBenchmarkJarFile();
             return dryRun();
         }
 
@@ -339,6 +332,10 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
         int resolvedWallClock = timings.watchdogSeconds();
         logger.debug("Resolved job parameters: instanceType={}, timeout={}s, watchdog={}s, project={}, params={}",
             resolvedInstanceType, resolvedTimeout, resolvedWallClock, resolvedProject, benchmarkParams);
+
+        // The JAR is named, never derived. Checked before the image lookup and before any upload,
+        // like every other precondition this command has.
+        requireBenchmarkJarFile();
 
         summaryDeployment = config.getPrefix();
         var request = new JobLaunch.Request(benchmarkType, benchmarkParams, benchmarkJar, runnerJar,
@@ -498,6 +495,17 @@ public class RunCommand implements Callable<Integer>, JobLaunch.Listener {
             throw CommandRefusal.usage(noRun.get() + " makes " + reading.tool() + " print and exit without "
                 + "measuring, so the job would measure nothing. Run it locally: " + localCommand
                 + "\nNothing was launched.");
+        }
+    }
+
+    /**
+     * A regular file: a directory passed {@code exists()} and then failed as the upload of a job
+     * already reserved (N3).
+     */
+    private void requireBenchmarkJarFile() {
+        if (!Files.isRegularFile(benchmarkJar)) {
+            throw CommandRefusal.refused((Files.exists(benchmarkJar) ? "Benchmark JAR is not a file: "
+                : "Benchmark JAR not found: ") + benchmarkJar + "\nBuild it first, then pass --benchmark-jar.");
         }
     }
 
