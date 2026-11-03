@@ -6,6 +6,7 @@ import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemConditions;
 import pl.wsztajerowski.baas.model.dynamodb.JobItemMapper;
 import pl.wsztajerowski.baas.model.JobStatus;
+import pl.wsztajerowski.baas.results.TableItems;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException;
@@ -100,7 +101,7 @@ public class DynamoDbJobRecorder implements JobRecorder {
                 ":pk", AttributeValue.fromS(ResultKeys.jobIndexPartitionKey(jobId)),
                 ":job", AttributeValue.fromS(ResultKeys.JOB_INDEX_SORT_KEY)))
             .build()).items();
-        return items.stream().findFirst().map(JobItemMapper::fromItem);
+        return items.stream().findFirst().flatMap(item -> TableItems.read(item, JobItemMapper::fromItem));
     }
 
     /**
@@ -121,8 +122,8 @@ public class DynamoDbJobRecorder implements JobRecorder {
         List<JobItem> kept = new ArrayList<>();
         for (var page : client.queryPaginator(request)) {
             for (var item : page.items()) {
-                JobItem job = JobItemMapper.fromItem(item);
-                if (filter.test(job)) {
+                JobItem job = TableItems.read(item, JobItemMapper::fromItem).orElse(null);
+                if (job != null && filter.test(job)) {
                     kept.add(job);
                     if (kept.size() >= limit) {
                         return kept;
