@@ -97,6 +97,14 @@ public final class BenchmarkArgs {
     public static final String LIST_PROFILERS = "lprof";
 
     /**
+     * JMH's fail-on-error option. JMH defaults it to {@code false}, under which a failed benchmark is
+     * reported and skipped and JMH still exits 0 — so a job ended {@code completed} with some of its
+     * measurements or none (PT2). BaaS defaults it to {@code true} instead; see
+     * {@link #defaultsFailOnError}.
+     */
+    public static final String FAIL_ON_ERROR = "foe";
+
+    /**
      * The profiler option keys BaaS owns, by profiler name, refused in every spelling a profiler's
      * parser could resolve to them. {@code dir} is where the profiler writes, which must be the
      * directory the runner uploads, and the runner appends it to every such {@code -prof}.
@@ -277,6 +285,16 @@ public final class BenchmarkArgs {
 
     private boolean listsProfilers(List<String> args) {
         return read(args).stream().anyMatch(occurrence -> occurrence.name().equals(LIST_PROFILERS));
+    }
+
+    /**
+     * Whether the runner adds {@code -foe true} to these arguments: a JMH run whose arguments do not
+     * set {@code -foe} in any spelling. A profiler listing runs nothing, so it gets none. Read by the
+     * runner, which adds it, and by the CLI, which says so when such a job fails.
+     */
+    public boolean defaultsFailOnError(List<String> args) {
+        return this == JMH && !isProfilerListing(args)
+            && read(args).stream().noneMatch(occurrence -> occurrence.name().equals(FAIL_ON_ERROR));
     }
 
     /** Every {@code -prof} value, in order. */

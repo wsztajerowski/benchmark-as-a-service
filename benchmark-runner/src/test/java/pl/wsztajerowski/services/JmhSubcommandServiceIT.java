@@ -2,6 +2,7 @@ package pl.wsztajerowski.services;
 
 import org.json.JSONArray;
 import org.junit.jupiter.api.Test;
+import pl.wsztajerowski.JavaWonderlandException;
 import pl.wsztajerowski.TestcontainersWithDynamoDbBaseIT;
 import pl.wsztajerowski.infra.S3StorageService;
 import pl.wsztajerowski.options.CommonSharedOptions;
@@ -16,6 +17,7 @@ import java.util.Collections;
 
 import static net.javacrumbs.jsonunit.assertj.JsonAssertions.assertThatJson;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class JmhSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
 
@@ -82,5 +84,53 @@ class JmhSubcommandServiceIT extends TestcontainersWithDynamoDbBaseIT {
             .noneSatisfy(o -> assertThat(o).asString().isEqualTo("test-listing/jmh-result.json"));
     }
 
+    /**
+     * PT2: {@code size=notanint} fails one of the two variants. Under BaaS's default {@code -foe true}
+     * the job fails and stores nothing; its process output is still uploaded.
+     */
+    @Test
+    void aFailedBenchmarkFailsTheJobByDefault() throws IOException {
+        JmhSubcommandService sut = service("test-foe", List.of("Summing_Array", "-p", "size=1,notanint"));
 
+        assertThatThrownBy(sut::executeCommand).isInstanceOf(JavaWonderlandException.class);
+
+        assertThat(storedMeasurements()).isEmpty();
+        assertThatJson(listObjectsInTestBucket())
+            .inPath("$[*].Key")
+            .isArray()
+            .anySatisfy(o -> assertThat(o).asString().isEqualTo("test-foe/jmh-output.txt"));
+    }
+
+    /** {@code -foe false} is the user's way back to JMH's semantics: the variant that succeeded is stored. */
+    @Test
+    void foeFalseStoresTheBenchmarksThatSucceeded() throws IOException {
+        service("test-no-foe", List.of("Summing_Array", "-p", "size=1,notanint", "-foe", "false")).executeCommand();
+
+        assertThat(storedMeasurements()).singleElement()
+            .satisfies(measurement -> assertThat(measurement.params()).containsEntry("size", "1"));
+    }
+
+    /** PT2's observed case: every benchmark failed, JMH exited 0 with {@code [ ]}, and the job said completed. */
+    @Test
+    void aRunThatStoresNoMeasurementFails() throws IOException {
+        JmhSubcommandService sut = service("test-empty",
+            List.of("Incrementing_Synchronized", "-jvmArgsAppend", "-XX:+DefinitelyNotAFlag", "-foe", "false"));
+
+        assertThatThrownBy(sut::executeCommand)
+            .isInstanceOf(JavaWonderlandException.class)
+            .hasMessageContaining("wrote no measurement");
+
+        assertThat(storedMeasurements()).isEmpty();
+    }
+
+    private JmhSubcommandService service(String resultPath, List<String> arguments) throws IOException {
+        List<String> quick = new java.util.ArrayList<>(arguments);
+        quick.addAll(List.of("-f", "1", "-wi", "0", "-i", "1", "-r", "100ms"));
+        return new JmhSubcommandService(
+            new S3StorageService(awsS3Client, TEST_BUCKET_NAME),
+            resultsStore(),
+            new CommonSharedOptions(Path.of(resultPath), "req-" + resultPath, Instant.now(), "test-project", Collections.emptyMap()),
+            new JmhRun(Path.of("target", "fake-jmh-benchmarks.jar").toAbsolutePath(), quick,
+                Files.createTempDirectory("jmh"), Path.of("no-async-profiler")));
+    }
 }

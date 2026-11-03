@@ -48,7 +48,8 @@ public class JmhSubcommandService {
 
     /**
      * JMH's command line, without the output redirection: the result format and file the runner
-     * reads back, then the user's arguments as given — except that every {@code async} and
+     * reads back, {@code -foe true} unless the user set {@code -foe} (PT2), then the user's arguments
+     * as given — except that every {@code async} and
      * {@code jfr} profiler is pointed at {@link JmhRun#profilerOutput()}, after the user's own keys.
      * The baked async-profiler's directory is on the process's library path, for the forks and for a
      * profiler listing alike, which asks for no result file and gets none.
@@ -64,10 +65,17 @@ public class JmhSubcommandService {
         builder
             .addArgumentWithValue("-rf", "json")
             .addArgumentWithValue("-rff", run.resultFile());
+        if (defaultsFailOnError()) {
+            builder.addArgumentWithValue("-" + BenchmarkArgs.FAIL_ON_ERROR, "true");
+        }
         BenchmarkArgs.of(BenchmarkType.JMH)
             .withProfilerOptions(run.arguments(), this::managedProfilerOptions)
             .forEach(builder::addArgument);
         return builder;
+    }
+
+    private boolean defaultsFailOnError() {
+        return BenchmarkArgs.of(BenchmarkType.JMH).defaultsFailOnError(run.arguments());
     }
 
     private boolean isProfilerListing() {
@@ -96,6 +104,10 @@ public class JmhSubcommandService {
     public void executeCommand() {
         Path outputPath = commonOptions.resultPath();
         logger.info("Running JMH. Output path: {}", outputPath);
+        if (defaultsFailOnError()) {
+            logger.info("Running with -foe true, BaaS's default: a failed benchmark fails the job and "
+                + "no measurement is stored. Pass -foe false after -- to keep the ones that succeeded");
+        }
         try {
             Files.createDirectories(run.resultFile().toAbsolutePath().getParent());
             int exitCode = jmhProcess()
@@ -118,6 +130,10 @@ public class JmhSubcommandService {
             if (exitCode != 0) {
                 logger.error("Jmh process exited with exit code: {}", exitCode);
                 logger.info("Benchmark process logs:\n{}", Files.readString(run.processOutput()));
+                if (defaultsFailOnError()) {
+                    logger.error("A benchmark failed under -foe true, BaaS's default. Pass -foe false after -- "
+                        + "to store the benchmarks that succeeded");
+                }
                 throw new JavaWonderlandException(format("Benchmark process exit with non-zero code: {0}", exitCode));
             }
         } catch (InterruptedException | IOException e) {
@@ -137,6 +153,13 @@ public class JmhSubcommandService {
         logger.info("Saving verbatim JMH result JSON: {}", resultJsonKey);
         storageService.saveFile(resultJsonKey, resultJson);
         List<StoredMeasurement> measurements = JmhRunResults.map(commonOptions, resultJson);
+        if (measurements.isEmpty()) {
+            // JMH exits 0 with an empty result when every benchmark failed under -foe false: without
+            // this the job ended completed with nothing stored (PT2). The result JSON is uploaded.
+            throw new JavaWonderlandException(
+                "JMH exited 0 but wrote no measurement: every benchmark failed. See %s"
+                    .formatted(BenchmarkType.JMH.processOutputName()));
+        }
 
         logger.info("Storing {} measurement(s) for request {}", measurements.size(), commonOptions.jobId());
         resultsStore.write(measurements);

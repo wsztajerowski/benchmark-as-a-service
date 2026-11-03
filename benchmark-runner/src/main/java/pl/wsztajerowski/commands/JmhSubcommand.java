@@ -23,7 +23,8 @@ import static pl.wsztajerowski.FileUtils.getWorkingDirectory;
 @Command(name = BenchmarkType.JMH_NAME,
     description = "Run JMH benchmarks. Everything after -- reaches the benchmark JAR as given, "
         + "except -rf, -rff and -o, and the dir (and async's libPath) of an async or jfr profiler, "
-        + "which the runner sets.")
+        + "which the runner sets. -foe defaults to true: pass -foe false to keep the benchmarks that "
+        + "succeeded when another fails.")
 public class JmhSubcommand implements Runnable {
     private static final String DEFAULT_ASYNC_LIBRARY = "/app/async-profiler/lib/libasyncProfiler.so";
 

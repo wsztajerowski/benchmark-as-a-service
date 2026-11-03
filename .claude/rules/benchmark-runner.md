@@ -38,8 +38,14 @@ The runner module, what reaches the benchmark JAR, and how a library is added.
   break BaaS".** The known gap: perfasm's `savePerfTo`, `savePerfBinTo`, `saveLogTo` and their
   `…ToFile` forms write outside the uploaded tree, so their files are lost. Not managed, because no
   allowed instance type exposes the hardware counters perfasm needs and the injection could not be
-  tested (PT3). `-foe` passes through: `-foe true` fails the job with no result file, `-foe
-  false` exits 0 with only the variants that succeeded (PT2).
+  tested (PT3).
+- **`-foe` defaults to `true`, and an empty JMH result fails the job** (PT2). JMH's own default,
+  `false`, reports a failed benchmark and exits 0 — with every benchmark failed, an empty `[ ]` — so
+  a job ended `completed` with some measurements or none. The runner adds `-foe true` unless the
+  arguments set `-foe` in any spelling (`BenchmarkArgs.defaultsFailOnError`, read by the CLI too, which
+  names the default when such a job fails); `-foe true` exits 1 and writes an empty result file, so
+  the variants that succeeded are lost — `-foe false` is the user's way to keep them. Separately, a
+  JMH run that exits 0 with no measurement fails the job.
 - **`-lprof` alone is a listing job, not a refusal** (`list-runner-profilers`): its answer depends
   on the host — perf, the baked async-profiler, the instance type — and on the JMH version inside the
   JAR, so only the runner can give it. Anything beside it is refused, since JMH lists and exits,
