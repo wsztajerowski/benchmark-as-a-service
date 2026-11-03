@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.results;
 
+import pl.wsztajerowski.baas.testsupport.TestRows;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -41,9 +42,9 @@ class ResultsFormatTest {
     }
 
     private static ResultRow row(double score, double error) {
-        return new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
-            score, error, "ops/s", "2026-08-12T21:36:13Z",
-            Map.of("imageVersion", "1.0.0", "instanceType", "c5.2xlarge"));
+        return TestRows.row().jobId("jmh-1").benchmarkName("com.example.MyBenchmark.run").score(score)
+            .scoreError(error).createdAt("2026-08-12T21:36:13Z")
+            .tags(Map.of("imageVersion", "1.0.0", "instanceType", "c5.2xlarge")).build();
     }
 
     private String render(String format, List<ResultRow> rows) throws Exception {
@@ -62,10 +63,10 @@ class ResultsFormatTest {
         for (int i = 0; i < failed; i++) failedTests.put("org.example.Race" + i, "FORBIDDEN");
         Map<String, String> errorTests = new java.util.HashMap<>();
         for (int i = 0; i < errors; i++) errorTests.put("org.example.Crash" + i, "ERROR");
-        return new ResultRow("jc-1", "(jcstress) jc-1", "jcstress", null, Double.NaN, Double.NaN, "",
-            "2026-08-12T21:36:13Z", Map.of(), "p", Map.of(),
-            new JcstressSummary(40, 40 - failed - errors, failed, errors, failedTests, errorTests, Map.of()),
-            Map.of());
+        return TestRows.row().jobId("jc-1").benchmarkName("(jcstress) jc-1").benchmarkType("jcstress").mode(null)
+            .score(Double.NaN).scoreError(Double.NaN).scoreUnit("")
+            .createdAt("2026-08-12T21:36:13Z").project("p")
+            .jcstress(new JcstressSummary(40, 40 - failed - errors, failed, errors, failedTests, errorTests, Map.of())).build();
     }
 
     private String table(List<ResultRow> rows, boolean verbose) {
@@ -89,9 +90,9 @@ class ResultsFormatTest {
     @Test
     void verboseNamesTheFailingTestsAndTheSecondaryMetrics() {
         Locale.setDefault(Locale.ROOT);
-        var jmh = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
-            "2026-08-12T21:36:13Z", Map.of(), "p", Map.of(), null,
-            Map.of("gc.alloc.rate.norm", new SecondaryMetric(24.0, "B/op"), "gc.count", new SecondaryMetric(3.0, "counts")));
+        var jmh = TestRows.row().jobId("jmh-1").benchmarkName("com.example.MyBenchmark.run")
+            .createdAt("2026-08-12T21:36:13Z").project("p")
+            .secondaryMetrics(Map.of("gc.alloc.rate.norm", new SecondaryMetric(24.0, "B/op"), "gc.count", new SecondaryMetric(3.0, "counts"))).build();
 
         String out = table(List.of(jcstress(1, 1), jmh), true);
 
@@ -101,9 +102,9 @@ class ResultsFormatTest {
 
     @Test
     void jsonCarriesTheVerdictAndTheSecondaryMetrics() throws Exception {
-        var jmh = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt", 1.0, 0.1, "ops/s",
-            "2026-08-12T21:36:13Z", Map.of(), "p", Map.of(), null,
-            Map.of("gc.alloc.rate.norm", new SecondaryMetric(24.0, "B/op")));
+        var jmh = TestRows.row().jobId("jmh-1").benchmarkName("com.example.MyBenchmark.run")
+            .createdAt("2026-08-12T21:36:13Z").project("p")
+            .secondaryMetrics(Map.of("gc.alloc.rate.norm", new SecondaryMetric(24.0, "B/op"))).build();
 
         var parsed = new ObjectMapper().readTree(render("json", List.of(jcstress(2, 1), jmh)));
 
@@ -187,8 +188,8 @@ class ResultsFormatTest {
 
     @Test
     void untaggedHistoricalRowsRenderAsJsonNullRatherThanTheStringNull() throws Exception {
-        var untagged = new ResultRow("jmh-old", "com.example.Old.run", "jmh", "thrpt",
-            1.0, 0.1, "ops/s", "2026-01-01T00:00:00Z", Map.of());
+        var untagged = TestRows.row().jobId("jmh-old").benchmarkName("com.example.Old.run")
+            .createdAt("2026-01-01T00:00:00Z").build();
 
         var parsed = new ObjectMapper().readTree(render("json", List.of(untagged)));
 
@@ -208,8 +209,9 @@ class ResultsFormatTest {
     /** X7: a runner can write tags and names; an escape sequence in one must not reach the terminal. */
     @Test
     void runnerWrittenTextReachesTheTableWithoutControlCharacters() {
-        var hostile = new ResultRow("jmh-1", "com.example.My\u001b]0;pwned\u0007Benchmark.run", "jmh\u001b[2J", "thrpt",
-            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z", Map.of("note", "ok\u001b[31mred\u009b"));
+        var hostile = TestRows.row().jobId("jmh-1").benchmarkName("com.example.My\u001b]0;pwned\u0007Benchmark.run")
+            .benchmarkType("jmh\u001b[2J").score(1.5).scoreError(0.25)
+            .createdAt("2026-08-12T21:36:13Z").tags(Map.of("note", "ok\u001b[31mred\u009b")).build();
 
         String out = table(List.of(hostile), true);
 
@@ -233,10 +235,11 @@ class ResultsFormatTest {
     /** A profiler perturbs the score it measures, so a profiled row is marked and the mark explained. */
     @Test
     void aProfiledScoreIsMarkedAndTheDigitsStayAligned() {
-        var profiled = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.Q.offer", "jmh", "thrpt",
-            41790355.108, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of("profilers", "async,gc"));
-        var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",
-            48213977.412, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var profiled = TestRows.row().jobId("20260820T174432812Z-a3f9c21b").benchmarkName("com.example.Q.offer")
+            .score(41790355.108).createdAt("2026-08-20T17:44:32.812Z")
+            .tags(Map.of("profilers", "async,gc")).build();
+        var clean = TestRows.row().jobId("20260820T174432812Z-b7e4d0f2").benchmarkName("com.example.Q.offer")
+            .score(48213977.412).createdAt("2026-08-20T17:44:32.812Z").build();
 
         String out = table(List.of(clean, profiled), false);
 
@@ -255,10 +258,11 @@ class ResultsFormatTest {
     /** A row stored under a retired profiled type carries no profilers tag, and was profiled all the same. */
     @Test
     void aRowOfARetiredProfiledTypeIsMarkedAndJcstressCellsKeepTheirEdge() {
-        var legacy = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.Q.offer", "jmh-with-async", "thrpt",
-            41790355.108, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of("type", "jmh-with-async"));
-        var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",
-            48213977.412, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var legacy = TestRows.row().jobId("20260820T174432812Z-a3f9c21b").benchmarkName("com.example.Q.offer")
+            .benchmarkType("jmh-with-async").score(41790355.108)
+            .createdAt("2026-08-20T17:44:32.812Z").tags(Map.of("type", "jmh-with-async")).build();
+        var clean = TestRows.row().jobId("20260820T174432812Z-b7e4d0f2").benchmarkName("com.example.Q.offer")
+            .score(48213977.412).createdAt("2026-08-20T17:44:32.812Z").build();
 
         String out = table(List.of(clean, legacy, jcstress(0, 0)), false);
 
@@ -273,8 +277,8 @@ class ResultsFormatTest {
 
     @Test
     void aTableWithNoProfiledRowHasNoMarkAndNoFootnote() {
-        var clean = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.Q.offer", "jmh", "thrpt",
-            48213977.412, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var clean = TestRows.row().jobId("20260820T174432812Z-b7e4d0f2").benchmarkName("com.example.Q.offer")
+            .score(48213977.412).createdAt("2026-08-20T17:44:32.812Z").build();
 
         String out = table(List.of(clean), false);
 
@@ -291,8 +295,8 @@ class ResultsFormatTest {
     @Test
     void theJobIdentifierRendersWhole() {
         String jobId = "20260820T174432812Z-a3f9c21b";
-        var row = new ResultRow(jobId, "com.example.MyBenchmark.run", "jmh", "thrpt",
-            1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var row = TestRows.row().jobId(jobId).benchmarkName("com.example.MyBenchmark.run")
+            .createdAt("2026-08-20T17:44:32.812Z").build();
 
         ResultsTable.print(console, List.of(row));
 
@@ -305,8 +309,9 @@ class ResultsFormatTest {
      */
     @Test
     void theBenchmarkCellNamesTheSimpleClassAndTheMethod() {
-        var row = new ResultRow("20260820T174432812Z-a3f9c21b", "io.roadrunner.bench.ClosedWorldBenchmark.closedWorld",
-            "jmh", "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var row = TestRows.row().jobId("20260820T174432812Z-a3f9c21b")
+            .benchmarkName("io.roadrunner.bench.ClosedWorldBenchmark.closedWorld")
+            .createdAt("2026-08-20T17:44:32.812Z").build();
 
         ResultsTable.print(console, List.of(row));
 
@@ -315,11 +320,11 @@ class ResultsFormatTest {
 
     @Test
     void aBenchmarkNameLongerThanItsColumnIsCutWithoutMovingTheNextColumn() {
-        var longName = new ResultRow("20260820T174432812Z-a3f9c21b",
-            "io.roadrunner.bench.ClosedWorldBenchmark.closedWorldBenchmarkWithMetrics",
-            "jmh", "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
-        var shortName = new ResultRow("20260820T174432812Z-b7e4d0f2", "io.roadrunner.bench.B.run",
-            "jmh", "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var longName = TestRows.row().jobId("20260820T174432812Z-a3f9c21b")
+            .benchmarkName("io.roadrunner.bench.ClosedWorldBenchmark.closedWorldBenchmarkWithMetrics")
+            .createdAt("2026-08-20T17:44:32.812Z").build();
+        var shortName = TestRows.row().jobId("20260820T174432812Z-b7e4d0f2").benchmarkName("io.roadrunner.bench.B.run")
+            .createdAt("2026-08-20T17:44:32.812Z").build();
 
         ResultsTable.print(console, List.of(longName, shortName));
 
@@ -330,10 +335,10 @@ class ResultsFormatTest {
 
     @Test
     void twoJobsOfOneTypeOnOneDayRenderDistinctly() {
-        var first = new ResultRow("20260820T174432812Z-a3f9c21b", "com.example.B.run", "jmh",
-            "thrpt", 1.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
-        var second = new ResultRow("20260820T174432812Z-b7e4d0f2", "com.example.B.run", "jmh",
-            "thrpt", 2.0, 0.1, "ops/s", "2026-08-20T17:44:32.812Z", Map.of());
+        var first = TestRows.row().jobId("20260820T174432812Z-a3f9c21b").benchmarkName("com.example.B.run")
+            .createdAt("2026-08-20T17:44:32.812Z").build();
+        var second = TestRows.row().jobId("20260820T174432812Z-b7e4d0f2").benchmarkName("com.example.B.run").score(2.0)
+            .createdAt("2026-08-20T17:44:32.812Z").build();
 
         ResultsTable.print(console, List.of(first, second));
 
@@ -344,9 +349,9 @@ class ResultsFormatTest {
     /** Tag values are free-form: quotes, backslashes and control characters must still parse. */
     @Test
     void jsonCarriesEveryTagAndKeepsTheScoreError() throws Exception {
-        var tagged = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
-            1.0, 0.25, "ops/s", "2026-08-12T21:36:13Z",
-            Map.of("branch", "main", "note", "say \"hi\" \\ tab\there"));
+        var tagged = TestRows.row().jobId("jmh-1").benchmarkName("com.example.MyBenchmark.run").scoreError(0.25)
+            .createdAt("2026-08-12T21:36:13Z")
+            .tags(Map.of("branch", "main", "note", "say \"hi\" \\ tab\there")).build();
 
         var parsed = new ObjectMapper().readTree(render("json", List.of(tagged)));
 
@@ -359,9 +364,9 @@ class ResultsFormatTest {
     @Test
     void csvQuotesTheTagsColumn() throws Exception {
         Locale.setDefault(Locale.forLanguageTag("pl-PL"));
-        var tagged = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
-            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z",
-            Map.of("note", "a,b;\"c\"", "branch", "main"));
+        var tagged = TestRows.row().jobId("jmh-1").benchmarkName("com.example.MyBenchmark.run").score(1.5)
+            .scoreError(0.25).createdAt("2026-08-12T21:36:13Z")
+            .tags(Map.of("note", "a,b;\"c\"", "branch", "main")).build();
 
         var lines = render("csv", List.of(tagged)).strip().lines().toList();
 
@@ -374,9 +379,9 @@ class ResultsFormatTest {
     /** Review A11: a sweep's variant is told apart by its params, in both machine formats. */
     @Test
     void jsonAndCsvCarryTheParamsOfASweepVariant() throws Exception {
-        var variant = new ResultRow("jmh-1", "com.acme.MapLookup.get", "jmh", "thrpt",
-            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z", Map.of("branch", "main"), "lynx-journal",
-            Map.of("size", "10", "impl", "hash"));
+        var variant = TestRows.row().jobId("jmh-1").benchmarkName("com.acme.MapLookup.get").score(1.5).scoreError(0.25)
+            .createdAt("2026-08-12T21:36:13Z").tags(Map.of("branch", "main"))
+            .project("lynx-journal").params(Map.of("size", "10", "impl", "hash")).build();
 
         var parsed = new ObjectMapper().readTree(render("json", List.of(variant)));
         assertThat(parsed.get(0).get("params").get("impl").asText()).isEqualTo("hash");
@@ -392,8 +397,8 @@ class ResultsFormatTest {
 
     @Test
     void jsonGivesABenchmarkWithoutParamsAnEmptyObject() throws Exception {
-        var plain = new ResultRow("jmh-1", "com.example.MyBenchmark.run", "jmh", "thrpt",
-            1.5, 0.25, "ops/s", "2026-08-12T21:36:13Z", Map.of());
+        var plain = TestRows.row().jobId("jmh-1").benchmarkName("com.example.MyBenchmark.run").score(1.5)
+            .scoreError(0.25).createdAt("2026-08-12T21:36:13Z").build();
 
         var parsed = new ObjectMapper().readTree(render("json", List.of(plain)));
         assertThat(parsed.get(0).get("params").isEmpty()).isTrue();

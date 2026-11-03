@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import pl.wsztajerowski.baas.session.CoreStack;
 import pl.wsztajerowski.baas.image.RunnerImage;
 import pl.wsztajerowski.baas.model.JobItem;
@@ -146,8 +147,8 @@ public final class FakeRunAws implements RunAws {
 
         @Override
         public Optional<JobItem> read(JobItem job) {
-            return status == null ? Optional.empty() : Optional.of(new JobItem(job.jobId(), job.project(),
-                job.createdAt(), job.resultPath(), job.instanceType(), status, null, null, job.tags(), null, job.watchdogSeconds()));
+            return status == null ? Optional.empty() : Optional.of(TestJobs.copy(job)
+                .status(status).instanceId(null).errorCode(null).updatedAt(null).build());
         }
 
         @Override

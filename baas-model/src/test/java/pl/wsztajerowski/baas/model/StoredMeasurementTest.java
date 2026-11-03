@@ -3,7 +3,6 @@ package pl.wsztajerowski.baas.model;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -55,24 +54,17 @@ class StoredMeasurementTest {
      */
     @Test
     void createdAtIsTruncatedToMillisecondPrecisionAtConstruction() {
-        var m = new StoredMeasurement(
-            "lynx-journal",
-            "jmh-20260817_220706",
-            Instant.parse("2026-08-17T22:07:06.123456789Z"),
-            BenchmarkType.JMH,
-            "pl.wsztajerowski.fake.Incrementing_Synchronized",
-            "incrementUsingSynchronized",
-            "thrpt",
-            Map.of(),
-            14075511.867,
-            10632927.824,
-            "ops/s",
-            Map.of(),
-            null,
-            Map.of(),
-            "main/jmh/20260817_220706",
-            "main/jmh/20260817_220706/jmh-result.json",
-            "main/jmh/20260817_220706/environment.json");
+        var m = TestMeasurements.jmh()
+            .jobId("jmh-20260817_220706")
+            .createdAt("2026-08-17T22:07:06.123456789Z")
+            .benchmarkClass("pl.wsztajerowski.fake.Incrementing_Synchronized")
+            .benchmarkMethod("incrementUsingSynchronized")
+            .score(14075511.867)
+            .scoreError(10632927.824)
+            .resultPath("main/jmh/20260817_220706")
+            .resultJsonKey("main/jmh/20260817_220706/jmh-result.json")
+            .environmentJsonKey("main/jmh/20260817_220706/environment.json")
+            .build();
 
         assertThat(m.createdAt()).isEqualTo(Instant.parse("2026-08-17T22:07:06.123Z"));
     }

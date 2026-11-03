@@ -66,13 +66,10 @@ class ResultKeysTest {
     @Test
     void jmhSortKeyRendersNullModeAsAnEmptyFieldToKeepTheFieldCountFixed() {
         var original = StoredMeasurementFixtures.jmh();
-        var withoutMode = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), null,
-            Map.of(),
-            original.score(), original.scoreError(), original.scoreUnit(),
-            original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+        var withoutMode = TestMeasurements.copy(original)
+            .mode(null)
+            .params(Map.of())
+            .build();
 
         assertThat(ResultKeys.sortKey(withoutMode)).isEqualTo(
             "pl.wsztajerowski.fake.Incrementing_Synchronized"
@@ -101,13 +98,10 @@ class ResultKeysTest {
     @Test
     void theRequestIndexSortKeyRendersNullModeAsAnEmptyFieldToo() {
         var original = StoredMeasurementFixtures.jmh();
-        var withoutMode = new StoredMeasurement(
-            original.project(), original.jobId(), original.createdAt(), original.kind(),
-            original.benchmarkClass(), original.benchmarkMethod(), null,
-            Map.of(),
-            original.score(), original.scoreError(), original.scoreUnit(),
-            original.secondaryMetrics(), original.jcstress(), original.tags(),
-            original.resultPath(), original.resultJsonKey(), original.environmentJsonKey());
+        var withoutMode = TestMeasurements.copy(original)
+            .mode(null)
+            .params(Map.of())
+            .build();
 
         assertThat(ResultKeys.requestIndexSortKey(withoutMode))
             .isEqualTo("pl.wsztajerowski.fake.Incrementing_Synchronized#incrementUsingSynchronized#");

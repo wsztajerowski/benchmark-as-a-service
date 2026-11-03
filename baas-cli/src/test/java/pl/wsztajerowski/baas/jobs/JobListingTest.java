@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import org.junit.jupiter.api.Test;
 import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
@@ -17,8 +18,7 @@ class JobListingTest {
     private static final Instant CREATED = Instant.parse("2026-10-03T00:00:00Z");
 
     private static JobItem run(String id, String project, String status, String instanceId, Map<String, String> tags) {
-        return new JobItem(id, project, Instant.parse("2026-10-03T00:00:00Z"), "jobs/" + project + "/" + id,
-            "c5.2xlarge", status, instanceId, null, tags, null);
+        return TestJobs.job(id).project(project).status(status).instanceId(instanceId).tags(tags).build();
     }
 
     @Test
@@ -106,8 +106,8 @@ class JobListingTest {
     /** K3: the one job object jobs list and jobs show both print; the live instance wins over the stored one. */
     @Test
     void theJobObjectKeepsItsDocumentedFieldOrder() {
-        var job = new JobItem("j-1", "p", CREATED, "jobs/p/j-1", "c5.large", JobStatus.LAUNCHED, "i-stored", null,
-            Map.of("source", "ci"), null, 900);
+        var job = TestJobs.job("j-1").createdAt(CREATED).instanceType("c5.large").status(JobStatus.LAUNCHED)
+            .instanceId("i-stored").tags(Map.of("source", "ci")).watchdogSeconds(900).build();
 
         assertThat(new JobListing.Row(job, JobStatus.RUNNING, "i-live").json()).isEqualTo(
             "{\"jobId\":\"j-1\",\"project\":\"p\",\"status\":\"running\",\"storedStatus\":\"launched\","
@@ -116,8 +116,8 @@ class JobListingTest {
     }
 
     private static JobListing.Row at(String id, String created, String status, String project) {
-        var job = new JobItem(id, project, Instant.parse(created), "jobs/" + project + "/" + id, "c5.2xlarge",
-            status, null, null, Map.of("source", "local"), null);
+        var job = TestJobs.job(id).project(project).createdAt(created).status(status)
+            .tags(Map.of("source", "local")).build();
         return new JobListing.Row(job, status, null);
     }
 

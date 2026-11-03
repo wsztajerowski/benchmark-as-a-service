@@ -1,9 +1,9 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import org.junit.jupiter.api.Test;
 import picocli.CommandLine;
 import pl.wsztajerowski.baas.console.Console;
-import pl.wsztajerowski.baas.model.JobItem;
 import pl.wsztajerowski.baas.model.JobStatus;
 
 import java.io.PrintWriter;
@@ -19,9 +19,8 @@ class JobsCommandTest {
     private static final Instant NOW = Instant.parse("2026-10-03T00:12:04Z");
 
     private static JobListing.Row row(String id, String status, String errorCode) {
-        var job = new JobItem(id, "lynx-journal", Instant.parse("2026-10-03T00:00:00Z"),
-            "jobs/lynx-journal/" + id, "c6i.4xlarge", status, "i-0def", errorCode,
-            Map.of("source", "ci", "hidden", "true"), null);
+        var job = TestJobs.job(id).project("lynx-journal").instanceType("c6i.4xlarge").status(status)
+            .instanceId("i-0def").errorCode(errorCode).tags(Map.of("source", "ci", "hidden", "true")).build();
         return new JobListing.Row(job, status, JobStatus.isInFlight(status) ? "i-0def" : null);
     }
 
@@ -131,8 +130,8 @@ class JobsCommandTest {
     void theDefaultPageIsTheTwentyNewestAndTheCutIsAnnounced() {
         var rows = new java.util.ArrayList<JobListing.Row>();
         for (int day = 1; day <= 30; day++) {
-            var job = new JobItem("job-" + day, "p", Instant.parse("2026-09-%02dT00:00:00Z".formatted(day)),
-                "jobs/p/job-" + day, "c5.2xlarge", JobStatus.COMPLETED, null, null, Map.of(), null);
+            var job = TestJobs.job("job-" + day).createdAt("2026-09-%02dT00:00:00Z".formatted(day))
+                .status(JobStatus.COMPLETED).build();
             rows.add(new JobListing.Row(job, JobStatus.COMPLETED, null));
         }
         var notes = new java.util.ArrayList<String>();

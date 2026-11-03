@@ -1,5 +1,6 @@
 package pl.wsztajerowski.baas.jobs;
 
+import pl.wsztajerowski.baas.model.TestJobs;
 import pl.wsztajerowski.baas.testsupport.TestCli;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -120,8 +121,8 @@ class JobsConnectCommandTest {
     }
 
     private static JobItem job(String status, Integer watchdogSeconds) {
-        return new JobItem(ID, "baas-e2e", Instant.parse("2026-10-22T12:00:00Z"), "jobs/baas-e2e/" + ID, "c5.large",
-            status, INSTANCE, null, Map.of("type", "jmh"), null, watchdogSeconds);
+        return TestJobs.job(ID).project("baas-e2e").createdAt("2026-10-22T12:00:00Z").instanceType("c5.large")
+            .status(status).instanceId(INSTANCE).tags(Map.of("type", "jmh")).watchdogSeconds(watchdogSeconds).build();
     }
 
     private void runningJob() {
@@ -164,8 +165,8 @@ class JobsConnectCommandTest {
 
     @Test
     void aJobStillReservingHasNothingToConnectTo() throws Exception {
-        job = new JobItem(ID, "baas-e2e", Instant.parse("2026-10-22T12:00:00Z"), "jobs/baas-e2e/" + ID, "c5.large",
-            JobStatus.LAUNCHING, null, null, Map.of(), null, 3600);
+        job = TestJobs.job(ID).project("baas-e2e").createdAt("2026-10-22T12:00:00Z").instanceType("c5.large")
+            .watchdogSeconds(3600).build();
 
         var run = connect();
 
@@ -178,8 +179,8 @@ class JobsConnectCommandTest {
     @Test
     void aJobWhoseItemNeverRecordedItsInstanceIsFoundByItsTag() throws Exception {
         runningJob();
-        job = new JobItem(ID, "baas-e2e", Instant.parse("2026-10-22T12:00:00Z"), "jobs/baas-e2e/" + ID, "c5.large",
-            JobStatus.LAUNCHING, null, null, Map.of(), null, 3600);
+        job = TestJobs.job(ID).project("baas-e2e").createdAt("2026-10-22T12:00:00Z").instanceType("c5.large")
+            .watchdogSeconds(3600).build();
 
         var run = connect();
 
