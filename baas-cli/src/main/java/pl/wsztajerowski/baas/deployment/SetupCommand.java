@@ -10,6 +10,7 @@ import picocli.CommandLine.Spec;
 import pl.wsztajerowski.baas.cli.LoggingMixin;
 import pl.wsztajerowski.baas.deployment.setup.AwsSetupAws;
 import pl.wsztajerowski.baas.deployment.setup.SetupAws;
+import pl.wsztajerowski.baas.deployment.setup.GitHubNames;
 import pl.wsztajerowski.baas.deployment.setup.SetupOptions;
 import pl.wsztajerowski.baas.deployment.setup.SetupSteps;
 import pl.wsztajerowski.baas.console.Console;
@@ -84,7 +85,8 @@ public class SetupCommand implements Callable<Integer> {
 
     @Option(names = "--github-repo", split = ",",
         description = "Repository name allowed to assume the operator role. Repeatable, or "
-            + "comma-separated; one deployment can serve several repositories.")
+            + "comma-separated; one deployment can serve several repositories. Names only: "
+            + "a wildcard is refused.")
     List<String> githubRepos = new ArrayList<>();
 
     @Option(names = "--revoke-github-oidc",
@@ -138,5 +140,9 @@ public class SetupCommand implements Callable<Integer> {
                     + "stack would report success while continuous integration has no access. "
                     + "Nothing was deployed.");
         }
+        GitHubNames.problem(githubOrg, githubRepos.stream().map(String::strip).filter(r -> !r.isEmpty()).toList())
+            .ifPresent(problem -> {
+                throw new ParameterException(spec.commandLine(), problem + " Nothing was deployed.");
+            });
     }
 }

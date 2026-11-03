@@ -469,6 +469,29 @@ class SetupStepsTest {
         assertThat(run.aws.submitted).containsEntry("GitHubRepo", "repo:org/a:*,repo:org/b:*");
     }
 
+    /** X5: a wildcard is not a repository name; the walkthrough says so and asks again. */
+    @Test
+    void aWildcardAnswerIsAskedAgain() throws Exception {
+        var run = existing("dev", DEV_FILE).interactive("", "y", "", "*", "", "a,b", "", "");
+        run.aws.stackParameters.put("dev", Map.of("ResourceNamePrefix", "dev",
+            "GitHubOrg", "org", "GitHubRepo", "repo:org/a:*"));
+        run.aws.provider = new SetupAws.OidcProvider.Present(List.of(SetupAws.STS_AUDIENCE));
+
+        assertThat(run.run()).isZero();
+        assertThat(run.asked("'*' is not a GitHub repository name")).isTrue();
+        assertThat(run.aws.submitted).containsEntry("GitHubRepo", "repo:org/a:*,repo:org/b:*");
+    }
+
+    @Test
+    void gitHubNamesFollowGitHubsGrammar() {
+        assertThat(GitHubNames.problem("acme-corp", List.of("widgets", "my.repo_2", "a-b"))).isEmpty();
+        assertThat(GitHubNames.problem("*", List.of("widgets"))).hasValueSatisfying(m -> assertThat(m).contains("'*'"));
+        assertThat(GitHubNames.problem("ac?me", List.of("widgets"))).isPresent();
+        assertThat(GitHubNames.problem("-acme", List.of("widgets"))).isPresent();
+        assertThat(GitHubNames.problem("acme", List.of("widgets", "wid*"))).hasValueSatisfying(m -> assertThat(m).contains("'wid*'"));
+        assertThat(GitHubNames.problem("acme", List.of("a/b"))).isPresent();
+    }
+
     /** Carry-forward: an unrelated setup must not resubmit the defaults that revoked CI's access. */
     @Test
     void unchangedFederationIsCarriedForward() throws Exception {
