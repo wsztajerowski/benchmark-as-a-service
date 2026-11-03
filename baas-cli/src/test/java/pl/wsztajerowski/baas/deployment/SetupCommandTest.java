@@ -57,6 +57,23 @@ class SetupCommandTest {
             .hasMessageContaining("--github-repo");
     }
 
+    /** X5: in the trust policy's StringLike, `*` would trust every repository on GitHub. */
+    @ParameterizedTest
+    @ValueSource(strings = {"*", "ac?me", "acme/widgets"})
+    void anOrganisationThatIsNotAGitHubNameIsAUsageError(String org) {
+        assertThatThrownBy(parsed("--github-org", org, "--github-repo", "widgets")::validateFederationOptions)
+            .isInstanceOf(CommandLine.ParameterException.class)
+            .hasMessageContaining("is not a GitHub organisation")
+            .hasMessageContaining("Nothing was deployed");
+    }
+
+    @Test
+    void aWildcardRepositoryIsAUsageError() {
+        assertThatThrownBy(parsed("--github-org", "acme", "--github-repo", "widgets,*")::validateFederationOptions)
+            .isInstanceOf(CommandLine.ParameterException.class)
+            .hasMessageContaining("'*' is not a GitHub repository name");
+    }
+
     @Test
     void aPlainSetupPassesValidation() {
         assertThatCode(parsed("--region", "eu-central-1")::validateFederationOptions)

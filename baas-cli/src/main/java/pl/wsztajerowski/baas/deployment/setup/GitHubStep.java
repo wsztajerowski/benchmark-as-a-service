@@ -86,32 +86,51 @@ final class GitHubStep implements SetupStep {
             if (!prompter.confirm("Change that?", false)) {
                 return;
             }
-            String org = prompter.ask("GitHub organisation or user (type - to stop trusting GitHub)", current.org());
-            if ("-".equals(org)) {
-                context.revoke = true;
-                context.federationChanged = true;
-                return;
+            while (true) {
+                // A closed input keeps what is deployed: the defaults could be what was refused.
+                Optional<String> org = prompter.answer(
+                    "GitHub organisation or user (type - to stop trusting GitHub)", current.org());
+                if (org.isEmpty()) {
+                    return;
+                }
+                if ("-".equals(org.get())) {
+                    context.revoke = true;
+                    context.federationChanged = true;
+                    return;
+                }
+                Optional<String> repos = prompter.answer("Repositories, comma-separated", String.join(",", current.repos()));
+                if (repos.isEmpty() || setAnswer(context, org.get(), repos.get())) {
+                    return;
+                }
             }
-            String repos = prompter.ask("Repositories, comma-separated", String.join(",", current.repos()));
-            setAnswer(context, org, repos);
-            return;
         }
         if (!prompter.confirm("Let GitHub Actions workflows run benchmarks on this deployment?", false)) {
             return;
         }
-        String org = prompter.ask("GitHub organisation or user", null);
-        String repos = prompter.ask("Repositories, comma-separated", null);
-        if (org == null || org.isBlank() || repos == null || repos.isBlank()) {
-            prompter.console().println("Both are needed; GitHub Actions is left off.");
-            return;
+        while (true) {
+            String org = prompter.ask("GitHub organisation or user", null);
+            String repos = prompter.ask("Repositories, comma-separated", null);
+            if (org == null || org.isBlank() || repos == null || repos.isBlank()) {
+                prompter.console().println("Both are needed; GitHub Actions is left off.");
+                return;
+            }
+            if (setAnswer(context, org, repos)) {
+                return;
+            }
         }
-        setAnswer(context, org, repos);
     }
 
-    private static void setAnswer(SetupContext context, String org, String repos) {
+    /** False, having said why, when the names are not GitHub's: the walkthrough then asks again. */
+    private static boolean setAnswer(SetupContext context, String org, String repos) {
         var answer = new SetupContext.Federation(org.strip(), clean(Arrays.asList(repos.split(","))));
+        var problem = GitHubNames.problem(answer.org(), answer.repos());
+        if (problem.isPresent()) {
+            context.prompter().console().println(problem.get());
+            return false;
+        }
         context.federation = Optional.of(answer);
         context.federationChanged = !context.deployedFederation.equals(context.federation);
+        return true;
     }
 
     private static List<String> clean(List<String> repos) {
