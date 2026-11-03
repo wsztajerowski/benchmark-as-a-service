@@ -74,6 +74,11 @@ class ResultsQueryPipelineTest {
                     }
 
                     @Override
+                    public List<String> listVisibleProjects() {
+                        return List.of("lynx-journal", "p");
+                    }
+
+                    @Override
                     public void close() {
                     }
                 };
@@ -82,6 +87,23 @@ class ResultsQueryPipelineTest {
         command.context.use(Console.plain(new PrintWriter(out, true)));
         var run = TestCli.at(dir).with(ResultsQuerySubcommand.class, command).run(line.toArray(String[]::new));
         return new Run(run.exit(), out.toString(), run.err());
+    }
+
+    /** G18: the picker's list without a terminal, as lines or a JSON array. */
+    @Test
+    void listProjectsPrintsWhatThePickerWouldOffer() {
+        var lines = execute(List.of("query", "--list-projects"));
+        assertThat(lines.exit()).isZero();
+        assertThat(lines.out()).isEqualTo("lynx-journal" + System.lineSeparator() + "p" + System.lineSeparator());
+
+        var json = execute(List.of("query", "--list-projects", "--format", "json"));
+        assertThat(json.out().strip()).isEqualTo("[\"lynx-journal\",\"p\"]");
+    }
+
+    @Test
+    void listProjectsCannotBeCombinedWithAProjectChoice() {
+        assertThat(execute(List.of("query", "--list-projects", "--project", "p")).exit()).isEqualTo(2);
+        assertThat(execute(List.of("query", "--list-projects", "--all-projects")).exit()).isEqualTo(2);
     }
 
     private static List<String> jobIds(String json) {
