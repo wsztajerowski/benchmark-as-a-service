@@ -102,7 +102,7 @@ jobs:
         run: mvn -B -q clean package -DskipTests
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           # Federates straight into the operator role. No intermediate role: a role-chained
           # session is capped at 60 minutes by STS whatever MaxSessionDuration says, and this run
@@ -324,7 +324,7 @@ jobs:
         run: mvn -B -q clean package -DskipTests
 
       - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@61815dcd50bd041e203e49132bacad1fd04d2708 # v5.1.1
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           # Same federation and session length as the job above, for the same reasons.
           role-to-assume: ${{ vars.OPERATOR_ROLE_ARN }}
