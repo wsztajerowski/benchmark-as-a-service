@@ -22,22 +22,22 @@
              (-Dbaas.sourceRepo=$GITHUB_REPOSITORY), so a fork's CLI fetches the fork's runner. -->
         <baas.sourceRepo>wsztajerowski/benchmark-as-a-service</baas.sourceRepo>
         <!-- plugin versions -->
-        <maven-test-plugins.version>3.6.0</maven-test-plugins.version>
+        <maven-test-plugins.version>3.6.1</maven-test-plugins.version>
         <maven-compiler-plugin.version>3.16.0</maven-compiler-plugin.version>
         <maven-clean-plugin.version>3.5.0</maven-clean-plugin.version>
         <maven-shade-plugin.version>3.6.2</maven-shade-plugin.version>
         <maven-resources-plugin.version>3.5.0</maven-resources-plugin.version>
         <maven-dependency-plugin.version>3.11.0</maven-dependency-plugin.version>
-        <maven-enforcer-plugin.version>3.6.3</maven-enforcer-plugin.version>
+        <maven-enforcer-plugin.version>3.7.0</maven-enforcer-plugin.version>
         <!-- dependency versions -->
         <junit.bom.version>6.1.3</junit.bom.version>
-        <awssdk.java.bom.version>2.57.2</awssdk.java.bom.version>
+        <awssdk.java.bom.version>2.57.10</awssdk.java.bom.version>
         <testcontainers.bom.version>2.0.5</testcontainers.bom.version>
         <assertj.version>3.27.7</assertj.version>
         <json.version>20260814</json.version>
         <json-unit-assertj.version>6.4.0</json-unit-assertj.version>
-        <jsoup.version>1.23.2</jsoup.version>
-        <gson.version>2.14.0</gson.version>
+        <jsoup.version>1.24.1</jsoup.version>
+        <gson.version>2.15.0</gson.version>
         <picocli.version>4.7.7</picocli.version>
         <slf4j.version>2.0.20</slf4j.version>
         <jackson-dataformat-yaml.version>2.22.4</jackson-dataformat-yaml.version>
